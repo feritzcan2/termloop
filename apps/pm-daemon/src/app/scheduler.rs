@@ -23,6 +23,9 @@ use crate::app::control::errors::ControlError;
 use crate::app::{AppState, agents, credentials, jira, skills};
 
 const CHECK_TICK: Duration = Duration::from_secs(60);
+/// Expired skill data is dropped once every this many ticks; it expires
+/// by the day, so an hourly sweep is enough.
+const EXPIRY_TICKS: u32 = 60;
 const FACT_REFRESH_INTERVAL: Duration = Duration::from_secs(10 * 60);
 /// An approved probe runs again once its last run is this old.
 const PROBE_INTERVAL_MS: u64 = 10 * 60 * 1000;
@@ -111,8 +114,13 @@ pub(crate) fn start_check(
 pub(crate) async fn run_check_scheduler(state: AppState) {
     let mut interval = tokio::time::interval(CHECK_TICK);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut ticks = 0;
     loop {
         interval.tick().await;
+        if ticks % EXPIRY_TICKS == 0 {
+            skills::expire_skill_data(&state);
+        }
+        ticks = ticks.wrapping_add(1);
         check_tick(&state, agents::launch_check).await;
     }
 }

@@ -19,6 +19,7 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
         execution,
         workspace_network,
         approved_tools,
+        approved_external_tools,
         read_only_workspace,
     } = request;
     if let Some(instructions) = provider_instructions
@@ -233,8 +234,14 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
         );
     }
     if let Some(mcp) = mcp.as_ref() {
-        apply_tool_approvals(agent_id, &mut arguments, mcp.server_name, approved_tools)?;
-    } else if !approved_tools.is_empty() {
+        apply_tool_approvals(
+            agent_id,
+            &mut arguments,
+            mcp.server_name,
+            approved_tools,
+            approved_external_tools,
+        )?;
+    } else if !approved_tools.is_empty() || !approved_external_tools.is_empty() {
         return Err(InvocationError::InvalidMcpEndpoint);
     }
 
@@ -459,6 +466,10 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
         },
         codex_runtime_policy: CodexRuntimePolicy {
             approved_tools: approved_tools.iter().map(|s| (*s).to_owned()).collect(),
+            approved_external_tools: approved_external_tools
+                .iter()
+                .map(|s| (*s).to_owned())
+                .collect(),
             workspace_network,
         },
         codex_resume_permissions: if inherits_codex_permissions {

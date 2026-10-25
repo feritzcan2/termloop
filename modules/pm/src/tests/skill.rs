@@ -5,15 +5,16 @@ use crate::agent::{PM_BOARD_READ, PM_RISKS_READ, PM_TICKET_READ, PM_TICKET_SUGGE
 use crate::agent::{PmAgentMode, PmToolContext, SkillRunContext};
 use crate::skill::{
     BuiltinSkill, DryRunState, Evidence, FeedbackOutcome, NeededTool, NewSkillDraft,
-    SKILL_RUN_DEADLINE_MS, SkillDraftOrigin, SkillEvent, SkillManifest, SkillPrefilter,
-    SkillRunOutcome, SkillRunTrigger, SkillSample, SkillSource, SkillTrigger, evidence_sources,
+    SKILL_RUN_DEADLINE_MS, SkillChannel, SkillDraftOrigin, SkillEvent, SkillManifest,
+    SkillPrefilter, SkillRunOutcome, SkillRunTrigger, SkillSample, SkillSource, SkillTrigger,
+    evidence_sources,
 };
 use crate::{
     PmError, PmStore, ProjectEnvironment, ProposalChange, ProposalOrigin,
     SKILL_PAUSE_AFTER_FAILURES, TicketStatus,
 };
 
-fn manifest() -> SkillManifest {
+pub(super) fn manifest() -> SkillManifest {
     SkillManifest {
         name: "Standup digest".into(),
         description: "Suggests blockers from the board.".into(),
@@ -23,10 +24,11 @@ fn manifest() -> SkillManifest {
         approved_tools: vec![PM_BOARD_READ.into(), PM_TICKET_READ.into()],
         instructions: "Look for blocked tickets.".into(),
         channels: Vec::new(),
+        agent_tools: Vec::new(),
     }
 }
 
-fn new_draft(manifest: SkillManifest, base_skill_id: Option<String>) -> NewSkillDraft {
+pub(super) fn new_draft(manifest: SkillManifest, base_skill_id: Option<String>) -> NewSkillDraft {
     NewSkillDraft {
         project_id: "p1".into(),
         origin: if base_skill_id.is_some() {
@@ -46,7 +48,7 @@ fn new_draft(manifest: SkillManifest, base_skill_id: Option<String>) -> NewSkill
     }
 }
 
-fn evidence(url: &str) -> Vec<Evidence> {
+pub(super) fn evidence(url: &str) -> Vec<Evidence> {
     vec![Evidence {
         label: "Slack thread".into(),
         url: Some(url.into()),
@@ -55,13 +57,13 @@ fn evidence(url: &str) -> Vec<Evidence> {
 }
 
 /// Submits, dry-runs, and installs a draft with every tool approved.
-fn installed(store: &mut PmStore, manifest: SkillManifest) -> crate::skill::Skill {
+pub(super) fn installed(store: &mut PmStore, manifest: SkillManifest) -> crate::skill::Skill {
     let draft = store.submit_skill_draft(new_draft(manifest, None)).unwrap();
     let run = store.start_dry_run(&draft.id, 0).unwrap();
     store
         .finish_skill_run(&run.id, SkillRunOutcome::Reported, None)
         .unwrap();
-    let tools = draft.manifest.approved_tools.clone();
+    let tools = draft.first_use_tools.clone();
     store.install_skill_draft(&draft.id, &tools, None).unwrap()
 }
 
@@ -144,7 +146,10 @@ fn manifests_are_bounded_and_name_the_refused_field() {
         Some("instructions")
     );
     assert_eq!(
-        refused(|m| m.channels = vec!["C123".into()]),
+        refused(|m| m.channels = vec![SkillChannel {
+            id: "C123".into(),
+            name: "shop".into()
+        }]),
         Some("channels")
     );
     assert_eq!(

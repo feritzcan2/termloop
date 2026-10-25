@@ -6,11 +6,12 @@
 
 mod manifest;
 
-pub(crate) use manifest::valid_channel_id;
+pub(crate) use manifest::{CHANNEL_ID_MAX_BYTES, CHANNEL_NAME_MAX_CHARS};
 pub use manifest::{
-    SKILL_CHANNELS_MAX, SKILL_DESCRIPTION_MAX_CHARS, SKILL_INSTRUCTIONS_MAX_CHARS,
-    SKILL_NAME_MAX_CHARS, SKILL_SCHEDULE_MAX_MINUTES, SKILL_SCHEDULE_MIN_MINUTES, SKILL_TOOLS_MAX,
-    SkillEvent, SkillManifest, SkillPrefilter, SkillSource, SkillTrigger,
+    SKILL_AGENT_TOOLS_MAX, SKILL_CHANNELS_MAX, SKILL_DESCRIPTION_MAX_CHARS,
+    SKILL_INSTRUCTIONS_MAX_CHARS, SKILL_NAME_MAX_CHARS, SKILL_SCHEDULE_MAX_MINUTES,
+    SKILL_SCHEDULE_MIN_MINUTES, SKILL_TOOLS_MAX, SkillChannel, SkillEvent, SkillManifest,
+    SkillPrefilter, SkillSource, SkillTrigger, valid_agent_tool,
 };
 
 use crate::ProposalChange;
@@ -73,6 +74,7 @@ impl BuiltinSkill {
                 approved_tools: Vec::new(),
                 instructions: "Start the delivery checks that are due.".to_owned(),
                 channels: Vec::new(),
+                agent_tools: Vec::new(),
             },
         }
     }

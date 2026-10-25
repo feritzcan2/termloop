@@ -17,104 +17,116 @@ fn json_array_unique(values: &[Value]) -> bool {
         .all(|(index, value)| !values[index + 1..].contains(value))
 }
 
-static CONTRACT_PATTERN_0: std::sync::LazyLock<regex::Regex> =
+static CONTRACT_PATTERN_0: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new("^(pm_[a-z_]{1,60}|mcp__[A-Za-z0-9_-]{1,64}__[A-Za-z0-9_-]{1,64})$")
+        .expect("generated contract pattern")
+});
+static CONTRACT_PATTERN_1: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| regex::Regex::new("^[!-~]+$").expect("generated contract pattern"));
-static CONTRACT_PATTERN_1: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_2: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[0-9]{1,64}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_2: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_3: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[0-9a-f]{64}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_3: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_4: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[0-9a-f]{7,64}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_4: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_5: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_5: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_6: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_6: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_7: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_7: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_8: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Z][A-Z0-9_]{0,63}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_8: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_9: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Z][A-Z0-9_]{0,63}-[1-9][0-9]{0,19}$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_9: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_10: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z0-9._-]+$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_10: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_11: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z0-9]{1,32}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_11: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_12: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z0-9_-][A-Za-z0-9_.-]*$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_12: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_13: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[^\\s@]+@[^\\s@]+$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_13: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_14: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_14: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_15: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[!-~]+$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_15: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_16: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_16: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_17: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[^\\s@/]+/[^\\s]*$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_17: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_18: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_18: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_19: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net/browse/[A-Z][A-Z0-9_]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_19: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_20: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new("^mcp__[A-Za-z0-9_-]{1,64}__[A-Za-z0-9_-]{1,64}$")
+        .expect("generated contract pattern")
+});
+static CONTRACT_PATTERN_21: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^pm_[a-z_]{1,60}$").expect("generated contract pattern")
 });
 
 fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
     match pattern {
-        "^[!-~]+$" => CONTRACT_PATTERN_0.is_match(text),
-        "^[0-9]{1,64}$" => CONTRACT_PATTERN_1.is_match(text),
-        "^[0-9a-f]{64}$" => CONTRACT_PATTERN_2.is_match(text),
-        "^[0-9a-f]{7,64}$" => CONTRACT_PATTERN_3.is_match(text),
+        "^(pm_[a-z_]{1,60}|mcp__[A-Za-z0-9_-]{1,64}__[A-Za-z0-9_-]{1,64})$" => {
+            CONTRACT_PATTERN_0.is_match(text)
+        }
+        "^[!-~]+$" => CONTRACT_PATTERN_1.is_match(text),
+        "^[0-9]{1,64}$" => CONTRACT_PATTERN_2.is_match(text),
+        "^[0-9a-f]{64}$" => CONTRACT_PATTERN_3.is_match(text),
+        "^[0-9a-f]{7,64}$" => CONTRACT_PATTERN_4.is_match(text),
         "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" => {
-            CONTRACT_PATTERN_4.is_match(text)
+            CONTRACT_PATTERN_5.is_match(text)
         }
-        "^[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_5.is_match(text),
-        "^[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_6.is_match(text),
-        "^[A-Z][A-Z0-9_]{0,63}$" => CONTRACT_PATTERN_7.is_match(text),
-        "^[A-Z][A-Z0-9_]{0,63}-[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_8.is_match(text),
-        "^[A-Za-z0-9._-]+$" => CONTRACT_PATTERN_9.is_match(text),
-        "^[A-Za-z0-9]{1,32}$" => CONTRACT_PATTERN_10.is_match(text),
-        "^[A-Za-z0-9_-][A-Za-z0-9_.-]*$" => CONTRACT_PATTERN_11.is_match(text),
-        "^[^\\s@]+@[^\\s@]+$" => CONTRACT_PATTERN_12.is_match(text),
-        "^https://" => CONTRACT_PATTERN_13.is_match(text),
-        "^https://[!-~]+$" => CONTRACT_PATTERN_14.is_match(text),
+        "^[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_6.is_match(text),
+        "^[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_7.is_match(text),
+        "^[A-Z][A-Z0-9_]{0,63}$" => CONTRACT_PATTERN_8.is_match(text),
+        "^[A-Z][A-Z0-9_]{0,63}-[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_9.is_match(text),
+        "^[A-Za-z0-9._-]+$" => CONTRACT_PATTERN_10.is_match(text),
+        "^[A-Za-z0-9]{1,32}$" => CONTRACT_PATTERN_11.is_match(text),
+        "^[A-Za-z0-9_-][A-Za-z0-9_.-]*$" => CONTRACT_PATTERN_12.is_match(text),
+        "^[^\\s@]+@[^\\s@]+$" => CONTRACT_PATTERN_13.is_match(text),
+        "^https://" => CONTRACT_PATTERN_14.is_match(text),
+        "^https://[!-~]+$" => CONTRACT_PATTERN_15.is_match(text),
         "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$" => {
-            CONTRACT_PATTERN_15.is_match(text)
+            CONTRACT_PATTERN_16.is_match(text)
         }
-        "^https://[^\\s@/]+/[^\\s]*$" => CONTRACT_PATTERN_16.is_match(text),
+        "^https://[^\\s@/]+/[^\\s]*$" => CONTRACT_PATTERN_17.is_match(text),
         "^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net$" => {
-            CONTRACT_PATTERN_17.is_match(text)
-        }
-        "^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net/browse/[A-Z][A-Z0-9_]{0,63}-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_18.is_match(text)
         }
-        "^pm_[a-z_]{1,60}$" => CONTRACT_PATTERN_19.is_match(text),
+        "^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net/browse/[A-Z][A-Z0-9_]{0,63}-[1-9][0-9]{0,19}$" => {
+            CONTRACT_PATTERN_19.is_match(text)
+        }
+        "^mcp__[A-Za-z0-9_-]{1,64}__[A-Za-z0-9_-]{1,64}$" => CONTRACT_PATTERN_20.is_match(text),
+        "^pm_[a-z_]{1,60}$" => CONTRACT_PATTERN_21.is_match(text),
         _ => false,
     }
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:29d90448bab4a94533fcedb59c5f6d511a8ec6104977e7cc4654ea05abdb609b";
+    "sha256:3a312f5a9315aeb2f922085e0f0b91d0c962ce5313d064720e3bcd920d367988";
 pub const CAPABILITY_SCOPE: &str = "pm.full";
 pub const METHODS: &[&str] = &[
     "pm_system_version",
@@ -1934,7 +1946,16 @@ pub struct PmSkillManifest {
     #[serde(rename = "approvedTools")]
     pub approved_tools: Vec<String>,
     pub instructions: String,
-    pub channels: Vec<String>,
+    pub channels: Vec<PmSkillChannel>,
+    #[serde(rename = "agentTools")]
+    pub agent_tools: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmSkillChannel {
+    pub id: String,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -6985,11 +7006,19 @@ fn validate_pm_skill_manifest(value: &Value) -> bool {
             })
             && object.get("channels").is_some_and(|field| {
                 field.as_array().is_some_and(|items| {
-                    items.len() <= 20
+                    items.len() <= 20 && items.iter().all(|item| validate_pm_skill_channel(item))
+                })
+            })
+            && object.get("agentTools").is_some_and(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() <= 8
                         && json_array_unique(items)
                         && items.iter().all(|item| {
                             item.as_str().is_some_and(|text| {
-                                contract_pattern_matches("^[A-Za-z0-9]{1,32}$", text)
+                                contract_pattern_matches(
+                                    "^mcp__[A-Za-z0-9_-]{1,64}__[A-Za-z0-9_-]{1,64}$",
+                                    text,
+                                )
                             })
                         })
                 })
@@ -7004,9 +7033,35 @@ fn validate_pm_skill_manifest(value: &Value) -> bool {
                     "approvedTools",
                     "instructions",
                     "channels",
+                    "agentTools",
                 ]
                 .contains(&key.as_str())
             })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_skill_channel(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("id").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| contract_pattern_matches("^[A-Za-z0-9]{1,32}$", text))
+        }) && object.get("name").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)
+        }) && object
+            .keys()
+            .all(|key| ["id", "name"].contains(&key.as_str()))
     })
 }
 
@@ -7390,12 +7445,15 @@ fn validate_pm_skill_draft(value: &Value) -> bool {
             })
             && object.get("firstUseTools").is_some_and(|field| {
                 field.as_array().is_some_and(|items| {
-                    items.len() <= 16
+                    items.len() <= 24
                         && json_array_unique(items)
                         && items.iter().all(|item| {
                             item.as_str().is_some_and(|text| {
-                                contract_pattern_matches("^pm_[a-z_]{1,60}$", text)
-                            })
+                            contract_pattern_matches(
+                                "^(pm_[a-z_]{1,60}|mcp__[A-Za-z0-9_-]{1,64}__[A-Za-z0-9_-]{1,64})$",
+                                text,
+                            )
+                        })
                         })
                 })
             })
@@ -7652,11 +7710,15 @@ fn validate_pm_skill_install_params(value: &Value) -> bool {
             })
         }) && object.get("approvedTools").is_some_and(|field| {
             field.as_array().is_some_and(|items| {
-                items.len() <= 16
+                items.len() <= 24
                     && json_array_unique(items)
                     && items.iter().all(|item| {
-                        item.as_str()
-                            .is_some_and(|text| contract_pattern_matches("^pm_[a-z_]{1,60}$", text))
+                        item.as_str().is_some_and(|text| {
+                            contract_pattern_matches(
+                                "^(pm_[a-z_]{1,60}|mcp__[A-Za-z0-9_-]{1,64}__[A-Za-z0-9_-]{1,64})$",
+                                text,
+                            )
+                        })
                     })
             })
         }) && object.get("channels").is_none_or(|field| {

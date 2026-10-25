@@ -11,7 +11,7 @@ use crate::skill::{
     PROJECT_SKILLS_MAX, SKILL_DRAFT_SAMPLES_MAX, SKILL_FEEDBACK_KEPT, SKILL_RUN_DEADLINE_MS,
     SKILL_RUN_SUMMARY_MAX_CHARS, SKILL_RUNS_KEPT, Skill, SkillDraft, SkillEvent, SkillFeedback,
     SkillManifest, SkillRun, SkillRunOutcome, SkillRunTrigger, SkillSample, evidence_sources,
-    valid_channel_id, valid_evidence,
+    valid_evidence,
 };
 use crate::store::{
     SkillRecord, ToolApproval, approved_tools_ever, builtin_skill_record, draft_by_id, json_column,
@@ -179,7 +179,7 @@ pub(super) fn record_feedback(
 /// Closes a run inside a transaction and updates what its outcome means
 /// for the skill or draft: a failure counts toward the pause, a report or a
 /// skip resets the count, and a dry run marks its draft.
-fn close_run(
+pub(super) fn close_run(
     connection: &Connection,
     run: &SkillRun,
     outcome: SkillRunOutcome,
@@ -409,13 +409,16 @@ impl PmStore {
             if let Some(channels) = channels {
                 if !channels
                     .iter()
-                    .all(|channel| valid_channel_id(channel) && manifest.channels.contains(channel))
+                    .all(|channel| manifest.reads_channel(channel))
                 {
                     return Err(PmError::Invalid("channels"));
                 }
                 manifest
                     .channels
-                    .retain(|channel| channels.contains(channel));
+                    .retain(|channel| channels.contains(&channel.id));
+                if manifest.invalid_field().is_some() {
+                    return Err(PmError::Invalid("channels"));
+                }
             }
             let approvals: Vec<ToolApproval> = draft
                 .first_use_tools

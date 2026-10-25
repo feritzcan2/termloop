@@ -16,8 +16,8 @@ export type SkillsPanelProps = {
   onCreate(): void;
   onDryRun(draftId: string): void;
   onDiscard(draftId: string): void;
-  /** Resolves true once installed. */
-  onInstall(draftId: string, approvedTools: string[]): Promise<boolean>;
+  /** Resolves true once installed; `channels` are the ticked Slack channel ids. */
+  onInstall(draftId: string, approvedTools: string[], channels: string[]): Promise<boolean>;
   onOpenLink(url: string): void;
 };
 
@@ -79,7 +79,7 @@ export function SkillsPanel(props: SkillsPanelProps) {
           now={props.now}
           onDryRun={() => props.onDryRun(draft.id)}
           onDiscard={() => props.onDiscard(draft.id)}
-          onInstall={(tools) => props.onInstall(draft.id, tools)}
+          onInstall={(tools, channels) => props.onInstall(draft.id, tools, channels)}
           onOpenLink={props.onOpenLink}
         />
       ))}
@@ -111,25 +111,37 @@ function SkillRow({ skill, now, onSetEnabled, onRun }: { skill: PmSkill; now: nu
   );
 }
 
+function toggled(list: string[], item: string, on: boolean): string[] {
+  return on ? [...list, item] : list.filter((other) => other !== item);
+}
+
+/** A PM tool by name; one of the agent's own tools with its server. */
+function ToolName(props: { tool: string }) {
+  const own = /^mcp__(.+?)__(.+)$/.exec(props.tool);
+  if (!own) return <code>{props.tool}</code>;
+  return <span>Your agent's <code>{own[2]}</code> <span className="hint">({own[1]}, read-only)</span></span>;
+}
+
 function DraftCard(props: {
   draft: PmSkillDraft;
   tickets: PmTicket[];
   now: number;
   onDryRun(): void;
   onDiscard(): void;
-  onInstall(tools: string[]): Promise<boolean>;
+  onInstall(tools: string[], channels: string[]): Promise<boolean>;
   onOpenLink(url: string): void;
 }) {
   const { draft } = props;
   const [approved, setApproved] = useState<string[]>([]);
+  const [channels, setChannels] = useState<string[]>(() => draft.manifest.channels.map((channel) => channel.id));
+  const needsChannel = draft.manifest.channels.length > 0 && channels.length === 0;
   const [installing, setInstalling] = useState(false);
   const dryRunDone = draft.dryRunState === "completed";
   const allApproved = draft.firstUseTools.every((tool) => approved.includes(tool));
   const ticketLabel = (id: string) => props.tickets.find((ticket) => ticket.id === id)?.title ?? "a ticket";
-  const toggle = (tool: string, on: boolean) => setApproved(on ? [...approved, tool] : approved.filter((item) => item !== tool));
   const install = async () => {
     setInstalling(true);
-    await props.onInstall(approved);
+    await props.onInstall(approved, channels);
     setInstalling(false);
   };
   return (
@@ -153,8 +165,23 @@ function DraftCard(props: {
           <legend>Approve each tool this skill uses for the first time</legend>
           {draft.firstUseTools.map((tool) => (
             <label key={tool}>
-              <input type="checkbox" checked={approved.includes(tool)} onChange={(event) => toggle(tool, event.target.checked)} />
-              <code>{tool}</code>
+              <input type="checkbox" checked={approved.includes(tool)} onChange={(event) => setApproved(toggled(approved, tool, event.target.checked))} />
+              <ToolName tool={tool} />
+            </label>
+          ))}
+        </fieldset>
+      )}
+      {draft.manifest.channels.length > 0 && (
+        <fieldset className="tool-approvals">
+          <legend>Slack channels to follow</legend>
+          {draft.manifest.channels.map((channel) => (
+            <label key={channel.id}>
+              <input
+                type="checkbox"
+                checked={channels.includes(channel.id)}
+                onChange={(event) => setChannels(toggled(channels, channel.id, event.target.checked))}
+              />
+              #{channel.name}
             </label>
           ))}
         </fieldset>
@@ -186,8 +213,8 @@ function DraftCard(props: {
         <button
           type="button"
           className="btn sm pri"
-          disabled={!dryRunDone || !allApproved || installing}
-          title={!dryRunDone ? "Run a dry run first" : !allApproved ? "Approve each new tool first" : undefined}
+          disabled={!dryRunDone || !allApproved || needsChannel || installing}
+          title={!dryRunDone ? "Run a dry run first" : !allApproved ? "Approve each new tool first" : needsChannel ? "Tick at least one channel" : undefined}
           onClick={() => void install()}
         >
           Install

@@ -119,7 +119,18 @@ pub fn codex_app_server_with_project_trust(
         environment = environment.with_explicit("TERMLOOP_MCP_TOKEN", mcp.token);
         let mut tool_arguments = Vec::new();
         let tools: Vec<_> = policy.approved_tools.iter().map(String::as_str).collect();
-        apply_tool_approvals("codex", &mut tool_arguments, mcp.server_name, &tools)?;
+        let external: Vec<_> = policy
+            .approved_external_tools
+            .iter()
+            .map(String::as_str)
+            .collect();
+        apply_tool_approvals(
+            "codex",
+            &mut tool_arguments,
+            mcp.server_name,
+            &tools,
+            &external,
+        )?;
         args.extend(tool_arguments.into_iter().map(|argument| argument.value));
     }
     if let Some(enabled) = policy.workspace_network {

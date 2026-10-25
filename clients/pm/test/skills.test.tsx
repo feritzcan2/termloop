@@ -71,7 +71,31 @@ describe("SkillsPanel", () => {
     act(() => ticks[1]!.click());
     expect(install.disabled).toBe(false);
     await act(async () => install.click());
-    expect(onInstall).toHaveBeenCalledWith("draft-1", ["pm_board_read", "pm_risks_read"]);
+    expect(onInstall).toHaveBeenCalledWith("draft-1", ["pm_board_read", "pm_risks_read"], []);
+    unmount();
+  });
+
+  it("asks for the agent's own Slack tool and at least one ticked channel", async () => {
+    const onInstall = vi.fn(async () => true);
+    const slackTool = "mcp__claude_ai_Slack__slack_read_channel";
+    const base = skillDraft();
+    const draft = skillDraft({
+      firstUseTools: [slackTool],
+      manifest: { ...base.manifest, sources: ["slack"], prefilter: "slackMentions", agentTools: [slackTool], channels: [{ id: "C0SHOP", name: "shop" }, { id: "C0OPS", name: "ops" }] },
+    });
+    const { container, unmount } = render(<SkillsPanel {...panel({ onInstall, skills: { projectId: "project-1", skills: [], drafts: [draft] } })} />);
+    expect(container.textContent).toContain("Your agent's slack_read_channel");
+    expect(container.textContent).toContain("#shop");
+    const [toolTick, shopTick, opsTick] = [...container.querySelectorAll<HTMLInputElement>(".tool-approvals input")];
+    const install = button(container, "Install");
+    act(() => toolTick!.click());
+    expect(install.disabled).toBe(false);
+    act(() => shopTick!.click());
+    act(() => opsTick!.click());
+    expect(install.disabled).toBe(true);
+    act(() => opsTick!.click());
+    await act(async () => install.click());
+    expect(onInstall).toHaveBeenCalledWith("draft-1", [slackTool], ["C0OPS"]);
     unmount();
   });
 

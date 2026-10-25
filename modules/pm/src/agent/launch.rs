@@ -215,6 +215,8 @@ pub fn pm_launch_plan(request: PmLaunchRequest<'_>) -> Result<PmLaunchPlan, PmLa
     launch.provider_instructions = Some(&profile.system_prompt);
     launch.executable_directory = request.executable_directory;
     launch.approved_tools = &profile.tools;
+    let external_tools: Vec<&str> = profile.external_tools.iter().map(String::as_str).collect();
+    launch.approved_external_tools = &external_tools;
     launch.read_only_workspace = request.read_only_workspace;
     let mut resolved = resolve(launch)?;
     if let Some(message) = first_message(profile, fresh) {

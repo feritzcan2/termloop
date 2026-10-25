@@ -3,12 +3,13 @@ use std::collections::BTreeSet;
 use serde_json::{Value, json};
 
 use super::*;
+use crate::ChannelWatermark;
 use crate::ProposalChange;
 use crate::agent::{
     PM_SKILL_DISCOVERY_READ, PM_SKILL_DRY_RUN_REQUEST, PM_SKILL_TOOL_VERIFY, PM_TICKET_NOTE_ADD,
     PM_TOOLS,
 };
-use crate::skill::{Evidence, NeededTool, SkillPrefilter, SkillSource, SkillTrigger};
+use crate::skill::{Evidence, NeededTool, SkillChannel, SkillPrefilter, SkillSource, SkillTrigger};
 use crate::{
     DeliveryStageKind, EnvironmentDeployState, FactRead, FactSource, FactsObservation, NewProbe,
     NewTicket, ProbeMatcher, ProbeOutcome, ProbeStatus, ProjectEnvironment, PullRequestFact,
@@ -184,6 +185,10 @@ fn samples() -> Vec<(&'static str, Value)> {
             PM_SKILL_RUN_FINISH,
             sample(SkillRunFinishParams {
                 summary: "Read 3 tickets".into(),
+                channel_watermarks: vec![ChannelWatermark {
+                    channel_id: "C123".into(),
+                    ts: "1712345678.000100".into(),
+                }],
             }),
         ),
         (PM_SKILL_DISCOVERY_READ, json!({ "refresh": true })),
@@ -198,12 +203,16 @@ fn samples() -> Vec<(&'static str, Value)> {
                 prefilter: SkillPrefilter::SlackMentions,
                 tools: vec![PM_TICKET_READ.into()],
                 instructions: "Suggest updates".into(),
-                channels: vec!["C123".into()],
+                channels: vec![SkillChannel {
+                    id: "C123".into(),
+                    name: "shop".into(),
+                }],
+                agent_tools: vec!["mcp__slack__read_channel".into()],
                 what_it_will_do: "Reads channels".into(),
                 needed_tools: vec![NeededTool {
-                    name: "Slack token".into(),
+                    name: "Slack MCP server".into(),
                     available: false,
-                    steps: Some("Create a Slack app".into()),
+                    steps: Some("Add the Slack connector to Claude".into()),
                 }],
                 changelog: Some("first".into()),
                 base_skill_id: Some("s1".into()),

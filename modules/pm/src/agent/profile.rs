@@ -142,7 +142,17 @@ time.
 Skill shapes you know: Deployment control (built in: delivery checks and \
 probes), Slack tracker (reads chosen Slack channels and suggests ticket \
 updates from messages that name tickets), and Bug owner finder (suggests who \
-should own a new bug from code history, pull requests, and similar tickets).";
+should own a new bug from code history, pull requests, and similar tickets).
+Slack: the PM holds no Slack connection; you and the skill's runs read Slack \
+only with your own Slack tools (a Slack MCP server or connector you have), \
+read-only. For a Slack tracker, list the channels you can see, read the last \
+7 days of the likely ones, and rank them by how often they name a sprint \
+ticket key or title; submit the best ones first with their ids and names, \
+and the project manager ticks which to keep. Put the exact read-only Slack \
+tools a run needs in agentTools (channel history, thread replies, \
+permalinks), never one that sends, posts, edits, or reacts. It runs every 30 \
+minutes with the slackMentions prefilter. Without a Slack tool, say so and \
+give the steps to add one.";
 
 /// The creator's first message: discover first, then plain offers.
 const SKILL_CREATOR_KICKOFF: &str = "\
@@ -220,6 +230,9 @@ pub struct PmAgentProfile {
     /// or the assistant's kickoff, which only a fresh conversation gets.
     pub first_message: Option<String>,
     pub tools: Vec<&'static str>,
+    /// Read-only tools of the agent's own MCP servers that run without
+    /// asking: a skill run's approved agent tools, else none.
+    pub external_tools: Vec<String>,
 }
 
 /// What one skill run is about: the skill, and what its prefilter kept.
@@ -232,10 +245,22 @@ pub struct SkillRunBrief {
     pub tools: Vec<&'static str>,
     /// The tickets the prefilter kept; the run starts from these.
     pub ticket_ids: Vec<String>,
-    /// Other items the prefilter kept, in a few words, e.g. "4 Slack
-    /// messages naming tickets".
+    /// Other items the prefilter kept, in a few words.
     pub items_note: Option<String>,
     pub dry_run: bool,
+    /// The skill's approved tools of the agent's own MCP servers.
+    pub agent_tools: Vec<String>,
+    /// For a Slack skill: each channel and the message `ts` to read after.
+    pub slack_channels: Vec<SlackChannelBrief>,
+}
+
+/// One Slack channel a run reads, after the message `ts` it last read up
+/// to (or the start of the run's window).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SlackChannelBrief {
+    pub id: String,
+    pub name: String,
+    pub after_ts: String,
 }
 
 /// Tickets named in a skill run's kickoff, which goes to the provider in
@@ -279,6 +304,27 @@ fn skill_run_kickoff(brief: &SkillRunBrief) -> String {
             } else {
                 ""
             }
+        ));
+    }
+    if !brief.slack_channels.is_empty() {
+        let channels: Vec<String> = brief
+            .slack_channels
+            .iter()
+            .map(|channel| {
+                format!(
+                    "#{} ({}) after ts {}",
+                    channel.name, channel.id, channel.after_ts
+                )
+            })
+            .collect();
+        message.push_str(&format!(
+            " Read Slack only with these tools of your own: {}. Channels: {}. Keep only \
+             messages that name a sprint ticket's key, title, or assignee; skip the rest. \
+             Each Slack suggestion's evidence is the message permalink with a quote of at \
+             most 280 characters. Pass pm_skill_run_finish the newest ts you read per \
+             channel as channelWatermarks.",
+            brief.agent_tools.join(", "),
+            channels.join("; ")
         ));
     }
     message.push_str(" Follow the skill's instructions, suggest, then call pm_skill_run_finish.");
@@ -546,6 +592,7 @@ impl PmAgentProfile {
             system_prompt,
             first_message,
             tools: mode.tools().to_vec(),
+            external_tools: Vec::new(),
         })
     }
 
@@ -572,6 +619,7 @@ impl PmAgentProfile {
             system_prompt: bounded_prompt(sections.join("\n\n")),
             first_message: Some(skill_run_kickoff(brief)),
             tools: brief.tools.clone(),
+            external_tools: brief.agent_tools.clone(),
         })
     }
 }

@@ -452,3 +452,48 @@ fn the_assistant_hears_the_focus_notes_and_can_start_a_description_update() {
         ));
     }
 }
+
+#[test]
+fn a_slack_run_reads_with_its_approved_own_tools_after_each_position() {
+    let (store, ticket_id) = project_store();
+    let slack_tool = "mcp__claude_ai_Slack__slack_read_channel";
+    let brief = SkillRunBrief {
+        name: "Slack tracker".into(),
+        description: "Follows Slack.".into(),
+        instructions: "Suggest updates.".into(),
+        tools: vec![PM_TICKET_SUGGEST, PM_SKILL_RUN_FINISH],
+        ticket_ids: vec![ticket_id],
+        items_note: None,
+        dry_run: false,
+        agent_tools: vec![slack_tool.into()],
+        slack_channels: vec![SlackChannelBrief {
+            id: "C0SHOP".into(),
+            name: "shop".into(),
+            after_ts: "1712345678.000200".into(),
+        }],
+    };
+    let profile = PmAgentProfile::build_skill_run(&store, "p1", &brief).unwrap();
+    let kickoff = profile.first_message.as_deref().unwrap();
+    assert!(kickoff.contains(&format!("tools of your own: {slack_tool}")));
+    assert!(kickoff.contains("#shop (C0SHOP) after ts 1712345678.000200"));
+    assert!(kickoff.contains("channelWatermarks"));
+    assert_eq!(profile.external_tools, [slack_tool]);
+
+    let directory = cli_directory();
+    let mut request =
+        PmLaunchRequest::new("claude", "/tmp/pm", &profile, ENDPOINT, TOKEN, CONFIG_PATH);
+    request.executable_directory = Some(&directory);
+    let plan = pm_launch_plan(request).unwrap();
+    let args = plan.payload.args();
+    let allowed = args
+        .iter()
+        .position(|arg| arg == "--allowedTools")
+        .map(|index| args[index + 1].clone())
+        .unwrap();
+    assert_eq!(
+        allowed,
+        format!(
+            "mcp__termloop_pm__pm_ticket_suggest,mcp__termloop_pm__pm_skill_run_finish,{slack_tool}"
+        )
+    );
+}

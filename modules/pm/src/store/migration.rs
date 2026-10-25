@@ -362,6 +362,19 @@ CREATE UNIQUE INDEX ticket_notes_one_per_source_key ON ticket_notes (ticket_id, 
     WHERE source_key IS NOT NULL;
 "#;
 
+/// Slack read positions: per skill and channel, the newest message
+/// timestamp a reported run read up to. Bounded by the manifest's channels
+/// and dropped after 30 days without a run.
+const V10: &str = r#"
+CREATE TABLE skill_channel_watermarks (
+    skill_id TEXT NOT NULL REFERENCES skills (id) ON DELETE CASCADE,
+    channel_id TEXT NOT NULL,
+    ts TEXT NOT NULL,
+    updated_at_epoch_ms INTEGER NOT NULL,
+    PRIMARY KEY (skill_id, channel_id)
+) STRICT;
+"#;
+
 /// Every migration in order; a version is never edited once released.
 const MIGRATIONS: &[(u32, &str)] = &[
     (1, V1),
@@ -373,6 +386,7 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (7, V7),
     (8, V8),
     (9, V9),
+    (10, V10),
 ];
 
 pub const SCHEMA_VERSION: u32 = MIGRATIONS[MIGRATIONS.len() - 1].0;

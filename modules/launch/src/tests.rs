@@ -259,11 +259,11 @@ fn codex_image_prompt_is_one_literal_argument_without_a_terminal_submission() {
 fn external_product_names_cannot_inject_provider_configuration() {
     let mut arguments = Vec::new();
     for name in ["", "app.tools", "app\nother", "app=untrusted", "app[0]"] {
-        assert!(apply_tool_approvals("codex", &mut arguments, name, &["save"]).is_err());
-        assert!(apply_tool_approvals("codex", &mut arguments, "my_app", &[name]).is_err());
+        assert!(apply_tool_approvals("codex", &mut arguments, name, &["save"], &[]).is_err());
+        assert!(apply_tool_approvals("codex", &mut arguments, "my_app", &[name], &[]).is_err());
         assert!(arguments.is_empty());
     }
-    apply_tool_approvals("codex", &mut arguments, "my_app", &["save"]).unwrap();
+    apply_tool_approvals("codex", &mut arguments, "my_app", &["save"], &[]).unwrap();
     assert_eq!(
         arguments[1].value,
         "mcp_servers.my_app.tools.save.approval_mode=\"approve\""
@@ -522,12 +522,45 @@ fn gemini_overlay_never_replaces_an_existing_system_defaults_source() {
 #[test]
 fn claude_approval_is_scoped_to_the_products_named_tools() {
     let mut args = Vec::new();
-    apply_tool_approvals("claude", &mut args, "example", &["report", "inbox"]).unwrap();
+    apply_tool_approvals("claude", &mut args, "example", &["report", "inbox"], &[]).unwrap();
     assert_eq!(
         args.iter().map(|a| a.value.as_str()).collect::<Vec<_>>(),
         ["--allowedTools", "mcp__example__report,mcp__example__inbox"]
     );
-    assert!(apply_tool_approvals("claude", &mut Vec::new(), "example", &["*"]).is_err());
+    assert!(apply_tool_approvals("claude", &mut Vec::new(), "example", &["*"], &[]).is_err());
+}
+
+#[test]
+fn external_approvals_name_one_tool_of_another_server() {
+    let mut args = Vec::new();
+    apply_tool_approvals(
+        "claude",
+        &mut args,
+        "example",
+        &["report"],
+        &["mcp__slack__read_channel"],
+    )
+    .unwrap();
+    assert_eq!(
+        args.iter().map(|a| a.value.as_str()).collect::<Vec<_>>(),
+        [
+            "--allowedTools",
+            "mcp__example__report,mcp__slack__read_channel"
+        ]
+    );
+    for refused in [
+        "slack__read_channel",
+        "mcp__slack",
+        "mcp__slack__*",
+        "mcp__slack__read__more",
+        "mcp__example__inbox",
+        "mcp__sla ck__read",
+    ] {
+        assert!(
+            apply_tool_approvals("claude", &mut Vec::new(), "example", &[], &[refused]).is_err(),
+            "{refused}"
+        );
+    }
 }
 #[test]
 fn workspace_network_policy_is_explicit_without_widening_filesystem_permissions() {
@@ -566,6 +599,7 @@ fn execution_server_keeps_named_tool_policy_for_remote_resume() {
     };
     let policy = CodexRuntimePolicy {
         approved_tools: vec!["report".into()],
+        approved_external_tools: vec!["mcp__slack__read_channel".into()],
         workspace_network: Some(true),
     };
     let launch = codex_app_server_with_project_trust(
@@ -585,6 +619,12 @@ fn execution_server_keeps_named_tool_policy_for_remote_resume() {
             .args()
             .iter()
             .any(|a| a == "mcp_servers.example.tools.report.approval_mode=\"approve\"")
+    );
+    assert!(
+        launch
+            .args()
+            .iter()
+            .any(|a| a == "mcp_servers.slack.tools.read_channel.approval_mode=\"approve\"")
     );
     assert!(
         launch

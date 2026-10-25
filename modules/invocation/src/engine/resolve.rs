@@ -216,7 +216,7 @@ fn resolve_launch_manifest_with_environment(
         mcp: mcp.map(AgentMcpLaunch::connection), provider_instructions_source,
         provider_instructions, attachments, codex_project_trust, executable_directory,
         explicit_configuration: template.id == QUICK_ACTION_FREE_PROMPT_TEMPLATE_REF,
-        execution: None, workspace_network: None, approved_tools: &[],
+        execution: None, workspace_network: None, approved_tools: &[], approved_external_tools: &[],
         read_only_workspace: false,
     })
 }

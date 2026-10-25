@@ -4988,7 +4988,8 @@
         "prefilter",
         "approvedTools",
         "instructions",
-        "channels"
+        "channels",
+        "agentTools"
       ],
       "properties": {
         "name": {
@@ -5033,11 +5034,38 @@
         "channels": {
           "type": "array",
           "items": {
-            "type": "string",
-            "pattern": "^[A-Za-z0-9]{1,32}$"
+            "$ref": "#/$defs/pmSkillChannel"
           },
-          "maxItems": 20,
+          "maxItems": 20
+        },
+        "agentTools": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^mcp__[A-Za-z0-9_-]{1,64}__[A-Za-z0-9_-]{1,64}$"
+          },
+          "maxItems": 8,
           "uniqueItems": true
+        }
+      }
+    },
+    "pmSkillChannel": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9]{1,32}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
         }
       }
     },
@@ -5414,9 +5442,9 @@
           "type": "array",
           "items": {
             "type": "string",
-            "pattern": "^pm_[a-z_]{1,60}$"
+            "pattern": "^(pm_[a-z_]{1,60}|mcp__[A-Za-z0-9_-]{1,64}__[A-Za-z0-9_-]{1,64})$"
           },
-          "maxItems": 16,
+          "maxItems": 24,
           "uniqueItems": true
         },
         "changelog": {
@@ -5627,9 +5655,9 @@
           "type": "array",
           "items": {
             "type": "string",
-            "pattern": "^pm_[a-z_]{1,60}$"
+            "pattern": "^(pm_[a-z_]{1,60}|mcp__[A-Za-z0-9_-]{1,64}__[A-Za-z0-9_-]{1,64})$"
           },
-          "maxItems": 16,
+          "maxItems": 24,
           "uniqueItems": true
         },
         "channels": {

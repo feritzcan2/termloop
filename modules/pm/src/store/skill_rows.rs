@@ -171,8 +171,7 @@ fn with_first_use(connection: &Connection, mut draft: SkillDraft) -> Result<Skil
     };
     draft.first_use_tools = draft
         .manifest
-        .approved_tools
-        .iter()
+        .all_tools()
         .filter(|tool| !approved.contains(tool))
         .cloned()
         .collect();

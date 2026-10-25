@@ -9,11 +9,11 @@ use crate::agent::{
     PM_TICKET_SUGGEST, PmAgentMode,
 };
 use crate::skill::{
-    Evidence, NeededTool, NewSkillDraft, SkillDraftOrigin, SkillManifest, SkillPrefilter,
-    SkillRunOutcome, SkillSample, SkillSource, SkillTrigger,
+    Evidence, NeededTool, NewSkillDraft, SkillChannel, SkillDraftOrigin, SkillManifest,
+    SkillPrefilter, SkillSample, SkillSource, SkillTrigger,
 };
 use crate::{
-    AgentProbeReading, Board, CheckReport, DataTier, DeliveryRisk, DeliveryStage,
+    AgentProbeReading, Board, ChannelWatermark, CheckReport, DataTier, DeliveryRisk, DeliveryStage,
     EnvironmentDeployState, NewProbe, NewTicketNote, PmError, PmStore, ProbeMatcher,
     ProposalChange, ProposalOrigin, ReportedEnvironment, SprintState, Ticket, TicketAuthor,
     TicketDelivery, TicketDeliveryFacts, TicketNote, TicketNoteKind, TicketPriority,
@@ -157,6 +157,9 @@ pub struct SuggestParams {
 pub struct SkillRunFinishParams {
     /// One line: what the run looked at and suggested.
     pub summary: String,
+    /// The newest Slack message the run read in each channel.
+    #[serde(default)]
+    pub channel_watermarks: Vec<ChannelWatermark>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -176,7 +179,10 @@ pub struct SkillDraftSubmitParams {
     pub tools: Vec<String>,
     pub instructions: String,
     #[serde(default)]
-    pub channels: Vec<String>,
+    pub channels: Vec<SkillChannel>,
+    /// Read-only tools of the agent's own MCP servers a run may call.
+    #[serde(default)]
+    pub agent_tools: Vec<String>,
     pub what_it_will_do: String,
     #[serde(default)]
     pub needed_tools: Vec<NeededTool>,
@@ -543,11 +549,7 @@ pub(super) fn skill_run_finish(
     let Some(run) = &context.skill else {
         return Err(denied(PM_SKILL_RUN_FINISH, "not a skill run"));
     };
-    store.finish_skill_run(
-        &run.run_id,
-        SkillRunOutcome::Reported,
-        Some(&params.summary),
-    )?;
+    store.report_skill_run(&run.run_id, &params.summary, &params.channel_watermarks)?;
     Ok(SkillRunFinishResult { accepted: true })
 }
 
@@ -584,6 +586,7 @@ pub(super) fn draft_submit(
             approved_tools: params.tools,
             instructions: params.instructions,
             channels: params.channels,
+            agent_tools: params.agent_tools,
         },
         what_it_will_do: params.what_it_will_do,
         needed_tools: params.needed_tools,

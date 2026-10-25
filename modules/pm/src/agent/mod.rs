@@ -11,7 +11,9 @@ pub use launch::{
     PM_MCP_SERVER_NAME, PmLaunchError, PmLaunchPlan, PmLaunchRequest, claude_mcp_config,
     pm_launch_plan,
 };
-pub use profile::{AssistantTask, PM_SYSTEM_PROMPT_MAX_BYTES, PmAgentProfile, SkillRunBrief};
+pub use profile::{
+    AssistantTask, PM_SYSTEM_PROMPT_MAX_BYTES, PmAgentProfile, SkillRunBrief, SlackChannelBrief,
+};
 pub use tools::{
     AcceptanceCriteriaProposalParams, AgentProbeParams, BoardReadParams, BoardReadResult,
     BoardScope, BoardSprint, BoardTicket, CheckReportParams, CheckReportResult,

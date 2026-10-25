@@ -11,12 +11,14 @@ use crate::agent::{
     PM_TICKET_PROPOSE_ACCEPTANCE_CRITERIA, PM_TICKET_PROPOSE_DESCRIPTION, PM_TICKET_READ,
     PM_TICKET_SUGGEST, SKILL_READ_TOOLS,
 };
+use crate::commands::{TS_FRACTION_MAX_DIGITS, TS_SECONDS_MAX_DIGITS};
 use crate::proposal::{ASSIGNEE_SHORTLIST_MAX, JIRA_COMMENT_MAX_CHARS};
 use crate::skill::{
-    EVIDENCE_LABEL_MAX_CHARS, EVIDENCE_MAX, EVIDENCE_QUOTE_MAX_CHARS, SKILL_CHANGELOG_MAX_CHARS,
-    SKILL_CHANNELS_MAX, SKILL_DESCRIPTION_MAX_CHARS, SKILL_INSTRUCTIONS_MAX_CHARS,
-    SKILL_NAME_MAX_CHARS, SKILL_NEEDED_TOOLS_MAX, SKILL_RUN_SUMMARY_MAX_CHARS,
-    SKILL_SCHEDULE_MAX_MINUTES, SKILL_SCHEDULE_MIN_MINUTES, SKILL_STEPS_MAX_CHARS, SKILL_TOOLS_MAX,
+    CHANNEL_ID_MAX_BYTES, CHANNEL_NAME_MAX_CHARS, EVIDENCE_LABEL_MAX_CHARS, EVIDENCE_MAX,
+    EVIDENCE_QUOTE_MAX_CHARS, SKILL_AGENT_TOOLS_MAX, SKILL_CHANGELOG_MAX_CHARS, SKILL_CHANNELS_MAX,
+    SKILL_DESCRIPTION_MAX_CHARS, SKILL_INSTRUCTIONS_MAX_CHARS, SKILL_NAME_MAX_CHARS,
+    SKILL_NEEDED_TOOLS_MAX, SKILL_RUN_SUMMARY_MAX_CHARS, SKILL_SCHEDULE_MAX_MINUTES,
+    SKILL_SCHEDULE_MIN_MINUTES, SKILL_STEPS_MAX_CHARS, SKILL_TOOLS_MAX,
     SKILL_WHAT_IT_DOES_MAX_CHARS,
 };
 use crate::{
@@ -292,6 +294,15 @@ fn definition(name: &'static str) -> PmToolDefinition {
                         "minLength": 1,
                         "maxLength": SKILL_RUN_SUMMARY_MAX_CHARS,
                         "description": "One line: what you looked at and what you suggested."
+                    },
+                    "channelWatermarks": {
+                        "type": "array",
+                        "maxItems": SKILL_CHANNELS_MAX,
+                        "items": object(json!({
+                            "channelId": { "type": "string", "pattern": channel_id_pattern() },
+                            "ts": { "type": "string", "pattern": format!("^[0-9]{{1,{TS_SECONDS_MAX_DIGITS}}}\\.[0-9]{{1,{TS_FRACTION_MAX_DIGITS}}}$"), "description": "The ts of the newest message you read in the channel." }
+                        }), &["channelId", "ts"]),
+                        "description": "For a Slack skill: per channel you read, the newest message ts, so the next run starts after it."
                     }
                 }),
                 &["summary"],
@@ -350,9 +361,18 @@ fn definition(name: &'static str) -> PmToolDefinition {
                     "channels": {
                         "type": "array",
                         "maxItems": SKILL_CHANNELS_MAX,
+                        "items": object(json!({
+                            "id": { "type": "string", "pattern": channel_id_pattern() },
+                            "name": { "type": "string", "minLength": 1, "maxLength": CHANNEL_NAME_MAX_CHARS }
+                        }), &["id", "name"]),
+                        "description": "For a Slack source: the channels you ranked, best first; the PM ticks which to keep."
+                    },
+                    "agentTools": {
+                        "type": "array",
+                        "maxItems": SKILL_AGENT_TOOLS_MAX,
                         "uniqueItems": true,
-                        "items": { "type": "string", "pattern": "^[A-Za-z0-9]{1,32}$" },
-                        "description": "Slack channel ids to read, for a Slack source only."
+                        "items": { "type": "string", "pattern": "^mcp__[A-Za-z0-9_-]+__[A-Za-z0-9_-]+$" },
+                        "description": "Read-only tools of your own MCP servers a run may call, exactly as you see them (e.g. a Slack server's channel history read). Never a tool that sends, posts, creates, edits, or deletes."
                     },
                     "whatItWillDo": { "type": "string", "minLength": 1, "maxLength": SKILL_WHAT_IT_DOES_MAX_CHARS },
                     "neededTools": {
@@ -433,4 +453,8 @@ fn definition(name: &'static str) -> PmToolDefinition {
 /// The tools a caller lists over MCP, in a stable order.
 pub fn pm_tool_definitions(context: &PmToolContext) -> Vec<PmToolDefinition> {
     context.tools().into_iter().map(definition).collect()
+}
+
+fn channel_id_pattern() -> String {
+    format!("^[A-Za-z0-9]{{1,{CHANNEL_ID_MAX_BYTES}}}$")
 }

@@ -244,7 +244,7 @@ ${events.map((event) => `        ${JSON.stringify(event)} => serde_json::from_va
   };
 }
 
-export function formatRust(source) {
+function rustfmtOnce(source) {
   const result = spawnSync("rustfmt", ["--edition", "2024", "--emit", "stdout"], {
     input: source,
     encoding: "utf8",
@@ -254,4 +254,16 @@ export function formatRust(source) {
     throw new Error(`rustfmt failed while generating the Rust contract: ${result.stderr || result.stdout}`);
   }
   return result.stdout;
+}
+
+// One rustfmt pass is not always a fixed point for long generated closure
+// chains; format until stable so `cargo fmt --check` agrees with drift.
+export function formatRust(source) {
+  let formatted = source;
+  for (let pass = 0; pass < 4; pass += 1) {
+    const again = rustfmtOnce(formatted);
+    if (again === formatted) return formatted;
+    formatted = again;
+  }
+  throw new Error("rustfmt did not reach a stable format for the Rust contract");
 }

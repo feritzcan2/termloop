@@ -11,13 +11,13 @@ use std::time::Duration;
 use serde_json::{Value, json};
 use termloop_pm::agent::{
     PM_SKILL_DISCOVERY_READ, PM_SKILL_DRY_RUN_REQUEST, PM_SKILL_TOOL_VERIFY, PmAgentMode,
-    PmAgentProfile, PmToolContext, PmToolError, SkillRunBrief, SkillRunContext,
+    PmAgentProfile, PmToolContext, PmToolError, SkillRunBrief, SkillRunContext, SlackChannelBrief,
 };
 use termloop_pm::skill::{
     BuiltinSkill, SKILL_DRY_RUN_WINDOW_MS, SkillManifest, SkillPrefilter, SkillRun,
     SkillRunTrigger, SkillSource,
 };
-use termloop_pm::{PmError, PmStore, Ticket};
+use termloop_pm::{PmError, PmStore, SprintState, Ticket, slack_ts_at};
 use termloop_pm_contract::pm::EventName;
 
 use crate::app::control::errors::{ControlError, not_found};
@@ -76,37 +76,97 @@ pub(crate) struct Kept {
     pub(crate) note: Option<String>,
 }
 
-/// The deterministic check before any launch: the tickets (or messages)
-/// new since `since`. Nothing kept means no agent starts.
+/// The deterministic check before any launch: the tickets new since
+/// `since`. Nothing kept means no agent starts. Slack is read only by the
+/// agent with its own tools, so a Slack skill keeps the active sprint's
+/// tickets, the keys, titles and assignees its messages must name; without
+/// an active sprint ticket there is nothing to match and nothing starts.
 pub(crate) fn prefilter(
     store: &PmStore,
     project_id: &str,
     manifest: &SkillManifest,
     since: u64,
 ) -> Result<Kept, PmError> {
-    let mut tickets: Vec<Ticket> = store
-        .board(project_id)?
-        .tickets
-        .into_iter()
-        .filter(|ticket| ticket.updated_at_epoch_ms >= since)
-        .collect();
-    tickets.sort_by(|a, b| b.updated_at_epoch_ms.cmp(&a.updated_at_epoch_ms));
-    let keep = |ticket: &Ticket| match manifest.prefilter {
-        SkillPrefilter::BoardChanges => true,
-        SkillPrefilter::BugTickets => bug_like(ticket),
-        // Slack reads come with the Slack tracker; delivery checks are
-        // the built-in skill's.
-        SkillPrefilter::SlackMentions | SkillPrefilter::DeliveryChecks => false,
+    let board = store.board(project_id)?;
+    let ticket_ids = match manifest.prefilter {
+        SkillPrefilter::SlackMentions => {
+            let active = board
+                .sprints
+                .iter()
+                .find(|sprint| sprint.state == SprintState::Active)
+                .map(|sprint| sprint.id.as_str());
+            board
+                .tickets
+                .iter()
+                .filter(|ticket| active.is_some() && ticket.sprint_id.as_deref() == active)
+                .take(RUN_TICKETS_MAX)
+                .map(|ticket| ticket.id.clone())
+                .collect()
+        }
+        SkillPrefilter::BoardChanges | SkillPrefilter::BugTickets => {
+            let mut tickets: Vec<&Ticket> = board
+                .tickets
+                .iter()
+                .filter(|ticket| ticket.updated_at_epoch_ms >= since)
+                .filter(|ticket| {
+                    manifest.prefilter == SkillPrefilter::BoardChanges || bug_like(ticket)
+                })
+                .collect();
+            tickets.sort_by(|a, b| b.updated_at_epoch_ms.cmp(&a.updated_at_epoch_ms));
+            tickets
+                .iter()
+                .take(RUN_TICKETS_MAX)
+                .map(|ticket| ticket.id.clone())
+                .collect()
+        }
+        // Delivery checks are the built-in skill's and never run here.
+        SkillPrefilter::DeliveryChecks => Vec::new(),
     };
     Ok(Kept {
-        ticket_ids: tickets
-            .iter()
-            .filter(|ticket| keep(ticket))
-            .take(RUN_TICKETS_MAX)
-            .map(|ticket| ticket.id.clone())
-            .collect(),
+        ticket_ids,
         note: None,
     })
+}
+
+/// The channels a run reads, each after its read position, or the start
+/// of the run's window: 3 days for a dry run, a day before the first run.
+pub(crate) fn slack_channel_briefs(
+    store: &PmStore,
+    manifest: &SkillManifest,
+    run: &SkillRun,
+) -> Result<Vec<SlackChannelBrief>, PmError> {
+    let window = if run.draft_id.is_some() {
+        SKILL_DRY_RUN_WINDOW_MS
+    } else {
+        FIRST_RUN_WINDOW_MS
+    };
+    let start = slack_ts_at(run.started_at_epoch_ms.saturating_sub(window));
+    let watermarks = match &run.skill_id {
+        Some(skill_id) => store.skill_channel_watermarks(skill_id)?,
+        None => Vec::new(),
+    };
+    Ok(manifest
+        .channels
+        .iter()
+        .map(|channel| SlackChannelBrief {
+            id: channel.id.clone(),
+            name: channel.name.clone(),
+            after_ts: watermarks
+                .iter()
+                .find(|watermark| watermark.channel_id == channel.id)
+                .map_or_else(|| start.clone(), |watermark| watermark.ts.clone()),
+        })
+        .collect())
+}
+
+/// Drops Slack read positions and skill suggestions past their 30 days.
+pub(crate) fn expire_skill_data(state: &AppState) {
+    let now = termloop_platform::current_epoch_ms();
+    if let Ok(expired) = state.store.lock().expire_skill_data(now)
+        && expired > 0
+    {
+        tracing::debug!(expired, "expired skill suggestions");
+    }
 }
 
 /// Launches the agent of a recorded run. A run whose agent does not start
@@ -129,6 +189,7 @@ fn launch_run(
         ..PmToolContext::new(project_id, PmAgentMode::SkillRun)
     }
     .tools();
+    let slack_channels = slack_channel_briefs(&state.store.lock(), manifest, run)?;
     let brief = SkillRunBrief {
         name: manifest.name.clone(),
         description: manifest.description.clone(),
@@ -137,6 +198,8 @@ fn launch_run(
         ticket_ids: kept.ticket_ids,
         items_note: kept.note,
         dry_run: run.draft_id.is_some(),
+        agent_tools: manifest.agent_tools.clone(),
+        slack_channels,
     };
     let launched = PmAgentProfile::build_skill_run(&state.store.lock(), project_id, &brief)
         .map_err(ControlError::from)
@@ -472,7 +535,11 @@ async fn verify_source(
                 ),
             }
         }
-        SkillSource::Slack => (false, "Slack is not connected"),
+        SkillSource::Slack => (
+            false,
+            "the PM has no Slack connection; Slack is read with your own Slack tools, so \
+             call one of them read-only to check it",
+        ),
     };
     Ok(verified("source", name, works, detail))
 }

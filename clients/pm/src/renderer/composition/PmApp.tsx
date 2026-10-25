@@ -329,7 +329,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 onCreate={() => void controller.launchSkillCreator()}
                 onDryRun={(id) => void controller.dryRunDraft(id)}
                 onDiscard={(id) => void controller.discardDraft(id)}
-                onInstall={(id, tools) => controller.installDraft(id, tools)}
+                onInstall={(id, tools, channels) => controller.installDraft(id, tools, channels.length > 0 ? channels : undefined)}
                 onOpenLink={(url) => void controller.bridge.openExternal(url)}
               />
             )}

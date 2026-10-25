@@ -21,6 +21,9 @@ pub struct LaunchRequest<'a> {
     /// Explicit policy for the provider workspace-write sandbox; None inherits its configuration.
     pub workspace_network: Option<bool>,
     pub approved_tools: &'a [&'a str],
+    /// Tools of the agent's own MCP servers that run without asking, as
+    /// `mcp__<server>__<tool>`; never the launch's own MCP server.
+    pub approved_external_tools: &'a [&'a str],
     /// The working directory is someone's code the agent may read but never
     /// change: Claude loses its file-editing tools and Codex runs in the
     /// read-only sandbox, whatever the permission selection.
@@ -49,6 +52,7 @@ impl<'a> LaunchRequest<'a> {
             execution: None,
             workspace_network: None,
             approved_tools: &[],
+            approved_external_tools: &[],
             read_only_workspace: false,
         }
     }
@@ -116,5 +120,6 @@ impl std::fmt::Debug for ConversationHandle {
 #[derive(Clone, Default)]
 pub struct CodexRuntimePolicy {
     pub approved_tools: Vec<String>,
+    pub approved_external_tools: Vec<String>,
     pub workspace_network: Option<bool>,
 }

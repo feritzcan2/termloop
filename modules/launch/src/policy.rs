@@ -10,26 +10,53 @@ fn validate_config_name(name: &str) -> Result<(), InvocationError> {
     Ok(())
 }
 
+/// Splits `mcp__<server>__<tool>` of the agent's own MCP servers; the
+/// launch's own server is approved by tool name instead. Callers that
+/// accept such names validate them here, so they launch as accepted.
+pub fn external_tool<'a>(
+    name: &'a str,
+    own_server: &str,
+) -> Result<(&'a str, &'a str), InvocationError> {
+    let mut parts = name
+        .strip_prefix("mcp__")
+        .ok_or(InvocationError::InvalidMcpEndpoint)?
+        .split("__");
+    let (Some(server), Some(tool), None) = (parts.next(), parts.next(), parts.next()) else {
+        return Err(InvocationError::InvalidMcpEndpoint);
+    };
+    validate_config_name(server)?;
+    validate_config_name(tool)?;
+    if server == own_server {
+        return Err(InvocationError::InvalidMcpEndpoint);
+    }
+    Ok((server, tool))
+}
+
 fn apply_tool_approvals(
     agent_id: &str,
     arguments: &mut Vec<ResolvedArgument>,
     server: &str,
     tools: &[&str],
+    external_tools: &[&str],
 ) -> Result<(), InvocationError> {
     validate_config_name(server)?;
     for tool in tools {
         validate_config_name(tool)?;
     }
-    if tools.is_empty() {
+    let mut approvals: Vec<(&str, &str)> = tools.iter().map(|tool| (server, *tool)).collect();
+    for name in external_tools {
+        approvals.push(external_tool(name, server)?);
+    }
+    if approvals.is_empty() {
         return Ok(());
     }
     if agent_id == "claude" {
         arguments.extend([
             ResolvedArgument::exact("--allowedTools", "authorized local application tools"),
             ResolvedArgument::exact(
-                tools
+                approvals
                     .iter()
-                    .map(|tool| format!("mcp__{server}__{tool}"))
+                    .map(|(server, tool)| format!("mcp__{server}__{tool}"))
                     .collect::<Vec<_>>()
                     .join(","),
                 "authorized local application tools",
@@ -40,7 +67,7 @@ fn apply_tool_approvals(
     if agent_id != "codex" {
         return Err(InvocationError::UnsupportedAgent(agent_id.into()));
     }
-    for tool in tools {
+    for (server, tool) in approvals {
         arguments.extend([
             ResolvedArgument::exact("-c", "authorized local automation tool"),
             ResolvedArgument::exact(

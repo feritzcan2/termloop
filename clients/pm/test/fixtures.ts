@@ -74,7 +74,7 @@ export const ok = (result: unknown) => ({ ok: true, result }) as PmCallOutcome<R
 export function manifest(overrides: Partial<PmSkillManifest> = {}): PmSkillManifest {
   return {
     name: "Bug owner finder", description: "Suggests who should own a new bug.", trigger: { kind: "manual" },
-    sources: ["board"], prefilter: "bugTickets", approvedTools: ["pm_board_read"], instructions: "Suggest an owner.", channels: [],
+    sources: ["board"], prefilter: "bugTickets", approvedTools: ["pm_board_read"], instructions: "Suggest an owner.", channels: [], agentTools: [],
     ...overrides,
   };
 }

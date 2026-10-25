@@ -21,7 +21,7 @@ use super::agents::{AgentRecord, AgentRegistry};
 use super::control::errors::ControlError;
 use super::control::{decode_request, run_request};
 use super::scheduler::{self, Refusal};
-use super::{AppState, Store, mcp};
+use super::{AppState, Store, mcp, skills};
 
 const TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
@@ -948,6 +948,7 @@ async fn a_skill_with_nothing_new_records_a_skipped_run_without_an_agent() {
         approved_tools: vec![termloop_pm::agent::PM_BOARD_READ.to_owned()],
         instructions: "Suggest an owner.".to_owned(),
         channels: Vec::new(),
+        agent_tools: Vec::new(),
     };
     let skill_id = {
         let mut store = state.store.lock();
@@ -981,4 +982,70 @@ async fn a_skill_with_nothing_new_records_a_skipped_run_without_an_agent() {
     // Runs per day count launched agents; a skipped run cost nothing.
     assert_eq!(ran["skill"]["runsToday"], 0);
     assert_eq!(ran["skill"]["lastOutcome"], "skipped");
+}
+
+#[test]
+fn a_slack_skill_targets_the_active_sprint_and_reads_after_its_positions() {
+    use termloop_pm::skill::{
+        SkillChannel, SkillManifest, SkillPrefilter, SkillRun, SkillRunTrigger, SkillSource,
+        SkillTrigger,
+    };
+    let mut store = termloop_pm::PmStore::open_in_memory().unwrap();
+    let manifest = SkillManifest {
+        name: "Slack tracker".to_owned(),
+        description: "Follows Slack.".to_owned(),
+        trigger: SkillTrigger::Schedule { every_minutes: 30 },
+        sources: vec![SkillSource::Slack],
+        prefilter: SkillPrefilter::SlackMentions,
+        approved_tools: Vec::new(),
+        instructions: "Suggest updates.".to_owned(),
+        channels: vec![
+            SkillChannel {
+                id: "C0SHOP".to_owned(),
+                name: "shop".to_owned(),
+            },
+            SkillChannel {
+                id: "C0OPS".to_owned(),
+                name: "ops".to_owned(),
+            },
+        ],
+        agent_tools: vec!["mcp__slack__read_channel".to_owned()],
+    };
+    // Without an active sprint there is nothing a message could name.
+    let planned = store
+        .create_sprint("p1", "Next", None, termloop_pm::SprintState::Planned)
+        .unwrap();
+    store
+        .create_ticket(termloop_pm::NewTicket {
+            sprint_id: Some(planned.id.clone()),
+            ..termloop_pm::NewTicket::new("p1", "Checkout")
+        })
+        .unwrap();
+    let kept = skills::prefilter(&store, "p1", &manifest, 0).unwrap();
+    assert!(kept.ticket_ids.is_empty());
+    store.activate_sprint(&planned.id).unwrap();
+    let kept = skills::prefilter(&store, "p1", &manifest, u64::MAX).unwrap();
+    assert_eq!(kept.ticket_ids.len(), 1);
+
+    let run = |skill_id: Option<&str>, draft_id: Option<&str>| SkillRun {
+        id: "r1".to_owned(),
+        project_id: "p1".to_owned(),
+        skill_id: skill_id.map(str::to_owned),
+        draft_id: draft_id.map(str::to_owned),
+        version: skill_id.map(|_| 1),
+        trigger: SkillRunTrigger::Schedule,
+        items: 1,
+        started_at_epoch_ms: 4 * 86_400_000,
+        finished_at_epoch_ms: None,
+        outcome: None,
+        summary: None,
+    };
+    let dry = skills::slack_channel_briefs(&store, &manifest, &run(None, Some("d1"))).unwrap();
+    assert_eq!(dry[0].after_ts, "86400.000000");
+    let first = skills::slack_channel_briefs(&store, &manifest, &run(Some("s1"), None)).unwrap();
+    assert_eq!(first[1].after_ts, "259200.000000");
+    assert_eq!(
+        (first[0].id.as_str(), first[0].name.as_str()),
+        ("C0SHOP", "shop")
+    );
 }
