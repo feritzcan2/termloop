@@ -198,10 +198,10 @@ export class PmController {
     await this.loadProposals(ticketId);
   }
 
-  async createTicket(title: string): Promise<void> {
+  /** Creates a ticket in `sprintId`, by default the focused sprint. */
+  async createTicket(title: string, sprintId = this.state.selectedSprintId): Promise<void> {
     const projectId = this.state.projectId;
     if (!projectId || !title.trim()) return;
-    const sprintId = this.state.selectedSprintId;
     const ticket = await this.call("pm_ticket_create", { projectId, title: title.trim(), ...(sprintId ? { sprintId } : {}) });
     if (!ticket) return;
     await this.refreshBoard();

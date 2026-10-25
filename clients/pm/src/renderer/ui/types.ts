@@ -4,6 +4,9 @@ import type { PmAgentProvider, PmAgentState, PmJiraApplyResult, PmJiraDiff } fro
 
 export type PmView = "overview" | "ticket" | "settings";
 
+/** What the right activity bar opens in the right sidebar. */
+export type RightSidebarView = "sprints" | "assistant";
+
 export type JiraDialogView = {
   ticketId: string;
   loading: boolean;

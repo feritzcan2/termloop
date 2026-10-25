@@ -23,7 +23,6 @@ function sidebar(tier: PmDataTier) {
       onCreateSprint={noop}
       onCreateTicket={noop}
       onMoveTicket={noop}
-      onSetStatus={noop}
     />,
   );
   cleanup = view.unmount;

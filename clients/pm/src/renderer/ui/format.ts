@@ -69,6 +69,30 @@ export function daysLeft(sprint: PmSprint, now: number): number | undefined {
   return Math.ceil((sprint.endsAtEpochMs - now) / (24 * 60 * 60 * 1000));
 }
 
+/** The sprint the left sidebar shows: the active one, else the focused one. */
+export function leftSprint(sprints: PmSprint[], focusedSprintId: string | undefined): PmSprint | undefined {
+  return sprints.find((sprint) => sprint.state === "active") ?? sprints.find((sprint) => sprint.id === focusedSprintId);
+}
+
+/** When a sprint starts: its activation, else its creation. */
+export function sprintStart(sprint: PmSprint): number {
+  return sprint.activatedAtEpochMs ?? sprint.createdAtEpochMs;
+}
+
+/**
+ * The right panel's sprint order: active first, then open sprints by start
+ * date (earliest first), then closed ones by start date (latest first).
+ */
+export function sprintPanelOrder(sprints: PmSprint[]): PmSprint[] {
+  const rank = (sprint: PmSprint) => (sprint.state === "active" ? 0 : sprint.state === "closed" ? 2 : 1);
+  return [...sprints].sort((left, right) => {
+    const byRank = rank(left) - rank(right);
+    if (byRank !== 0) return byRank;
+    const byStart = sprintStart(left) - sprintStart(right);
+    return left.state === "closed" ? -byStart : byStart;
+  });
+}
+
 export function sprintTickets(tickets: PmBoardTicket[], sprintId: string | undefined): PmBoardTicket[] {
   return tickets
     .filter((entry) => (sprintId === undefined ? entry.ticket.sprintId === null : entry.ticket.sprintId === sprintId))

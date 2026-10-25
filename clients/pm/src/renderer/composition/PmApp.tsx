@@ -1,20 +1,31 @@
 // Composition: binds store state to UI props and UI intents to the
 // controller. The only renderer layer that sees both the bridge-backed
 // controller and the terminal adapter.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import type { PmBoardTicket } from "@termloop/pm-contract/pm";
 import type { PmApi } from "../../pm-api.js";
 import { usePmState, type PmState } from "../state/presentation-store.js";
+import {
+  clampRightSidebarWidth,
+  readRightSidebarPreference,
+  toggleRightSidebar,
+  writeRightSidebarPreference,
+  type RightSidebarPreference,
+} from "../state/right-sidebar-preference.js";
 import { mountAgentTerminal } from "../terminal/agent-terminal.js";
 import { xtermSurface } from "../terminal/xterm-surface.js";
 import { AgentPanel } from "../ui/AgentPanel.js";
 import { JiraSyncDialog } from "../ui/JiraSyncDialog.js";
+import { RightActivityBar } from "../ui/RightActivityBar.js";
+import { RightSidebar } from "../ui/RightSidebar.js";
 import { SettingsPage } from "../ui/SettingsPage.js";
 import { Sidebar } from "../ui/Sidebar.js";
 import { SprintOverview } from "../ui/SprintOverview.js";
+import { SprintsPanel } from "../ui/SprintsPanel.js";
+import { SprintDnd } from "../ui/sprint-dnd.js";
 import { StageTabs, type StageTab } from "../ui/StageTabs.js";
 import { TicketEditor } from "../ui/TicketEditor.js";
-import { lastJiraPull, sprintTickets, ticketLabel } from "../ui/format.js";
+import { lastJiraPull, leftSprint, sprintTickets, ticketLabel } from "../ui/format.js";
 import type { AgentTab, MountTerminal } from "../ui/types.js";
 import type { PmController } from "./pm-controller.js";
 
@@ -59,6 +70,14 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
   }));
   const ticketId = entry?.ticket.id;
   const view = state.view === "ticket" && !entry ? "overview" : state.view;
+  const shownSprintId = leftSprint(sprints, state.selectedSprintId)?.id;
+  const lane = useMemo(() => (shownSprintId ? sprintTickets(allTickets, shownSprintId) : EMPTY), [allTickets, shownSprintId]);
+  const [right, updateRight] = useRightSidebar();
+  const showAssistant = () => updateRight((current) => ({ ...current, open: true, view: "assistant" }));
+  const launchAgent = (focusTicketId: string | undefined) => {
+    showAssistant();
+    void controller.launchAgent(focusTicketId);
+  };
   const stageTabs: StageTab[] = [
     { view: "overview", label: sprint ? `${sprint.name} overview` : "Overview" },
     ...(entry ? [{
@@ -70,126 +89,161 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
   ];
 
   return (
-    <div className="shell">
-      <Sidebar
-        projects={state.projects}
-        projectId={state.projectId}
-        hasProject={Boolean(project)}
-        view={view}
-        jira={{ configured: jiraConfigured, status: jiraStatus(state), lastPullEpochMs: lastJiraPull(sprints, allTickets) }}
-        pulling={state.pulling}
-        now={now}
-        sprints={sprints}
-        tickets={allTickets}
-        tier={tier}
-        selectedSprintId={state.selectedSprintId}
-        selectedTicketId={state.selectedTicketId}
-        agents={agents}
-        activeAgentSessionId={state.activeAgentSessionId}
-        onSelectProject={(id) => void controller.selectProject(id)}
-        onCreateProject={(name) => void controller.createProject(name)}
-        onView={(next) => controller.setView(next)}
-        onPull={() => void controller.pullJira()}
-        onStartAssistant={() => void controller.launchAgent(view === "ticket" ? ticketId : undefined)}
-        onSelectAgent={(id) => controller.selectAgent(id)}
-        onSelectSprint={(id) => controller.selectSprint(id)}
-        onSelectTicket={(id) => void controller.selectTicket(id)}
-        onCreateSprint={(name, goal) => void controller.createSprint(name, goal)}
-        onCreateTicket={(title) => void controller.createTicket(title)}
-        onMoveTicket={(id, sprintId, index) => void controller.moveTicket(id, sprintId, index)}
-        onSetStatus={(id, status) => void controller.setStatus(id, status)}
-      />
-      <main className="stage">
-        <StageTabs tabs={stageTabs} view={view} onView={(next) => controller.setView(next)} />
-        {state.notice && (
-          <div className={`notice ${state.notice.tone}`} role={state.notice.tone === "error" ? "alert" : "status"}>
-            <span>{state.notice.text}</span>
-            <button type="button" className="icb" aria-label="Dismiss" onClick={() => controller.dismissNotice()}>×</button>
+    <SprintDnd
+      lane={lane}
+      laneSprintId={shownSprintId}
+      onMoveTicket={(id, sprintId, index) => void controller.moveTicket(id, sprintId, index)}
+      onSetStatus={(id, status) => void controller.setStatus(id, status)}
+    >
+      <div className={`shell ${right.open ? "right-open" : ""}`} style={right.open ? { "--right-width": `${right.width}px` } as CSSProperties : undefined}>
+        <Sidebar
+          projects={state.projects}
+          projectId={state.projectId}
+          hasProject={Boolean(project)}
+          view={view}
+          jira={{ configured: jiraConfigured, status: jiraStatus(state), lastPullEpochMs: lastJiraPull(sprints, allTickets) }}
+          pulling={state.pulling}
+          now={now}
+          sprints={sprints}
+          tickets={allTickets}
+          tier={tier}
+          selectedSprintId={state.selectedSprintId}
+          selectedTicketId={state.selectedTicketId}
+          agents={agents}
+          activeAgentSessionId={state.activeAgentSessionId}
+          onSelectProject={(id) => void controller.selectProject(id)}
+          onCreateProject={(name) => void controller.createProject(name)}
+          onView={(next) => controller.setView(next)}
+          onPull={() => void controller.pullJira()}
+          onStartAssistant={() => launchAgent(view === "ticket" ? ticketId : undefined)}
+          onSelectAgent={(id) => { controller.selectAgent(id); showAssistant(); }}
+          onSelectSprint={(id) => controller.selectSprint(id)}
+          onSelectTicket={(id) => void controller.selectTicket(id)}
+          onCreateSprint={(name, goal) => void controller.createSprint(name, goal)}
+          onCreateTicket={(title, sprintId) => void controller.createTicket(title, sprintId)}
+          onMoveTicket={(id, sprintId, index) => void controller.moveTicket(id, sprintId, index)}
+          onShowSprints={() => updateRight((current) => ({ ...current, open: true, view: "sprints" }))}
+        />
+        <main className="stage">
+          <StageTabs tabs={stageTabs} view={view} onView={(next) => controller.setView(next)} />
+          {state.notice && (
+            <div className={`notice ${state.notice.tone}`} role={state.notice.tone === "error" ? "alert" : "status"}>
+              <span>{state.notice.text}</span>
+              <button type="button" className="icb" aria-label="Dismiss" onClick={() => controller.dismissNotice()}>×</button>
+            </div>
+          )}
+          <div className="panes">
+            {!project ? (
+              <section className="pane">
+                <div className="pane-head"><b>Welcome to TermLoop PM</b></div>
+                <div className="body empty-state"><p className="lead">Create a project from the project picker in the sidebar to start planning.</p></div>
+              </section>
+            ) : view === "settings" ? (
+              <SettingsPage
+                projectName={project.name}
+                settings={state.settings}
+                catalog={state.catalog}
+                sources={state.sources}
+                tracking={board?.tracking}
+                environments={board?.environments ?? EMPTY}
+                probes={board?.probes ?? EMPTY}
+                now={now}
+                onSaveSources={(jira, github) => controller.saveSources(jira, github)}
+                onClearToken={() => void controller.clearJiraToken()}
+                onSaveSettings={(edit) => void controller.saveSettings(edit)}
+                onSetEnvironments={(environments) => void controller.setEnvironments(environments)}
+                onCreateProbe={(environment, argv, matcher) => void controller.createProbe(environment, argv, matcher)}
+                onApproveProbe={(id) => void controller.approveProbe(id)}
+                onRejectProbe={(id) => void controller.rejectProbe(id)}
+                onDeleteProbe={(id) => void controller.deleteProbe(id)}
+              />
+            ) : view === "ticket" && entry && ticketId ? (
+              <TicketEditor
+                key={ticketId}
+                entry={entry}
+                sprints={sprints}
+                tier={tier}
+                jiraConfigured={jiraConfigured}
+                deployTracking={board?.tracking.deploy ?? false}
+                proposals={state.proposals[ticketId] ?? EMPTY}
+                versions={state.versions[ticketId]}
+                now={now}
+                onUpdate={(fields) => void controller.updateTicket(ticketId, fields)}
+                onMoveSprint={(sprintId) => void controller.moveTicket(ticketId, sprintId)}
+                onSaveDescription={(description, base) => controller.saveDescription(ticketId, description, base)}
+                onLoadVersions={() => void controller.loadVersions(ticketId)}
+                onAddCriterion={(text) => void controller.addCriterion(ticketId, text)}
+                onSetCriterionDone={(id, done) => void controller.setCriterionDone(ticketId, id, done)}
+                onRemoveCriterion={(id) => void controller.removeCriterion(ticketId, id)}
+                onAddBlocker={(text) => void controller.addBlocker(ticketId, text)}
+                onRemoveBlocker={(id) => void controller.removeBlocker(ticketId, id)}
+                onAcceptProposal={(id) => void controller.acceptProposal(ticketId, id)}
+                onRejectProposal={(id) => void controller.rejectProposal(ticketId, id)}
+                onOpenLink={(url) => void controller.bridge.openExternal(url)}
+                onWriteToJira={() => void controller.openJiraDialog(ticketId)}
+                onStartCheck={() => { showAssistant(); void controller.startCheck(ticketId); }}
+                onAskAgent={() => launchAgent(ticketId)}
+              />
+            ) : (
+              <SprintOverview
+                sprint={sprint}
+                sprints={sprints}
+                tickets={tickets}
+                tier={tier}
+                digest={state.digest?.entries ?? EMPTY}
+                now={now}
+                onOpenTicket={(id) => void controller.selectTicket(id)}
+                onActivate={(id) => void controller.activateSprint(id)}
+                onClose={(id, carryOverTo) => void controller.closeSprint(id, carryOverTo)}
+              />
+            )}
           </div>
+        </main>
+        {right.open && (
+          <RightSidebar
+            view={right.view}
+            width={right.width}
+            onResize={(width) => updateRight((current) => ({ ...current, width: clampRightSidebarWidth(width) }))}
+            onClose={() => updateRight((current) => ({ ...current, open: false }))}
+          >
+            {right.view === "sprints" ? (
+              <SprintsPanel
+                sprints={sprints}
+                tickets={allTickets}
+                selectedSprintId={state.selectedSprintId}
+                now={now}
+                canCreate={Boolean(project)}
+                onSelectSprint={(id) => controller.selectSprint(id)}
+                onActivateSprint={(id) => void controller.activateSprint(id)}
+                onCreateSprint={(name, goal) => void controller.createSprint(name, goal)}
+              />
+            ) : (
+              <AgentPanel
+                tabs={agents}
+                activeSessionId={state.activeAgentSessionId}
+                canStart={Boolean(project)}
+                focusLabel={view === "ticket" && entry ? ticketLabel(entry.ticket) : undefined}
+                mountTerminal={mountTerminal}
+                onStop={(id) => void controller.stopAgent(id)}
+                onStart={() => launchAgent(view === "ticket" ? ticketId : undefined)}
+              />
+            )}
+          </RightSidebar>
         )}
-        <div className={`panes ${view === "settings" || !project ? "single" : ""}`}>
-          {!project ? (
-            <section className="pane">
-              <div className="pane-head"><b>Welcome to TermLoop PM</b></div>
-              <div className="body empty-state"><p className="lead">Create a project from the project picker in the sidebar to start planning.</p></div>
-            </section>
-          ) : view === "settings" ? (
-            <SettingsPage
-              projectName={project.name}
-              settings={state.settings}
-              catalog={state.catalog}
-              sources={state.sources}
-              tracking={board?.tracking}
-              environments={board?.environments ?? EMPTY}
-              probes={board?.probes ?? EMPTY}
-              now={now}
-              onSaveSources={(jira, github) => controller.saveSources(jira, github)}
-              onClearToken={() => void controller.clearJiraToken()}
-              onSaveSettings={(edit) => void controller.saveSettings(edit)}
-              onSetEnvironments={(environments) => void controller.setEnvironments(environments)}
-              onCreateProbe={(environment, argv, matcher) => void controller.createProbe(environment, argv, matcher)}
-              onApproveProbe={(id) => void controller.approveProbe(id)}
-              onRejectProbe={(id) => void controller.rejectProbe(id)}
-              onDeleteProbe={(id) => void controller.deleteProbe(id)}
-            />
-          ) : view === "ticket" && entry && ticketId ? (
-            <TicketEditor
-              key={ticketId}
-              entry={entry}
-              sprints={sprints}
-              tier={tier}
-              jiraConfigured={jiraConfigured}
-              deployTracking={board?.tracking.deploy ?? false}
-              proposals={state.proposals[ticketId] ?? EMPTY}
-              versions={state.versions[ticketId]}
-              now={now}
-              onUpdate={(fields) => void controller.updateTicket(ticketId, fields)}
-              onMoveSprint={(sprintId) => void controller.moveTicket(ticketId, sprintId)}
-              onSaveDescription={(description, base) => controller.saveDescription(ticketId, description, base)}
-              onLoadVersions={() => void controller.loadVersions(ticketId)}
-              onAddCriterion={(text) => void controller.addCriterion(ticketId, text)}
-              onSetCriterionDone={(id, done) => void controller.setCriterionDone(ticketId, id, done)}
-              onRemoveCriterion={(id) => void controller.removeCriterion(ticketId, id)}
-              onAddBlocker={(text) => void controller.addBlocker(ticketId, text)}
-              onRemoveBlocker={(id) => void controller.removeBlocker(ticketId, id)}
-              onAcceptProposal={(id) => void controller.acceptProposal(ticketId, id)}
-              onRejectProposal={(id) => void controller.rejectProposal(ticketId, id)}
-              onOpenLink={(url) => void controller.bridge.openExternal(url)}
-              onWriteToJira={() => void controller.openJiraDialog(ticketId)}
-              onStartCheck={() => void controller.startCheck(ticketId)}
-              onAskAgent={() => void controller.launchAgent(ticketId)}
-            />
-          ) : (
-            <SprintOverview
-              sprint={sprint}
-              sprints={sprints}
-              tickets={tickets}
-              tier={tier}
-              digest={state.digest?.entries ?? EMPTY}
-              now={now}
-              onOpenTicket={(id) => void controller.selectTicket(id)}
-              onActivate={(id) => void controller.activateSprint(id)}
-              onClose={(id, carryOverTo) => void controller.closeSprint(id, carryOverTo)}
-            />
-          )}
-          {project && view !== "settings" && (
-            <AgentPanel
-              tabs={agents}
-              activeSessionId={state.activeAgentSessionId}
-              canStart={Boolean(project)}
-              focusLabel={view === "ticket" && entry ? ticketLabel(entry.ticket) : undefined}
-              mountTerminal={mountTerminal}
-              onStop={(id) => void controller.stopAgent(id)}
-              onStart={() => void controller.launchAgent(view === "ticket" ? ticketId : undefined)}
-            />
-          )}
-        </div>
-      </main>
-      {state.jiraDialog && (
-        <JiraSyncDialog dialog={state.jiraDialog} onApply={() => void controller.applyJira()} onClose={() => controller.closeJiraDialog()} />
-      )}
-    </div>
+        <RightActivityBar open={right.open} view={right.view} onSelect={(next) => updateRight((current) => toggleRightSidebar(current, next))} />
+        {state.jiraDialog && (
+          <JiraSyncDialog dialog={state.jiraDialog} onApply={() => void controller.applyJira()} onClose={() => controller.closeJiraDialog()} />
+        )}
+      </div>
+    </SprintDnd>
   );
+}
+
+/** The right sidebar layout, remembered across launches. */
+function useRightSidebar(): [RightSidebarPreference, (update: (current: RightSidebarPreference) => RightSidebarPreference) => void] {
+  const [preference, setPreference] = useState(readRightSidebarPreference);
+  useEffect(() => writeRightSidebarPreference(preference), [preference]);
+  return [preference, setPreference];
 }
 
 function ConnectionScreen({ connection }: { connection: PmState["connection"] }) {

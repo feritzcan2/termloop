@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { SprintSidebar, dropTarget } from "../src/renderer/ui/SprintSidebar.js";
+import { SprintSidebar } from "../src/renderer/ui/SprintSidebar.js";
+import { dropTarget } from "../src/renderer/ui/sprint-dnd.js";
 import { boardTicket, sprint } from "./fixtures.js";
 import { render } from "./render.js";
 
@@ -44,7 +45,6 @@ describe("sprint sidebar moves", () => {
         onCreateSprint={noop}
         onCreateTicket={noop}
         onMoveTicket={onMoveTicket}
-        onSetStatus={noop}
       />,
     );
     const items = [...container.querySelectorAll(".group .list > li")].map((item) =>
@@ -77,7 +77,6 @@ describe("sprint sidebar moves", () => {
         onCreateSprint={noop}
         onCreateTicket={noop}
         onMoveTicket={onMoveTicket}
-        onSetStatus={noop}
       />,
     );
     const menuOf = (index: number) => {

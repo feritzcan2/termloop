@@ -13,6 +13,7 @@ const PATHS = {
   refresh: <path d="M13 8a5 5 0 1 1-1.5-3.5M13 2v3h-3" />,
   flag: <path d="M3 2v12M3 2h8l-2 3 2 3H3" />,
   warn: <><path d="M8 2l6.5 11h-13z" /><path d="M8 6.5v3M8 11.5v.2" /></>,
+  close: <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />,
   more: <path d="M4 8h.01M8 8h.01M12 8h.01" strokeWidth={2.4} />,
 } satisfies Record<string, ReactElement>;
 

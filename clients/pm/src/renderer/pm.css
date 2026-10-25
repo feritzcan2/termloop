@@ -32,6 +32,7 @@
   --st-idle: #8ec8ff;
   --st-unknown: #727c80;
   --st-exited: #e1757e;
+  --activity-width: 44px;
   color-scheme: dark;
 }
 
@@ -88,7 +89,9 @@ code { font: 11px var(--font-mono); background: var(--bg-raised); padding: 1px 5
 .chip.warn { border-color: rgba(217, 170, 95, .35); color: var(--warning); }
 
 /* ---------- shell ---------- */
-.shell { display: grid; grid-template-columns: 270px minmax(0, 1fr); height: 100%; background: var(--bg-app); }
+/* left sidebar | stage | right panel (when open) | activity bar */
+.shell { display: grid; grid-template-columns: 270px minmax(0, 1fr) var(--activity-width); height: 100%; background: var(--bg-app); }
+.shell.right-open { grid-template-columns: 270px minmax(0, 1fr) var(--right-width, 320px) var(--activity-width); }
 
 /* ---------- sidebar ---------- */
 .sidebar { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-right: 1px solid var(--border); background: var(--bg-sidebar); }
@@ -180,8 +183,6 @@ code { font: 11px var(--font-mono); background: var(--bg-raised); padding: 1px 5
 .row .dot.progress { background: var(--accent); }
 .row .dot.inreview { background: var(--warning); }
 .row .sq { justify-self: center; width: 7px; height: 7px; border-radius: 2px; background: var(--dimmer); }
-.sprint-row.active .sq { background: var(--success); }
-.sprint-row.planned .sq { background: var(--accent); }
 .pm-no-sprint { cursor: default; }
 .row .copy { display: grid; min-width: 0; gap: 2px; }
 .row-title { overflow: hidden; color: inherit; font: 600 13px/1.3 var(--font-ui); letter-spacing: -.01em; text-overflow: ellipsis; white-space: nowrap; }
@@ -226,7 +227,7 @@ code { font: 11px var(--font-mono); background: var(--bg-raised); padding: 1px 5
 
 /* status sections inside the focused sprint group */
 .group .pm-status-head { padding: 6px 6px 3px 26px; }
-.pm-status-head .n { color: var(--dim); letter-spacing: 0; }
+.pm-status-head .n, .pm-other-sprints .n { color: var(--dim); letter-spacing: 0; }
 
 .sidebar-footer { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 6px; min-height: 37px; padding: 6px 8px; border-top: 1px solid var(--border); flex: none; }
 .fchip {
@@ -254,8 +255,7 @@ code { font: 11px var(--font-mono); background: var(--bg-raised); padding: 1px 5
 .notice.error { background: rgba(225, 117, 126, .12); color: #f0a3a9; }
 .notice.info { background: var(--accent-wash); color: var(--accent-strong); }
 
-.panes { display: grid; grid-template-columns: minmax(0, 1fr) 420px; flex: 1; min-height: 0; }
-.panes.single { grid-template-columns: minmax(0, 1fr); }
+.panes { display: grid; grid-template-columns: minmax(0, 1fr); flex: 1; min-height: 0; }
 .pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-right: 1px solid var(--border); }
 .pane:last-child { border-right: 0; }
 .pane-head { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px; border-bottom: 1px solid var(--border); flex: none; min-width: 0; }
@@ -280,6 +280,38 @@ h3.s .r { margin-left: auto; color: var(--dimmer); font: 400 10px/1 var(--font-m
 .card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .card-head .meta { color: var(--dimmer); font: 10px/1 var(--font-mono); }
 .card-foot { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-top: 10px; }
+
+/* ---------- right activity bar and sidebar ---------- */
+.activity-bar { display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 0; padding: 8px 0; border-left: 1px solid var(--border); background: var(--bg-sidebar); }
+.activity-bar button {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; width: 40px; padding: 6px 0 5px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--dimmer); font: 600 8.5px/1 var(--font-ui); letter-spacing: -.01em;
+}
+.activity-bar button:hover { background: var(--bg-hover); color: var(--text); }
+.activity-bar button.selected { color: var(--text); }
+.activity-bar button.selected::before { position: absolute; top: 6px; bottom: 6px; right: -2px; width: 2px; border-radius: 2px; background: var(--accent); content: ""; }
+.activity-bar button:focus-visible { outline: 1px solid var(--accent); }
+.activity-bar svg { width: 17px; height: 17px; }
+.right-sidebar { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; border-left: 1px solid var(--border); background: var(--bg-sidebar); }
+.right-sidebar-resize { position: absolute; top: 0; bottom: 0; left: -3px; z-index: 5; width: 6px; cursor: col-resize; outline: none; }
+.right-sidebar-resize:hover, .right-sidebar-resize:focus-visible, .right-sidebar-resize.dragging { background: rgba(102, 179, 255, .35); }
+.right-sidebar-header { display: flex; align-items: center; justify-content: space-between; height: 34px; padding: 0 6px 0 12px; border-bottom: 1px solid var(--border); flex: none; }
+.right-sidebar-header h2 { margin: 0; color: var(--text-muted); font: 600 10px/1 var(--font-ui); letter-spacing: .08em; text-transform: uppercase; }
+.right-sidebar-body { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+.right-sidebar-body > .pane { flex: 1; }
+.sprints-panel { flex: 1; min-height: 0; overflow-y: auto; }
+.right-sidebar-tools { display: flex; align-items: center; gap: 6px; padding: 8px 10px 2px 13px; }
+.right-sidebar-tools .view-action { margin-left: 0; }
+.pm-sprint-item { position: relative; border-radius: 8px; }
+.pm-sprint-item.drop-over > .row { border-color: rgba(102, 179, 255, .45); background: var(--accent-wash); }
+.sprint-row { grid-template-columns: 24px minmax(0, 1fr) auto; }
+.sprint-row[data-state="active"] .sq { background: var(--success); }
+.sprint-row[data-state="planned"] .sq { background: var(--accent); }
+.sprint-row .done { color: var(--dim); font: 600 10px/1 var(--font-mono); }
+.pm-activate { position: absolute; top: 50%; right: 8px; transform: translateY(-50%); opacity: 0; background: var(--bg-sidebar); }
+.pm-sprint-item:hover .pm-activate, .pm-activate:focus-visible { opacity: 1; }
+.pm-other-sprints { width: 100%; margin-top: 4px; border: 0; background: none; cursor: pointer; }
+.pm-other-sprints:hover { color: var(--text-secondary); }
 
 /* ---------- agent pane ---------- */
 /* The fit addon sizes the grid from the host and subtracts only the padding
