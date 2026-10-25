@@ -41,6 +41,7 @@ fn environment(name: &str, state: EnvironmentDeployState, changed: u64) -> Envir
 fn jira(status: &str) -> JiraFact {
     JiraFact {
         status: status.into(),
+        status_category: None,
         assignee: None,
         observed_at_epoch_ms: NOW,
         changed_at_epoch_ms: NOW - DAY_MS,
@@ -68,7 +69,7 @@ fn facts(
 }
 
 fn kinds(facts: &TaskDeliveryFacts) -> Vec<DeliveryRiskKind> {
-    delivery_risks(None, Some(facts), NOW)
+    delivery_risks(None, Some(facts), &[], NOW)
         .into_iter()
         .map(|risk| risk.kind)
         .collect()
@@ -87,7 +88,7 @@ fn a_task_on_track_has_no_risk() {
         Some("In Review"),
     );
     assert!(kinds(&on_track).is_empty());
-    assert!(delivery_risks(None, None, NOW).is_empty());
+    assert!(delivery_risks(None, None, &[], NOW).is_empty());
 }
 
 #[test]
@@ -112,6 +113,7 @@ fn review_stalls_and_failing_checks_are_risks() {
             vec![],
             None,
         )),
+        &[],
         NOW,
     );
     assert_eq!(
@@ -159,7 +161,7 @@ fn a_merge_that_never_reaches_production_is_a_risk() {
             NOW - 4 * DAY_MS,
         ),
     ]);
-    let risks = delivery_risks(None, Some(&staging_only), NOW);
+    let risks = delivery_risks(None, Some(&staging_only), &[], NOW);
     assert_eq!(risks.len(), 1);
     assert_eq!(risks[0].kind, DeliveryRiskKind::NotInProduction);
     assert_eq!(
@@ -226,7 +228,7 @@ fn blockers_and_failed_reads_are_risks() {
         markdown: String::new(),
         recorded_at_epoch_ms: NOW,
     });
-    let risks = delivery_risks(Some(&tracking), Some(&observed), NOW);
+    let risks = delivery_risks(Some(&tracking), Some(&observed), &[], NOW);
     assert_eq!(risks[0].kind, DeliveryRiskKind::Blocked);
     assert_eq!(
         risks[0].detail, "Waiting for the vendor",
@@ -238,7 +240,55 @@ fn blockers_and_failed_reads_are_risks() {
     );
     // Without the Project Manager's own, a check's blockers count.
     assert_eq!(
-        delivery_risks(None, Some(&observed), NOW)[0].detail,
+        delivery_risks(None, Some(&observed), &[], NOW)[0].detail,
         "QA sign-off"
     );
+}
+
+#[test]
+fn the_project_environment_list_decides_production_and_jira_category_decides_done() {
+    use termloop_domain::{JiraStatusCategory, ProjectEnvironment};
+    let live = [ProjectEnvironment {
+        name: "Live".into(),
+        production: true,
+    }];
+    let merged = |environments| {
+        facts(
+            vec![pull_request(
+                9,
+                PullRequestFactState::Merged,
+                PullRequestFactChecks::Passing,
+                NOW - 5 * DAY_MS,
+            )],
+            environments,
+            None,
+        )
+    };
+    // Without a fact for the configured production environment, a Task long
+    // deployed to staging is still not in production.
+    let staging_only = merged(vec![environment(
+        "Staging",
+        EnvironmentDeployState::Deployed,
+        NOW - 4 * DAY_MS,
+    )]);
+    let risks = delivery_risks(None, Some(&staging_only), &live, NOW);
+    assert_eq!(risks[0].kind, DeliveryRiskKind::NotInProduction);
+    assert_eq!(risks[0].detail, "On Staging for 4 days but not on Live");
+    // Jira's done category counts whatever the status is called.
+    let mut on_live = merged(vec![environment(
+        "Live",
+        EnvironmentDeployState::Deployed,
+        NOW - DAY_MS,
+    )]);
+    on_live.jira = Some(JiraFact {
+        status_category: Some(JiraStatusCategory::Done),
+        ..jira("Shipped to customers")
+    });
+    assert!(delivery_risks(None, Some(&on_live), &live, NOW).is_empty());
+    on_live.jira = Some(JiraFact {
+        status_category: Some(JiraStatusCategory::Indeterminate),
+        ..jira("Done-ish")
+    });
+    let risks = delivery_risks(None, Some(&on_live), &live, NOW);
+    assert_eq!(risks[0].kind, DeliveryRiskKind::JiraBehind);
 }

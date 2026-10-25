@@ -37,6 +37,7 @@ export function projectManagerDigest(tasks: readonly Task[], board: ProjectManag
     .slice()
     .sort((left, right) => left.rank - right.rank);
   const facts = new Map((board?.facts ?? []).map((record) => [record.taskId, record]));
+  const stages = new Map((board?.stages ?? []).map((record) => [record.taskId, record.stage]));
   const count = (test: (taskId: string) => boolean) => scoped.filter((task) => test(task.id)).length;
   const pullRequests = (taskId: string) => facts.get(taskId)?.pullRequests?.items ?? [];
   return {
@@ -44,8 +45,7 @@ export function projectManagerDigest(tasks: readonly Task[], board: ProjectManag
     tasks: scoped.length,
     inReview: count((taskId) => pullRequests(taskId).some((item) => item.state === "open" || item.state === "draft")),
     merged: count((taskId) => pullRequests(taskId).some((item) => item.state === "merged")),
-    inProduction: count((taskId) => (facts.get(taskId)?.environments ?? [])
-      .some((environment) => /prod/iu.test(environment.name) && environment.state === "deployed")),
+    inProduction: count((taskId) => stages.get(taskId) === "live" || stages.get(taskId) === "done"),
     atRisk: scoped
       .map((task) => ({ task, risks: (board?.risks ?? []).filter((risk) => risk.taskId === task.id) }))
       .filter((entry) => entry.risks.length > 0),

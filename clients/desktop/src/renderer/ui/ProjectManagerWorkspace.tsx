@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type {
-  PlaybookGetResult,
-  PlaybookMilestoneDto,
-  PlaybookRuntimeResult,
+  ProjectEnvironmentDto,
   ProjectManagerBoardResult,
   ProjectManagerCheckRequestResult,
   ProjectManagerEnvironmentSetParams,
@@ -18,14 +16,14 @@ import type {
 } from "@termloop/contract/current";
 
 import type { Task } from "../model.js";
+import { ProjectManagerEnvironments } from "./ProjectManagerEnvironments.js";
 import { ProjectManagerOverview } from "./ProjectManagerOverview.js";
 import type { ProjectManagerProbeActions } from "./ProjectManagerProbes.js";
 import { ProjectManagerTicket } from "./ProjectManagerTicket.js";
+import { projectManagerStage, projectManagerStageTrack } from "./project-manager-stage.js";
 
 export type ProjectManagerWorkspaceActions = {
-  loadPlaybook(): Promise<PlaybookGetResult>;
   openTaskSources(): void;
-  openPlaybookBuilder(): void;
   openExternal(url: string): void;
   /// The selected Project's local sprints and tracking records.
   loadBoard(): Promise<ProjectManagerBoardResult>;
@@ -45,6 +43,8 @@ export type ProjectManagerWorkspaceActions = {
   /// Reads Jira and pull requests for the tracked Tasks now.
   refreshFacts(): Promise<ProjectManagerBoardResult>;
   setEnvironment(params: ProjectManagerEnvironmentSetParams): Promise<ProjectManagerBoardResult>;
+  /// Replaces the Project's environments, in delivery order.
+  setEnvironments(environments: ProjectEnvironmentDto[]): Promise<ProjectManagerBoardResult>;
   acceptProposal(taskId: string, expectedVersion: number | null): Promise<ProjectManagerTicketSaveResult>;
   dismissProposal(taskId: string): Promise<ProjectManagerBoardResult>;
   /// Writes a probe, approved as written.
@@ -68,6 +68,7 @@ export type ProjectManagerProjectActions = {
   requestCheck(projectId: string, taskIds: string[] | null): Promise<ProjectManagerCheckRequestResult>;
   refreshFacts(projectId: string): Promise<ProjectManagerBoardResult>;
   setEnvironment(projectId: string, params: ProjectManagerEnvironmentSetParams): Promise<ProjectManagerBoardResult>;
+  setEnvironments(projectId: string, environments: ProjectEnvironmentDto[]): Promise<ProjectManagerBoardResult>;
   acceptProposal(projectId: string, taskId: string, expectedVersion: number | null): Promise<ProjectManagerTicketSaveResult>;
   dismissProposal(projectId: string, taskId: string): Promise<ProjectManagerBoardResult>;
   createProbe(projectId: string, params: Omit<ProjectManagerProbeCreateParams, "projectId">): Promise<ProjectManagerBoardResult>;
@@ -115,65 +116,15 @@ export function useProjectManagerBoard(
   return { board, error, apply };
 }
 
-export type PlaybookStepState = "passed" | "current" | "ahead";
-
-export type PlaybookStepTrack = {
-  id: string;
-  title: string;
-  state: PlaybookStepState;
-  evidence: string | null;
-};
-
 /// The running delivery check that covers a Task, if any.
 export function projectManagerTaskCheck(taskId: string, board: ProjectManagerBoardResult | null): ProjectManagerBoardResult["checks"][number] | undefined {
   return board?.checks.find((check) => check.taskIds.includes(taskId));
-}
-
-/// Where one Task stands on the Playbook, from the daemon's runtime: steps
-/// before the one it waits at are passed; a done Task passed every step. A
-/// Task the runtime does not place yet shows every step ahead.
-export function projectManagerStepTrack(
-  taskId: string,
-  milestones: readonly Pick<PlaybookMilestoneDto, "id" | "title">[],
-  runtime: PlaybookRuntimeResult | null,
-): PlaybookStepTrack[] {
-  const done = runtime?.doneTaskIds.includes(taskId) ?? false;
-  const currentIndex = runtime?.steps.findIndex((step) => step.waitingTaskIds.includes(taskId)) ?? -1;
-  const currentId = currentIndex >= 0 ? runtime?.steps[currentIndex]?.milestoneId : undefined;
-  const currentPosition = currentId ? milestones.findIndex((milestone) => milestone.id === currentId) : -1;
-  return milestones.map((milestone, index) => {
-    const state: PlaybookStepState = done || (currentPosition >= 0 && index < currentPosition)
-      ? "passed"
-      : index === currentPosition ? "current" : "ahead";
-    const progress = runtime?.steps
-      .find((step) => step.milestoneId === milestone.id)
-      ?.progress.find((entry) => entry.taskId === taskId);
-    return { id: milestone.id, title: milestone.title, state, evidence: progress?.evidence ?? null };
-  });
 }
 
 export function jiraIssueKey(url: string | null): string | null {
   if (!url) return null;
   const key = url.split(/[/?#]/).filter(Boolean).at(-1);
   return key && /^[A-Z][A-Z0-9_]*-\d+$/.test(key) ? key : null;
-}
-
-/// The active Playbook's steps, reloaded whenever the daemon's runtime moves.
-export function useProjectManagerPlaybook(
-  loadPlaybook: ProjectManagerWorkspaceActions["loadPlaybook"],
-  runtimeRevision: number | undefined,
-): { milestones: readonly PlaybookMilestoneDto[]; error: string | undefined } {
-  const [milestones, setMilestones] = useState<readonly PlaybookMilestoneDto[]>([]);
-  const [error, setError] = useState<string>();
-  useEffect(() => {
-    let active = true;
-    loadPlaybook().then(
-      (result) => { if (active) { setMilestones(result.playbook?.milestones ?? []); setError(undefined); } },
-      (failure: unknown) => { if (active) setError(failure instanceof Error ? failure.message : String(failure)); },
-    );
-    return () => { active = false; };
-  }, [loadPlaybook, runtimeRevision]);
-  return { milestones, error };
 }
 
 export function visibleProjectManagerTasks(tasks: readonly Task[], query: string, showClosed: boolean): Task[] {
@@ -188,15 +139,12 @@ export function visibleProjectManagerTasks(tasks: readonly Task[], query: string
 }
 
 /// The Project Manager stage: the selected Task's ticket and delivery facts
-/// beside the Playbook.
+/// beside where it stands on its way to production.
 export function ProjectManagerStage(props: {
   task: Task | undefined;
   /// The Project's Tasks, for the sprint overview shown without a Task.
   tasks: readonly Task[];
   board: ProjectManagerBoardResult | null;
-  milestones: readonly PlaybookMilestoneDto[];
-  playbookError: string | undefined;
-  playbookRuntime: PlaybookRuntimeResult | null;
   disabled: boolean;
   actions: ProjectManagerWorkspaceActions;
   /// Each command below takes the returned board and answers with the
@@ -205,6 +153,7 @@ export function ProjectManagerStage(props: {
   saveTicket(params: ProjectManagerTicketSaveParams): Promise<string | undefined>;
   restoreTicket(taskId: string, number: number, expectedVersion: number | null): Promise<string | undefined>;
   setEnvironment(params: ProjectManagerEnvironmentSetParams): Promise<string | undefined>;
+  setEnvironments(environments: ProjectEnvironmentDto[]): Promise<string | undefined>;
   acceptProposal(taskId: string, expectedVersion: number | null): Promise<string | undefined>;
   dismissProposal(taskId: string): Promise<string | undefined>;
   requestCheck(taskIds: string[] | null): Promise<string | undefined>;
@@ -215,10 +164,9 @@ export function ProjectManagerStage(props: {
   selectTask(taskId: string): void;
   addTask(): void;
 }) {
-  const { task, milestones, actions, board } = props;
-  const track = task
-    ? projectManagerStepTrack(task.id, milestones, props.playbookRuntime)
-    : milestones.map((milestone) => ({ id: milestone.id, title: milestone.title, state: "ahead" as const, evidence: null }));
+  const { task, actions, board } = props;
+  const environments = board?.environments ?? [];
+  const track = projectManagerStageTrack(task ? projectManagerStage(task.id, board) : undefined, environments);
   const tracking = task ? board?.tracking.find((record) => record.taskId === task.id) : undefined;
   const sprints = board?.sprints ?? [];
   const sprint = sprints.find((candidate) => candidate.id === tracking?.sprintId);
@@ -260,25 +208,20 @@ export function ProjectManagerStage(props: {
         addTask={props.addTask}
       />}
     </section>
-    <aside className="pm-playbook" aria-label="Playbook">
+    <aside className="pm-playbook" aria-label="Delivery">
       <header>
-        <h3>Playbook</h3>
-        <button type="button" className="secondary-button" onClick={actions.openPlaybookBuilder}>
-          {milestones.length === 0 ? "Build with agent" : "Edit"}
-        </button>
+        <h3>{task ? "Delivery" : "Stages"}</h3>
       </header>
-      {props.playbookError ? <p className="form-error" role="alert">{props.playbookError}</p> : null}
-      {milestones.length === 0 ? <p className="pm-muted">
-        No Playbook yet. The builder researches how this Project ships and proposes the steps.
-      </p> : <ol className="pm-steps">
-        {track.map((step) => <li key={step.id} className={`pm-step ${step.state}`} data-step-state={step.state}>
+      <ol className="pm-steps">
+        {track.map((step) => <li key={step.id} className={`pm-step ${task ? step.state : "ahead"}`} data-step-state={task ? step.state : "ahead"}>
           <span className="pm-step-mark" aria-hidden="true" />
           <div>
             <strong>{step.title}</strong>
-            {step.evidence ? <span>{step.evidence}</span> : null}
+            {task && step.detail ? <span>{step.detail}</span> : null}
           </div>
         </li>)}
-      </ol>}
+      </ol>
+      <ProjectManagerEnvironments environments={environments} disabled={props.disabled} save={props.setEnvironments} />
     </aside>
   </div>;
 }

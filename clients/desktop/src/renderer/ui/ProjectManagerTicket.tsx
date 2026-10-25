@@ -27,7 +27,8 @@ import {
   ticketSaveParams,
   type TicketDraft,
 } from "./project-manager-ticket.js";
-import { errorText, jiraIssueKey, type PlaybookStepTrack } from "./ProjectManagerWorkspace.js";
+import { errorText, jiraIssueKey } from "./ProjectManagerWorkspace.js";
+import type { StageStep } from "./project-manager-stage.js";
 
 export type ProjectManagerTicketActions = {
   openExternal(url: string): void;
@@ -58,7 +59,8 @@ export function ProjectManagerTicket(props: {
   inActiveSprint: boolean;
   /// Whether the Project's sprints mirror Jira.
   sprintsFromJira: boolean;
-  track: readonly PlaybookStepTrack[];
+  /// Where the Task stands on its way to production.
+  track: readonly StageStep[];
   disabled: boolean;
   actions: ProjectManagerTicketActions;
   saveTicket(params: ProjectManagerTicketSaveParams): Promise<string | undefined>;
@@ -212,8 +214,8 @@ export function ProjectManagerTicket(props: {
           </select>
         </label>
         {task.status === "closed" ? <span className="td-status closed">Closed</span> : null}
-        {track.length > 0 && props.inActiveSprint ? <span className={`pm-meta-step${done ? " done" : ""}`} title={`${passed} of ${track.length} Playbook steps passed`}>
-          <i aria-hidden="true" />{done ? "Delivered" : current?.title ?? track[0]!.title}
+        {track.length > 0 ? <span className={`pm-meta-step${done ? " done" : ""}`} title={`${passed} of ${track.length} stages passed`}>
+          <i aria-hidden="true" />{done ? "Done" : current ? [current.title, current.detail].filter(Boolean).join(" · ") : track[0]!.title}
         </span> : null}
         {check ? <button
           type="button"
@@ -329,8 +331,8 @@ export function ProjectManagerTicket(props: {
                 <div className="pm-progress" aria-hidden="true">
                   {track.map((step) => <i key={step.id} className={step.state} title={step.title} />)}
                 </div>
-                <span className="pm-delivery-now">{done ? "Delivered" : current?.title ?? "Not placed on the Playbook yet"}</span>
-                {current?.evidence ? <span className="pm-evidence">{current.evidence}</span> : null}
+                <span className="pm-delivery-now">{done ? "Done" : current?.title ?? track[0]!.title}</span>
+                {current?.detail ? <span className="pm-evidence">{current.detail}</span> : null}
                 {next ? <span className="pm-dim">Next: {next.title}</span> : null}
               </dd>
             </div> : null}

@@ -7,6 +7,7 @@ mod mode;
 mod probes;
 mod risks;
 mod sprint;
+mod stage;
 mod ticket;
 mod ticket_tools;
 pub(crate) use changes::ProjectChangeObservationCache;

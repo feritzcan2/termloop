@@ -34,6 +34,7 @@ fn issue(key: &str, status: &str) -> JiraIssueSnapshot {
         summary: "Restrict CORS origins".into(),
         description: None,
         status_name: status.into(),
+        status_category: None,
         assignee_display: Some("Ada Lovelace".into()),
         updated_at: "2026-10-24T09:00:00.000+0000".into(),
     }

@@ -15,8 +15,8 @@ use super::GitHostProjectionReason;
 use super::repository_pull_requests::{ProjectRepository, observe_repository};
 use crate::{CoreError, CoreRuntime, TaskSourceFailure, TaskSourceRefreshPlan, store_error};
 use termloop_domain::{
-    FactSource, IssueLinkProvider, PullRequestFact, PullRequestFactChecks, PullRequestFactState,
-    TaskDeliveryFacts,
+    FactSource, IssueLinkProvider, JiraStatusCategory, PullRequestFact, PullRequestFactChecks,
+    PullRequestFactState, TaskDeliveryFacts,
 };
 use termloop_providers::{
     AzureDevOpsClient, CheckState, GitHubClient, IssueKeyPullRequests, JiraSearchRequest,
@@ -169,6 +169,10 @@ impl CoreRuntime {
                     {
                         facts.observe_jira(
                             bounded(&issue.status_name),
+                            issue
+                                .status_category
+                                .as_deref()
+                                .and_then(JiraStatusCategory::from_key),
                             issue.assignee_display.as_deref().map(bounded),
                             now_epoch_ms,
                         );

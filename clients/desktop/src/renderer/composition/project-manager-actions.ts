@@ -1,4 +1,5 @@
 import type {
+  ProjectEnvironmentDto,
   ProjectManagerEnvironmentSetParams,
   ProjectManagerProbeCreateParams,
   ProjectManagerTaskCreateParams,
@@ -56,6 +57,8 @@ export function createProjectManagerActions({ api, guard, refresh }: ProjectMana
       guard(api(projectId).projectManagerFactsRefresh(projectId)),
     setEnvironment: (projectId: string, params: ProjectManagerEnvironmentSetParams) =>
       guard(api(projectId).projectManagerEnvironmentSet(params)),
+    setEnvironments: (projectId: string, environments: ProjectEnvironmentDto[]) =>
+      guard(api(projectId).projectManagerEnvironmentsSet({ projectId, environments })),
     acceptProposal: async (projectId: string, taskId: string, expectedVersion: number | null) => {
       const result = await guard(api(projectId).projectManagerProposalAccept({ taskId, expectedVersion }));
       await refresh();

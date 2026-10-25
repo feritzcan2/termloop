@@ -1256,6 +1256,7 @@ mod tests {
                             summary: summary.into(),
                             description: Some(description.into()),
                             status_name: "Open".into(),
+                            status_category: None,
                             assignee_display: Some("Ada".into()),
                             updated_at: updated_at.into(),
                         }],

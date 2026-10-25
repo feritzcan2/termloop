@@ -63,6 +63,8 @@ impl CoreRuntime {
             "proposals": self.ticket_proposals_json(project_id),
             "probes": self.probes_json(project_id),
             "risks": self.project_risks_json(project_id, termloop_platform::current_epoch_ms()),
+            "stages": self.project_stages_json(project_id),
+            "environments": self.store.project_environments(project_id),
             "checks": self
                 .running_delivery_checks(project_id)
                 .into_iter()

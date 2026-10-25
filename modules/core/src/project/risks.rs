@@ -4,8 +4,9 @@
 
 use serde_json::{Value, json};
 use termloop_domain::{
-    EnvironmentDeployState, FactSource, PullRequestFactChecks, PullRequestFactState,
-    TaskDeliveryFacts, TaskStatus, TaskTrackingRecord,
+    EnvironmentDeployState, FactSource, JiraFact, JiraStatusCategory, ProjectEnvironment,
+    PullRequestFactChecks, PullRequestFactState, TaskDeliveryFacts, TaskStatus, TaskTrackingRecord,
+    environment_is_production,
 };
 
 use crate::CoreRuntime;
@@ -52,12 +53,14 @@ impl CoreRuntime {
             })
             .collect::<Vec<_>>();
         tasks.sort_by_key(|task| task.rank);
+        let environments = self.store.project_environments(project_id);
         tasks
             .into_iter()
             .flat_map(|task| {
                 delivery_risks(
                     self.store.task_tracking(&task.id),
                     self.store.task_delivery_facts_for(&task.id),
+                    environments,
                     now_epoch_ms,
                 )
                 .into_iter()
@@ -78,6 +81,7 @@ impl CoreRuntime {
 pub(crate) fn delivery_risks(
     tracking: Option<&TaskTrackingRecord>,
     facts: Option<&TaskDeliveryFacts>,
+    environments: &[ProjectEnvironment],
     now_epoch_ms: u64,
 ) -> Vec<DeliveryRisk> {
     let mut risks = Vec::new();
@@ -145,12 +149,18 @@ pub(crate) fn delivery_risks(
         .iter()
         .filter(|environment| environment.state == EnvironmentDeployState::Deployed)
         .collect::<Vec<_>>();
-    let production = facts
-        .environments
-        .iter()
-        .find(|environment| environment.name.to_ascii_lowercase().contains("prod"));
+    let production = production_fact(facts, environments);
     let in_production =
         production.is_some_and(|environment| environment.state == EnvironmentDeployState::Deployed);
+    // A configured production environment counts even before any fact names it.
+    let production_name = production
+        .map(|environment| environment.name.as_str())
+        .or_else(|| {
+            environments
+                .iter()
+                .find(|environment| environment.production)
+                .map(|environment| environment.name.as_str())
+        });
     if let Some(merged_at) = merged_at
         && deployed.is_empty()
         && now_epoch_ms.saturating_sub(merged_at) >= MERGED_NOT_DEPLOYED_MS
@@ -164,7 +174,7 @@ pub(crate) fn delivery_risks(
             since_epoch_ms: Some(merged_at),
         });
     }
-    if let Some(production) = production
+    if let Some(production_name) = production_name
         && !in_production
         && let Some(earliest) = deployed
             .iter()
@@ -177,20 +187,20 @@ pub(crate) fn delivery_risks(
                 "On {} for {} but not on {}",
                 earliest.name,
                 days(now_epoch_ms, earliest.changed_at_epoch_ms),
-                production.name
+                production_name
             ),
             since_epoch_ms: Some(earliest.changed_at_epoch_ms),
         });
     }
     if let Some(jira) = &facts.jira {
-        let done = jira_status_done(&jira.status);
+        let done = jira_done(jira);
         if in_production && !done {
             risks.push(DeliveryRisk {
                 kind: DeliveryRiskKind::JiraBehind,
                 detail: format!("In production, but Jira still says {}", jira.status),
                 since_epoch_ms: production.map(|environment| environment.changed_at_epoch_ms),
             });
-        } else if done && production.is_some() && !in_production {
+        } else if done && production_name.is_some() && !in_production {
             risks.push(DeliveryRisk {
                 kind: DeliveryRiskKind::JiraAhead,
                 detail: format!("Jira says {}, but it is not in production", jira.status),
@@ -199,6 +209,31 @@ pub(crate) fn delivery_risks(
         }
     }
     risks
+}
+
+/// A Task's production environment fact: deployed if any production
+/// environment runs it, otherwise the first production one named.
+pub(super) fn production_fact<'a>(
+    facts: &'a TaskDeliveryFacts,
+    environments: &[ProjectEnvironment],
+) -> Option<&'a termloop_domain::EnvironmentFact> {
+    let mut production = facts
+        .environments
+        .iter()
+        .filter(|environment| environment_is_production(environments, &environment.name));
+    let first = production.clone().next();
+    production
+        .find(|environment| environment.state == EnvironmentDeployState::Deployed)
+        .or(first)
+}
+
+/// Whether Jira says the work is finished: its status category when Jira
+/// sent one, otherwise the status name.
+pub(super) fn jira_done(jira: &JiraFact) -> bool {
+    jira.status_category.map_or_else(
+        || jira_status_done(&jira.status),
+        |category| category == JiraStatusCategory::Done,
+    )
 }
 
 /// Whether a Jira status name means the work is finished. Jira workflows

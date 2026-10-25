@@ -436,6 +436,14 @@
         "$ref": "#/$defs/projectManagerBoardResult"
       }
     },
+    "projectManager.environmentsSet": {
+      "params": {
+        "$ref": "#/$defs/projectManagerEnvironmentsSetParams"
+      },
+      "result": {
+        "$ref": "#/$defs/projectManagerBoardResult"
+      }
+    },
     "projectManager.proposalAccept": {
       "params": {
         "$ref": "#/$defs/projectManagerProposalAcceptParams"
@@ -2566,6 +2574,7 @@
         "projectManager.modeGet",
         "projectManager.modeSet",
         "projectManager.environmentSet",
+        "projectManager.environmentsSet",
         "projectManager.proposalAccept",
         "projectManager.proposalDismiss",
         "projectManager.checkRequest",
@@ -3644,6 +3653,82 @@
         "projectManager"
       ]
     },
+    "jiraStatusCategory": {
+      "x-codegen": true,
+      "x-codegen-name": "JiraStatusCategory",
+      "type": "string",
+      "enum": ["new", "indeterminate", "done"]
+    },
+    "deliveryStageKind": {
+      "x-codegen": true,
+      "x-codegen-name": "DeliveryStageKind",
+      "type": "string",
+      "enum": ["toDo", "inProgress", "inReview", "merged", "deployed", "live", "done"]
+    },
+    "deliveryStageDto": {
+      "x-codegen": true,
+      "x-codegen-name": "DeliveryStageDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["taskId", "stage", "environment", "sinceEpochMs"],
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stage": {
+          "$ref": "#/$defs/deliveryStageKind"
+        },
+        "environment": {
+          "description": "The environment of a deployed or live stage.",
+          "type": ["string", "null"],
+          "maxLength": 120
+        },
+        "sinceEpochMs": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "projectEnvironmentDto": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectEnvironmentDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "production"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "production": {
+          "type": "boolean"
+        }
+      }
+    },
+    "projectManagerEnvironmentsSetParams": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectManagerEnvironmentsSetParams",
+      "description": "The Project Manager replaces the Project's environments, in delivery order; an empty list tells production apart by name again.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectId", "environments"],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "environments": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "$ref": "#/$defs/projectEnvironmentDto"
+          }
+        }
+      }
+    },
     "jiraFactDto": {
       "x-codegen": true,
       "x-codegen-name": "JiraFactDto",
@@ -3651,6 +3736,7 @@
       "additionalProperties": false,
       "required": [
         "status",
+        "statusCategory",
         "assignee",
         "observedAtEpochMs",
         "changedAtEpochMs"
@@ -3660,6 +3746,17 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 120
+        },
+        "statusCategory": {
+          "description": "Jira's own grouping of the status, whatever it is named; null when Jira sent none.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/jiraStatusCategory"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "assignee": {
           "type": [
@@ -4625,6 +4722,8 @@
         "proposals",
         "probes",
         "risks",
+        "stages",
+        "environments",
         "checks",
         "stateRevision"
       ],
@@ -4687,6 +4786,21 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/deliveryRiskDto"
+          }
+        },
+        "stages": {
+          "description": "Where each unarchived Task stands on its way to production, derived from its facts on every read.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/deliveryStageDto"
+          }
+        },
+        "environments": {
+          "description": "The Project's environments in delivery order; empty when production is told apart by name.",
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "$ref": "#/$defs/projectEnvironmentDto"
           }
         },
         "checks": {

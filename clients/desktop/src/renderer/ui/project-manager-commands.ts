@@ -9,7 +9,7 @@ import {
 
 type ProjectManagerShellActions = Pick<
   ProjectManagerWorkspaceActions,
-  "loadPlaybook" | "openTaskSources" | "openPlaybookBuilder" | "openExternal"
+  "openTaskSources" | "openExternal"
 >;
 
 /// The Project Manager commands of one Project, with the Shell's own
@@ -34,6 +34,7 @@ export function bindProjectManagerActions(
     requestCheck: (taskIds) => pm.requestCheck(projectId, taskIds),
     refreshFacts: () => pm.refreshFacts(projectId),
     setEnvironment: (params) => pm.setEnvironment(projectId, params),
+    setEnvironments: (environments) => pm.setEnvironments(projectId, environments),
     acceptProposal: (taskId, expectedVersion) => pm.acceptProposal(projectId, taskId, expectedVersion),
     dismissProposal: (taskId) => pm.dismissProposal(projectId, taskId),
     createProbe: (params) => pm.createProbe(projectId, params),

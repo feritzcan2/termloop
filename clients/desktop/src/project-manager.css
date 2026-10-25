@@ -399,3 +399,12 @@
 @media (max-width: 720px) {
   .pm-probe-form { grid-template-columns: minmax(0,1fr); }
 }
+.pm-environments { margin-top: 14px; }
+.pm-environments > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pm-environment-list, .pm-environment-form ol { margin: 0; padding-left: 18px; font-size: 12px; }
+.pm-environment-list li { padding: 2px 0; }
+.pm-environment-production { margin-left: 6px; color: var(--text-muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; }
+.pm-environment-form li { display: flex; align-items: center; gap: 4px; padding: 2px 0; }
+.pm-environment-form input:not([type="checkbox"]) { flex: 1; min-width: 0; }
+.pm-environment-form label { display: flex; align-items: center; gap: 3px; font-size: 11px; }
+.pm-environment-actions { display: flex; gap: 6px; margin-top: 6px; }

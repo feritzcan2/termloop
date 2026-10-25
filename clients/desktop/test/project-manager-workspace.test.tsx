@@ -2,14 +2,13 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { PlaybookRuntimeResult, ProjectManagerBoardResult, TaskDeliveryFactsDto } from "@termloop/contract/current";
+import type { ProjectManagerBoardResult, TaskDeliveryFactsDto } from "@termloop/contract/current";
 
 import type { Task } from "../src/renderer/model.js";
 import {
   ProjectManagerStage,
   projectManagerFindingsSections,
   jiraIssueKey,
-  projectManagerStepTrack,
   projectManagerTaskCheck,
   visibleProjectManagerTasks,
   type ProjectManagerWorkspaceActions,
@@ -22,6 +21,8 @@ import { PROFILED_DESKTOP_OPERATIONS } from "../src/source-operations.js";
 import { projectManagerDigest } from "../src/renderer/ui/ProjectManagerOverview.js";
 import { argvText, commandArgv } from "../src/renderer/ui/ProjectManagerProbes.js";
 import { projectManagerLayoutActive } from "../src/renderer/ui/ProjectModeMenuItems.js";
+import { projectManagerStageTrack, stageLabel } from "../src/renderer/ui/project-manager-stage.js";
+import { ProjectManagerEnvironments } from "../src/renderer/ui/ProjectManagerEnvironments.js";
 
 const NOW = 1_700_000_000_000;
 
@@ -43,37 +44,10 @@ function task(overrides: Partial<Task> = {}): Task {
   } as Task;
 }
 
-const milestones = [
-  { id: "merged", title: "Merged" },
-  { id: "staging", title: "Deployed to staging" },
-  { id: "production", title: "Deployed to production" },
-];
-
-function runtime(overrides: Partial<PlaybookRuntimeResult> = {}): PlaybookRuntimeResult {
-  return {
-    processingTaskIds: [],
-    evaluations: [],
-    activePipelineName: "Delivery",
-    evaluation: null,
-    processingTaskId: null,
-    steps: [
-      { milestoneId: "merged", routineId: "r1", waitingTaskIds: [], progress: [], agentReports: [], nextAttemptAtEpochMs: null },
-      {
-        milestoneId: "staging", routineId: "r2", waitingTaskIds: ["task-1"], agentReports: [], nextAttemptAtEpochMs: null,
-        progress: [{ evaluator: "routine", deterministicFallback: null, taskId: "task-1", verdict: "waiting", evidence: "Deploy #812 is still running", decidedAtEpochMs: NOW, nextAttemptAtEpochMs: null }],
-      },
-      { milestoneId: "production", routineId: "r3", waitingTaskIds: [], progress: [], agentReports: [], nextAttemptAtEpochMs: null },
-    ],
-    doneTaskIds: ["task-done"],
-    stateRevision: 3,
-    ...overrides,
-  } as PlaybookRuntimeResult;
-}
-
 function facts(overrides: Partial<TaskDeliveryFactsDto> = {}): TaskDeliveryFactsDto {
   return {
     taskId: "task-1",
-    jira: { status: "In Review", assignee: "Ada Lovelace", observedAtEpochMs: NOW, changedAtEpochMs: NOW },
+    jira: { status: "In Review", statusCategory: "indeterminate", assignee: "Ada Lovelace", observedAtEpochMs: NOW, changedAtEpochMs: NOW },
     pullRequests: {
       repository: "github.com/acme/pay",
       items: [{ number: 9, title: "PAY-42 retry checkout", url: "https://github.com/acme/pay/pull/9", state: "merged", checks: "passing", baseBranch: "main", headBranch: "feature/PAY-42", mergeCommit: "abc1234", updatedAtEpochMs: NOW }],
@@ -106,6 +80,8 @@ function board(overrides: Partial<ProjectManagerBoardResult> = {}): ProjectManag
     proposals: [],
     probes: [],
     risks: [],
+    stages: [{ taskId: "task-1", stage: "deployed", environment: "Staging", sinceEpochMs: NOW }],
+    environments: [],
     checks: [],
     stateRevision: 4,
     ...overrides,
@@ -121,7 +97,6 @@ function actions(overrides: Partial<ProjectManagerWorkspaceActions> = {}): Proje
     setTracking: async () => board(),
     createTask: async () => ({ task: task(), board: board() }),
     searchJira: async () => ({ issues: [], truncated: false, failureReason: null }),
-    loadPlaybook: async () => ({ playbook: null, stateRevision: 1 }),
     saveTicket: vi.fn(async () => ({ taskId: "task-1", version: 1, board: board() })),
     loadTicketVersions: vi.fn(async () => ({ taskId: "task-1", versions: [] })),
     restoreTicket: vi.fn(async () => ({ taskId: "task-1", version: 1, board: board() })),
@@ -131,10 +106,10 @@ function actions(overrides: Partial<ProjectManagerWorkspaceActions> = {}): Proje
     deleteProbe: async () => board(),
     refreshFacts: async () => board(),
     setEnvironment: async () => board(),
+    setEnvironments: async () => board(),
     acceptProposal: vi.fn(async () => ({ taskId: "task-1", version: 2, board: board() })),
     dismissProposal: async () => board(),
     openTaskSources: vi.fn(),
-    openPlaybookBuilder: vi.fn(),
     openExternal: vi.fn(),
     ...overrides,
   };
@@ -161,14 +136,26 @@ describe("Project Manager layout helpers", () => {
     expect(projectManagerLayoutActive(true, "projectManager")).toBe(true);
   });
 
-  it("places a Task on the Playbook from the daemon runtime", () => {
-    expect(projectManagerStepTrack("task-1", milestones, runtime()).map((step) => [step.state, step.evidence])).toEqual([
-      ["passed", null],
-      ["current", "Deploy #812 is still running"],
-      ["ahead", null],
+  it("places a Task on its delivery stages from the daemon's stage", () => {
+    const deployed = { taskId: "task-1", stage: "deployed" as const, environment: "uat", sinceEpochMs: NOW };
+    const environments = [{ name: "dev", production: false }, { name: "uat", production: false }, { name: "live", production: true }];
+    expect(projectManagerStageTrack(deployed, environments).map((step) => [step.title, step.state])).toEqual([
+      ["To do", "passed"],
+      ["In progress", "passed"],
+      ["In review", "passed"],
+      ["Merged", "passed"],
+      ["On dev", "passed"],
+      ["On uat", "current"],
+      ["Live on live", "ahead"],
+      ["Done", "ahead"],
     ]);
-    expect(projectManagerStepTrack("task-done", milestones, runtime()).every((step) => step.state === "passed")).toBe(true);
-    expect(projectManagerStepTrack("unplaced", milestones, null).every((step) => step.state === "ahead")).toBe(true);
+    // Without a list, one deploy step names the environment it reached.
+    const track = projectManagerStageTrack({ ...deployed, environment: "Staging" }, []);
+    expect(track.find((step) => step.state === "current")).toMatchObject({ title: "Deployed", detail: "Staging" });
+    expect(projectManagerStageTrack({ ...deployed, stage: "done" }, []).every((step) => step.state === "passed")).toBe(true);
+    expect(projectManagerStageTrack(undefined, [])[0]!.state).toBe("current");
+    expect(stageLabel({ ...deployed, stage: "live", environment: "prod" })).toBe("Live · prod");
+    expect(stageLabel({ ...deployed, stage: "inReview", environment: null })).toBe("In review");
   });
 
   it("reads Jira keys, filters Tasks, and finds the check that covers a Task", () => {
@@ -209,15 +196,13 @@ function stageProps(overrides: Partial<StageProps> = {}): StageProps {
     task: task(),
     tasks: [task()],
     board: board(),
-    milestones: milestones as never,
-    playbookError: undefined,
-    playbookRuntime: runtime(),
     disabled: false,
     actions: actions(),
     setTracking: vi.fn(async () => undefined),
     saveTicket: vi.fn(async () => undefined),
     restoreTicket: vi.fn(async () => undefined),
     setEnvironment: vi.fn(async () => undefined),
+    setEnvironments: vi.fn(async () => undefined),
     acceptProposal: vi.fn(async () => undefined),
     dismissProposal: vi.fn(async () => undefined),
     requestCheck: vi.fn(async () => undefined),
@@ -247,8 +232,6 @@ describe("Project Manager workspace", () => {
     await act(async () => root.render(<ProjectManagerTaskList
       tasks={[task(), task({ id: "task-2", title: "Planned work", jira_url: null, worktree: null, rank: 2 }), task({ id: "task-3", title: "Loose idea", jira_url: null, worktree: null, rank: 3 })]}
       board={board({ checks: [{ sessionId: "check-1", taskIds: ["task-1"] }] })}
-      milestones={milestones}
-      playbookRuntime={runtime()}
       selectedTaskId="task-1"
       disabled={false}
       select={select}
@@ -267,7 +250,7 @@ describe("Project Manager workspace", () => {
     expect(checkButton.textContent).toBe("Checking");
     await act(async () => checkButton.click());
     expect(openCheck).toHaveBeenCalledWith("task-1", "check-1");
-    expect(activeRow.querySelector(".pm-task-step")?.textContent).toBe("Deployed to staging");
+    expect(activeRow.querySelector(".pm-task-step")?.textContent).toBe("Deployed · Staging");
     const plannedRow = sections[1]!.querySelector(".pm-task-rows button")!;
     expect(plannedRow.querySelector(".pm-task-agent")?.textContent).toBe("Linus");
     expect(sections[1]!.querySelector(".pm-task-agent-open")).toBeNull();
@@ -301,8 +284,6 @@ describe("Project Manager workspace", () => {
     await act(async () => root.render(<ProjectManagerTaskList
       tasks={[task(), task({ id: "task-2", title: "Local work", jira_url: null, rank: 2 })]}
       board={synced}
-      milestones={milestones}
-      playbookRuntime={runtime()}
       selectedTaskId={undefined}
       disabled={false}
       select={vi.fn()}
@@ -332,8 +313,6 @@ describe("Project Manager workspace", () => {
     await act(async () => root.render(<ProjectManagerTaskList
       tasks={[]}
       board={board({ sprintSync: { sourceName: "Pay Jira", boardIds: [7], syncedAtEpochMs: null, failureReason: "credentialsInvalid", failedAtEpochMs: NOW } })}
-      milestones={milestones}
-      playbookRuntime={null}
       selectedTaskId={undefined}
       disabled={false}
       select={vi.fn()}
@@ -432,8 +411,8 @@ describe("Project Manager workspace", () => {
     await act(async () => root.render(<ProjectManagerStage {...props} />));
     expect(host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')?.value).toBe("Checkout times out");
     expect(host.querySelector(".pm-md")?.textContent).toContain("Users see a timeout at checkout.");
-    expect(host.querySelector(".pm-meta-step")?.textContent).toBe("Deployed to staging");
-    expect(host.querySelector(".pm-delivery")?.textContent).toContain("Deploy #812 is still running");
+    expect(host.querySelector(".pm-meta-step")?.textContent).toBe("Deployed · Staging");
+    expect(host.querySelector(".pm-delivery")?.textContent).toContain("DeployedStagingNext: Live");
     expect(host.querySelector<HTMLSelectElement>('select[aria-label="Sprint"]')?.value).toBe("s14");
     expect(host.querySelector<HTMLInputElement>('input[aria-label="Developer"]')?.value).toBe("Ada");
     const facts = host.querySelector('[aria-label="Delivery facts"]')!;
@@ -444,7 +423,7 @@ describe("Project Manager workspace", () => {
     expect(facts.querySelector(".pm-env-row")?.textContent).toContain("Delivery check");
     expect(host.querySelector(".pm-finding.observed li")?.textContent).toBe("deploy-staging run 812 shipped v1.4");
     expect(host.querySelector(".pm-fact-blockers")?.textContent).toBe("Waiting for QA");
-    expect([...host.querySelectorAll(".pm-step")].map((step) => step.getAttribute("data-step-state"))).toEqual(["passed", "current", "ahead"]);
+    expect([...host.querySelectorAll(".pm-step")].map((step) => step.getAttribute("data-step-state"))).toEqual(["passed", "passed", "passed", "passed", "current", "ahead", "ahead"]);
     await act(async () => facts.querySelector<HTMLButtonElement>(".pm-pr-link")!.click());
     expect(props.actions.openExternal).toHaveBeenCalledWith("https://github.com/acme/pay/pull/9");
     await act(async () => button("Check now")!.click());
@@ -518,9 +497,9 @@ describe("Project Manager workspace", () => {
   });
 
   it("edits the ticket in TermLoop", async () => {
-    const props = stageProps({ milestones: [], playbookRuntime: null, board: board({ facts: [] }) });
+    const props = stageProps({ board: board({ facts: [] }) });
     await act(async () => root.render(<ProjectManagerStage {...props} />));
-    expect(host.textContent).toContain("No Playbook yet");
+    expect(host.textContent).toContain("An environment whose name contains “prod” counts as production.");
     expect(host.textContent).toContain("Jira is not changed");
     expect(host.querySelector('[aria-label="Delivery facts"]')?.textContent).toContain("Not read yet");
     expect(host.querySelector(".pm-save-bar")).toBeNull();
@@ -539,8 +518,6 @@ describe("Project Manager workspace", () => {
       task: task({ brief }),
       board: board({ tickets: [{ taskId: "task-1", number: version, author: version > 1 ? "agent" : "projectManager", summary: null, createdAtEpochMs: NOW }] }),
       saveTicket,
-      milestones: [],
-      playbookRuntime: null,
     })} />;
     await act(async () => root.render(stage(1, "Users wait.")));
     expect(host.querySelector(".pm-version-badge")?.textContent).toContain("v1");
@@ -597,8 +574,6 @@ describe("Project Manager workspace", () => {
     await act(async () => root.render(<ProjectManagerTaskList
       tasks={[task()]}
       board={risky}
-      milestones={milestones}
-      playbookRuntime={null}
       selectedTaskId="task-1"
       disabled={false}
       select={vi.fn()}
@@ -649,5 +624,22 @@ describe("Project Manager workspace", () => {
     expect(props.probes.create).toHaveBeenCalledWith({
       environment: "Dev", argv: ["curl", "-s", "https://dev.example.com/version"], matcher: "commitAncestry",
     });
+  });
+
+  it("orders the Project's environments and marks production", async () => {
+    const save = vi.fn(async () => undefined);
+    await act(async () => root.render(<ProjectManagerEnvironments environments={[{ name: "prod", production: true }]} disabled={false} save={save} />));
+    expect(host.querySelector(".pm-environment-list")?.textContent).toBe("prodProduction");
+    await act(async () => button("Edit")!.click());
+    await act(async () => button("Environment")!.click());
+    await act(async () => type(host.querySelector<HTMLInputElement>('input[aria-label="Environment 2"]')!, " staging "));
+    await act(async () => host.querySelectorAll<HTMLButtonElement>('button[aria-label="Move up"]')[1]!.click());
+    await act(async () => host.querySelector<HTMLButtonElement>('.pm-environment-form button[type="submit"]')!.click());
+    expect(save).toHaveBeenCalledWith([{ name: "staging", production: false }, { name: "prod", production: true }]);
+    // A duplicate name cannot be saved.
+    await act(async () => button("Edit")!.click());
+    await act(async () => button("Environment")!.click());
+    await act(async () => type(host.querySelector<HTMLInputElement>('input[aria-label="Environment 2"]')!, "PROD"));
+    expect(host.querySelector<HTMLButtonElement>('.pm-environment-form button[type="submit"]')!.disabled).toBe(true);
   });
 });

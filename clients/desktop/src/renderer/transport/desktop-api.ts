@@ -41,6 +41,7 @@ import type {
   ProjectManagerCheckRequestParams,
   ProjectManagerCheckRequestResult,
   ProjectManagerEnvironmentSetParams,
+  ProjectManagerEnvironmentsSetParams,
   ProjectManagerProposalAcceptParams,
   ProjectManagerProbeCreateParams,
   ProjectManagerBoardResult,
@@ -353,6 +354,7 @@ export type DesktopApi = {
   projectManagerModeGet(): Promise<ProjectManagerModeResult>;
   projectManagerModeSet(params: ProjectManagerModeSetParams): Promise<ProjectManagerModeResult>;
   projectManagerEnvironmentSet(params: ProjectManagerEnvironmentSetParams): Promise<ProjectManagerBoardResult>;
+  projectManagerEnvironmentsSet(params: ProjectManagerEnvironmentsSetParams): Promise<ProjectManagerBoardResult>;
   projectManagerProposalAccept(params: ProjectManagerProposalAcceptParams): Promise<ProjectManagerTicketSaveResult>;
   projectManagerProposalDismiss(taskId: string): Promise<ProjectManagerBoardResult>;
   projectManagerCheckRequest(params: ProjectManagerCheckRequestParams): Promise<ProjectManagerCheckRequestResult>;

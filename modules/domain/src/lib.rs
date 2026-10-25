@@ -70,12 +70,17 @@ pub use delivery_probe::{
     PROBE_FAILURE_MAX_BYTES, PROBE_REASON_MAX_CHARS, PROJECT_PROBES_MAX, ProbeAuthor, ProbeMatcher,
     ProbeRun, ProbeStatus, valid_commit, valid_probe_argv, valid_probe_environment,
 };
+mod project_environment;
+pub use project_environment::{
+    PROJECT_ENVIRONMENTS_MAX, ProjectEnvironment, ProjectEnvironments, environment_is_production,
+    valid_project_environments,
+};
 mod project_delivery;
 pub use project_delivery::{
     CheckNotes, EnvironmentDeployState, EnvironmentFact, FactReadFailure, FactSource, JiraFact,
-    PullRequestFact, PullRequestFactChecks, PullRequestFactState, PullRequestsFact,
-    TASK_CHECK_NOTES_MAX_BYTES, TASK_ENVIRONMENT_FACTS_MAX, TASK_PULL_REQUEST_FACTS_MAX,
-    TaskDeliveryFacts,
+    JiraStatusCategory, PullRequestFact, PullRequestFactChecks, PullRequestFactState,
+    PullRequestsFact, TASK_CHECK_NOTES_MAX_BYTES, TASK_ENVIRONMENT_FACTS_MAX,
+    TASK_PULL_REQUEST_FACTS_MAX, TaskDeliveryFacts,
 };
 
 mod project_task_automation;

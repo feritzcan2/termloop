@@ -35,10 +35,33 @@ pub enum EnvironmentDeployState {
     Deployed,
 }
 
+/// Jira's own grouping of an issue status, whatever the status is named.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum JiraStatusCategory {
+    New,
+    Indeterminate,
+    Done,
+}
+
+impl JiraStatusCategory {
+    /// Jira's `statusCategory.key`.
+    pub fn from_key(key: &str) -> Option<Self> {
+        match key {
+            "new" => Some(Self::New),
+            "indeterminate" => Some(Self::Indeterminate),
+            "done" => Some(Self::Done),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct JiraFact {
     pub status: String,
+    #[serde(default)]
+    pub status_category: Option<JiraStatusCategory>,
     #[serde(default)]
     pub assignee: Option<String>,
     pub observed_at_epoch_ms: u64,
@@ -250,17 +273,28 @@ impl TaskDeliveryFacts {
         }
     }
 
-    /// Records a Jira read. The change time moves only when status or
-    /// assignee changed.
-    pub fn observe_jira(&mut self, status: String, assignee: Option<String>, now_epoch_ms: u64) {
+    /// Records a Jira read. The change time moves only when status, its
+    /// category, or assignee changed.
+    pub fn observe_jira(
+        &mut self,
+        status: String,
+        status_category: Option<JiraStatusCategory>,
+        assignee: Option<String>,
+        now_epoch_ms: u64,
+    ) {
         let changed_at = match &self.jira {
-            Some(previous) if previous.status == status && previous.assignee == assignee => {
+            Some(previous)
+                if previous.status == status
+                    && previous.status_category == status_category
+                    && previous.assignee == assignee =>
+            {
                 previous.changed_at_epoch_ms
             }
             _ => now_epoch_ms,
         };
         self.jira = Some(JiraFact {
             status,
+            status_category,
             assignee,
             observed_at_epoch_ms: now_epoch_ms,
             changed_at_epoch_ms: changed_at,
@@ -383,11 +417,11 @@ mod tests {
             task_id: "task".into(),
             ..TaskDeliveryFacts::default()
         };
-        facts.observe_jira("In Progress".into(), Some("Ada".into()), 10);
-        facts.observe_jira("In Progress".into(), Some("Ada".into()), 20);
+        facts.observe_jira("In Progress".into(), None, Some("Ada".into()), 10);
+        facts.observe_jira("In Progress".into(), None, Some("Ada".into()), 20);
         assert_eq!(facts.jira.as_ref().unwrap().changed_at_epoch_ms, 10);
         assert_eq!(facts.jira.as_ref().unwrap().observed_at_epoch_ms, 20);
-        facts.observe_jira("Done".into(), Some("Ada".into()), 30);
+        facts.observe_jira("Done".into(), None, Some("Ada".into()), 30);
         assert_eq!(facts.jira.as_ref().unwrap().changed_at_epoch_ms, 30);
 
         let repository = "github.com/acme/pay".to_owned();
@@ -427,13 +461,13 @@ mod tests {
             task_id: "task".into(),
             ..TaskDeliveryFacts::default()
         };
-        facts.observe_jira("In Review".into(), None, 1);
+        facts.observe_jira("In Review".into(), None, None, 1);
         facts.fail_read(FactSource::Jira, "unauthorized".into(), 2);
         facts.fail_read(FactSource::Jira, "offline".into(), 3);
         assert_eq!(facts.jira.as_ref().unwrap().status, "In Review");
         assert_eq!(facts.read_failures.len(), 1);
         assert_eq!(facts.read_failures[0].reason, "offline");
-        facts.observe_jira("Done".into(), None, 4);
+        facts.observe_jira("Done".into(), None, None, 4);
         assert!(facts.read_failures.is_empty());
     }
 

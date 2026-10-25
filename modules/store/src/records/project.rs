@@ -160,6 +160,9 @@ impl Store {
             .delivery_probes
             .retain(|probe| probe.project_id != project_id);
         self.state
+            .project_environments
+            .retain(|record| record.project_id != project_id);
+        self.state
             .project_task_automation_configurations
             .retain(|configuration| configuration.project_id != project_id);
         self.state

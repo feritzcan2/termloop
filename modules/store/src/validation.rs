@@ -61,6 +61,7 @@ pub(super) fn validate_current_state(state: &CurrentState) -> Result<(), StoreEr
         || task_ticket_proposals_are_invalid(state)
         || task_delivery_facts_are_invalid(state)
         || delivery_probes_are_invalid(state)
+        || project_environments_are_invalid(state)
         || archive_records_are_invalid(state)
         || relocation_records_are_invalid(state)
         || state
@@ -678,6 +679,23 @@ fn project_mode_settings_are_invalid(state: &CurrentState) -> bool {
                 || state.project_mode_settings[index + 1..]
                     .iter()
                     .any(|candidate| candidate.project_id == setting.project_id)
+        })
+}
+
+fn project_environments_are_invalid(state: &CurrentState) -> bool {
+    state
+        .project_environments
+        .iter()
+        .enumerate()
+        .any(|(index, record)| {
+            !record.is_valid()
+                || !state
+                    .projects
+                    .iter()
+                    .any(|project| project.id == record.project_id)
+                || state.project_environments[index + 1..]
+                    .iter()
+                    .any(|candidate| candidate.project_id == record.project_id)
         })
 }
 

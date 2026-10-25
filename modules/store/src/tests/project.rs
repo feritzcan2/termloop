@@ -506,7 +506,7 @@ fn delivery_facts_replace_in_place_and_follow_their_task() {
         task_id: "task-a".into(),
         ..TaskDeliveryFacts::default()
     };
-    facts.observe_jira("In Review".into(), Some("Ada".into()), 1);
+    facts.observe_jira("In Review".into(), None, Some("Ada".into()), 1);
     facts.observe_environment(
         "Staging",
         EnvironmentDeployState::Deployed,
@@ -912,5 +912,71 @@ fn delivery_probes_run_only_once_approved_and_go_with_their_project() {
         .delete_project_and_related_records(&authority, "pm")
         .unwrap();
     assert!(store.delivery_probes().is_empty());
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn project_environments_replace_in_place_and_go_with_their_project() {
+    use termloop_domain::ProjectEnvironment;
+    let path = std::env::temp_dir().join(format!(
+        "termloop-store-environments-{}-{}.json",
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    ));
+    let authority = issue_core_write_authority_for_composition();
+    let mut store = Store::open(&path).unwrap();
+    store.insert_project(&authority, project("pm")).unwrap();
+    let list = vec![
+        ProjectEnvironment {
+            name: "staging".into(),
+            production: false,
+        },
+        ProjectEnvironment {
+            name: "live".into(),
+            production: true,
+        },
+    ];
+    let revision = store.revision();
+    assert!(matches!(
+        store.set_project_environments(&authority, "pm", list.clone(), revision + 1),
+        Err(StoreError::RevisionConflict)
+    ));
+    assert!(matches!(
+        store.set_project_environments(&authority, "missing", list.clone(), revision),
+        Err(StoreError::NotFound)
+    ));
+    let duplicate = vec![list[0].clone(), list[0].clone()];
+    assert!(
+        store
+            .set_project_environments(&authority, "pm", duplicate, revision)
+            .is_err()
+    );
+    let revision = store.revision();
+    let saved = store
+        .set_project_environments(&authority, "pm", list.clone(), revision)
+        .unwrap();
+    // The same list again changes nothing.
+    assert_eq!(
+        store
+            .set_project_environments(&authority, "pm", list.clone(), saved)
+            .unwrap(),
+        saved
+    );
+    drop(store);
+    let mut store = Store::open(&path).unwrap();
+    assert_eq!(store.project_environments("pm"), list.as_slice());
+    let revision = store.revision();
+    store
+        .set_project_environments(&authority, "pm", vec![], revision)
+        .unwrap();
+    assert!(store.project_environments("pm").is_empty());
+    let revision = store.revision();
+    store
+        .set_project_environments(&authority, "pm", list, revision)
+        .unwrap();
+    store
+        .delete_project_and_related_records(&authority, "pm")
+        .unwrap();
+    assert!(store.project_environments("pm").is_empty());
     std::fs::remove_file(path).unwrap();
 }

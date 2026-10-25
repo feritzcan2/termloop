@@ -225,7 +225,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:6be27e37117a8b45a92e50c507b32958e78dfa382778c462511022c84e6ae7b4";
+    "sha256:e948b1b49afaaf31a36a9f8a64095350ae883428d5c37f33a84d798c63b114db";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -279,6 +279,7 @@ pub const METHODS: &[&str] = &[
     "projectManager.modeGet",
     "projectManager.modeSet",
     "projectManager.environmentSet",
+    "projectManager.environmentsSet",
     "projectManager.proposalAccept",
     "projectManager.proposalDismiss",
     "projectManager.checkRequest",
@@ -1480,10 +1481,73 @@ pub enum FactSource {
     ProjectManager,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum JiraStatusCategory {
+    #[serde(rename = "new")]
+    New,
+    #[serde(rename = "indeterminate")]
+    Indeterminate,
+    #[serde(rename = "done")]
+    Done,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum DeliveryStageKind {
+    #[serde(rename = "toDo")]
+    ToDo,
+    #[serde(rename = "inProgress")]
+    InProgress,
+    #[serde(rename = "inReview")]
+    InReview,
+    #[serde(rename = "merged")]
+    Merged,
+    #[serde(rename = "deployed")]
+    Deployed,
+    #[serde(rename = "live")]
+    Live,
+    #[serde(rename = "done")]
+    Done,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct DeliveryStageDto {
+    #[serde(rename = "taskId")]
+    pub task_id: String,
+    pub stage: DeliveryStageKind,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub environment: Option<String>,
+    #[serde(
+        rename = "sinceEpochMs",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub since_epoch_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectEnvironmentDto {
+    pub name: String,
+    pub production: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectManagerEnvironmentsSetParams {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    pub environments: Vec<ProjectEnvironmentDto>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct JiraFactDto {
     pub status: String,
+    #[serde(
+        rename = "statusCategory",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub status_category: Option<JiraStatusCategory>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub assignee: Option<String>,
     #[serde(rename = "observedAtEpochMs")]
@@ -1839,6 +1903,8 @@ pub struct ProjectManagerBoardResult {
     pub proposals: Vec<TaskTicketProposalDto>,
     pub probes: Vec<DeliveryProbeDto>,
     pub risks: Vec<DeliveryRiskDto>,
+    pub stages: Vec<DeliveryStageDto>,
+    pub environments: Vec<ProjectEnvironmentDto>,
     pub checks: Vec<DeliveryCheckDto>,
     #[serde(rename = "stateRevision")]
     pub state_revision: u64,
@@ -10031,6 +10097,7 @@ pub type ProjectManagerModeGetParams = EmptyParams;
 pub type ProjectManagerModeGetResult = ProjectManagerModeResult;
 pub type ProjectManagerModeSetResult = ProjectManagerModeResult;
 pub type ProjectManagerEnvironmentSetResult = ProjectManagerBoardResult;
+pub type ProjectManagerEnvironmentsSetResult = ProjectManagerBoardResult;
 pub type ProjectManagerProposalAcceptResult = ProjectManagerTicketSaveResult;
 pub type ProjectManagerProposalDismissParams = TaskIdParams;
 pub type ProjectManagerProposalDismissResult = ProjectManagerBoardResult;
@@ -10834,6 +10901,7 @@ fn validate_method(value: &Value) -> bool {
             "projectManager.modeGet",
             "projectManager.modeSet",
             "projectManager.environmentSet",
+            "projectManager.environmentsSet",
             "projectManager.proposalAccept",
             "projectManager.proposalDismiss",
             "projectManager.checkRequest",
@@ -12766,36 +12834,169 @@ fn validate_fact_source(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_jira_status_category(value: &Value) -> bool {
+    value
+        .as_str()
+        .is_some_and(|text| ["new", "indeterminate", "done"].contains(&text))
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_delivery_stage_kind(value: &Value) -> bool {
+    value.as_str().is_some_and(|text| {
+        [
+            "toDo",
+            "inProgress",
+            "inReview",
+            "merged",
+            "deployed",
+            "live",
+            "done",
+        ]
+        .contains(&text)
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_delivery_stage_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("taskId")
+            .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
+            && object
+                .get("stage")
+                .is_some_and(|field| validate_delivery_stage_kind(field))
+            && object.get("environment").is_some_and(|field| {
+                (field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() <= 120)
+                    || field.is_null())
+            })
+            && object.get("sinceEpochMs").is_some_and(|field| {
+                (field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                }) || field.is_null())
+            })
+            && object.keys().all(|key| {
+                ["taskId", "stage", "environment", "sinceEpochMs"].contains(&key.as_str())
+            })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_project_environment_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("name").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 120)
+        }) && object
+            .get("production")
+            .is_some_and(|field| field.is_boolean())
+            && object
+                .keys()
+                .all(|key| ["name", "production"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_project_manager_environments_set_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("projectId")
+            .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
+            && object.get("environments").is_some_and(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() <= 12
+                        && items
+                            .iter()
+                            .all(|item| validate_project_environment_dto(item))
+                })
+            })
+            && object
+                .keys()
+                .all(|key| ["projectId", "environments"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_jira_fact_dto(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object.get("status").is_some_and(|field| {
             field
                 .as_str()
                 .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 120)
-        }) && object.get("assignee").is_some_and(|field| {
-            (field
-                .as_str()
-                .is_some_and(|text| text.chars().count() <= 120)
-                || field.is_null())
-        }) && object.get("observedAtEpochMs").is_some_and(|field| {
-            field.as_number().is_some_and(|number| {
-                (number.as_i64().is_some() || number.as_u64().is_some())
-                    && (number.as_u64().is_some_and(|number| number >= 0_u64))
+        }) && object
+            .get("statusCategory")
+            .is_some_and(|field| (validate_jira_status_category(field) || field.is_null()))
+            && object.get("assignee").is_some_and(|field| {
+                (field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() <= 120)
+                    || field.is_null())
             })
-        }) && object.get("changedAtEpochMs").is_some_and(|field| {
-            field.as_number().is_some_and(|number| {
-                (number.as_i64().is_some() || number.as_u64().is_some())
-                    && (number.as_u64().is_some_and(|number| number >= 0_u64))
+            && object.get("observedAtEpochMs").is_some_and(|field| {
+                field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                })
             })
-        }) && object.keys().all(|key| {
-            [
-                "status",
-                "assignee",
-                "observedAtEpochMs",
-                "changedAtEpochMs",
-            ]
-            .contains(&key.as_str())
-        })
+            && object.get("changedAtEpochMs").is_some_and(|field| {
+                field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                })
+            })
+            && object.keys().all(|key| {
+                [
+                    "status",
+                    "statusCategory",
+                    "assignee",
+                    "observedAtEpochMs",
+                    "changedAtEpochMs",
+                ]
+                .contains(&key.as_str())
+            })
     })
 }
 
@@ -13774,6 +13975,19 @@ fn validate_project_manager_board_result(value: &Value) -> bool {
                     .as_array()
                     .is_some_and(|items| items.iter().all(|item| validate_delivery_risk_dto(item)))
             })
+            && object.get("stages").is_some_and(|field| {
+                field
+                    .as_array()
+                    .is_some_and(|items| items.iter().all(|item| validate_delivery_stage_dto(item)))
+            })
+            && object.get("environments").is_some_and(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() <= 12
+                        && items
+                            .iter()
+                            .all(|item| validate_project_environment_dto(item))
+                })
+            })
             && object.get("checks").is_some_and(|field| {
                 field
                     .as_array()
@@ -13796,6 +14010,8 @@ fn validate_project_manager_board_result(value: &Value) -> bool {
                     "proposals",
                     "probes",
                     "risks",
+                    "stages",
+                    "environments",
                     "checks",
                     "stateRevision",
                 ]
@@ -36698,6 +36914,10 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<ProjectManagerEnvironmentSetParams>(params.clone()).is_ok()
                 && validate_project_manager_environment_set_params(params)
         }
+        "projectManager.environmentsSet" => {
+            serde_json::from_value::<ProjectManagerEnvironmentsSetParams>(params.clone()).is_ok()
+                && validate_project_manager_environments_set_params(params)
+        }
         "projectManager.proposalAccept" => {
             serde_json::from_value::<ProjectManagerProposalAcceptParams>(params.clone()).is_ok()
                 && validate_project_manager_proposal_accept_params(params)
@@ -37692,6 +37912,10 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         }
         "projectManager.environmentSet" => {
             serde_json::from_value::<ProjectManagerEnvironmentSetResult>(result.clone()).is_ok()
+                && validate_project_manager_board_result(result)
+        }
+        "projectManager.environmentsSet" => {
+            serde_json::from_value::<ProjectManagerEnvironmentsSetResult>(result.clone()).is_ok()
                 && validate_project_manager_board_result(result)
         }
         "projectManager.proposalAccept" => {

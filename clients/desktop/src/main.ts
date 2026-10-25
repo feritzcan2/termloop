@@ -606,6 +606,11 @@ handleIpc(
     controlCall("projectManager.environmentSet", params),
 );
 handleIpc(
+  "termloop:project-manager-environments-set",
+  (_event, params: import("@termloop/contract/current").ProjectManagerEnvironmentsSetParams) =>
+    controlCall("projectManager.environmentsSet", params),
+);
+handleIpc(
   "termloop:project-manager-proposal-accept",
   (_event, params: import("@termloop/contract/current").ProjectManagerProposalAcceptParams) =>
     controlCall("projectManager.proposalAccept", params),

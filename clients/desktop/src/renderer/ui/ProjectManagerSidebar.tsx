@@ -1,7 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
 import type {
-  PlaybookMilestoneDto,
-  PlaybookRuntimeResult,
   ProjectManagerBoardResult,
   ProjectSprintDto,
   SprintState,
@@ -10,10 +8,10 @@ import type {
 
 import type { Task } from "../model.js";
 import { Icon } from "./Icon.js";
+import { projectManagerStage, stageLabel } from "./project-manager-stage.js";
 import { relativeTime } from "./project-manager-ticket.js";
 import {
   jiraIssueKey,
-  projectManagerStepTrack,
   projectManagerTaskCheck,
   visibleProjectManagerTasks,
 } from "./ProjectManagerWorkspace.js";
@@ -77,8 +75,6 @@ export type ProjectManagerSidebarActions = {
 export function ProjectManagerTaskList(props: {
   tasks: readonly Task[];
   board: ProjectManagerBoardResult | null;
-  milestones: readonly Pick<PlaybookMilestoneDto, "id" | "title">[];
-  playbookRuntime: PlaybookRuntimeResult | null;
   selectedTaskId: string | undefined;
   disabled: boolean;
   select(taskId: string): void;
@@ -140,10 +136,8 @@ export function ProjectManagerTaskList(props: {
       {group.tasks.map((task) => {
         const record = tracking.get(task.id);
         const check = active ? projectManagerTaskCheck(task.id, props.board) : undefined;
-        const track = projectManagerStepTrack(task.id, props.milestones, props.playbookRuntime);
-        const step = track.length > 0 && track.every((entry) => entry.state === "passed")
-          ? "Done"
-          : track.find((entry) => entry.state === "current")?.title;
+        const stage = projectManagerStage(task.id, props.board);
+        const step = stage ? stageLabel(stage) : undefined;
         const terminalOpen = Boolean(check && check.sessionId === props.terminalSessionId);
         const selected = task.id === props.selectedTaskId && !terminalOpen;
         const detail = [record?.developer ?? facts.get(task.id)?.jira?.assignee, facts.get(task.id)?.jira?.status]
@@ -163,7 +157,7 @@ export function ProjectManagerTaskList(props: {
             <span className="pm-task-title">{task.title}</span>
             {detail ? <span className="pm-task-agent">{detail}</span> : null}
             {risks.length > 0 ? <span className="pm-task-failing" title={risks.map((risk) => risk.detail).join("\n")} aria-label={`${risks.length} risk${risks.length === 1 ? "" : "s"}`}><Icon name="alert" /></span> : null}
-            {active && step ? <span className="pm-task-step">{step}</span> : null}
+            {step ? <span className={`pm-task-step ${stage!.stage}`}>{step}</span> : null}
           </button>
           {check ? <button
             type="button"

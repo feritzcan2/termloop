@@ -122,7 +122,6 @@ import {
 import { ProjectModeMenuItems, projectManagerLayoutActive, useProjectManagerSwitch, useProjectMode, type ProjectManagerSwitchActions, type ProjectModeActions } from "./ProjectModeMenuItems.js";
 import {
   ProjectManagerStage,
-  useProjectManagerPlaybook,
   type ProjectManagerProjectActions,
   type ProjectManagerWorkspaceActions,
 } from "./ProjectManagerWorkspace.js";
@@ -1153,12 +1152,10 @@ export function Shell(props: ShellProps) {
     const pm = props.projectManagerTaskActions;
     if (!pm || !projectManagerProjectId) return undefined;
     return bindProjectManagerActions(pm, projectManagerProjectId, {
-      loadPlaybook: props.assistantActions.getPlaybook,
       openTaskSources: () => openStagePage({ kind: "taskSettings" }),
-      openPlaybookBuilder,
       openExternal: props.openExternal,
     });
-  }, [props.projectManagerTaskActions, projectManagerProjectId, props.assistantActions.getPlaybook, openStagePage, openPlaybookBuilder, props.openExternal]);
+  }, [props.projectManagerTaskActions, projectManagerProjectId, openStagePage, props.openExternal]);
   const {
     board: projectManagerBoard,
     setTracking: setProjectManagerTracking,
@@ -1168,10 +1165,6 @@ export function Shell(props: ShellProps) {
     requestCheck: requestProjectManagerCheck,
   } = useProjectManagerCommands(projectManagerActive ? projectManagerActions : undefined, props.projectTasks);
   const [projectManagerAddTask, setProjectManagerAddTask] = useState<{ sprintId: string | null }>();
-  const projectManagerPlaybook = useProjectManagerPlaybook(
-    projectManagerActive && projectManagerActions ? projectManagerActions.loadPlaybook : noPlaybook,
-    projectManagerActive ? props.playbookRuntime?.stateRevision : undefined,
-  );
   /// Without a chosen Task the stage shows the sprint overview.
   const projectManagerTask = props.projectTasks.find((task) => task.id === projectManagerTaskId);
   useEffect(() => {
@@ -1653,8 +1646,6 @@ export function Shell(props: ShellProps) {
           {projectManagerActive && projectManagerActions ? <ProjectManagerTaskList
             tasks={props.projectTasks}
             board={projectManagerBoard.board}
-            milestones={projectManagerPlaybook.milestones}
-            playbookRuntime={props.playbookRuntime}
             selectedTaskId={projectManagerTask?.id}
             disabled={disabled}
             select={(taskId) => { dismissStagePages(); setProjectManagerTerminal(false); setProjectManagerTaskId(taskId); }}
@@ -2166,6 +2157,7 @@ export function Shell(props: ShellProps) {
               saveTicket={saveProjectManagerTicket}
               restoreTicket={restoreProjectManagerTicket}
               setEnvironment={(params) => projectManagerBoardCommand((actions) => actions.setEnvironment(params))}
+              setEnvironments={(environments) => projectManagerBoardCommand((actions) => actions.setEnvironments(environments))}
               acceptProposal={(taskId, expectedVersion) => projectManagerBoardCommand(async (actions) => (await actions.acceptProposal(taskId, expectedVersion)).board)}
               dismissProposal={(taskId) => projectManagerBoardCommand((actions) => actions.dismissProposal(taskId))}
               requestCheck={requestProjectManagerCheck}
@@ -2176,9 +2168,6 @@ export function Shell(props: ShellProps) {
               }}
               openCheck={(sessionId) => { selectSession(sessionId); setProjectManagerTerminal(true); }}
               addTask={() => setProjectManagerAddTask({ sprintId: projectManagerBoard.board?.sprints.find((sprint) => sprint.state === "active")?.id ?? null })}
-              milestones={projectManagerPlaybook.milestones}
-              playbookError={projectManagerPlaybook.error}
-              playbookRuntime={props.playbookRuntime}
               disabled={disabled}
               actions={projectManagerActions}
             /> : props.layout ? (
@@ -2740,8 +2729,6 @@ function PaneTree(props: PaneTreeProps) {
     </div>
   );
 }
-
-const noPlaybook = async (): Promise<import("@termloop/contract/current").PlaybookGetResult> => ({ playbook: null, stateRevision: 0 });
 
 export function AssistantTerminalHost({ sessionId, session, terminalPresentation, bindTerminalHost, resumeSession, repairProviderHistory }: {
   sessionId: string;

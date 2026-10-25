@@ -33,6 +33,7 @@ export const PROFILED_DESKTOP_OPERATIONS = {
   projectManagerModeGet: "termloop:project-manager-mode-get",
   projectManagerModeSet: "termloop:project-manager-mode-set",
   projectManagerEnvironmentSet: "termloop:project-manager-environment-set",
+  projectManagerEnvironmentsSet: "termloop:project-manager-environments-set",
   projectManagerProposalAccept: "termloop:project-manager-proposal-accept",
   projectManagerProposalDismiss: "termloop:project-manager-proposal-dismiss",
   projectManagerCheckRequest: "termloop:project-manager-check-request",

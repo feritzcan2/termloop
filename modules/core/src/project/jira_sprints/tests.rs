@@ -12,6 +12,7 @@ fn issue(key: &str) -> JiraIssueSnapshot {
         summary: format!("{key} summary"),
         description: Some("h2. Goal".into()),
         status_name: "In Progress".into(),
+        status_category: None,
         assignee_display: None,
         updated_at: "2026-10-24T09:00:00.000+0000".into(),
     }

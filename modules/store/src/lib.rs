@@ -21,16 +21,16 @@ use termloop_domain::{
     AgentConversationReadiness, AgentConversationReadinessRecord, CompanionMessage,
     ConfigurationVersion, ConfigurationVersionSelection, DeletedSessionRecord, DeliveryProbe,
     DurableAgentPlan, IssueLink, KeepAwakePreference, ManagedWorktreeProof,
-    McpToolDescriptionOverride, PlaybookConfiguration, PlaybookStepProgress, ProjectModeSetting,
-    ProjectRecord, ProjectSprint, ProjectTaskAutomationConfiguration, RunConfiguration,
-    RunSetupMark, SavedAgentLaunchSelection, SessionArchiveOperation, SessionRecord,
-    SessionRelocationOperation, SessionRelocationReceipt, StewardConfiguration,
-    StewardConversationRef, TaskArchiveOperation, TaskArchiveSuspension, TaskBranchBinding,
-    TaskBranchSet, TaskDeliveryFacts, TaskRecord, TaskSourceConfiguration, TaskTicketProposal,
-    TaskTicketVersion, TaskTrackingRecord, TaskWorktreeBinding, TrackerConfiguration,
-    WorkflowConfiguration, WorkflowExecution, WorktreeCleanupOperation, WorktreeCleanupReceipt,
-    WorktreeProvisioningOperation, WorktreeRepairOperation, WorktreeRepairReceipt,
-    WorktreeStaleResolutionOperation, WorktreeStaleResolutionReceipt,
+    McpToolDescriptionOverride, PlaybookConfiguration, PlaybookStepProgress, ProjectEnvironment,
+    ProjectEnvironments, ProjectModeSetting, ProjectRecord, ProjectSprint,
+    ProjectTaskAutomationConfiguration, RunConfiguration, RunSetupMark, SavedAgentLaunchSelection,
+    SessionArchiveOperation, SessionRecord, SessionRelocationOperation, SessionRelocationReceipt,
+    StewardConfiguration, StewardConversationRef, TaskArchiveOperation, TaskArchiveSuspension,
+    TaskBranchBinding, TaskBranchSet, TaskDeliveryFacts, TaskRecord, TaskSourceConfiguration,
+    TaskTicketProposal, TaskTicketVersion, TaskTrackingRecord, TaskWorktreeBinding,
+    TrackerConfiguration, WorkflowConfiguration, WorkflowExecution, WorktreeCleanupOperation,
+    WorktreeCleanupReceipt, WorktreeProvisioningOperation, WorktreeRepairOperation,
+    WorktreeRepairReceipt, WorktreeStaleResolutionOperation, WorktreeStaleResolutionReceipt,
 };
 
 // Schema 20 was independently assigned to Ask-To continuation and IssueLink
@@ -81,7 +81,8 @@ use termloop_domain::{
 // proposals from the Project Manager's own tracking record and ticket.
 // Version 71 lets a sprint mirror a Jira sprint.
 // Version 72 adds Project Manager delivery probes.
-const CURRENT_SCHEMA_VERSION: u32 = 72;
+// Version 73 adds each Project Manager Project's environment list.
+const CURRENT_SCHEMA_VERSION: u32 = 73;
 
 pub struct CoreWriteAuthority {
     _private: (),
@@ -139,6 +140,8 @@ struct CurrentState {
     task_delivery_facts: Vec<TaskDeliveryFacts>,
     #[serde(default)]
     delivery_probes: Vec<DeliveryProbe>,
+    #[serde(default)]
+    project_environments: Vec<ProjectEnvironments>,
     #[serde(default)]
     provisioning_operations: Vec<WorktreeProvisioningOperation>,
     #[serde(default)]
@@ -226,6 +229,7 @@ impl Default for CurrentState {
             task_ticket_proposals: vec![],
             task_delivery_facts: vec![],
             delivery_probes: vec![],
+            project_environments: vec![],
             provisioning_operations: vec![],
             managed_worktrees: vec![],
             cleanup_operations: vec![],
@@ -451,6 +455,14 @@ impl Store {
     }
     pub fn delivery_probes(&self) -> &[DeliveryProbe] {
         &self.state.delivery_probes
+    }
+    /// One Project's environment list, empty when it has none.
+    pub fn project_environments(&self, project_id: &str) -> &[ProjectEnvironment] {
+        self.state
+            .project_environments
+            .iter()
+            .find(|record| record.project_id == project_id)
+            .map_or(&[], |record| &record.environments)
     }
     pub fn task_tracking_records(&self) -> &[TaskTrackingRecord] {
         &self.state.task_tracking_records

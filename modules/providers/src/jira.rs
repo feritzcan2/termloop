@@ -64,6 +64,9 @@ pub struct JiraIssueSnapshot {
     pub summary: String,
     pub description: Option<String>,
     pub status_name: String,
+    /// Jira's own grouping of the status: `new`, `indeterminate`, or `done`.
+    /// Absent when Jira did not send a known category.
+    pub status_category: Option<String>,
     pub assignee_display: Option<String>,
     pub updated_at: String,
 }
@@ -1069,15 +1072,23 @@ struct SearchFields {
     summary: String,
     #[serde(default)]
     description: Option<serde_json::Value>,
-    status: NamedField,
+    status: StatusField,
     #[serde(default)]
     assignee: Option<AssigneeField>,
     updated: String,
 }
 
 #[derive(Deserialize)]
-struct NamedField {
+#[serde(rename_all = "camelCase")]
+struct StatusField {
     name: String,
+    #[serde(default)]
+    status_category: Option<StatusCategoryField>,
+}
+
+#[derive(Deserialize)]
+struct StatusCategoryField {
+    key: String,
 }
 
 #[derive(Deserialize)]
@@ -1167,6 +1178,12 @@ fn decode_search_issue(site: &str, issue: SearchIssue) -> Option<JiraIssueSnapsh
             .and_then(jira_description_plain_text)
             .filter(|value| !value.is_empty()),
         status_name: truncate_utf8(issue.fields.status.name.trim(), 256),
+        status_category: issue
+            .fields
+            .status
+            .status_category
+            .map(|category| category.key)
+            .filter(|key| matches!(key.as_str(), "new" | "indeterminate" | "done")),
         assignee_display: issue
             .fields
             .assignee
@@ -1421,6 +1438,7 @@ mod tests {
             summary: key.into(),
             description: None,
             status_name: "Open".into(),
+            status_category: None,
             assignee_display: None,
             updated_at: "2026-08-26T10:00:00.000+0000".into(),
         };
@@ -1465,12 +1483,16 @@ mod tests {
             br#"{
               "issues":[{"id":"10042","key":"TERM-42","fields":{
                 "summary":"Ship Task Sources","description":{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Inbound Jira work"}]}]},
-                "status":{"name":"In Progress"},"assignee":{"displayName":"Ada"},"updated":"2026-08-25T12:00:00.000+0000"
+                "status":{"name":"In Progress","statusCategory":{"key":"indeterminate"}},"assignee":{"displayName":"Ada"},"updated":"2026-08-25T12:00:00.000+0000"
               }}],"isLast":false,"nextPageToken":"next"
             }"#,
         )
         .unwrap();
         assert!(result.truncated);
+        assert_eq!(
+            result.issues[0].status_category.as_deref(),
+            Some("indeterminate")
+        );
         assert_eq!(result.issues[0].external_id, "10042");
         assert_eq!(
             result.issues[0].description.as_deref(),
