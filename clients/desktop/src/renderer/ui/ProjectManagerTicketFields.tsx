@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type {
   EnvironmentDeployState,
   EnvironmentFactDto,
@@ -99,7 +99,6 @@ export function ProjectManagerDeliveryFacts(props: {
     />
     {notes ? <details className="pm-findings-card" aria-label="Delivery check notes">
       <summary><h3>Delivery check notes</h3><span className="pm-dim">{relativeTime(notes.recordedAtEpochMs)}</span></summary>
-      {notes.blockers ? <p className="pm-fact-blockers"><Icon name="alert" />{notes.blockers}</p> : null}
       <div className="pm-findings">
         {sections.map((section, index) => <div key={index} className={`pm-finding ${section.tone}`}>
           <h3>{section.title}</h3>
@@ -184,6 +183,7 @@ export function ProjectManagerTicketText(props: {
   placeholder: string;
   disabled: boolean;
   tone?: "warning";
+  hint?: ReactNode;
   change(value: string): void;
   commit(): void;
 }) {
@@ -200,5 +200,6 @@ export function ProjectManagerTicketText(props: {
       onChange={(event) => props.change(event.target.value)}
       onBlur={props.commit}
     />
+    {props.hint}
   </section>;
 }

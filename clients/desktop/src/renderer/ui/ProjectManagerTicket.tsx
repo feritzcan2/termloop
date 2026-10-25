@@ -23,6 +23,7 @@ import {
   isRevisionConflict,
   relativeTime,
   sameTicket,
+  taskDeveloper,
   ticketDraft,
   ticketSaveParams,
   type TicketDraft,
@@ -179,6 +180,11 @@ export function ProjectManagerTicket(props: {
   const update = (patch: Partial<TicketDraft>) => setDraft((current) => ({ ...current, ...patch }));
 
   const jiraKey = jiraIssueKey(task.jira_url);
+  const developer = taskDeveloper(task, props.tracking, props.facts);
+  // One list of blockers: the Project Manager's entry wins, and the
+  // delivery check's shows only while they have written none.
+  const checkNotes = props.facts?.checkNotes;
+  const checkedBlockers = !ownFields.blockers.trim() && checkNotes?.blockers?.trim() ? checkNotes : null;
   const currentIndex = track.findIndex((step) => step.state === "current");
   const current = currentIndex >= 0 ? track[currentIndex] : undefined;
   const next = currentIndex >= 0 ? track[currentIndex + 1] : undefined;
@@ -321,9 +327,11 @@ export function ProjectManagerTicket(props: {
           <dl className="pm-props">
             <div className="pm-prop">
               <dt><Icon name="agent" />Developer</dt>
-              <dd><input aria-label="Developer" value={ownFields.developer} placeholder={props.facts?.jira?.assignee ?? "Empty"} maxLength={120} disabled={props.disabled}
-                onChange={(event) => own({ developer: event.target.value })}
-                onBlur={commitOwnFields} /></dd>
+              {developer.fromJira
+                ? <dd className="pm-fact">{developer.name ?? <span className="pm-dim">Unassigned</span>}<span className="pm-fact-source">From Jira</span></dd>
+                : <dd><input aria-label="Developer" value={ownFields.developer} placeholder="Empty" maxLength={120} disabled={props.disabled}
+                  onChange={(event) => own({ developer: event.target.value })}
+                  onBlur={commitOwnFields} /></dd>}
             </div>
             {track.length > 0 ? <div className="pm-prop">
               <dt><Icon name="branch" />Delivery</dt>
@@ -360,6 +368,10 @@ export function ProjectManagerTicket(props: {
           />
           <div className="pm-doc-pair">
             <ProjectManagerTicketText label="Blockers" tone="warning" value={ownFields.blockers} placeholder="What stops delivery right now" disabled={props.disabled}
+              hint={checkedBlockers ? <p className="pm-fact-blockers"><Icon name="alert" />
+                <span>{checkedBlockers.blockers}</span>
+                <span className="pm-fact-source">Reported by a delivery check {relativeTime(checkedBlockers.recordedAtEpochMs)}; what you write here replaces it</span>
+              </p> : null}
               change={(blockers) => own({ blockers })} commit={commitOwnFields} />
             <ProjectManagerTicketText label="Note" value={ownFields.note} placeholder="Your own note; no Agent changes it" disabled={props.disabled}
               change={(note) => own({ note })} commit={commitOwnFields} />

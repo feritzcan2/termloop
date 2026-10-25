@@ -9,7 +9,7 @@ import type {
 import type { Task } from "../model.js";
 import { Icon } from "./Icon.js";
 import { projectManagerStage, stageLabel } from "./project-manager-stage.js";
-import { relativeTime } from "./project-manager-ticket.js";
+import { relativeTime, taskDeveloper } from "./project-manager-ticket.js";
 import {
   jiraIssueKey,
   projectManagerTaskCheck,
@@ -140,7 +140,7 @@ export function ProjectManagerTaskList(props: {
         const step = stage ? stageLabel(stage) : undefined;
         const terminalOpen = Boolean(check && check.sessionId === props.terminalSessionId);
         const selected = task.id === props.selectedTaskId && !terminalOpen;
-        const detail = [record?.developer ?? facts.get(task.id)?.jira?.assignee, facts.get(task.id)?.jira?.status]
+        const detail = [taskDeveloper(task, record, facts.get(task.id)).name, facts.get(task.id)?.jira?.status]
           .filter(Boolean).join(" · ") || null;
         const risks = (props.board?.risks ?? []).filter((risk) => risk.taskId === task.id);
         return <li key={task.id}>

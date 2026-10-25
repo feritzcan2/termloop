@@ -245,7 +245,7 @@ describe("Project Manager workspace", () => {
     expect(sections.map((section) => section.getAttribute("aria-label"))).toEqual(["Sprint 14", "Sprint 15", "Backlog", "Sprint 13"]);
     const activeRow = sections[0]!.querySelector(".pm-task-rows button")!;
     expect(activeRow.querySelector(".pm-task-key")?.textContent).toBe("PAY-42");
-    expect(activeRow.querySelector(".pm-task-agent")?.textContent).toBe("Ada · In Review");
+    expect(activeRow.querySelector(".pm-task-agent")?.textContent).toBe("Ada Lovelace · In Review");
     const checkButton = sections[0]!.querySelector<HTMLButtonElement>(".pm-task-agent-open")!;
     expect(checkButton.textContent).toBe("Checking");
     await act(async () => checkButton.click());
@@ -414,7 +414,9 @@ describe("Project Manager workspace", () => {
     expect(host.querySelector(".pm-meta-step")?.textContent).toBe("Deployed · Staging");
     expect(host.querySelector(".pm-delivery")?.textContent).toContain("DeployedStagingNext: Live");
     expect(host.querySelector<HTMLSelectElement>('select[aria-label="Sprint"]')?.value).toBe("s14");
-    expect(host.querySelector<HTMLInputElement>('input[aria-label="Developer"]')?.value).toBe("Ada");
+    // A Jira Task's developer is Jira's assignee, not an entry of its own.
+    expect(host.querySelector('input[aria-label="Developer"]')).toBeNull();
+    expect(host.querySelector(".pm-props .pm-fact")?.textContent).toBe("Ada LovelaceFrom Jira");
     const facts = host.querySelector('[aria-label="Delivery facts"]')!;
     expect(facts.textContent).toContain("In Review");
     expect(facts.textContent).toContain("Ada Lovelace");
@@ -422,7 +424,7 @@ describe("Project Manager workspace", () => {
     expect(facts.querySelector(".pm-pr-fact")?.textContent).toContain("Merged");
     expect(facts.querySelector(".pm-env-row")?.textContent).toContain("Delivery check");
     expect(host.querySelector(".pm-finding.observed li")?.textContent).toBe("deploy-staging run 812 shipped v1.4");
-    expect(host.querySelector(".pm-fact-blockers")?.textContent).toBe("Waiting for QA");
+    expect(host.querySelector('[aria-label="Blockers"] .pm-fact-blockers')?.textContent).toContain("Waiting for QA");
     expect([...host.querySelectorAll(".pm-step")].map((step) => step.getAttribute("data-step-state"))).toEqual(["passed", "passed", "passed", "passed", "current", "ahead", "ahead"]);
     await act(async () => facts.querySelector<HTMLButtonElement>(".pm-pr-link")!.click());
     expect(props.actions.openExternal).toHaveBeenCalledWith("https://github.com/acme/pay/pull/9");
@@ -467,6 +469,20 @@ describe("Project Manager workspace", () => {
     expect(host.querySelector(".pm-save-bar")).toBeNull();
     await act(async () => note.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
     expect(props.setTracking).toHaveBeenCalledWith({ taskId: "task-1", sprintId: "s14", developer: "Ada", blockers: null, note: "Ask QA" });
+  });
+
+  it("keeps one list of blockers and asks for a developer only without Jira", async () => {
+    const props = stageProps({
+      task: task({ jira_url: null }),
+      board: board({ tracking: [{ taskId: "task-1", sprintId: "s14", developer: "Ada", blockers: "Needs a QA slot", note: null, updatedAtEpochMs: NOW }] }),
+    });
+    await act(async () => root.render(<ProjectManagerStage {...props} />));
+    expect(host.querySelector<HTMLInputElement>('input[aria-label="Developer"]')?.value).toBe("Ada");
+    // The Project Manager's blockers replace the check's.
+    expect(host.querySelector(".pm-fact-blockers")).toBeNull();
+    const blockers = host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Blockers"]')!;
+    await act(async () => type(blockers, ""));
+    expect(host.querySelector('[aria-label="Blockers"] .pm-fact-blockers')?.textContent).toContain("Waiting for QA");
   });
 
   it("reviews, accepts, and dismisses a check's proposed ticket update", async () => {

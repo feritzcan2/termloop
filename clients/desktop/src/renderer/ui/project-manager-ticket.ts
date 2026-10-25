@@ -2,7 +2,9 @@ import type {
   EnvironmentDeployState,
   FactSource,
   ProjectManagerTicketSaveParams,
+  TaskDeliveryFactsDto,
   TaskTicketContentDto,
+  TaskTrackingDto,
 } from "@termloop/contract/current";
 
 import type { Task } from "../model.js";
@@ -14,6 +16,17 @@ export type TicketDraft = {
   title: string;
   brief: string;
 };
+
+/// Who works on a Task: Jira's assignee once Jira has been read for a Jira
+/// Task, otherwise the developer the Project Manager entered.
+export function taskDeveloper(
+  task: Pick<Task, "jira_url">,
+  tracking: TaskTrackingDto | undefined,
+  facts: TaskDeliveryFactsDto | undefined,
+): { name: string | null; fromJira: boolean } {
+  if (task.jira_url && facts?.jira) return { name: facts.jira.assignee, fromJira: true };
+  return { name: tracking?.developer ?? null, fromJira: false };
+}
 
 export const ENVIRONMENT_STATES: readonly { value: EnvironmentDeployState; label: string }[] = [
   { value: "unknown", label: "Unknown" },
