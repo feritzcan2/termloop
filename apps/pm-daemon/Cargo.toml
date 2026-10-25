@@ -30,4 +30,5 @@ termloop-terminal = { path = "../../modules/terminal" }
 termloop-terminal-wire = { path = "../../modules/terminal-wire" }
 
 [dev-dependencies]
+termloop-gitio = { path = "../../modules/gitio", features = ["test-support"] }
 termloop-platform = { path = "../../modules/platform", features = ["test-support"] }

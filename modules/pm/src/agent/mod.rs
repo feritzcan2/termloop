@@ -54,10 +54,16 @@ pub const PM_SKILL_TOOL_VERIFY: &str = "pm_skill_tool_verify";
 pub const PM_SKILL_DRAFT_SUBMIT: &str = "pm_skill_draft_submit";
 pub const PM_SKILL_DRY_RUN_REQUEST: &str = "pm_skill_dry_run_request";
 pub const PM_TICKET_NOTE_ADD: &str = "pm_ticket_note_add";
+pub const PM_OWNER_EVIDENCE_READ: &str = "pm_owner_evidence_read";
 
 /// The read tools a skill manifest may approve. A run sees exactly the
 /// ones its manifest approved, plus [`SKILL_PROPOSAL_TOOLS`].
-pub const SKILL_READ_TOOLS: &[&str] = &[PM_BOARD_READ, PM_TICKET_READ, PM_RISKS_READ];
+pub const SKILL_READ_TOOLS: &[&str] = &[
+    PM_BOARD_READ,
+    PM_TICKET_READ,
+    PM_RISKS_READ,
+    PM_OWNER_EVIDENCE_READ,
+];
 
 /// What every skill run may call: proposals and its one closing report.
 pub const SKILL_PROPOSAL_TOOLS: &[&str] = &[
@@ -68,9 +74,11 @@ pub const SKILL_PROPOSAL_TOOLS: &[&str] = &[
 ];
 
 /// Tools the daemon answers itself because they need I/O beyond the PM
-/// store: discovery, verification, and launching a dry run.
+/// store: discovery, verification, launching a dry run, and owner evidence
+/// from git and GitHub.
 pub const PM_HOST_TOOLS: &[&str] = &[
     PM_SKILL_DISCOVERY_READ,
+    PM_OWNER_EVIDENCE_READ,
     PM_SKILL_TOOL_VERIFY,
     PM_SKILL_DRY_RUN_REQUEST,
 ];
@@ -90,6 +98,7 @@ pub const PM_TOOLS: &[&str] = &[
     PM_SKILL_DRAFT_SUBMIT,
     PM_SKILL_DRY_RUN_REQUEST,
     PM_TICKET_NOTE_ADD,
+    PM_OWNER_EVIDENCE_READ,
 ];
 
 impl PmAgentMode {
@@ -117,6 +126,7 @@ impl PmAgentMode {
                 PM_BOARD_READ,
                 PM_TICKET_READ,
                 PM_RISKS_READ,
+                PM_OWNER_EVIDENCE_READ,
                 PM_TICKET_PROPOSE_DESCRIPTION,
                 PM_TICKET_PROPOSE_ACCEPTANCE_CRITERIA,
                 PM_TICKET_SUGGEST,
@@ -126,6 +136,7 @@ impl PmAgentMode {
                 PM_BOARD_READ,
                 PM_TICKET_READ,
                 PM_RISKS_READ,
+                PM_OWNER_EVIDENCE_READ,
                 PM_SKILL_DISCOVERY_READ,
                 PM_SKILL_TOOL_VERIFY,
                 PM_SKILL_DRAFT_SUBMIT,

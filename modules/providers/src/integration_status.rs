@@ -15,13 +15,14 @@ use termloop_platform::{
     CommandRequest, CommandTermination, LaunchEnvironment, MonotonicDeadline, SecureSecret,
 };
 
-use super::{GITHUB_HOST, ProviderFailure, azure_cli_request, github_cli_request};
+use super::{
+    GITHUB_HOST, ProviderFailure, azure_cli_request, github_cli_request, valid_github_login,
+};
 
 /// Environment variable the `azure-devops` CLI extension reads a PAT from.
 pub const AZURE_DEVOPS_PAT_ENVIRONMENT: &str = "AZURE_DEVOPS_EXT_PAT";
 const AZURE_DEVOPS_PAT_MAX_BYTES: usize = 1_024;
 const ACCOUNT_MAX_BYTES: usize = 120;
-const GITHUB_LOGIN_MAX_CHARS: usize = 39;
 const PROBE_OUTPUT_LIMIT: usize = 64 * 1024;
 const PROBE_MAX_TIMEOUT: Duration = Duration::from_secs(20);
 
@@ -412,13 +413,7 @@ fn unauthorized(diagnostics: &str) -> bool {
 /// never become an account label.
 fn github_login(stdout: &[u8]) -> Option<String> {
     let value = std::str::from_utf8(stdout).ok()?.trim();
-    let valid = !value.is_empty()
-        && value.len() <= GITHUB_LOGIN_MAX_CHARS
-        && !value.starts_with('-')
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-');
-    valid.then(|| value.to_owned())
+    valid_github_login(value).then(|| value.to_owned())
 }
 
 /// First non-empty line, free of control characters, at most 120 bytes.

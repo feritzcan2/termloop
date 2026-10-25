@@ -9,6 +9,7 @@ mod jira_browse;
 mod jira_write;
 mod openai_voice;
 mod pull_request_changes;
+mod pull_request_people;
 mod repository_pull_requests;
 
 pub use claude_usage::{
@@ -22,6 +23,8 @@ pub use integration_status::{
     IntegrationProbeCredential, IntegrationProbeState, InvalidAzureDevOpsToken,
     probe_azure_devops_cli, probe_github_cli, valid_azure_devops_personal_access_token,
 };
+
+pub use pull_request_people::{MAX_PULL_REQUEST_PEOPLE, PullRequestPeople};
 
 pub use issue_key_pull_requests::{
     IssueKeyPullRequests, MAX_ISSUE_KEY_PULL_REQUESTS, names_issue_key, valid_issue_key,
@@ -70,6 +73,7 @@ use termloop_platform::{CommandRequest, CommandTermination};
 use unicode_normalization::UnicodeNormalization;
 
 const GITHUB_HOST: &str = "github.com";
+const GITHUB_LOGIN_MAX_CHARS: usize = 39;
 const MAX_BATCH_QUERIES: usize = 20;
 const MAX_MATCHES: usize = 16;
 const MAX_STDIN: usize = 128 * 1024;
@@ -92,6 +96,21 @@ pub enum GitHostProvider {
 pub struct GitHubRepository {
     pub owner: String,
     pub name: String,
+}
+
+impl GitHubRepository {
+    /// The browse URL of one commit of this repository.
+    pub fn commit_url(&self, oid: &str) -> String {
+        format!(
+            "https://{GITHUB_HOST}/{}/{}/commit/{oid}",
+            self.owner, self.name
+        )
+    }
+
+    /// The same repository, compared the way GitHub does: ignoring case.
+    pub fn same_as(&self, other: &Self) -> bool {
+        self.owner.eq_ignore_ascii_case(&other.owner) && self.name.eq_ignore_ascii_case(&other.name)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -525,6 +544,17 @@ fn valid_slug(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+}
+
+/// The exact GitHub login grammar, so arbitrary output never becomes an
+/// account name.
+fn valid_github_login(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= GITHUB_LOGIN_MAX_CHARS
+        && !value.starts_with('-')
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
 }
 
 /// Builds the base spawn request for an externally installed provider CLI.

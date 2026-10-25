@@ -114,6 +114,12 @@ impl PmStore {
         ticket_by_id(self.connection(), ticket_id)
     }
 
+    /// Every ticket of a project, without the board's delivery derivations.
+    pub fn project_tickets(&self, project_id: &str) -> Result<Vec<Ticket>, PmError> {
+        check(project_id, "projectId")?;
+        project_tickets(self.connection(), project_id)
+    }
+
     pub fn probe(&self, probe_id: &str) -> Result<Option<DeliveryProbe>, PmError> {
         check(probe_id, "probeId")?;
         probe_by_id(self.connection(), probe_id)

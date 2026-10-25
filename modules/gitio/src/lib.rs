@@ -7,6 +7,7 @@ mod commit_changes;
 mod error;
 mod health;
 mod mutation;
+mod path_history;
 mod pre_image;
 mod remote;
 mod repair;
@@ -40,6 +41,7 @@ pub use health::{
     WorktreeHealthObservation, WorktreeObservationBudget, WorktreeStatusFacts,
 };
 pub use mutation::{FETCH_GIT_DEADLINE, GitReflogMessage, RefRecoveryFacts, ReflogEntry};
+pub use path_history::{HistoryCommit, HistoryObservation, PATH_HISTORY_MAX_ENTRIES};
 pub use pre_image::{PreImageContent, PreImageObservation, PreImageRevision};
 pub use remote::{BranchRemoteFacts, RemoteBranchFact, RemoteFact};
 pub use repair::WorktreeRepairFacts;

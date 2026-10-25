@@ -6,10 +6,10 @@ use serde_json::{Value, json};
 
 use super::PmToolContext;
 use crate::agent::{
-    PM_BOARD_READ, PM_CHECK_REPORT, PM_RISKS_READ, PM_SKILL_DISCOVERY_READ, PM_SKILL_DRAFT_SUBMIT,
-    PM_SKILL_DRY_RUN_REQUEST, PM_SKILL_RUN_FINISH, PM_SKILL_TOOL_VERIFY, PM_TICKET_NOTE_ADD,
-    PM_TICKET_PROPOSE_ACCEPTANCE_CRITERIA, PM_TICKET_PROPOSE_DESCRIPTION, PM_TICKET_READ,
-    PM_TICKET_SUGGEST, SKILL_READ_TOOLS,
+    PM_BOARD_READ, PM_CHECK_REPORT, PM_OWNER_EVIDENCE_READ, PM_RISKS_READ, PM_SKILL_DISCOVERY_READ,
+    PM_SKILL_DRAFT_SUBMIT, PM_SKILL_DRY_RUN_REQUEST, PM_SKILL_RUN_FINISH, PM_SKILL_TOOL_VERIFY,
+    PM_TICKET_NOTE_ADD, PM_TICKET_PROPOSE_ACCEPTANCE_CRITERIA, PM_TICKET_PROPOSE_DESCRIPTION,
+    PM_TICKET_READ, PM_TICKET_SUGGEST, SKILL_READ_TOOLS,
 };
 use crate::commands::{TS_FRACTION_MAX_DIGITS, TS_SECONDS_MAX_DIGITS};
 use crate::proposal::{ASSIGNEE_SHORTLIST_MAX, JIRA_COMMENT_MAX_CHARS};
@@ -317,6 +317,14 @@ fn definition(name: &'static str) -> PmToolDefinition {
                 json!({ "refresh": { "type": "boolean", "description": "Read again instead of the cache." } }),
                 &[],
             ),
+        ),
+        PM_OWNER_EVIDENCE_READ => (
+            "Rank who most likely owns one ticket, best first, up to 3 people: from commits \
+             to the files the ticket names and commits naming similar tickets (the project's \
+             code folder), authors and reviewers of related pull requests (GitHub), and \
+             assignees of similar past tickets. Each person comes with a one-line reason and \
+             evidence; `limitation` says plainly what could not be read. Read-only.",
+            object(json!({ "ticketId": ticket_id() }), &["ticketId"]),
         ),
         PM_SKILL_TOOL_VERIFY => (
             "Check one discovered tool with a harmless read-only call before you claim it \

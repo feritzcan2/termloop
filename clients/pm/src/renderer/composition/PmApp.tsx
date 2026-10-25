@@ -180,6 +180,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
           onPull={() => void controller.pullJira()}
           onStartAssistant={() => launchAgent(view === "ticket" ? ticketId : undefined)}
           onSelectAgent={(id) => controller.selectAgent(id)}
+          onStopAgent={(id) => void controller.stopAgent(id)}
           ticketActions={ticketActions}
           onSelectSprint={(id) => controller.selectSprint(id)}
           onSelectTicket={(id) => void controller.selectTicket(id)}

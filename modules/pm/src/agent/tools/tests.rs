@@ -6,8 +6,8 @@ use super::*;
 use crate::ChannelWatermark;
 use crate::ProposalChange;
 use crate::agent::{
-    PM_SKILL_DISCOVERY_READ, PM_SKILL_DRY_RUN_REQUEST, PM_SKILL_TOOL_VERIFY, PM_TICKET_NOTE_ADD,
-    PM_TOOLS,
+    PM_OWNER_EVIDENCE_READ, PM_SKILL_DISCOVERY_READ, PM_SKILL_DRY_RUN_REQUEST,
+    PM_SKILL_TOOL_VERIFY, PM_TICKET_NOTE_ADD, PM_TOOLS,
 };
 use crate::skill::{Evidence, NeededTool, SkillChannel, SkillPrefilter, SkillSource, SkillTrigger};
 use crate::{
@@ -219,6 +219,7 @@ fn samples() -> Vec<(&'static str, Value)> {
             }),
         ),
         (PM_SKILL_DRY_RUN_REQUEST, json!({ "draftId": "d1" })),
+        (PM_OWNER_EVIDENCE_READ, json!({ "ticketId": "t1" })),
         (
             PM_TICKET_NOTE_ADD,
             sample(NoteAddParams {

@@ -24,6 +24,7 @@ mod discovery;
 mod jira;
 mod jira_browse;
 mod mcp;
+mod owners;
 mod scheduler;
 mod skill_discovery;
 mod skills;

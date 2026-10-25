@@ -5,6 +5,7 @@
 //! every tool it uses for the first time.
 
 mod manifest;
+mod owners;
 
 pub(crate) use manifest::{CHANNEL_ID_MAX_BYTES, CHANNEL_NAME_MAX_CHARS};
 pub use manifest::{
@@ -12,6 +13,12 @@ pub use manifest::{
     SKILL_INSTRUCTIONS_MAX_CHARS, SKILL_NAME_MAX_CHARS, SKILL_SCHEDULE_MAX_MINUTES,
     SKILL_SCHEDULE_MIN_MINUTES, SKILL_TOOLS_MAX, SkillChannel, SkillEvent, SkillManifest,
     SkillPrefilter, SkillSource, SkillTrigger, valid_agent_tool,
+};
+#[cfg(test)]
+pub(crate) use owners::{OWNER_CANDIDATES_MAX, OWNER_PATHS_MAX, named_paths};
+pub use owners::{
+    OwnerCandidate, OwnerSignal, OwnerSignalKind, OwnerSourceRead, owner_limitation, rank_owners,
+    similar_tickets, ticket_paths,
 };
 
 use crate::ProposalChange;
@@ -118,6 +125,11 @@ pub fn valid_evidence(evidence: &[Evidence]) -> bool {
 
 /// A quote cut to the stored bound on a character boundary, on one line.
 pub fn bounded_quote(text: &str) -> String {
+    bounded_line(text, EVIDENCE_QUOTE_MAX_CHARS)
+}
+
+/// Text on one line, cut to `max` characters on a character boundary.
+pub(crate) fn bounded_line(text: &str, max: usize) -> String {
     let line: String = text
         .chars()
         .map(|character| {
@@ -129,7 +141,7 @@ pub fn bounded_quote(text: &str) -> String {
         })
         .collect();
     let trimmed = line.trim();
-    match trimmed.char_indices().nth(EVIDENCE_QUOTE_MAX_CHARS - 1) {
+    match trimmed.char_indices().nth(max - 1) {
         Some((end, _)) => format!("{}…", trimmed[..end].trim_end()),
         None => trimmed.to_owned(),
     }

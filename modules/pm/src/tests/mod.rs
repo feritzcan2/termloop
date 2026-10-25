@@ -4,6 +4,7 @@ mod jira;
 mod note;
 mod project;
 mod skill;
+mod skill_owners;
 mod skill_slack;
 mod sprint;
 mod store;

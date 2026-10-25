@@ -18,6 +18,11 @@ impl ObjectId {
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
+
+    /// The lowercase hex form; an object id is validated hex.
+    pub fn as_hex(&self) -> &str {
+        std::str::from_utf8(&self.0).unwrap_or_default()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

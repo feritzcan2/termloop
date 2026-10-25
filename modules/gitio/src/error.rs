@@ -36,6 +36,7 @@ pub enum GitOperation {
     Pull,
     Fetch,
     CommitAncestry,
+    History,
 }
 
 impl std::fmt::Display for GitOperation {
@@ -75,6 +76,7 @@ impl std::fmt::Display for GitOperation {
             Self::Pull => "pull",
             Self::Fetch => "fetch",
             Self::CommitAncestry => "commitAncestry",
+            Self::History => "history",
         };
         formatter.write_str(value)
     }

@@ -486,6 +486,38 @@ impl GitRunner {
 }
 
 fn parse_commits(bytes: &[u8]) -> Result<(Vec<BranchCommit>, bool), GitError> {
+    let mut commits = parse_log_records(bytes, GitOperation::CommitChanges)?
+        .into_iter()
+        .map(|record| BranchCommit {
+            parent_count: if record.second.is_empty() {
+                0
+            } else {
+                record.second.split(|byte| *byte == b' ').count()
+            },
+            oid: record.oid,
+            subject: record.subject.to_vec(),
+            authored_at_epoch_ms: Some(record.authored_at_epoch_ms),
+        })
+        .collect::<Vec<_>>();
+    let truncated = commits.len() > BRANCH_COMMIT_LIST_MAX_ENTRIES;
+    commits.truncate(BRANCH_COMMIT_LIST_MAX_ENTRIES);
+    Ok((commits, truncated))
+}
+
+/// One `log -z --format=%H%x00<field>%x00%at%x00%s` record.
+pub(crate) struct LogRecord<'a> {
+    pub(crate) oid: ObjectId,
+    /// The format's second field, such as `%P` or `%an`.
+    pub(crate) second: &'a [u8],
+    pub(crate) authored_at_epoch_ms: u64,
+    pub(crate) subject: &'a [u8],
+}
+
+pub(crate) fn parse_log_records(
+    bytes: &[u8],
+    operation: GitOperation,
+) -> Result<Vec<LogRecord<'_>>, GitError> {
+    let parse_error = || GitError::ParseFailed { operation };
     let mut fields = bytes.split(|byte| *byte == 0).collect::<Vec<_>>();
     if fields.last().is_some_and(|field| field.is_empty()) {
         fields.pop();
@@ -493,31 +525,21 @@ fn parse_commits(bytes: &[u8]) -> Result<(Vec<BranchCommit>, bool), GitError> {
     if fields.len() % 4 != 0 {
         return Err(parse_error());
     }
-    let mut commits = Vec::with_capacity(fields.len() / 4);
-    for fields in fields.chunks_exact(4) {
-        let oid = ObjectId::from_hex(fields[0].to_vec()).map_err(|_| parse_error())?;
-        let parent_count = if fields[1].is_empty() {
-            0
-        } else {
-            fields[1].split(|byte| *byte == b' ').count()
-        };
-        let authored_at_epoch_ms = std::str::from_utf8(fields[2])
-            .ok()
-            .and_then(|value| value.parse::<u64>().ok())
-            .and_then(|seconds| seconds.checked_mul(1_000));
-        if authored_at_epoch_ms.is_none() {
-            return Err(parse_error());
-        }
-        commits.push(BranchCommit {
-            oid,
-            subject: fields[3].to_vec(),
-            authored_at_epoch_ms,
-            parent_count,
-        });
-    }
-    let truncated = commits.len() > BRANCH_COMMIT_LIST_MAX_ENTRIES;
-    commits.truncate(BRANCH_COMMIT_LIST_MAX_ENTRIES);
-    Ok((commits, truncated))
+    fields
+        .chunks_exact(4)
+        .map(|fields| {
+            Ok(LogRecord {
+                oid: ObjectId::from_hex(fields[0].to_vec()).map_err(|_| parse_error())?,
+                second: fields[1],
+                authored_at_epoch_ms: std::str::from_utf8(fields[2])
+                    .ok()
+                    .and_then(|value| value.parse::<u64>().ok())
+                    .and_then(|seconds| seconds.checked_mul(1_000))
+                    .ok_or_else(parse_error)?,
+                subject: fields[3],
+            })
+        })
+        .collect()
 }
 
 fn parse_commit_changes(bytes: &[u8]) -> Result<(Vec<CommitChangeEntry>, bool), GitError> {

@@ -10,8 +10,9 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 use termloop_pm::agent::{
-    PM_SKILL_DISCOVERY_READ, PM_SKILL_DRY_RUN_REQUEST, PM_SKILL_TOOL_VERIFY, PmAgentMode,
-    PmAgentProfile, PmToolContext, PmToolError, SkillRunBrief, SkillRunContext, SlackChannelBrief,
+    PM_OWNER_EVIDENCE_READ, PM_SKILL_DISCOVERY_READ, PM_SKILL_DRY_RUN_REQUEST,
+    PM_SKILL_TOOL_VERIFY, PmAgentMode, PmAgentProfile, PmToolContext, PmToolError, SkillRunBrief,
+    SkillRunContext, SlackChannelBrief,
 };
 use termloop_pm::skill::{
     BuiltinSkill, SKILL_DRY_RUN_WINDOW_MS, SkillManifest, SkillPrefilter, SkillRun,
@@ -22,7 +23,7 @@ use termloop_pm_contract::pm::EventName;
 
 use crate::app::control::errors::{ControlError, not_found};
 use crate::app::control::to_value;
-use crate::app::{AppState, agents, scheduler, skill_discovery};
+use crate::app::{AppState, agents, owners, scheduler, skill_discovery};
 
 /// A skill's first run reads this far back.
 const FIRST_RUN_WINDOW_MS: u64 = 24 * 60 * 60 * 1000;
@@ -382,6 +383,12 @@ struct DryRunParams {
     draft_id: String,
 }
 
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct OwnerEvidenceParams {
+    ticket_id: String,
+}
+
 fn parse<T: serde::de::DeserializeOwned>(arguments: Value) -> Result<T, PmToolError> {
     let arguments = if arguments.is_null() {
         json!({})
@@ -426,6 +433,10 @@ pub(crate) async fn host_tool(
                 PmToolError::InvalidArguments(error.0.message.chars().take(200).collect())
             })?;
             Ok(json!({ "runId": run.id, "draftId": params.draft_id, "state": "running" }))
+        }
+        PM_OWNER_EVIDENCE_READ => {
+            let params: OwnerEvidenceParams = parse(arguments)?;
+            owners::owner_evidence(state, &context.project_id, &params.ticket_id).await
         }
         _ => Err(PmToolError::UnknownTool(tool.to_owned())),
     }

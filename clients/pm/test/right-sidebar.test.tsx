@@ -97,6 +97,7 @@ describe("left sprint rail", () => {
 describe("agents under tickets", () => {
   it("nests each agent under its focus ticket and reports a pick", () => {
     const onSelectAgent = vi.fn();
+    const onStopAgent = vi.fn();
     const agent = (sessionId: string, focusTicketId: string | null) =>
       ({ sessionId, label: "Assistant", state: "running" as const, assistant: true, provider: "claude" as const, detail: "", focusTicketId });
     const view = render(
@@ -109,6 +110,7 @@ describe("agents under tickets", () => {
         agents={[agent("s1", "a"), agent("s2", "a"), agent("s3", null)]}
         shownAgentSessionId="s2"
         onSelectAgent={onSelectAgent}
+        onStopAgent={onStopAgent}
         onSelectSprint={noop}
         onSelectTicket={noop}
         onCreateSprint={noop}
@@ -123,6 +125,11 @@ describe("agents under tickets", () => {
     expect(rows.map((row) => row.getAttribute("aria-current"))).toEqual([null, "true"]);
     act(() => rows[0]!.click());
     expect(onSelectAgent).toHaveBeenLastCalledWith("s1");
+    const stops = [...nested[0]!.querySelectorAll<HTMLButtonElement>(".pm-agent-stop")];
+    expect(stops).toHaveLength(2);
+    act(() => stops[1]!.click());
+    expect(onStopAgent).toHaveBeenLastCalledWith("s2");
+    expect(onSelectAgent).toHaveBeenCalledTimes(1);
   });
 });
 

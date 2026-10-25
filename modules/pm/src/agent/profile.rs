@@ -152,7 +152,15 @@ and the project manager ticks which to keep. Put the exact read-only Slack \
 tools a run needs in agentTools (channel history, thread replies, \
 permalinks), never one that sends, posts, edits, or reacts. It runs every 30 \
 minutes with the slackMentions prefilter. Without a Slack tool, say so and \
-give the steps to add one.";
+give the steps to add one.
+Bug owner finder: it runs on the boardChanged or jiraPulled event (or by \
+hand) with the bugTickets prefilter, and its tools are pm_ticket_read and \
+pm_owner_evidence_read. For each kept ticket without an assignee, a run calls \
+pm_owner_evidence_read and suggests an assignee with pm_ticket_suggest: the \
+first candidate as the assignee and up to 3 candidates as the shortlist, each \
+with the tool's reason and evidence. When the tool returns a limitation, say \
+it plainly in the suggestion's summary. Without a code folder or GitHub it \
+still works from ticket history; say so when you offer it.";
 
 /// The creator's first message: discover first, then plain offers.
 const SKILL_CREATOR_KICKOFF: &str = "\

@@ -5,11 +5,12 @@ import type { PmBoardTicket, PmDataTier, PmEnvironment, PmSprint } from "@termlo
 import { EnvironmentBadges } from "./delivery-facts.js";
 import { Icon } from "./icons.js";
 import {
-  RISK_LABEL, STAGE_LABEL, STATUS_DOT, STATUS_LABEL, agentTone, daysLeft, jiraKey, leftSprint, riskTone, sprintDay, sprintTickets, statusSections, tierAtLeast,
+  RISK_LABEL, STAGE_LABEL, STATUS_DOT, STATUS_LABEL, daysLeft, jiraKey, leftSprint, riskTone, sprintDay, sprintTickets, statusSections, tierAtLeast,
 } from "./format.js";
 import { ticketScope, type ScopeGrowth, type ScopeVersion } from "./scope.js";
 import { TicketContextMenu, type ContextMenuAt, type ContextMenuItem } from "./TicketContextMenu.js";
 import type { AgentTab } from "./types.js";
+import { AgentRow } from "./AgentRow.js";
 
 /** Which inline form the sprint rail shows. */
 export type SprintComposer = "sprint" | "ticket" | undefined;
@@ -45,6 +46,7 @@ export type SprintSidebarProps = {
   /** The agent the stage shows, highlighted under its ticket. */
   shownAgentSessionId?: string | undefined;
   onSelectAgent?(sessionId: string): void;
+  onStopAgent?(sessionId: string): void;
   /** A ticket's right-click actions; its move actions follow them. */
   ticketActions?(ticketId: string): ContextMenuItem[];
 };
@@ -97,6 +99,7 @@ export function SprintSidebar(props: SprintSidebarProps) {
               agents={props.agents ?? NO_AGENTS}
               shownAgentSessionId={props.shownAgentSessionId}
               onSelectAgent={props.onSelectAgent}
+              onStopAgent={props.onStopAgent}
               ticketActions={props.ticketActions}
               onSelectSprint={() => props.onSelectSprint(shown.id)}
               onSelectTicket={props.onSelectTicket}
@@ -175,6 +178,7 @@ function FocusedSprint(props: {
   agents: readonly AgentTab[];
   shownAgentSessionId: string | undefined;
   onSelectAgent: ((sessionId: string) => void) | undefined;
+  onStopAgent: ((sessionId: string) => void) | undefined;
   ticketActions: SprintSidebarProps["ticketActions"];
   onSelectSprint(): void;
   onSelectTicket(ticketId: string): void;
@@ -231,6 +235,7 @@ function FocusedSprint(props: {
                   agents={props.agents.filter((agent) => agent.focusTicketId === entry.ticket.id)}
                   shownAgentSessionId={props.shownAgentSessionId}
                   onSelectAgent={props.onSelectAgent}
+                  onStopAgent={props.onStopAgent}
                   actions={props.ticketActions}
                   onSelect={() => props.onSelectTicket(entry.ticket.id)}
                   moves={{
@@ -303,6 +308,7 @@ function TicketRow(props: {
   agents: readonly AgentTab[];
   shownAgentSessionId: string | undefined;
   onSelectAgent: ((sessionId: string) => void) | undefined;
+  onStopAgent: ((sessionId: string) => void) | undefined;
   actions: SprintSidebarProps["ticketActions"];
   onSelect(): void;
   moves: TicketMoves;
@@ -363,19 +369,14 @@ function TicketRow(props: {
         <ul className="pm-ticket-agents" aria-label={`Agents on ${ticket.title}`}>
           {props.agents.map((agent) => (
             <li key={agent.sessionId}>
-              <button
-                type="button"
-                className={`row pm-agent-row ${agent.sessionId === props.shownAgentSessionId ? "active" : ""}`}
-                aria-current={agent.sessionId === props.shownAgentSessionId ? "true" : undefined}
-                onClick={() => props.onSelectAgent?.(agent.sessionId)}
-              >
-                <span className={`dot ${agentTone(agent.state, agent.assistant ? "assistant" : "deliveryCheck")}`} />
-                <span className="copy">
-                  <span className="row-title">{agent.label}</span>
-                  <span className="row-sub"><span className={agent.provider}>{agent.provider === "claude" ? "Claude" : "Codex"}</span><span>{agent.state}</span></span>
-                </span>
-                <span />
-              </button>
+              <AgentRow
+                agent={agent}
+                shown={agent.sessionId === props.shownAgentSessionId}
+                sub={agent.state}
+                className="pm-agent-row"
+                onSelect={() => props.onSelectAgent?.(agent.sessionId)}
+                onStop={props.onStopAgent && (() => props.onStopAgent?.(agent.sessionId))}
+              />
             </li>
           ))}
         </ul>

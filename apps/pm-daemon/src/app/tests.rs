@@ -21,7 +21,7 @@ use super::agents::{AgentRecord, AgentRegistry};
 use super::control::errors::ControlError;
 use super::control::{decode_request, run_request};
 use super::scheduler::{self, Refusal};
-use super::{AppState, Store, mcp, skills};
+use super::{AppState, Store, mcp, owners, skills};
 
 const TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
@@ -1047,5 +1047,74 @@ fn a_slack_skill_targets_the_active_sprint_and_reads_after_its_positions() {
     assert_eq!(
         (first[0].id.as_str(), first[0].name.as_str()),
         ("C0SHOP", "shop")
+    );
+}
+
+#[tokio::test]
+async fn the_owner_finder_reads_ticket_history_alone_and_then_git_history() {
+    let fixture = fixture();
+    let state = &fixture.state;
+    let project_id = project(state).await;
+    let bug = ticket(
+        state,
+        &project_id,
+        json!({ "title": "Refund webhook times out", "description": "Fails in src/refund.rs" }),
+    )
+    .await;
+    ticket(
+        state,
+        &project_id,
+        json!({ "title": "Refund webhook retries", "assignee": "Ada" }),
+    )
+    .await;
+    let bug_id = bug["id"].as_str().unwrap();
+
+    let history = owners::owner_evidence(state, &project_id, bug_id)
+        .await
+        .unwrap();
+    assert_eq!(history["candidates"][0]["name"], "Ada");
+    assert_eq!(history["candidates"].as_array().unwrap().len(), 1);
+    assert!(
+        history["limitation"]
+            .as_str()
+            .unwrap()
+            .contains("ticket history only")
+    );
+    assert_eq!(history["namedPaths"], json!(["src/refund.rs"]));
+
+    let repository = fixture.directory.join("code");
+    std::fs::create_dir_all(repository.join("src")).unwrap();
+    std::fs::write(repository.join("src/refund.rs"), "fn refund() {}\n").unwrap();
+    let git = termloop_gitio::GitRunner::discover().unwrap();
+    termloop_gitio::test_support::initialize_repository(&git, &repository).unwrap();
+    termloop_gitio::test_support::commit_all(&git, &repository, "Add refunds").unwrap();
+    state
+        .store
+        .lock()
+        .set_project_folder(&project_id, repository.to_str())
+        .unwrap();
+
+    let read = owners::owner_evidence(state, &project_id, bug_id)
+        .await
+        .unwrap();
+    let names: Vec<&str> = read["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|candidate| candidate["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["TermLoop Fixture", "Ada"]);
+    assert_eq!(read["candidates"][0]["reason"], "1 related commit");
+    assert!(
+        read["limitation"]
+            .as_str()
+            .unwrap()
+            .contains("GitHub is not connected")
+    );
+
+    assert!(
+        owners::owner_evidence(state, "other", bug_id)
+            .await
+            .is_err()
     );
 }

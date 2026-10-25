@@ -3,7 +3,8 @@ import { Icon, type IconName } from "./icons.js";
 import { ResizeHandle, type WidthBounds } from "./ResizeHandle.js";
 import { ProjectSwitcher, type ProjectSwitcherProps } from "./ProjectSwitcher.js";
 import { SprintSidebar, type SprintComposer, type SprintSidebarProps } from "./SprintSidebar.js";
-import { agentTone, relativeTime } from "./format.js";
+import { AgentRow } from "./AgentRow.js";
+import { relativeTime } from "./format.js";
 import type { AgentTab, PmView } from "./types.js";
 
 export type SidebarProps = ProjectSwitcherProps &
@@ -19,6 +20,7 @@ export type SidebarProps = ProjectSwitcherProps &
     onPull(): void;
     onStartAssistant(): void;
     onSelectAgent(sessionId: string): void;
+    onStopAgent(sessionId: string): void;
     /** Laid-out width; drags and arrow keys request a new one through `onResize`. */
     width: number;
     widthBounds: WidthBounds;
@@ -56,19 +58,14 @@ export function Sidebar(props: SidebarProps) {
       {props.agents.length === 0 ? <p className="rail-empty">No agent is running.</p> : (
         <div className="list">
           {props.agents.map((agent) => (
-            <button
+            <AgentRow
               key={agent.sessionId}
-              type="button"
-              className={`row ${agent.sessionId === shownAgent ? "active" : ""}`}
-              onClick={() => props.onSelectAgent(agent.sessionId)}
-            >
-              <span className={`dot ${agentTone(agent.state, agent.assistant ? "assistant" : "deliveryCheck")}`} />
-              <span className="copy">
-                <span className="row-title">{agent.label}</span>
-                <span className="row-sub"><span className={agent.provider}>{agent.provider === "claude" ? "Claude" : "Codex"}</span><span>{agent.detail}</span></span>
-              </span>
-              <span />
-            </button>
+              agent={agent}
+              shown={agent.sessionId === shownAgent}
+              sub={agent.detail}
+              onSelect={() => props.onSelectAgent(agent.sessionId)}
+              onStop={() => props.onStopAgent(agent.sessionId)}
+            />
           ))}
         </div>
       )}
