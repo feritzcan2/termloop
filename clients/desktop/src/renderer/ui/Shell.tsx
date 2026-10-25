@@ -1651,11 +1651,6 @@ export function Shell(props: ShellProps) {
             disabled={disabled}
             select={(taskId) => { dismissStagePages(); setProjectManagerTerminal(false); setProjectManagerTaskId(taskId); }}
             selectOverview={() => { dismissStagePages(); setProjectManagerTerminal(false); setProjectManagerTaskId(undefined); }}
-            openCheck={(taskId, sessionId) => {
-              setProjectManagerTaskId(taskId);
-              selectSession(sessionId);
-              setProjectManagerTerminal(true);
-            }}
             terminalSessionId={projectManagerTerminal ? props.selectedSession?.id : undefined}
             openTaskSources={projectManagerActions.openTaskSources}
             actions={{
@@ -1674,7 +1669,6 @@ export function Shell(props: ShellProps) {
                 });
               },
               refreshFacts: () => projectManagerBoard.apply(() => projectManagerActions.refreshFacts()),
-              checkSprint: () => requestProjectManagerCheck(null),
             }}
           /> : <>
           <WorkspaceViewSwitch

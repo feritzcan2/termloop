@@ -225,7 +225,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:45b2dcc37c84bdc101a137742a58061249705e86ff22bf595875619dc6d7d53f";
+    "sha256:1d76781ccf4ce1a562d6dea6f5c64c6fe83fafd061ae293072d0e8fac15905d1";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -1514,6 +1514,14 @@ pub enum DeliveryStageKind {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
+pub struct DeliveryCheckReasonDto {
+    #[serde(rename = "taskId")]
+    pub task_id: String,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct DeliveryStageDto {
     #[serde(rename = "taskId")]
     pub task_id: String,
@@ -2009,6 +2017,8 @@ pub struct ProjectManagerBoardResult {
     pub probes: Vec<DeliveryProbeDto>,
     pub risks: Vec<DeliveryRiskDto>,
     pub stages: Vec<DeliveryStageDto>,
+    #[serde(rename = "checkReasons")]
+    pub check_reasons: Vec<DeliveryCheckReasonDto>,
     pub environments: Vec<ProjectEnvironmentDto>,
     pub checks: Vec<DeliveryCheckDto>,
     #[serde(rename = "stateRevision")]
@@ -12984,6 +12994,29 @@ fn validate_delivery_stage_kind(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_delivery_check_reason_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("taskId")
+            .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
+            && object
+                .get("detail")
+                .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
+            && object
+                .keys()
+                .all(|key| ["taskId", "detail"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_delivery_stage_dto(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object
@@ -14287,6 +14320,13 @@ fn validate_project_manager_board_result(value: &Value) -> bool {
                     .as_array()
                     .is_some_and(|items| items.iter().all(|item| validate_delivery_stage_dto(item)))
             })
+            && object.get("checkReasons").is_some_and(|field| {
+                field.as_array().is_some_and(|items| {
+                    items
+                        .iter()
+                        .all(|item| validate_delivery_check_reason_dto(item))
+                })
+            })
             && object.get("environments").is_some_and(|field| {
                 field.as_array().is_some_and(|items| {
                     items.len() <= 12
@@ -14318,6 +14358,7 @@ fn validate_project_manager_board_result(value: &Value) -> bool {
                     "probes",
                     "risks",
                     "stages",
+                    "checkReasons",
                     "environments",
                     "checks",
                     "stateRevision",

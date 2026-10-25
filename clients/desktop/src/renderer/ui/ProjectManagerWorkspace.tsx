@@ -193,6 +193,7 @@ export function ProjectManagerStage(props: {
         facts={board?.facts.find((facts) => facts.taskId === task.id)}
         proposal={board?.proposals.find((proposal) => proposal.taskId === task.id)}
         check={projectManagerTaskCheck(task.id, board)}
+        checkReason={board?.checkReasons.find((reason) => reason.taskId === task.id)}
         risks={board?.risks.filter((risk) => risk.taskId === task.id) ?? []}
         head={board?.tickets.find((head) => head.taskId === task.id)}
         sprints={sprints}
@@ -216,7 +217,7 @@ export function ProjectManagerStage(props: {
         board={board}
         disabled={props.disabled}
         select={props.selectTask}
-        checkSprint={() => void props.requestCheck(null)}
+        checkTasks={(taskIds) => void props.requestCheck(taskIds)}
         probes={props.probes}
         addTask={props.addTask}
       />}

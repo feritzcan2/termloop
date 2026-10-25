@@ -3692,6 +3692,18 @@
       "type": "string",
       "enum": ["toDo", "inProgress", "inReview", "merged", "deployed", "live", "done"]
     },
+    "deliveryCheckReasonDto": {
+      "x-codegen": true,
+      "x-codegen-name": "DeliveryCheckReasonDto",
+      "description": "Why a delivery check is worth an Agent for one Task.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["taskId", "detail"],
+      "properties": {
+        "taskId": { "type": "string", "minLength": 1 },
+        "detail": { "type": "string", "minLength": 1 }
+      }
+    },
     "deliveryStageDto": {
       "x-codegen": true,
       "x-codegen-name": "DeliveryStageDto",
@@ -4849,6 +4861,7 @@
         "probes",
         "risks",
         "stages",
+        "checkReasons",
         "environments",
         "checks",
         "stateRevision"
@@ -4919,6 +4932,13 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/deliveryStageDto"
+          }
+        },
+        "checkReasons": {
+          "description": "Tasks of the active sprint that facts and approved probes cannot place, and that no delivery check has looked at since they reached their stage.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/deliveryCheckReasonDto"
           }
         },
         "environments": {

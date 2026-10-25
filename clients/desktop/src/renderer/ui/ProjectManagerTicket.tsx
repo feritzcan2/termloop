@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   DeliveryCheckDto,
+  DeliveryCheckReasonDto,
   DeliveryRiskDto,
   ProjectManagerEnvironmentSetParams,
   ProjectManagerJiraIssueResult,
@@ -57,6 +58,8 @@ export function ProjectManagerTicket(props: {
   facts: TaskDeliveryFactsDto | undefined;
   proposal: TaskTicketProposalDto | undefined;
   check: DeliveryCheckDto | undefined;
+  /// Why facts and probes cannot place the Task, when a check is worth it.
+  checkReason: DeliveryCheckReasonDto | undefined;
   risks: readonly DeliveryRiskDto[];
   head: TaskTicketHeadDto | undefined;
   sprints: readonly ProjectSprintDto[];
@@ -254,7 +257,7 @@ export function ProjectManagerTicket(props: {
           title="Compare the ticket with the Jira issue, then update either one"
           onClick={() => setSyncOpen(true)}
         ><Icon name="upload" />Sync with Jira</button> : null}
-        {open && !check ? <button
+        {open && !check && !props.checkReason ? <button
           type="button"
           className="td-mini"
           disabled={props.disabled || busy !== undefined}
@@ -334,6 +337,14 @@ export function ProjectManagerTicket(props: {
               {proposal.title ? <p><strong>Title:</strong> {proposal.title}</p> : null}
               {proposal.brief ? <pre className="pm-proposal-brief">{proposal.brief}</pre> : null}
             </div> : null}
+          </div> : null}
+          {props.checkReason && open && !check ? <div className="pm-banner" role="status" aria-label="Where it runs is unknown">
+            <Icon name="alert" />
+            <span>{props.checkReason.detail}. A delivery check can look at the deployments.</span>
+            <button type="button" className="td-mini" disabled={props.disabled || busy !== undefined}
+              onClick={() => void run("check", () => props.requestCheck([task.id]))}>
+              {busy === "check" ? "Starting…" : "Check now"}
+            </button>
           </div> : null}
           {!props.inActiveSprint && open ? <div className="pm-banner">
             <span>

@@ -81,6 +81,7 @@ function board(overrides: Partial<ProjectManagerBoardResult> = {}): ProjectManag
     probes: [],
     risks: [],
     stages: [{ taskId: "task-1", stage: "deployed", environment: "Staging", sinceEpochMs: NOW }],
+    checkReasons: [],
     environments: [],
     checks: [],
     stateRevision: 4,
@@ -250,10 +251,8 @@ describe("Project Manager workspace", () => {
     const select = vi.fn();
     const moveTask = vi.fn(async () => undefined);
     const updateSprint = vi.fn(async () => undefined);
-    const checkSprint = vi.fn(async () => undefined);
     const refreshFacts = vi.fn(async () => undefined);
     const addTask = vi.fn();
-    const openCheck = vi.fn();
     await act(async () => root.render(<ProjectManagerTaskList
       tasks={[task(), task({ id: "task-2", title: "Planned work", jira_url: null, worktree: null, rank: 2 }), task({ id: "task-3", title: "Loose idea", jira_url: null, worktree: null, rank: 3 })]}
       board={board({ checks: [{ sessionId: "check-1", taskIds: ["task-1"] }] })}
@@ -261,31 +260,28 @@ describe("Project Manager workspace", () => {
       disabled={false}
       select={select}
       selectOverview={vi.fn()}
-      openCheck={openCheck}
       terminalSessionId={undefined}
       openTaskSources={vi.fn()}
-      actions={{ addTask, createSprint: vi.fn(async () => undefined), updateSprint, deleteSprint: vi.fn(async () => undefined), moveTask, refreshFacts, checkSprint }}
+      actions={{ addTask, createSprint: vi.fn(async () => undefined), updateSprint, deleteSprint: vi.fn(async () => undefined), moveTask, refreshFacts }}
     />));
     const sections = [...host.querySelectorAll(".pm-sprint")];
     expect(sections.map((section) => section.getAttribute("aria-label"))).toEqual(["Sprint 14", "Sprint 15", "Backlog", "Sprint 13"]);
     const activeRow = sections[0]!.querySelector(".pm-task-rows button")!;
     expect(activeRow.querySelector(".pm-task-key")?.textContent).toBe("PAY-42");
     expect(activeRow.querySelector(".pm-task-agent")?.textContent).toBe("Ada Lovelace · In Review");
-    const checkButton = sections[0]!.querySelector<HTMLButtonElement>(".pm-task-agent-open")!;
-    expect(checkButton.textContent).toBe("Checking");
-    await act(async () => checkButton.click());
-    expect(openCheck).toHaveBeenCalledWith("task-1", "check-1");
+    // A running check is the row's status mark, not a second row.
+    expect(activeRow.querySelector('.pm-task-status.checking[aria-label="Checking"]')).not.toBeNull();
+    expect(host.textContent).not.toContain("Checking");
     expect(activeRow.querySelector(".pm-task-step")?.textContent).toBe("Deployed · Staging");
     const plannedRow = sections[1]!.querySelector(".pm-task-rows button")!;
     expect(plannedRow.querySelector(".pm-task-agent")?.textContent).toBe("Linus");
-    expect(sections[1]!.querySelector(".pm-task-agent-open")).toBeNull();
+    expect(sections[1]!.querySelector(".pm-task-status.checking")).toBeNull();
     expect(sections[2]!.textContent).toContain("Loose idea");
     // Closed sprints start collapsed.
     expect(sections[3]!.querySelector(".pm-task-rows")).toBeNull();
     // Only one sprint can be active, so a planned one cannot start yet.
     expect(button("Start")!.disabled).toBe(true);
-    await act(async () => button("Check")!.click());
-    expect(checkSprint).toHaveBeenCalled();
+    expect([...host.querySelectorAll("button")].some((candidate) => /^Check\b(?!out)/.test(candidate.textContent ?? ""))).toBe(false);
     await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Read Jira and pull requests now"]')!.click());
     expect(refreshFacts).toHaveBeenCalled();
     await act(async () => button("Complete")!.click());
@@ -313,10 +309,9 @@ describe("Project Manager workspace", () => {
       disabled={false}
       select={vi.fn()}
       selectOverview={vi.fn()}
-      openCheck={vi.fn()}
       terminalSessionId={undefined}
       openTaskSources={vi.fn()}
-      actions={{ addTask: vi.fn(), createSprint: vi.fn(async () => undefined), updateSprint: vi.fn(async () => undefined), deleteSprint: vi.fn(async () => undefined), moveTask: vi.fn(async () => undefined), refreshFacts: vi.fn(async () => undefined), checkSprint: vi.fn(async () => undefined) }}
+      actions={{ addTask: vi.fn(), createSprint: vi.fn(async () => undefined), updateSprint: vi.fn(async () => undefined), deleteSprint: vi.fn(async () => undefined), moveTask: vi.fn(async () => undefined), refreshFacts: vi.fn(async () => undefined) }}
     />));
     expect(host.querySelector(".pm-sprint-sync")?.textContent).toContain("Sprints follow Pay Jira");
     expect(button("New sprint")).toBeUndefined();
@@ -395,10 +390,9 @@ describe("Project Manager workspace", () => {
       disabled={false}
       select={vi.fn()}
       selectOverview={vi.fn()}
-      openCheck={vi.fn()}
       terminalSessionId={undefined}
       openTaskSources={vi.fn()}
-      actions={{ addTask: vi.fn(), createSprint: vi.fn(async () => undefined), updateSprint: vi.fn(async () => undefined), deleteSprint: vi.fn(async () => undefined), moveTask: vi.fn(async () => undefined), refreshFacts: vi.fn(async () => undefined), checkSprint: vi.fn(async () => undefined) }}
+      actions={{ addTask: vi.fn(), createSprint: vi.fn(async () => undefined), updateSprint: vi.fn(async () => undefined), deleteSprint: vi.fn(async () => undefined), moveTask: vi.fn(async () => undefined), refreshFacts: vi.fn(async () => undefined) }}
     />));
     expect(host.querySelector(".pm-sprint-sync.failed")?.textContent).toContain("Jira sprints could not be read (credentialsInvalid)");
   });
@@ -656,8 +650,35 @@ describe("Project Manager workspace", () => {
     expect(overview.querySelector(".pm-risk")?.textContent).toBe("Blocked Vendor");
     await act(async () => overview.querySelector<HTMLButtonElement>(".pm-overview-risks button")!.click());
     expect(props.selectTask).toHaveBeenCalledWith("task-4");
-    await act(async () => button("Check sprint")!.click());
-    expect(props.requestCheck).toHaveBeenCalledWith(null);
+    // Nothing is unplaced, so no check is offered.
+    expect([...host.querySelectorAll("button")].some((candidate) => /^Check\b(?!out)/.test(candidate.textContent ?? ""))).toBe(false);
+  });
+
+  it("offers a delivery check only for Tasks facts and probes cannot place", async () => {
+    const tasks = [task(), task({ id: "task-2", title: "Planned work", rank: 2 }), task({ id: "task-3", title: "Being checked", rank: 3 })];
+    const unplaced = board({
+      checkReasons: [
+        { taskId: "task-1", detail: "No probe tells whether it reached Production" },
+        { taskId: "task-3", detail: "No probe tells whether it reached Production" },
+      ],
+      checks: [{ sessionId: "check-1", taskIds: ["task-3"] }],
+    });
+    const props = stageProps({ task: undefined, tasks, board: unplaced });
+    await act(async () => root.render(<ProjectManagerStage {...props} />));
+    const section = host.querySelector('[aria-label="Where it runs is unknown"]')!;
+    // A Task a running check covers is not offered again.
+    expect([...section.querySelectorAll("li")].map((item) => item.querySelector("strong")?.textContent)).toEqual(["Checkout times out"]);
+    await act(async () => button("Check this Task")!.click());
+    expect(props.requestCheck).toHaveBeenCalledWith(["task-1"]);
+
+    const ticket = stageProps({ board: unplaced });
+    await act(async () => root.render(<ProjectManagerStage {...ticket} />));
+    const banner = host.querySelector('.pm-banner[aria-label="Where it runs is unknown"]')!;
+    expect(banner.textContent).toContain("No probe tells whether it reached Production. A delivery check can look at the deployments.");
+    // The banner's button is the ticket's only way to start a check.
+    expect([...host.querySelectorAll("button")].filter((candidate) => candidate.textContent?.includes("Check now"))).toHaveLength(1);
+    await act(async () => banner.querySelector("button")!.click());
+    expect(ticket.requestCheck).toHaveBeenCalledWith(["task-1"]);
   });
 
   it("shows a Task's risks on its ticket and in the sidebar", async () => {
@@ -672,10 +693,9 @@ describe("Project Manager workspace", () => {
       disabled={false}
       select={vi.fn()}
       selectOverview={selectOverview}
-      openCheck={vi.fn()}
       terminalSessionId={undefined}
       openTaskSources={vi.fn()}
-      actions={{ addTask: vi.fn(), createSprint: vi.fn(async () => undefined), updateSprint: vi.fn(async () => undefined), deleteSprint: vi.fn(async () => undefined), moveTask: vi.fn(async () => undefined), refreshFacts: vi.fn(async () => undefined), checkSprint: vi.fn(async () => undefined) }}
+      actions={{ addTask: vi.fn(), createSprint: vi.fn(async () => undefined), updateSprint: vi.fn(async () => undefined), deleteSprint: vi.fn(async () => undefined), moveTask: vi.fn(async () => undefined), refreshFacts: vi.fn(async () => undefined) }}
     />));
     expect(host.querySelector('.pm-task-failing')?.getAttribute("aria-label")).toBe("1 risk");
     expect(host.querySelector(".pm-overview-count")?.textContent).toBe("1 need attention");

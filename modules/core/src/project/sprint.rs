@@ -64,6 +64,7 @@ impl CoreRuntime {
             "probes": self.probes_json(project_id),
             "risks": self.project_risks_json(project_id, termloop_platform::current_epoch_ms()),
             "stages": self.project_stages_json(project_id),
+            "checkReasons": self.project_check_reasons_json(project_id),
             "environments": self.store.project_environments(project_id),
             "checks": self
                 .running_delivery_checks(project_id)

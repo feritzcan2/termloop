@@ -4,7 +4,7 @@ import type { Task } from "../model.js";
 import { Icon } from "./Icon.js";
 import { ProjectManagerProbes, type ProjectManagerProbeActions } from "./ProjectManagerProbes.js";
 import { relativeTime } from "./project-manager-ticket.js";
-import { jiraIssueKey } from "./ProjectManagerWorkspace.js";
+import { jiraIssueKey, projectManagerTaskCheck } from "./ProjectManagerWorkspace.js";
 
 export const RISK_LABELS: Record<DeliveryRiskKind, string> = {
   blocked: "Blocked",
@@ -59,11 +59,18 @@ export function ProjectManagerOverview(props: {
   board: ProjectManagerBoardResult | null;
   disabled: boolean;
   select(taskId: string): void;
-  checkSprint(): void;
+  /// Starts one delivery check of the named Tasks.
+  checkTasks(taskIds: string[]): void;
   addTask(): void;
   probes: ProjectManagerProbeActions;
 }) {
   const digest = projectManagerDigest(props.tasks, props.board);
+  // Only Tasks facts and probes cannot place are worth a check, and only
+  // while none runs for them.
+  const unplaced = (props.board?.checkReasons ?? []).flatMap((reason) => {
+    const task = props.tasks.find((candidate) => candidate.id === reason.taskId);
+    return task && !projectManagerTaskCheck(task.id, props.board) ? [{ task, detail: reason.detail }] : [];
+  });
   const stats: [string, number][] = [
     ["Tasks", digest.tasks],
     ["In review", digest.inReview],
@@ -78,9 +85,6 @@ export function ProjectManagerOverview(props: {
         <h2>{digest.sprintName ?? "Open Tasks"}</h2>
       </div>
       <div className="pm-overview-actions">
-        <button type="button" className="secondary-button" disabled={props.disabled || digest.tasks === 0} onClick={props.checkSprint}>
-          <Icon name="restart" />Check sprint
-        </button>
         <button type="button" className="primary-button" onClick={props.addTask}>Add Task</button>
       </div>
     </header>
@@ -108,6 +112,27 @@ export function ProjectManagerOverview(props: {
           </li>)}
         </ul>}
     </section>
+    {unplaced.length > 0 ? <section className="pm-overview-risks" aria-label="Where it runs is unknown">
+      <div className="pm-overview-section-head">
+        <h3>Where it runs is unknown</h3>
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={props.disabled}
+          title="Start one short-lived Agent that looks at the deployments of these Tasks"
+          onClick={() => props.checkTasks(unplaced.map(({ task }) => task.id))}
+        ><Icon name="restart" />Check {unplaced.length === 1 ? "this Task" : `these ${unplaced.length} Tasks`}</button>
+      </div>
+      <ul>
+        {unplaced.map(({ task, detail }) => <li key={task.id}>
+          <button type="button" onClick={() => props.select(task.id)}>
+            <span className="pm-task-key">{jiraIssueKey(task.jira_url) ?? "Local"}</span>
+            <strong>{task.title}</strong>
+            <span className="pm-overview-risk-list"><span className="pm-risk">{detail}</span></span>
+          </button>
+        </li>)}
+      </ul>
+    </section> : null}
     <ProjectManagerProbes probes={props.board?.probes ?? []} disabled={props.disabled} actions={props.probes} />
   </div>;
 }

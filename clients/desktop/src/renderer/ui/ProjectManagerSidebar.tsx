@@ -65,13 +65,12 @@ export type ProjectManagerSidebarActions = {
   moveTask(taskId: string, sprintId: string | null): Promise<string | undefined>;
   /// Reads Jira and pull requests for the active sprint now.
   refreshFacts(): Promise<string | undefined>;
-  /// Starts one delivery check of every open Task in the active sprint.
-  checkSprint(): Promise<string | undefined>;
 };
 
 /// The Project Manager sidebar: local sprints with their Tasks. TermLoop
 /// reads facts for the active sprint's Tasks, so only they show Jira status
-/// and a running delivery check.
+/// and, as their status mark, a running delivery check; its terminal opens
+/// from the Task's ticket.
 export function ProjectManagerTaskList(props: {
   tasks: readonly Task[];
   board: ProjectManagerBoardResult | null;
@@ -80,8 +79,6 @@ export function ProjectManagerTaskList(props: {
   select(taskId: string): void;
   /// Shows the sprint overview in place of a Task.
   selectOverview(): void;
-  /// Opens a running delivery check's terminal in place of the Task page.
-  openCheck(taskId: string, sessionId: string): void;
   /// The check terminal currently filling the stage, if any.
   terminalSessionId: string | undefined;
   openTaskSources(): void;
@@ -130,7 +127,6 @@ export function ProjectManagerTaskList(props: {
       }}
       addTask={() => props.actions.addTask(group.sprint?.id ?? null)}
       setState={(next) => group.sprint ? void run(props.actions.updateSprint(group.sprint, next)) : undefined}
-      check={active && group.tasks.some((task) => task.status === "open") ? () => void run(props.actions.checkSprint()) : undefined}
       remove={() => group.sprint ? void run(props.actions.deleteSprint(group.sprint.id)) : undefined}
     >
       {group.tasks.map((task) => {
@@ -138,8 +134,7 @@ export function ProjectManagerTaskList(props: {
         const check = active ? projectManagerTaskCheck(task.id, props.board) : undefined;
         const stage = projectManagerStage(task.id, props.board);
         const step = stage ? stageLabel(stage) : undefined;
-        const terminalOpen = Boolean(check && check.sessionId === props.terminalSessionId);
-        const selected = task.id === props.selectedTaskId && !terminalOpen;
+        const selected = task.id === props.selectedTaskId;
         const detail = [taskDeveloper(task, record, facts.get(task.id)).name, facts.get(task.id)?.jira?.status]
           .filter(Boolean).join(" · ") || null;
         const risks = (props.board?.risks ?? []).filter((risk) => risk.taskId === task.id);
@@ -152,23 +147,18 @@ export function ProjectManagerTaskList(props: {
             onDragStart={(event) => { event.dataTransfer.setData("text/plain", task.id); event.dataTransfer.effectAllowed = "move"; }}
             onClick={() => props.select(task.id)}
           >
-            <span className={`pm-task-status ${task.status}`} aria-hidden="true" />
+            <span
+              className={`pm-task-status ${task.status}${check ? " checking" : ""}`}
+              title={check ? "A delivery check is running" : undefined}
+              aria-label={check ? "Checking" : undefined}
+              aria-hidden={check ? undefined : "true"}
+            />
             <span className="pm-task-key">{jiraIssueKey(task.jira_url) ?? "Local"}</span>
             <span className="pm-task-title">{task.title}</span>
             {detail ? <span className="pm-task-agent">{detail}</span> : null}
             {risks.length > 0 ? <span className="pm-task-failing" title={risks.map((risk) => risk.detail).join("\n")} aria-label={`${risks.length} risk${risks.length === 1 ? "" : "s"}`}><Icon name="alert" /></span> : null}
             {step ? <span className={`pm-task-step ${stage!.stage}`}>{step}</span> : null}
           </button>
-          {check ? <button
-            type="button"
-            className={`pm-task-agent-open${terminalOpen ? " selected" : ""}`}
-            aria-current={terminalOpen ? "true" : undefined}
-            title="Open the delivery check's terminal"
-            onClick={() => props.openCheck(task.id, check.sessionId)}
-          >
-            <span className="pm-agent-dot working" aria-hidden="true" />
-            <span>Checking</span>
-          </button> : null}
         </li>;
       })}
     </ProjectManagerSprintSection>;
@@ -270,8 +260,6 @@ function ProjectManagerSprintSection(props: {
   canStart: boolean;
   /// A sprint mirrored from Jira changes only with Jira.
   mirrored: boolean;
-  /// Present on the active sprint: starts one delivery check of its Tasks.
-  check: (() => void) | undefined;
   children: ReactNode;
   onDragOver(): void;
   onDragLeave(): void;
@@ -312,13 +300,6 @@ function ProjectManagerSprintSection(props: {
           title={props.canStart ? "Start this sprint; TermLoop reads Jira and pull requests for its Tasks" : "Complete the active sprint first"}
           onClick={() => props.setState("active")}
         >Start</button> : null}
-        {props.check ? <button
-          type="button"
-          className="pm-sprint-action"
-          disabled={props.disabled}
-          title="Start a delivery check of this sprint's open Tasks"
-          onClick={props.check}
-        >Check</button> : null}
         {state === "active" && !props.mirrored ? <button
           type="button"
           className="pm-sprint-action"
