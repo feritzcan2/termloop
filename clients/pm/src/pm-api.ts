@@ -81,7 +81,46 @@ export type PmTerminalMessage =
   | { sessionId: string; type: "error"; message: string }
   | { sessionId: string; type: "state"; state: "connecting" | "connected" | "connectionLost" };
 
+/** How agent terminals render: the native Ghostty view (macOS) or xterm.js. */
+export type PmTerminalRenderer = "xterm" | "ghostty";
+
+/** Main announces the effective renderer to the preload through this argv flag. */
+export const TERMINAL_RENDERER_ARG = "--pm-terminal-renderer=";
+
+export function terminalRendererFromArgv(argv: readonly string[]): PmTerminalRenderer {
+  return argv.includes(`${TERMINAL_RENDERER_ARG}ghostty`) ? "ghostty" : "xterm";
+}
+
+export type PmGhosttyFrame = { x: number; y: number; width: number; height: number };
+export type PmGhosttyGrid = { rows: number; cols: number };
+
+/**
+ * Named operations on the native Ghostty surfaces main places over the
+ * window. Daemon output reaches a surface through `write`; keystrokes come
+ * back through `onInput` and go to the daemon via `terminal.input`.
+ */
+export type PmGhosttyApi = {
+  create(frame?: PmGhosttyFrame): Promise<{ surfaceId: number; rows: number; cols: number }>;
+  /** Resolves once Ghostty consumed the bytes: the output-credit cue. */
+  write(surfaceId: number, data: Uint8Array): Promise<void>;
+  setFrame(surfaceId: number, frame: PmGhosttyFrame): Promise<PmGhosttyGrid | undefined>;
+  setVisible(surfaceId: number, visible: boolean): Promise<void>;
+  focus(surfaceId: number): Promise<void>;
+  scrollToBottom(surfaceId: number): Promise<void>;
+  paste(surfaceId: number, text: string): Promise<void>;
+  snapshotText(surfaceId: number): Promise<string | undefined>;
+  /** PNG data URLs; `snapshotAndHide` captures and hides in one main turn. */
+  snapshotImage(surfaceId: number): Promise<string | undefined>;
+  snapshotAndHide(surfaceId: number): Promise<string | undefined>;
+  destroy(surfaceId: number): Promise<void>;
+  onInput(listener: (surfaceId: number, data: Uint8Array) => void): () => void;
+  onClosed(listener: (surfaceId: number) => void): () => void;
+};
+
 export type PmApi = {
+  /** Fixed for the window's lifetime; `ghostty` only when main loaded the addon. */
+  terminalRenderer: PmTerminalRenderer;
+  ghostty: PmGhosttyApi;
   call<M extends RendererMethod>(method: M, params: MethodParams[M]): Promise<PmCallOutcome<M>>;
   connectionState(): Promise<PmConnectionState>;
   onConnectionState(listener: (state: PmConnectionState) => void): () => void;
@@ -111,6 +150,19 @@ export const IPC = {
   terminalResize: "pm:terminal-resize",
   terminalCredit: "pm:terminal-credit",
   terminalMessage: "pm:terminal-message",
+  ghosttyCreate: "pm:ghostty-create",
+  ghosttyWrite: "pm:ghostty-write",
+  ghosttySetFrame: "pm:ghostty-set-frame",
+  ghosttySetVisible: "pm:ghostty-set-visible",
+  ghosttyFocus: "pm:ghostty-focus",
+  ghosttyScrollBottom: "pm:ghostty-scroll-bottom",
+  ghosttyPaste: "pm:ghostty-paste",
+  ghosttySnapshotText: "pm:ghostty-snapshot-text",
+  ghosttySnapshotImage: "pm:ghostty-snapshot-image",
+  ghosttySnapshotAndHide: "pm:ghostty-snapshot-and-hide",
+  ghosttyDestroy: "pm:ghostty-destroy",
+  ghosttyInput: "pm:ghostty-input",
+  ghosttyClosed: "pm:ghostty-closed",
 } as const;
 
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

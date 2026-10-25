@@ -12,5 +12,6 @@ await Promise.all([
   build({ entryPoints: ["src/preload.ts"], outfile: "dist/preload.cjs", bundle: true, platform: "node", format: "cjs", external: ["electron"] }),
   build({ entryPoints: { renderer: "src/renderer/index.tsx" }, outdir: "dist", bundle: true, platform: "browser", format: "esm", jsx: "automatic", loader: { ".css": "css", ".ttf": "file" }, assetNames: "[name]" }),
   cp("src/index.html", "dist/index.html"),
+  cp(require.resolve("@termloop/ghostty-host/embedded-config"), "dist/ghostty-embedded.conf"),
   cp(require.resolve("@termloop/terminal-surface/font-license"), "dist/JetBrainsMono-OFL.txt"),
 ]);

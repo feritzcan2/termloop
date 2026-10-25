@@ -1,5 +1,5 @@
-// Mounts one agent session's xterm surface on top of the `window.pm.terminal`
-// bridge. Main owns the socket and token; this side only sees frame payloads.
+// Mounts one agent session's terminal surface (xterm or native Ghostty) on
+// top of the `window.pm.terminal` bridge. Main owns the socket and token; this side only sees frame payloads.
 // It follows the developer app's TerminalPool path: the surface is fitted
 // before anything is written, the measured grid travels with the attach so
 // the PTY is resized before replay, replay is staged and stitched onto the
@@ -14,7 +14,7 @@ import type { PmApi } from "../../pm-api.js";
 /** xterm opens at 80x24; its onResize reports every change after that. */
 const OPENING_GRID = { rows: 24, cols: 80 };
 
-export type SurfaceFactory = (onInput: (data: string) => void, onResize: (rows: number, cols: number) => void) => TerminalSurface;
+export type SurfaceFactory = (onInput: (data: string | Uint8Array) => void, onResize: (rows: number, cols: number) => void) => TerminalSurface;
 
 export function mountAgentTerminal(
   terminal: PmApi["terminal"],
@@ -27,7 +27,7 @@ export function mountAgentTerminal(
   let attachRequested = false;
   let grid = { ...OPENING_GRID };
   const surface = createSurface(
-    (data) => terminal.input(sessionId, encoder.encode(data)),
+    (data) => terminal.input(sessionId, typeof data === "string" ? encoder.encode(data) : data),
     (rows, cols) => {
       grid = { rows, cols };
       if (attachRequested) terminal.resize(sessionId, rows, cols);
@@ -54,9 +54,10 @@ export function mountAgentTerminal(
     if (mouseModes !== undefined) batcher.push(replayMouseModesSequence(mouseModes), () => undefined);
   }, () => undefined);
 
-  // Mount fits the surface synchronously, so `grid` is the real pane grid
-  // before the attach below is sent.
-  void surface.mount(host, true);
+  // xterm fits synchronously during mount; Ghostty reports its grid only once
+  // the native view has its first frame. Either way `grid` is the real pane
+  // grid when the attach is sent, so the PTY is resized before replay.
+  const mounted = surface.mount(host, true);
   const unsubscribe = terminal.onMessage((message) => {
     if (disposed || message.sessionId !== sessionId) return;
     switch (message.type) {
@@ -97,10 +98,15 @@ export function mountAgentTerminal(
         break;
     }
   });
-  attachRequested = true;
-  terminal.attach(sessionId, grid.rows, grid.cols).catch((error: unknown) => {
-    if (!disposed) surface.writeln(`[could not attach: ${error instanceof Error ? error.message : String(error)}]`);
-  });
+  const attach = () => {
+    if (disposed) return;
+    attachRequested = true;
+    terminal.attach(sessionId, grid.rows, grid.cols).catch((error: unknown) => {
+      if (!disposed) surface.writeln(`[could not attach: ${error instanceof Error ? error.message : String(error)}]`);
+    });
+  };
+  if (mounted instanceof Promise) void mounted.then(attach, attach);
+  else attach();
   surface.focus();
   return () => {
     disposed = true;

@@ -2,7 +2,17 @@
 // operations; `call` forwards only allowlisted control methods, and main
 // enforces the same allowlist again.
 import { contextBridge, ipcRenderer } from "electron";
-import { IPC, isRendererMethod, isSessionId, type PmApi, type PmConnectionState, type PmEvent, type PmTerminalMessage } from "./pm-api.js";
+import {
+  IPC,
+  isRendererMethod,
+  isSessionId,
+  terminalRendererFromArgv,
+  type PmApi,
+  type PmConnectionState,
+  type PmEvent,
+  type PmGhosttyApi,
+  type PmTerminalMessage,
+} from "./pm-api.js";
 
 function subscribe<T>(channel: string, listener: (value: T) => void): () => void {
   const handler = (_event: unknown, value: T) => listener(value);
@@ -10,7 +20,28 @@ function subscribe<T>(channel: string, listener: (value: T) => void): () => void
   return () => { ipcRenderer.removeListener(channel, handler); };
 }
 
+const ghostty: PmGhosttyApi = {
+  create: (frame) => ipcRenderer.invoke(IPC.ghosttyCreate, frame),
+  write: (surfaceId, data) => ipcRenderer.invoke(IPC.ghosttyWrite, surfaceId, data),
+  setFrame: (surfaceId, frame) => ipcRenderer.invoke(IPC.ghosttySetFrame, surfaceId, frame),
+  setVisible: (surfaceId, visible) => ipcRenderer.invoke(IPC.ghosttySetVisible, surfaceId, visible),
+  focus: (surfaceId) => ipcRenderer.invoke(IPC.ghosttyFocus, surfaceId),
+  scrollToBottom: (surfaceId) => ipcRenderer.invoke(IPC.ghosttyScrollBottom, surfaceId),
+  paste: (surfaceId, text) => ipcRenderer.invoke(IPC.ghosttyPaste, surfaceId, text),
+  snapshotText: (surfaceId) => ipcRenderer.invoke(IPC.ghosttySnapshotText, surfaceId),
+  snapshotImage: (surfaceId) => ipcRenderer.invoke(IPC.ghosttySnapshotImage, surfaceId),
+  snapshotAndHide: (surfaceId) => ipcRenderer.invoke(IPC.ghosttySnapshotAndHide, surfaceId),
+  destroy: (surfaceId) => ipcRenderer.invoke(IPC.ghosttyDestroy, surfaceId),
+  onInput: (listener) => subscribe<{ surfaceId: number; data: ArrayBuffer }>(
+    IPC.ghosttyInput,
+    ({ surfaceId, data }) => listener(surfaceId, new Uint8Array(data)),
+  ),
+  onClosed: (listener) => subscribe<{ surfaceId: number }>(IPC.ghosttyClosed, ({ surfaceId }) => listener(surfaceId)),
+};
+
 const api: PmApi = {
+  terminalRenderer: terminalRendererFromArgv(process.argv),
+  ghostty,
   call: async (method, params) => {
     if (!isRendererMethod(method)) {
       return { ok: false, error: { code: "methodNotAllowed", message: "method is not available to the renderer" } };

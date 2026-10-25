@@ -28,7 +28,7 @@ for (const packagePath of process.argv.includes("--rust-only") ? [] : packagePat
   const internal = Object.keys({ ...manifest.dependencies, ...manifest.devDependencies }).filter((name) => name.startsWith("@termloop/"));
   const allowed = ["@termloop/contract", "@termloop/pm-contract", "@termloop/terminal-wire", "@termloop/ghostty-host"].includes(manifest.name) ? []
     : manifest.name === "@termloop/terminal-surface" ? ["@termloop/terminal-wire"]
-    : manifest.name === "@termloop/pm" ? ["@termloop/pm-contract", "@termloop/terminal-surface", "@termloop/terminal-wire"]
+    : manifest.name === "@termloop/pm" ? ["@termloop/pm-contract", "@termloop/terminal-surface", "@termloop/terminal-wire", "@termloop/ghostty-host"]
     : manifest.name === "@termloop/desktop" ? ["@termloop/contract", "@termloop/terminal-surface", "@termloop/terminal-wire", "@termloop/ghostty-host"] : ["@termloop/contract"];
   if (internal.some((name) => !allowed.includes(name))) {
     errors.push(`DAG_FORBIDDEN_JS_EDGE: ${manifest.name} -> ${internal.join(",")}`);

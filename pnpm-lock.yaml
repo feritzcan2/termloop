@@ -289,6 +289,9 @@ importers:
       '@dnd-kit/utilities':
         specifier: 3.2.2
         version: 3.2.2(react@19.1.1)
+      '@termloop/ghostty-host':
+        specifier: workspace:*
+        version: link:../ghostty-host
       '@termloop/pm-contract':
         specifier: workspace:*
         version: link:../../contract/generated/pm-typescript

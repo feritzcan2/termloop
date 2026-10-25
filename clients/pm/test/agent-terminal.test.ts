@@ -29,7 +29,7 @@ function fakes(measured: { rows: number; cols: number }) {
     probe: () => undefined,
     dispose: () => undefined,
   };
-  const factory = (_input: (data: string) => void, resize: (rows: number, cols: number) => void) => {
+  const factory = (_input: (data: string | Uint8Array) => void, resize: (rows: number, cols: number) => void) => {
     onResize = resize;
     return surface;
   };
@@ -44,6 +44,37 @@ describe("agent terminal adapter", () => {
     expect(fake.calls).toEqual(["attach 38x61", "resize 40x72"]);
     dispose();
     expect(fake.terminal.detach).toHaveBeenCalledWith(SESSION);
+  });
+
+  it("waits for an asynchronous mount's grid before attaching and passes byte input through", async () => {
+    const fake = fakes({ rows: 0, cols: 0 });
+    let input: ((data: string | Uint8Array) => void) | undefined;
+    let resize: ((rows: number, cols: number) => void) | undefined;
+    let finishMount: (() => void) | undefined;
+    const surface: TerminalSurface = {
+      mount: () => new Promise<void>((resolve) => { finishMount = resolve; }),
+      unmount: () => undefined,
+      write: (_data, done) => done(),
+      writeln: () => undefined,
+      focus: () => undefined,
+      probe: () => undefined,
+      dispose: () => undefined,
+    };
+    mountAgentTerminal(fake.terminal, document.createElement("div"), SESSION, (onInput, onResize) => {
+      input = onInput;
+      resize = onResize;
+      return surface;
+    });
+    expect(fake.calls).toEqual([]);
+    // Native Ghostty reports its grid once its first frame is placed.
+    resize?.(41, 120);
+    finishMount?.();
+    await vi.waitFor(() => expect(fake.calls).toEqual(["attach 41x120"]));
+    const bytes = new Uint8Array([27, 91, 65]);
+    input?.(bytes);
+    input?.("x");
+    expect(fake.terminal.input).toHaveBeenNthCalledWith(1, SESSION, bytes);
+    expect(fake.terminal.input).toHaveBeenNthCalledWith(2, SESSION, new TextEncoder().encode("x"));
   });
 
   it("stages announced replay and writes it once complete, crediting every byte", () => {

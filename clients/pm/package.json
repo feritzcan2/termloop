@@ -6,7 +6,7 @@
   "main": "dist/main.js",
   "description": "TermLoop Project Manager desktop client",
   "scripts": {
-    "deps": "pnpm --filter @termloop/pm-contract build && pnpm --filter @termloop/terminal-wire build && pnpm --filter @termloop/terminal-surface build",
+    "deps": "pnpm --filter @termloop/ghostty-host build && pnpm --filter @termloop/pm-contract build && pnpm --filter @termloop/terminal-wire build && pnpm --filter @termloop/terminal-surface build",
     "build": "pnpm deps && node build.mjs",
     "start": "pnpm build && electron .",
     "check": "pnpm deps && tsc --noEmit",
@@ -17,6 +17,7 @@
     "@dnd-kit/core": "6.3.1",
     "@dnd-kit/sortable": "10.0.0",
     "@dnd-kit/utilities": "3.2.2",
+    "@termloop/ghostty-host": "workspace:*",
     "@termloop/pm-contract": "workspace:*",
     "@termloop/terminal-surface": "workspace:*",
     "@termloop/terminal-wire": "workspace:*",

@@ -54,6 +54,8 @@ export function fakeBridge(respond: Responder): PmApi & { calls: { method: Rende
     onConnectionState: () => () => undefined,
     onEvent: () => () => undefined,
     openExternal: async () => undefined,
+    terminalRenderer: "xterm",
+    ghostty: new Proxy({} as PmApi["ghostty"], { get: () => () => { throw new Error("ghostty is not available in tests"); } }),
     terminal: {
       attach: async () => undefined,
       detach: () => undefined,

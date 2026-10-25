@@ -4,9 +4,11 @@
 import { app, BrowserWindow, ipcMain, shell, type IpcMainEvent, type IpcMainInvokeEvent } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { IPC, isSessionId, type PmConnectionState, type PmTerminalMessage } from "./pm-api.js";
+import { GhosttySurfaceManager } from "@termloop/ghostty-host";
+import { IPC, isSessionId, TERMINAL_RENDERER_ARG, type PmConnectionState, type PmTerminalMessage } from "./pm-api.js";
 import { PmControl } from "./main/control.js";
 import { PmDaemonSupervisor, type PmDiscovery } from "./main/daemon-lifecycle.js";
+import { ghosttyHandlers } from "./main/ghostty-ipc.js";
 import { handleRendererCall, isOpenableUrl, isTrustedSender } from "./main/ipc.js";
 import { TerminalBridge } from "./main/terminal-bridge.js";
 import {
@@ -15,6 +17,7 @@ import {
   daemonBinaryExists,
   resolveDaemonBinary,
 } from "./platform/daemon-process.js";
+import { loadGhosttyHostAddon } from "./platform/ghostty-host.js";
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const smokeRun = process.argv.includes("--smoke");
@@ -23,6 +26,7 @@ let mainWindow: BrowserWindow | undefined;
 let supervisor: PmDaemonSupervisor | undefined;
 let control: PmControl | undefined;
 let terminals: TerminalBridge | undefined;
+let ghosttySurfaces: GhosttySurfaceManager | undefined;
 let connection: PmConnectionState = { state: "starting" };
 let smokeDirectories: Awaited<ReturnType<typeof createSmokeDirectories>> | undefined;
 let quitting = false;
@@ -77,6 +81,12 @@ function registerIpc(): void {
   ipcMain.on(IPC.terminalCredit, (event, sessionId: unknown, bytes: unknown) => {
     if (trusted(event) && isSessionId(sessionId) && typeof bytes === "number") terminals?.credit(sessionId, bytes);
   });
+  for (const [channel, handler] of Object.entries(ghosttyHandlers(() => ghosttySurfaces))) {
+    ipcMain.handle(channel, (event, ...args: unknown[]) => {
+      if (!trusted(event)) throw new Error("untrusted sender");
+      return handler(...args);
+    });
+  }
 }
 
 async function connectDaemon(): Promise<PmDiscovery> {
@@ -114,6 +124,8 @@ async function connectDaemon(): Promise<PmDiscovery> {
 }
 
 async function createWindow(): Promise<BrowserWindow> {
+  // Load before the window exists so the preload learns the renderer from argv.
+  const ghosttyAddon = loadGhosttyHostAddon(app.getAppPath(), app.isPackaged);
   const window = new BrowserWindow({
     title: "TermLoop PM",
     width: 1440,
@@ -127,14 +139,26 @@ async function createWindow(): Promise<BrowserWindow> {
       nodeIntegration: false,
       sandbox: true,
       preload: path.join(directory, "preload.cjs"),
+      additionalArguments: [`${TERMINAL_RENDERER_ARG}${ghosttyAddon ? "ghostty" : "xterm"}`],
     },
   });
   mainWindow = window;
+  if (ghosttyAddon) {
+    // PM is dark-only, so the dark config also stands in for the light one.
+    const config = path.join(directory, "ghostty-embedded.conf");
+    ghosttySurfaces = new GhosttySurfaceManager(ghosttyAddon, window, config, config, {
+      input: (surfaceId, data) => sendToRenderer(IPC.ghosttyInput, { surfaceId, data }),
+      closed: (surfaceId) => sendToRenderer(IPC.ghosttyClosed, { surfaceId }),
+      shortcut: () => undefined,
+    });
+  }
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event, target) => {
     if (target !== window.webContents.getURL()) event.preventDefault();
   });
   window.once("closed", () => {
+    ghosttySurfaces?.dispose();
+    ghosttySurfaces = undefined;
     if (mainWindow === window) mainWindow = undefined;
   });
   await window.loadFile(path.join(directory, "index.html"));
