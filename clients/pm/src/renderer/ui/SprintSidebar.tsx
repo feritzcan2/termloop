@@ -1,11 +1,13 @@
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useState } from "react";
-import type { PmBoardTicket, PmDataTier, PmSprint } from "@termloop/pm-contract/pm";
+import type { PmBoardTicket, PmDataTier, PmEnvironment, PmSprint } from "@termloop/pm-contract/pm";
+import { EnvironmentBadges } from "./delivery-facts.js";
 import { Icon } from "./icons.js";
 import {
   RISK_LABEL, STAGE_LABEL, STATUS_DOT, STATUS_LABEL, daysLeft, jiraKey, leftSprint, riskTone, sprintDay, sprintTickets, statusSections, tierAtLeast,
 } from "./format.js";
+import { ticketScope, type ScopeGrowth, type ScopeVersion } from "./scope.js";
 
 /** Which inline form the sprint rail shows. */
 export type SprintComposer = "sprint" | "ticket" | undefined;
@@ -14,6 +16,10 @@ export type SprintSidebarProps = {
   sprints: PmSprint[];
   tickets: PmBoardTicket[];
   tier: PmDataTier;
+  /** The project's environments in delivery order; badges show at the deploy tier. */
+  environments?: readonly PmEnvironment[];
+  /** Description versions loaded so far, by ticket; they drive the `scope` tag. */
+  versions?: Readonly<Record<string, readonly ScopeVersion[]>>;
   /** The focused sprint; the rail shows it only when no sprint is active. */
   selectedSprintId: string | undefined;
   selectedTicketId: string | undefined;
@@ -74,6 +80,8 @@ export function SprintSidebar(props: SprintSidebarProps) {
               tickets={lane}
               all={props.sprints}
               tier={props.tier}
+              environments={props.tier === "deploy" && props.environments ? props.environments : NO_ENVIRONMENTS}
+              versions={props.versions}
               now={props.now ?? Date.now()}
               selectedTicketId={props.selectedTicketId}
               composing={composer === "ticket"}
@@ -95,6 +103,8 @@ export function SprintSidebar(props: SprintSidebarProps) {
     </section>
   );
 }
+
+const NO_ENVIRONMENTS: readonly PmEnvironment[] = [];
 
 /** The group head's progress: "day X/N", else days left, else the sprint state. */
 function sprintProgress(sprint: PmSprint, now: number): string {
@@ -142,6 +152,9 @@ function FocusedSprint(props: {
   tickets: PmBoardTicket[];
   all: PmSprint[];
   tier: PmDataTier;
+  /** Empty below the deploy tier. */
+  environments: readonly PmEnvironment[];
+  versions: SprintSidebarProps["versions"];
   now: number;
   selectedTicketId: string | undefined;
   composing: boolean;
@@ -193,6 +206,9 @@ function FocusedSprint(props: {
                   key={entry.ticket.id}
                   entry={entry}
                   showStage={showStage}
+                  environments={props.environments}
+                  scope={ticketScope(entry.ticket, props.all, props.versions?.[entry.ticket.id])}
+                  now={props.now}
                   selected={entry.ticket.id === props.selectedTicketId}
                   onSelect={() => props.onSelectTicket(entry.ticket.id)}
                   moves={{
@@ -243,11 +259,22 @@ function MoveMenu(props: { moves: TicketMoves; title: string }) {
   );
 }
 
-function TicketRow(props: { entry: PmBoardTicket; showStage: boolean; selected: boolean; onSelect(): void; moves: TicketMoves }) {
+function TicketRow(props: {
+  entry: PmBoardTicket;
+  showStage: boolean;
+  /** Empty below the deploy tier. */
+  environments: readonly PmEnvironment[];
+  scope: ScopeGrowth | undefined;
+  now: number;
+  selected: boolean;
+  onSelect(): void;
+  moves: TicketMoves;
+}) {
   const { ticket, delivery, pendingProposalCount } = props.entry;
   const key = jiraKey(ticket);
   const sortable = useSortable({ id: ticket.id });
   const style = { transform: CSS.Transform.toString(sortable.transform), transition: sortable.transition };
+  const pullRequests = props.showStage ? delivery.facts?.pullRequests ?? 0 : 0;
   const risks = delivery.risks.filter((risk) => risk.kind !== "unassigned" && risk.kind !== "carriedOver");
   return (
     <li ref={sortable.setNodeRef} style={style} className={`pm-ticket-item ${sortable.isDragging ? "dragging" : ""}`}>
@@ -269,6 +296,9 @@ function TicketRow(props: { entry: PmBoardTicket; showStage: boolean; selected: 
                 {STAGE_LABEL[delivery.stage.kind].toLowerCase()}{delivery.stage.environment ? ` · ${delivery.stage.environment}` : ""}
               </span>
             )}
+            <EnvironmentBadges environments={props.environments} facts={delivery.facts} now={props.now} />
+            {pullRequests > 0 && <span className="pr-chip" title="Linked pull requests">PR·{pullRequests}</span>}
+            {props.scope && <span className="warn" title={props.scope.explanation} data-testid="scope-tag">scope</span>}
             {ticket.carryOverCount > 0 && <span className="warn" title="Carried over">carried over ×{ticket.carryOverCount}</span>}
             {risks.map((risk, index) => (
               <span key={index} className={riskTone(risk.kind)} title={risk.detail}>{RISK_LABEL[risk.kind].toLowerCase()}</span>

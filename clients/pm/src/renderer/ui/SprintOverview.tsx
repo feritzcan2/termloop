@@ -1,5 +1,6 @@
 import { useState } from "react";
-import type { PmBoardTicket, PmDataTier, PmDigestEntry, PmSprint } from "@termloop/pm-contract/pm";
+import type { PmBoardTicket, PmDataTier, PmDigestEntry, PmEnvironment, PmSprint } from "@termloop/pm-contract/pm";
+import { EnvironmentBadges } from "./delivery-facts.js";
 import { RISK_LABEL, STAGE_LABEL, attentionRows, dayRuler, sprintDay, statusRibbon, ticketLabel, unknownDeployment } from "./format.js";
 
 export type SprintOverviewProps = {
@@ -7,6 +8,8 @@ export type SprintOverviewProps = {
   sprints: PmSprint[];
   tickets: PmBoardTicket[];
   tier: PmDataTier;
+  /** The project's environments in delivery order; attention rows show badges at the deploy tier. */
+  environments?: readonly PmEnvironment[];
   digest: PmDigestEntry[];
   now: number;
   onOpenTicket(ticketId: string): void;
@@ -38,6 +41,7 @@ export function SprintOverview(props: SprintOverviewProps) {
   const ruler = dayRuler(sprint, props.now);
   const position = sprintDay(sprint, props.now);
   const ribbon = statusRibbon(tickets, props.tier);
+  const environments = props.tier === "deploy" ? props.environments ?? [] : [];
   const unknown = props.tier === "deploy" ? unknownDeployment(tickets) : [];
   const targets = props.sprints.filter((candidate) => candidate.id !== sprint.id && (candidate.state === "planned" || candidate.state === "backlog"));
   const known = (ticketId: string | null) => ticketId !== null && tickets.some((entry) => entry.ticket.id === ticketId);
@@ -110,6 +114,7 @@ export function SprintOverview(props: SprintOverviewProps) {
                   <span>
                     <div className="ruled-title">{entry.ticket.title}</div>
                     <div className="ruled-detail">
+                      <EnvironmentBadges environments={environments} facts={entry.delivery.facts} now={props.now} />
                       <span className={row.tone}>{row.title}.</span> {row.detail}
                     </div>
                   </span>

@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import type { PmDataTier, PmFactSource, PmSprint, PmTicket, PmTicketDelivery, PmTicketPriority, PmTicketStatus } from "@termloop/pm-contract/pm";
+import type { PmDataTier, PmSprint, PmTicket, PmTicketDelivery, PmTicketPriority, PmTicketStatus } from "@termloop/pm-contract/pm";
 import {
   PRIORITY_LABEL,
   PRIORITY_ORDER,
@@ -9,9 +9,8 @@ import {
   relativeTime,
   tierAtLeast,
 } from "./format.js";
+import { SOURCE_LABEL, pullRequestLine } from "./delivery-facts.js";
 import { assigneeUpdate, jiraUrlUpdate, sprintChoices, type TicketFieldUpdate } from "./ticket-edit.js";
-
-const SOURCE_LABEL: Record<PmFactSource, string> = { jira: "Jira", gitHost: "pull requests", probe: "probes", check: "delivery checks", projectManager: "your edits" };
 
 export type TicketFieldsProps = {
   ticket: PmTicket;
@@ -39,6 +38,7 @@ export function TicketFields({ ticket, delivery, sprints, tier, now, onUpdate, o
   useEffect(() => { setJiraUrl(ticket.jiraUrl ?? ""); setJiraInvalid(false); }, [ticket.id, ticket.jiraUrl]);
   const showCode = tierAtLeast(tier, "code");
   const facts = delivery.facts;
+  const pullRequests = showCode && facts ? pullRequestLine(facts, delivery.risks) : undefined;
   const commitJira = () => {
     const update = jiraUrlUpdate(jiraUrl, ticket);
     setJiraInvalid(update === "invalid");
@@ -81,7 +81,6 @@ export function TicketFields({ ticket, delivery, sprints, tier, now, onUpdate, o
         </label>
         {ticket.blockers.length > 0 && <span className="chip-static bad">Blocked · {ticket.blockers[0]!.text}{ticket.blockers.length > 1 ? ` +${ticket.blockers.length - 1}` : ""}</span>}
         {showCode && <span className="chip-static">{STAGE_LABEL[delivery.stage.kind]}{delivery.stage.environment ? ` · ${delivery.stage.environment}` : ""}</span>}
-        {showCode && facts && <span className="chip-static">PR × {facts.pullRequests}</span>}
         {ticket.carryOverCount > 0 && <span className="chip-static">Carried over ×{ticket.carryOverCount}</span>}
         <span className="sp" />
         {actions}
@@ -108,6 +107,12 @@ export function TicketFields({ ticket, delivery, sprints, tier, now, onUpdate, o
           <div>
             <dt>In Jira</dt>
             <dd>{facts.jiraStatus} · {facts.jiraAssignee ?? "Unassigned"}</dd>
+          </div>
+        )}
+        {pullRequests && (
+          <div>
+            <dt>Pull requests</dt>
+            <dd className={pullRequests.unavailable ? "warning" : undefined} data-testid="pr-line">{pullRequests.text}</dd>
           </div>
         )}
         {showCode && facts && facts.deployedEnvironments.length > 0 && (

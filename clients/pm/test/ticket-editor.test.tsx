@@ -144,6 +144,16 @@ describe("markdown editor", () => {
 });
 
 describe("ticket editor", () => {
+  it("warns beside the risks when the acceptance criteria grew since sprint start", () => {
+    const versions = [
+      { ticketId: "ticket-1", number: 1, description: "## Acceptance criteria\n- a", author: "pm" as const, recordedAtEpochMs: -1 },
+      { ticketId: "ticket-1", number: 2, description: "## Acceptance criteria\n- a\n- b\n- c", author: "pm" as const, recordedAtEpochMs: 5 },
+    ];
+    const view = render(<TicketEditor {...editor(boardTicket(), { versions })} />);
+    cleanup = view.unmount;
+    expect(view.container.querySelector('[data-testid="scope-grew"]')?.textContent).toBe("Scope grew Acceptance criteria grew from 1 to 3 items since sprint start.");
+  });
+
   it("shows no unsaved state for an untouched description and adopts a newer saved version", () => {
     const view = render(<TicketEditor {...editor(boardTicket({ description: "* one\n* two" }))} />);
     cleanup = view.unmount;

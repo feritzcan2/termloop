@@ -5,6 +5,7 @@ import { ProposalCard } from "./ProposalCard.js";
 import { TicketFields } from "./TicketFields.js";
 import { AUTHOR_LABEL, VersionsList } from "./VersionsList.js";
 import { RISK_LABEL, jiraKey, relativeTime, riskTone, ticketLabel } from "./format.js";
+import { ticketScope } from "./scope.js";
 import { descriptionEdited, isSaveShortcut, titleUpdate, type DescriptionDraft, type TicketFieldUpdate } from "./ticket-edit.js";
 import type { DescriptionSaveOutcome } from "./types.js";
 
@@ -93,6 +94,7 @@ export function TicketEditor(props: TicketEditorProps) {
   };
 
   const key = jiraKey(ticket);
+  const scope = ticketScope(ticket, props.sprints, props.versions);
   const doneCount = ticket.acceptanceCriteria.filter((item) => item.done).length;
 
   return (
@@ -135,9 +137,10 @@ export function TicketEditor(props: TicketEditorProps) {
             {props.deployTracking && <button type="button" className="btn sm ghost" disabled={delivery.checking} onClick={props.onStartCheck}>{delivery.checking ? "Checking…" : "Check delivery"}</button>}
           </>}
         />
-        {delivery.risks.length > 0 && (
+        {(delivery.risks.length > 0 || scope) && (
           <ul className="risk-list">
             {delivery.risks.map((risk, index) => <li key={index} className={riskTone(risk.kind)}><strong>{RISK_LABEL[risk.kind]}</strong> {risk.detail}</li>)}
+            {scope && <li className="warn" data-testid="scope-grew"><strong>Scope grew</strong> {scope.explanation}.</li>}
           </ul>
         )}
 
