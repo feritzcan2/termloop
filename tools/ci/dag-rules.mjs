@@ -13,6 +13,7 @@ export const allowedRust = new Map(Object.entries({
   "termloop-terminal": ["termloop-platform", "termloop-terminal-wire"],
   "termloop-observability": ["termloop-gitio", "termloop-platform"],
   "termloop-llm": ["termloop-platform"],
+  "termloop-pm": ["termloop-agent-runtime", "termloop-domain", "termloop-invocation", "termloop-llm", "termloop-platform", "termloop-providers", "termloop-terminal"],
   "termloop-core": ["termloop-agent-runtime", "termloop-agents", "termloop-domain", "termloop-gitio", "termloop-invocation", "termloop-llm", "termloop-observability", "termloop-platform", "termloop-providers", "termloop-store", "termloop-terminal"],
   "termloop-server": ["termloop-terminal-wire", "termloop-agent-runtime", "termloop-contract", "termloop-core", "termloop-platform", "termloop-terminal"],
   "termloop-companion": ["termloop-contract"],

@@ -1,0 +1,15 @@
+[package]
+name = "termloop-pm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rusqlite = { workspace = true, features = ["fallible_uint"] }
+serde.workspace = true
+termloop-platform = { path = "../platform" }
+termloop-providers = { path = "../providers" }
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

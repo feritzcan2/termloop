@@ -1,0 +1,64 @@
+//! Named write commands. Each runs as one transaction through
+//! [`PmStore::write`](crate::PmStore) and validates every parameter before
+//! touching a row.
+
+mod environment;
+mod sprint;
+mod ticket;
+
+use rusqlite::{Connection, OptionalExtension, params};
+
+pub use sprint::ClosedSprint;
+pub use ticket::{NewTicket, TicketEdit};
+
+use crate::store::{sprint_by_id, ticket_by_id};
+pub(crate) use crate::validation::check_id;
+use crate::{PmError, Sprint, SprintState, Ticket};
+
+fn require_sprint(connection: &Connection, sprint_id: &str) -> Result<Sprint, PmError> {
+    check_id(sprint_id, "sprintId")?;
+    sprint_by_id(connection, sprint_id)?.ok_or(PmError::NotFound)
+}
+
+/// A sprint that still accepts changes and tickets.
+fn require_open_sprint(connection: &Connection, sprint_id: &str) -> Result<Sprint, PmError> {
+    let sprint = require_sprint(connection, sprint_id)?;
+    if sprint.state == SprintState::Closed {
+        return Err(PmError::Constraint("the sprint is closed"));
+    }
+    Ok(sprint)
+}
+
+fn require_ticket(connection: &Connection, ticket_id: &str) -> Result<Ticket, PmError> {
+    check_id(ticket_id, "ticketId")?;
+    ticket_by_id(connection, ticket_id)?.ok_or(PmError::NotFound)
+}
+
+/// The rank after the last ticket of one lane: a sprint, or the backlog for
+/// `None`.
+fn next_rank(
+    connection: &Connection,
+    project_id: &str,
+    sprint_id: Option<&str>,
+) -> Result<i64, PmError> {
+    let last: Option<i64> = connection
+        .query_row(
+            "SELECT MAX(rank) FROM tickets WHERE project_id = ?1 AND sprint_id IS ?2",
+            params![project_id, sprint_id],
+            |row| row.get(0),
+        )
+        .optional()?
+        .flatten();
+    last.map_or(Ok(0), |rank| {
+        rank.checked_add(1)
+            .ok_or(PmError::Constraint("ticket rank overflow"))
+    })
+}
+
+fn touch_ticket(connection: &Connection, ticket_id: &str, now: u64) -> Result<(), PmError> {
+    connection.execute(
+        "UPDATE tickets SET updated_at_epoch_ms = ?2 WHERE id = ?1",
+        params![ticket_id, now],
+    )?;
+    Ok(())
+}
