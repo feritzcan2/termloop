@@ -330,6 +330,28 @@ h3.s .r { margin-left: auto; color: var(--dimmer); font: 400 10px/1 var(--font-m
 .skill-row .skill-meta, .skill-row > .hint { margin-left: 21px; }
 .revision-offer { display: flex; align-items: center; gap: 10px; margin: 8px 0 0 21px; padding: 7px 10px; border: 1px solid rgba(217, 170, 95, .3); border-radius: 6px; background: rgba(217, 170, 95, .06); }
 .revision-offer p { flex: 1; margin: 0; color: var(--text-secondary); font-size: 11.5px; line-height: 1.5; }
+.skill-state { width: 13px; height: 13px; flex: none; border: 1.5px solid var(--dimmer); border-radius: 50%; }
+.skill-state.ready { border-color: var(--accent); background: var(--accent-wash); }
+.skill-row.setup .skill-name { color: var(--text-secondary); }
+.chip.ready { border-color: rgba(102, 179, 255, .35); color: var(--accent-strong); }
+.env-setup { width: min(620px, 92vw); }
+.env-setup > .sec-label { display: block; margin-top: 14px; color: var(--dimmer); }
+.env-summary { color: var(--text-secondary); font-size: 12.5px; line-height: 1.55; }
+.env-steps { margin-top: 8px; padding: 0; list-style: none; counter-reset: env; }
+.env-steps li { position: relative; margin-left: 10px; padding: 0 0 12px 18px; border-left: 1px solid var(--border-strong); }
+.env-steps li:last-child { border-left-color: transparent; padding-bottom: 0; }
+.env-steps li::before { position: absolute; top: 3px; left: -5px; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); content: ""; }
+.env-steps li.off::before { background: var(--dimmer); }
+.env-steps li.off .env-name b { color: var(--dimmer); text-decoration: line-through; }
+.env-name { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.env-name input, .env-probe input { margin: 0; accent-color: var(--accent); }
+.env-detail { margin: 3px 0 0 21px; color: var(--dimmer); font-size: 11px; }
+.env-detail summary { width: fit-content; cursor: pointer; }
+.env-detail p, .env-detail code { display: block; margin: 4px 0 0; color: var(--text-secondary); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.env-probe { margin: 8px 0 0 21px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-raised); }
+.env-probe label { display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; }
+.env-probe .env-detail { margin-left: 21px; }
+.env-none { margin: 6px 0 0 21px; color: var(--dimmer); font-size: 11px; }
 .skills-panel .draft-card { max-width: none; margin: 10px 10px 0; padding: 12px 14px; }
 .skill-draft h3.skill-name { margin-top: 8px; font-size: 14px; }
 .skill-draft .draft-summary { color: var(--text-secondary); }

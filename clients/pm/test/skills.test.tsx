@@ -159,7 +159,7 @@ describe("SkillsPanel", () => {
     const empty = render(<SkillsPanel {...panel({ onSetUp, skills: { projectId: "project-1", environmentProposal: null, skills: [], drafts: [] } })} />);
     const rows = [...empty.container.querySelectorAll(".skill-row.setup")];
     expect(rows.map((row) => row.querySelector(".skill-name")?.textContent)).toEqual(["Deployment control", "Bug owner finder", "Slack tracker"]);
-    expect(rows.every((row) => row.querySelector<HTMLInputElement>("input")!.disabled)).toBe(true);
+    expect(rows.every((row) => row.textContent!.includes("Not set up") && row.querySelector("input") === null)).toBe(true);
     act(() => rows[2]!.querySelector("button")!.click());
     expect(onSetUp).toHaveBeenCalledWith("slackTracker");
     empty.unmount();
@@ -168,8 +168,8 @@ describe("SkillsPanel", () => {
     );
     const setup = [...set.container.querySelectorAll(".skill-row.setup")];
     expect(setup.map((row) => row.querySelector(".skill-name")?.textContent)).toEqual(["Deployment control", "Slack tracker"]);
-    expect(setup[1]!.textContent).toContain("A draft is waiting below.");
-    expect(setup[1]!.querySelector("button")!.disabled).toBe(true);
+    expect(setup[1]!.textContent).toContain("Ready to review");
+    expect(setup[1]!.querySelector("button")!.textContent).toBe("Review");
     set.unmount();
   });
 
@@ -209,13 +209,18 @@ describe("SkillsPanel", () => {
       <SkillsPanel {...panel({ onApplyEnvironments, skills: { projectId: "project-1", environmentProposal: proposal, skills: [], drafts: [] } })} />,
     );
     const setup = container.querySelector(".skill-row.setup")!;
-    expect(setup.textContent).toContain("A draft is waiting below.");
-    const card = container.querySelector('[aria-label="Deployment control setup"]')!;
-    expect(card.textContent).toContain("curl https://staging.example/version");
-    const [, production] = [...card.querySelectorAll<HTMLInputElement>("input")];
-    act(() => production!.click());
+    expect(setup.textContent).toContain("Ready to review");
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    act(() => button(container, "Review").click());
+    const dialog = container.querySelector('[aria-label="Set up Deployment control"]')!;
+    expect(dialog.textContent).toContain("curl https://staging.example/version");
+    const productionCheck = dialog.querySelector<HTMLInputElement>('input[aria-label="Check production"]')!;
+    act(() => dialog.querySelector<HTMLInputElement>('input[aria-label="production"]')!.click());
+    expect(productionCheck.disabled).toBe(true);
+    expect(productionCheck.checked).toBe(false);
     await act(async () => button(container, "Turn on Deployment control").click());
     expect(onApplyEnvironments).toHaveBeenCalledWith(["staging"], ["probe-1"]);
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
     unmount();
   });
 

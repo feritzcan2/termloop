@@ -1,11 +1,12 @@
 import { useState } from "react";
 import type {
-  PmDataTier, PmEnvironmentProposal, PmProbe, PmSkill, PmSkillDraft, PmSkillManifest, PmSkillSetup, PmSkillsReadResult, PmTicket,
+  PmDataTier, PmSkill, PmSkillDraft, PmSkillManifest, PmSkillSetup, PmSkillsReadResult, PmTicket,
 } from "@termloop/pm-contract/pm";
 import { Icon } from "./icons.js";
 import { relativeTime, timeUntil } from "./format.js";
 import { EvidenceList, LineDiff } from "./ProposalCard.js";
 import { proposalKindLabel } from "./proposal-change.js";
+import { EnvironmentSetupDialog } from "./EnvironmentSetupDialog.js";
 
 export type SkillsPanelProps = {
   skills: PmSkillsReadResult | undefined;
@@ -80,6 +81,7 @@ export function SkillsPanel(props: SkillsPanelProps) {
   const skills = props.skills?.skills ?? [];
   const drafts = props.skills?.drafts ?? [];
   const proposal = props.skills?.environmentProposal ?? null;
+  const [reviewing, setReviewing] = useState(false);
   // The built-in Deployment control shows as a Set up row until it is on.
   const shown = skills.filter((skill) => skill.builtin === null || skill.enabled);
   const row = (skill: PmSkill) => (
@@ -88,7 +90,7 @@ export function SkillsPanel(props: SkillsPanelProps) {
   return (
     <div className="skills-panel">
       <div className="right-sidebar-tools">
-        <span className="count-badge" title="Skills on">{skills.filter((skill) => skill.enabled).length}</span>
+        <span className="meta">{skills.filter((skill) => skill.enabled).length} on</span>
         <span className="sp" />
         <button type="button" className="view-action" disabled={!props.canCreate} onClick={props.onCreate}>
           <Icon name="plus" />Create a skill
@@ -101,22 +103,24 @@ export function SkillsPanel(props: SkillsPanelProps) {
           {KNOWN_SKILLS.map((known) => {
             const set = shown.filter((skill) => known.matches(skill));
             if (set.length > 0) return set.map(row);
-            const drafting = known.kind === "deploymentControl"
-              ? proposal !== null
-              : drafts.some((draft) => draft.baseSkillId === null && known.matches({ builtin: null, manifest: draft.manifest }));
-            return <SetupRow key={known.kind} {...known} drafting={drafting} onSetUp={() => props.onSetUp(known.kind)} />;
+            const draft = drafts.find((draft) => draft.baseSkillId === null && known.matches({ builtin: null, manifest: draft.manifest }));
+            const review = known.kind === "deploymentControl"
+              ? proposal && (() => setReviewing(true))
+              : draft && (() => document.getElementById(draftAnchor(draft.id))?.scrollIntoView?.({ behavior: "smooth", block: "start" }));
+            return <SetupRow key={known.kind} {...known} onReview={review || undefined} onSetUp={() => props.onSetUp(known.kind)} />;
           })}
           {shown.filter((skill) => !KNOWN_SKILLS.some((known) => known.matches(skill))).map(row)}
         </ul>
       )}
       {props.tier === "tickets" && <p className="hint pad">Skills that read GitHub pull requests appear once a repository is connected.</p>}
-      {proposal && (
-        <EnvironmentProposalCard
+      {proposal && reviewing && (
+        <EnvironmentSetupDialog
           key={proposal.createdAtEpochMs}
           proposal={proposal}
           now={props.now}
           onApply={props.onApplyEnvironments}
           onDiscard={props.onDiscardEnvironments}
+          onClose={() => setReviewing(false)}
         />
       )}
       {drafts.map((draft) => (
@@ -136,19 +140,25 @@ export function SkillsPanel(props: SkillsPanelProps) {
   );
 }
 
-/** A known skill that is not set up: greyed out, with its own Set up. */
-function SetupRow(props: { name: string; description: string; drafting: boolean; onSetUp(): void }) {
+function draftAnchor(draftId: string): string {
+  return `skill-draft-${draftId}`;
+}
+
+/** A known skill that is not set up: greyed out, with its own Set up, or Review once its setup proposed something. */
+function SetupRow(props: { name: string; description: string; onReview: (() => void) | undefined; onSetUp(): void }) {
   return (
     <li className="skill-row off setup">
-      <label className="skill-tick">
-        <input type="checkbox" checked={false} disabled aria-label={`${props.name} enabled`} />
+      <span className="skill-tick">
+        <span className={`skill-state ${props.onReview ? "ready" : ""}`} aria-hidden="true" />
         <span className="skill-name">{props.name}</span>
-      </label>
+      </span>
       <p className="skill-description">{props.description}</p>
       <div className="skill-meta">
-        <span>{props.drafting ? "A draft is waiting below." : "Not set up"}</span>
+        {props.onReview ? <span className="chip ready">Ready to review</span> : <span>Not set up</span>}
         <span className="sp" />
-        <button type="button" className="btn sm pri" disabled={props.drafting} onClick={props.onSetUp}>Set up</button>
+        {props.onReview
+          ? <button type="button" className="btn sm pri" onClick={props.onReview}>Review</button>
+          : <button type="button" className="btn sm pri" onClick={props.onSetUp}>Set up</button>}
       </div>
     </li>
   );
@@ -224,78 +234,6 @@ export function manifestLines(manifest: PmSkillManifest): string {
   ].join("\n");
 }
 
-/** What the Deployment control setup found: the PM ticks the environments and probes to keep. */
-function EnvironmentProposalCard(props: {
-  proposal: PmEnvironmentProposal;
-  now: number;
-  onApply(environments: string[], probeIds: string[]): Promise<boolean>;
-  onDiscard(): void;
-}) {
-  const { proposal } = props;
-  const [environments, setEnvironments] = useState(() => proposal.environments.map((environment) => environment.name));
-  const [probeIds, setProbeIds] = useState(() => proposal.probes.map((probe) => probe.id));
-  const [applying, setApplying] = useState(false);
-  // A probe of an unticked environment is not kept.
-  const kept = (probe: PmProbe) => probeIds.includes(probe.id) && environments.includes(probe.environment);
-  const apply = async () => {
-    setApplying(true);
-    await props.onApply(environments, proposal.probes.filter(kept).map((probe) => probe.id));
-    setApplying(false);
-  };
-  return (
-    <section className="draft-card skill-draft" aria-label="Deployment control setup">
-      <div className="draft-head">
-        <span className="sec-label">Deployment control setup</span>
-        <span className="meta">{relativeTime(proposal.createdAtEpochMs, props.now)}</span>
-      </div>
-      <p className="draft-summary">{proposal.summary}</p>
-      <fieldset className="tool-approvals">
-        <legend>Environments, in delivery order</legend>
-        {proposal.environments.map((environment) => (
-          <label key={environment.name}>
-            <input
-              type="checkbox"
-              checked={environments.includes(environment.name)}
-              onChange={(event) => setEnvironments(toggled(environments, environment.name, event.target.checked))}
-            />
-            <span>
-              <b>{environment.name}</b>{environment.production && <span className="chip">production</span>}
-              <span className="hint"> · {environment.evidence}</span>
-            </span>
-          </label>
-        ))}
-      </fieldset>
-      {proposal.probes.length > 0 && (
-        <fieldset className="tool-approvals">
-          <legend>Probes to run: each reads what an environment runs</legend>
-          {proposal.probes.map((probe) => (
-            <label key={probe.id}>
-              <input
-                type="checkbox"
-                checked={kept(probe)}
-                disabled={!environments.includes(probe.environment)}
-                onChange={(event) => setProbeIds(toggled(probeIds, probe.id, event.target.checked))}
-              />
-              <span>
-                <b>{probe.environment}</b> <code>{probe.argv.join(" ")}</code>
-                {probe.reason && <span className="hint"> · {probe.reason}</span>}
-              </span>
-            </label>
-          ))}
-        </fieldset>
-      )}
-      {environments.length === 0 && <p className="hint install-hint">Tick at least one environment.</p>}
-      <div className="draft-actions">
-        <button type="button" className="btn sm ghost" onClick={props.onDiscard}>Discard</button>
-        <span className="sp" />
-        <button type="button" className="btn sm pri" disabled={environments.length === 0 || applying} onClick={() => void apply()}>
-          Turn on Deployment control
-        </button>
-      </div>
-    </section>
-  );
-}
-
 function DraftCard(props: {
   draft: PmSkillDraft;
   /** The installed skill a revision replaces. */
@@ -324,7 +262,7 @@ function DraftCard(props: {
     setInstalling(false);
   };
   return (
-    <section className="draft-card skill-draft" aria-label={`Skill draft ${draft.manifest.name}`}>
+    <section id={draftAnchor(draft.id)} className="draft-card skill-draft" aria-label={`Skill draft ${draft.manifest.name}`}>
       <div className="draft-head">
         <span className="sec-label">{draft.origin === "revision" ? "Skill revision" : draft.origin === "import" ? "Imported skill" : "Skill draft"}</span>
         <span className="meta">{relativeTime(draft.createdAtEpochMs, props.now)}</span>
