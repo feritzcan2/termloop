@@ -82,6 +82,12 @@ impl PmStore {
         (self.ids)()
     }
 
+    /// The id source, for a command that creates rows inside its
+    /// transaction.
+    pub(crate) fn id_source(&self) -> fn() -> String {
+        self.ids
+    }
+
     /// Runs one named command in a single transaction: either all of its
     /// writes commit or none do.
     pub(crate) fn write<T>(

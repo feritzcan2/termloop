@@ -115,7 +115,7 @@ fn check_target_sprint(
 /// Records `description` as the ticket's next version unless it equals the
 /// newest one, dropping versions beyond [`TICKET_VERSIONS_MAX`]. Returns the
 /// head version number afterwards (0 when there is none).
-fn record_version(
+pub(super) fn record_version(
     connection: &Connection,
     ticket_id: &str,
     description: &str,

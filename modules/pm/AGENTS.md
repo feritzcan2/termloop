@@ -15,7 +15,7 @@
   `invocation`, `agent-runtime`, `terminal`, `llm` (see
   `tools/ci/dag-rules.mjs`). Add an edge only when code here uses it.
 - Never depend on `core` or `store`; the developer daemon's state is not PM
-  state. External: `rusqlite`, `serde`, `serde_json`,
+  state. External: `rusqlite`, `serde`, `serde_json`, `sha2`,
   `thiserror`.
 
 ## Invariants
@@ -42,6 +42,15 @@
   approved probe. With neither, a ticket never gets a check reason.
 - A proposed probe never runs; only the PM's approval (or a PM-written
   probe) lets it. A run of a probe that changed meanwhile is refused.
+- A project whose Jira source names a board mirrors that board's sprints:
+  Jira owns a mirrored sprint's name, end, and state, and which linked issues
+  its active sprint holds; unlinked tickets keep the PM's sprint. A failed
+  pull, or one planned against changed sources or older than the last applied
+  pull, changes nothing. A closed sprint is never reopened by a pull.
+- Jira is written only with a diff the PM confirmed: the confirmation token
+  is the diff's hash, and applying re-reads Jira and refuses when the diff
+  differs. A credential is used only for an issue whose browse URL starts
+  with `{normalized site}/browse/` of the project's Jira source.
 - Migrations are forward-only, recorded in `schema_migrations`, never edited
   once released; a database newer than the build is refused.
 

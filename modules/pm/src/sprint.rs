@@ -57,6 +57,15 @@ pub struct Sprint {
     /// When the sprint is planned to end; risks look at it near the end.
     #[serde(default)]
     pub ends_at_epoch_ms: Option<u64>,
+    /// The Jira sprint this sprint mirrors; Jira owns a mirrored sprint's
+    /// name, end, and state.
+    #[serde(default)]
+    pub jira_sprint_id: Option<u64>,
+    #[serde(default)]
+    pub jira_board_id: Option<u64>,
+    /// When a sprint read last saw the Jira sprint.
+    #[serde(default)]
+    pub jira_pulled_at_epoch_ms: Option<u64>,
 }
 
 impl Sprint {
@@ -106,6 +115,9 @@ mod tests {
             activated_at_epoch_ms: None,
             closed_at_epoch_ms: None,
             ends_at_epoch_ms: Some(10),
+            jira_sprint_id: None,
+            jira_board_id: None,
+            jira_pulled_at_epoch_ms: None,
         };
         assert!(sprint.is_valid());
         assert!(

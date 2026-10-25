@@ -26,7 +26,8 @@ pub(crate) fn parsed<T>(
 }
 
 const SPRINT_COLUMNS: &str = "id, project_id, name, goal, state, created_at_epoch_ms, \
-     activated_at_epoch_ms, closed_at_epoch_ms, ends_at_epoch_ms";
+     activated_at_epoch_ms, closed_at_epoch_ms, ends_at_epoch_ms, jira_sprint_id, jira_board_id, \
+     jira_pulled_at_epoch_ms";
 
 fn sprint_row(row: &Row<'_>) -> rusqlite::Result<Sprint> {
     Ok(Sprint {
@@ -39,6 +40,9 @@ fn sprint_row(row: &Row<'_>) -> rusqlite::Result<Sprint> {
         activated_at_epoch_ms: row.get(6)?,
         closed_at_epoch_ms: row.get(7)?,
         ends_at_epoch_ms: row.get(8)?,
+        jira_sprint_id: row.get(9)?,
+        jira_board_id: row.get(10)?,
+        jira_pulled_at_epoch_ms: row.get(11)?,
     })
 }
 
@@ -157,7 +161,7 @@ fn load_tickets(
     let mut statement = connection.prepare(&format!(
         "SELECT t.id, t.project_id, t.title, t.status, t.priority, t.assignee, t.sprint_id, \
              t.rank, t.jira_url, t.carry_over_count, t.created_at_epoch_ms, \
-             t.updated_at_epoch_ms \
+             t.updated_at_epoch_ms, t.jira_sprint_id, t.jira_pulled_at_epoch_ms \
          FROM tickets t WHERE {filter} \
          ORDER BY t.sprint_id IS NULL, t.sprint_id, t.rank, t.id"
     ))?;
@@ -178,6 +182,8 @@ fn load_tickets(
                 sprint_id: row.get(6)?,
                 rank: row.get(7)?,
                 jira_url: row.get(8)?,
+                jira_sprint_id: row.get(12)?,
+                jira_pulled_at_epoch_ms: row.get(13)?,
                 carry_over_count: row.get(9)?,
                 blockers: blockers.remove(&id).unwrap_or_default(),
                 acceptance_criteria: criteria.remove(&id).unwrap_or_default(),

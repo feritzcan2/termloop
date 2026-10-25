@@ -32,6 +32,8 @@ pub struct JiraIssueText {
     pub description: Option<String>,
     /// The workflow status name; `None` when Jira did not send one.
     pub status_name: Option<String>,
+    /// The status's category key: `new`, `indeterminate`, or `done`.
+    pub status_category: Option<String>,
     /// Jira's `updated` stamp, which moves on every change to the issue.
     pub updated: String,
 }
@@ -291,13 +293,16 @@ struct IssueFields {
     #[serde(default)]
     description: Option<String>,
     #[serde(default)]
-    status: Option<NamedValue>,
+    status: Option<StatusValue>,
     updated: String,
 }
 
 #[derive(Deserialize)]
-struct NamedValue {
+#[serde(rename_all = "camelCase")]
+struct StatusValue {
     name: String,
+    #[serde(default)]
+    status_category: Option<CategoryValue>,
 }
 
 #[derive(Deserialize)]
@@ -325,6 +330,10 @@ struct CategoryValue {
     key: String,
 }
 
+fn known_category(category: CategoryValue) -> Option<String> {
+    matches!(category.key.as_str(), "new" | "indeterminate" | "done").then_some(category.key)
+}
+
 fn bounded_name(value: &str) -> Option<String> {
     let value = value.trim();
     (!value.is_empty() && value.chars().count() <= 256 && !value.chars().any(char::is_control))
@@ -347,11 +356,7 @@ fn decode_transitions(bytes: &[u8]) -> Result<Vec<JiraTransition>, JiraWriteErro
                 id: valid_transition_id(&transition.id).then_some(transition.id)?,
                 name: bounded_name(&transition.name)?,
                 to_status: bounded_name(&transition.to.name)?,
-                to_status_category: transition
-                    .to
-                    .status_category
-                    .map(|category| category.key)
-                    .filter(|key| matches!(key.as_str(), "new" | "indeterminate" | "done")),
+                to_status_category: transition.to.status_category.and_then(known_category),
             })
         })
         .collect::<Option<Vec<_>>>()
@@ -379,7 +384,13 @@ fn decode_issue_text(issue_key: &str, bytes: &[u8]) -> Result<JiraIssueText, Jir
         status_name: issue
             .fields
             .status
+            .as_ref()
             .and_then(|status| bounded_name(&status.name)),
+        status_category: issue
+            .fields
+            .status
+            .and_then(|status| status.status_category)
+            .and_then(known_category),
         updated: updated.to_owned(),
     })
 }
@@ -537,7 +548,7 @@ mod tests {
 
     #[test]
     fn decodes_the_issue_and_refuses_another_key() {
-        let body = br#"{"key":"PAY-42","fields":{"summary":" Checkout ","description":"h2. Goal","status":{"name":"In Progress"},"updated":"2026-10-20T10:00:00.000+0000"}}"#;
+        let body = br#"{"key":"PAY-42","fields":{"summary":" Checkout ","description":"h2. Goal","status":{"name":"In Progress","statusCategory":{"key":"indeterminate"}},"updated":"2026-10-20T10:00:00.000+0000"}}"#;
         assert_eq!(
             decode_issue_text("PAY-42", body).unwrap(),
             JiraIssueText {
@@ -545,6 +556,7 @@ mod tests {
                 summary: "Checkout".into(),
                 description: Some("h2. Goal".into()),
                 status_name: Some("In Progress".into()),
+                status_category: Some("indeterminate".into()),
                 updated: "2026-10-20T10:00:00.000+0000".into(),
             }
         );

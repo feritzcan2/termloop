@@ -8,6 +8,7 @@ rust-version.workspace = true
 rusqlite = { workspace = true, features = ["fallible_uint"] }
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 termloop-platform = { path = "../platform" }
 termloop-providers = { path = "../providers" }
 thiserror.workspace = true

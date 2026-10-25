@@ -2,7 +2,7 @@
 //! most one active sprint, and closing a sprint carries its unfinished
 //! tickets over, counting each carry-over on the ticket.
 
-use rusqlite::params;
+use rusqlite::{Connection, params};
 
 use super::{check_id, next_rank, require_open_sprint, require_sprint};
 use crate::sprint::{PROJECT_OPEN_SPRINTS_MAX, valid_sprint_goal, valid_sprint_name};
@@ -53,6 +53,9 @@ impl PmStore {
             activated_at_epoch_ms: None,
             closed_at_epoch_ms: None,
             ends_at_epoch_ms: None,
+            jira_sprint_id: None,
+            jira_board_id: None,
+            jira_pulled_at_epoch_ms: None,
         };
         self.write(|transaction| {
             let open: usize = transaction.query_row(
@@ -187,36 +190,47 @@ impl PmStore {
                     return Err(PmError::Invalid("carryOverTo"));
                 }
             }
-            let carried = {
-                let mut statement = transaction.prepare(
-                    "SELECT id FROM tickets WHERE sprint_id = ?1 AND status != 'done' \
-                     ORDER BY rank, id",
-                )?;
-                statement
-                    .query_map([sprint_id], |row| row.get::<_, String>(0))?
-                    .collect::<Result<Vec<_>, _>>()?
-            };
-            let first_rank = next_rank(transaction, &sprint.project_id, carry_over_to)?;
-            for (offset, ticket_id) in carried.iter().enumerate() {
-                let rank = i64::try_from(offset)
-                    .ok()
-                    .and_then(|offset| first_rank.checked_add(offset))
-                    .ok_or(PmError::Constraint("ticket rank overflow"))?;
-                transaction.execute(
-                    "UPDATE tickets SET sprint_id = ?2, rank = ?3, \
-                         carry_over_count = carry_over_count + 1, updated_at_epoch_ms = ?4 \
-                     WHERE id = ?1",
-                    params![ticket_id, carry_over_to, rank, now],
-                )?;
-            }
-            transaction.execute(
-                "UPDATE sprints SET state = 'closed', closed_at_epoch_ms = ?2 WHERE id = ?1",
-                params![sprint_id, now],
-            )?;
-            Ok(ClosedSprint {
-                sprint: require_sprint(transaction, sprint_id)?,
-                carried_over_ticket_ids: carried,
-            })
+            close_open_sprint(transaction, &sprint, carry_over_to, now)
         })
     }
+}
+
+/// Closes an open sprint, carrying its unfinished tickets over to the end of
+/// `carry_over_to` or of the backlog.
+pub(super) fn close_open_sprint(
+    connection: &Connection,
+    sprint: &Sprint,
+    carry_over_to: Option<&str>,
+    now: u64,
+) -> Result<ClosedSprint, PmError> {
+    let carried = {
+        let mut statement = connection.prepare(
+            "SELECT id FROM tickets WHERE sprint_id = ?1 AND status != 'done' \
+             ORDER BY rank, id",
+        )?;
+        statement
+            .query_map([&sprint.id], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    let first_rank = next_rank(connection, &sprint.project_id, carry_over_to)?;
+    for (offset, ticket_id) in carried.iter().enumerate() {
+        let rank = i64::try_from(offset)
+            .ok()
+            .and_then(|offset| first_rank.checked_add(offset))
+            .ok_or(PmError::Constraint("ticket rank overflow"))?;
+        connection.execute(
+            "UPDATE tickets SET sprint_id = ?2, rank = ?3, \
+                 carry_over_count = carry_over_count + 1, updated_at_epoch_ms = ?4 \
+             WHERE id = ?1",
+            params![ticket_id, carry_over_to, rank, now],
+        )?;
+    }
+    connection.execute(
+        "UPDATE sprints SET state = 'closed', closed_at_epoch_ms = ?2 WHERE id = ?1",
+        params![sprint.id, now],
+    )?;
+    Ok(ClosedSprint {
+        sprint: require_sprint(connection, &sprint.id)?,
+        carried_over_ticket_ids: carried,
+    })
 }

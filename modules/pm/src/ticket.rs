@@ -122,6 +122,13 @@ pub struct Ticket {
     /// The exact HTTPS browse URL of the Jira issue this ticket tracks.
     #[serde(default)]
     pub jira_url: Option<String>,
+    /// The Jira sprint the linked issue was in when a sprint read last saw
+    /// it; `None` when it was last seen outside the active sprint.
+    #[serde(default)]
+    pub jira_sprint_id: Option<u64>,
+    /// When a sprint read last saw the linked issue.
+    #[serde(default)]
+    pub jira_pulled_at_epoch_ms: Option<u64>,
     /// How often the ticket left a closed sprint unfinished.
     pub carry_over_count: u32,
     pub blockers: Vec<Blocker>,
@@ -146,6 +153,16 @@ pub struct TicketVersion {
 impl TicketVersion {
     pub fn is_valid(&self) -> bool {
         valid_id(&self.ticket_id) && self.number > 0 && valid_ticket_description(&self.description)
+    }
+}
+
+impl Ticket {
+    /// The key of the linked Jira issue, from its browse URL.
+    pub fn jira_issue_key(&self) -> Option<String> {
+        let url = self.jira_url.as_deref()?;
+        termloop_providers::normalize_jira_issue_url(url)
+            .ok()
+            .map(|normalized| normalized.external_ref)
     }
 }
 

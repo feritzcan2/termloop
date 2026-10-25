@@ -4,6 +4,8 @@
 
 mod environment;
 mod facts;
+mod jira_mirror;
+mod jira_write;
 mod probe;
 mod sources;
 mod sprint;
@@ -14,6 +16,14 @@ use rusqlite::{Connection, OptionalExtension, params};
 pub use facts::{
     CheckNotesObservation, EnvironmentObservation, FactRead, FactsObservation, JiraObservation,
     PullRequestsObservation,
+};
+pub use jira_mirror::{
+    JIRA_PULL_NEW_TICKETS_MAX, JiraPullChanges, JiraPullOutcome, JiraSprintPull, JiraSprintRead,
+    read_jira_sprints,
+};
+pub use jira_write::{
+    JiraChange, JiraIssueState, JiraWriteDiff, JiraWriteOutcome, JiraWriteTarget, apply_jira_write,
+    read_jira_issue_state,
 };
 pub use probe::{NewProbe, RecordedProbeRun};
 pub use sprint::ClosedSprint;

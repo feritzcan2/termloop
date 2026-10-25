@@ -20,6 +20,8 @@ fn ticket() -> Ticket {
         sprint_id: Some("s1".into()),
         rank: 0,
         jira_url: None,
+        jira_sprint_id: None,
+        jira_pulled_at_epoch_ms: None,
         carry_over_count: 0,
         blockers: vec![],
         acceptance_criteria: vec![AcceptanceCriterion {
@@ -44,6 +46,9 @@ fn sprint(state: SprintState, ends_at: Option<u64>) -> Sprint {
         activated_at_epoch_ms: None,
         closed_at_epoch_ms: (state == SprintState::Closed).then_some(1),
         ends_at_epoch_ms: ends_at,
+        jira_sprint_id: None,
+        jira_board_id: None,
+        jira_pulled_at_epoch_ms: None,
     }
 }
 

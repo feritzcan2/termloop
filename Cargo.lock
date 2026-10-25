@@ -2666,6 +2666,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
  "termloop-platform",
  "termloop-providers",
  "thiserror 2.0.19",

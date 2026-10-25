@@ -122,8 +122,21 @@ CREATE TABLE project_sources (
 ) STRICT;
 "#;
 
+/// The Jira sprint mirror: which Jira sprint a sprint mirrors, and which
+/// Jira sprint a linked ticket's issue was last seen in.
+const V3: &str = r#"
+ALTER TABLE sprints ADD COLUMN jira_sprint_id INTEGER CHECK (jira_sprint_id > 0);
+ALTER TABLE sprints ADD COLUMN jira_board_id INTEGER CHECK (jira_board_id > 0);
+ALTER TABLE sprints ADD COLUMN jira_pulled_at_epoch_ms INTEGER;
+CREATE UNIQUE INDEX sprints_one_per_jira_sprint ON sprints (project_id, jira_sprint_id)
+    WHERE jira_sprint_id IS NOT NULL;
+
+ALTER TABLE tickets ADD COLUMN jira_sprint_id INTEGER CHECK (jira_sprint_id > 0);
+ALTER TABLE tickets ADD COLUMN jira_pulled_at_epoch_ms INTEGER;
+"#;
+
 /// Every migration in order; a version is never edited once released.
-const MIGRATIONS: &[(u32, &str)] = &[(1, V1), (2, V2)];
+const MIGRATIONS: &[(u32, &str)] = &[(1, V1), (2, V2), (3, V3)];
 
 pub const SCHEMA_VERSION: u32 = MIGRATIONS[MIGRATIONS.len() - 1].0;
 

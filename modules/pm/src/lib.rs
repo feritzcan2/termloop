@@ -20,7 +20,10 @@ mod tests;
 pub use board::Board;
 pub use commands::{
     CheckNotesObservation, ClosedSprint, EnvironmentObservation, FactRead, FactsObservation,
-    JiraObservation, NewProbe, NewTicket, PullRequestsObservation, RecordedProbeRun, TicketEdit,
+    JIRA_PULL_NEW_TICKETS_MAX, JiraChange, JiraIssueState, JiraObservation, JiraPullChanges,
+    JiraPullOutcome, JiraSprintPull, JiraSprintRead, JiraWriteDiff, JiraWriteOutcome,
+    JiraWriteTarget, NewProbe, NewTicket, PullRequestsObservation, RecordedProbeRun, TicketEdit,
+    apply_jira_write, read_jira_issue_state, read_jira_sprints,
 };
 pub use delivery::check_reasons::{check_reasons, deploy_tracking_enabled};
 pub use delivery::facts::{
