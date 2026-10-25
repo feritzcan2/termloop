@@ -25,6 +25,8 @@ export class PmController {
   #unsubscribers: (() => void)[] = [];
   #boardRead: Promise<void> | undefined;
   #boardStale = false;
+  /** The stage content the Jira browser replaced; toggling Jira off returns to it. */
+  #beforeJira: PmView = "overview";
 
   constructor(readonly bridge: PmApi, readonly store: PmStore, readonly now: () => number = Date.now) {}
 
@@ -66,8 +68,14 @@ export class PmController {
   }
 
   setView(view: PmView): void {
+    if (view === "jira" && this.state.view !== "jira") this.#beforeJira = this.state.view;
     this.#set({ view });
     if (view === "settings") void this.loadSettings();
+  }
+
+  /** The activity bar's Jira item: shows the Jira browser in the stage, or returns to what it replaced. */
+  toggleJiraStage(): void {
+    this.setView(this.state.view === "jira" ? this.#beforeJira : "jira");
   }
 
   handleEvent(event: PmEvent): void {
@@ -207,7 +215,7 @@ export class PmController {
   async createTicket(
     title: string,
     sprintId: string | null | undefined = this.state.selectedSprintId,
-    fields: Pick<PmTicketCreateParams, "priority" | "assignee"> = {},
+    fields: Pick<PmTicketCreateParams, "priority" | "assignee" | "jiraUrl"> = {},
     open = true,
   ): Promise<PmTicket | undefined> {
     const projectId = this.state.projectId;

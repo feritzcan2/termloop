@@ -2,7 +2,8 @@
 // bridge, a transport, or the terminal adapter.
 import type { PmAgentProvider, PmAgentState, PmJiraApplyResult, PmJiraDiff, PmTicketPriority } from "@termloop/pm-contract/pm";
 
-export type PmView = "overview" | "ticket" | "settings";
+/** The stage's content; `jira` is the Jira issue browser the activity bar toggles. */
+export type PmView = "overview" | "ticket" | "settings" | "jira";
 
 /** What the right activity bar opens in the right sidebar. */
 export type RightSidebarView = "sprints" | "assistant";

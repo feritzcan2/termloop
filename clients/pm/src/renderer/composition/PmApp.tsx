@@ -28,6 +28,7 @@ import { mountAgentTerminal } from "../terminal/agent-terminal.js";
 import { agentSurface } from "../terminal/xterm-surface.js";
 import { AgentPanel } from "../ui/AgentPanel.js";
 import { JiraSyncDialog } from "../ui/JiraSyncDialog.js";
+import type { JiraConnection } from "../ui/jira/JiraBrowser.js";
 import { CaptureToast, QuickCapture } from "../ui/QuickCapture.js";
 import type { WidthBounds } from "../ui/ResizeHandle.js";
 import { RightActivityBar } from "../ui/RightActivityBar.js";
@@ -42,6 +43,7 @@ import { TicketEditor } from "../ui/TicketEditor.js";
 import { lastJiraPull, leftSprint, sprintTickets, ticketLabel } from "../ui/format.js";
 import type { AgentTab, MountTerminal, TicketCapture } from "../ui/types.js";
 import { DoubleShiftDetector, isNewTicketShortcut } from "./capture-shortcut.js";
+import { JiraStage } from "./JiraStage.js";
 import type { PmController } from "./pm-controller.js";
 
 const EMPTY: never[] = [];
@@ -76,6 +78,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
   const entry = allTickets.find((candidate) => candidate.ticket.id === state.selectedTicketId);
   const project = state.projects.find((candidate) => candidate.id === state.projectId);
   const jiraConfigured = Boolean(state.sources?.jira) || Boolean(board?.tracking.jira);
+  const jiraConnection: JiraConnection = state.sources === undefined ? "checking" : state.sources.jira ? "connected" : "notConnected";
   const agents: AgentTab[] = state.agents.map((session) => ({
     sessionId: session.sessionId,
     state: session.state,
@@ -111,7 +114,8 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
     setCreated({ id: ticket.id, label: ticketLabel(ticket) });
     return true;
   };
-  const captureSprintId = (sprints.find((candidate) => candidate.state === "active") ?? sprint)?.id ?? null;
+  const activeSprint = sprints.find((candidate) => candidate.state === "active");
+  const captureSprintId = (activeSprint ?? sprint)?.id ?? null;
   const assignees = useMemo(
     () => [...new Set(allTickets.flatMap((candidate) => candidate.ticket.assignee ?? []))].sort(),
     [allTickets],
@@ -127,6 +131,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
       label: `${ticketLabel(entry.ticket)} · ${entry.ticket.title}`,
       draft: entry.pendingProposalCount > 0 || (state.proposals[entry.ticket.id]?.length ?? 0) > 0,
     }] : []),
+    ...(jiraConnection === "connected" || view === "jira" ? [{ view: "jira" as const, label: "Jira issues" }] : []),
     { view: "settings", label: "Settings" },
   ];
 
@@ -207,6 +212,16 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 onRejectProbe={(id) => void controller.rejectProbe(id)}
                 onDeleteProbe={(id) => void controller.deleteProbe(id)}
               />
+            ) : view === "jira" ? (
+              <JiraStage
+                key={project.id}
+                controller={controller}
+                projectId={project.id}
+                connection={jiraConnection}
+                siteUrl={state.sources?.jira?.siteUrl}
+                sprintId={activeSprint?.id ?? null}
+                now={now}
+              />
             ) : view === "ticket" && entry && ticketId ? (
               <TicketEditor
                 key={ticketId}
@@ -282,7 +297,12 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
             )}
           </RightSidebar>
         )}
-        <RightActivityBar open={right.open} view={right.view} onSelect={(next) => updateRight((current) => toggleRightSidebar(current, next))} />
+        <RightActivityBar
+          open={right.open}
+          view={right.view}
+          onSelect={(next) => updateRight((current) => toggleRightSidebar(current, next))}
+          jira={{ available: Boolean(project) && jiraConnection === "connected", active: view === "jira", onToggle: () => controller.toggleJiraStage() }}
+        />
         {capturing && (
           <QuickCapture
             sprints={sprints}
