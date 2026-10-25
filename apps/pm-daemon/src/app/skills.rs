@@ -53,14 +53,15 @@ pub(crate) fn publish(state: &AppState, project_id: &str) {
     );
 }
 
-/// The project's skills (the built-in ones it qualifies for included) and
-/// the drafts waiting for review.
+/// The project's skills (the built-in ones it qualifies for included), the
+/// drafts waiting for review, and the Deployment control setup's proposal.
 pub(crate) fn skills_value(store: &mut PmStore, project_id: &str) -> Result<Value, ControlError> {
     store.ensure_builtin_skills(project_id)?;
     Ok(json!({
         "projectId": project_id,
         "skills": to_value(&store.skills(project_id)?)?,
         "drafts": to_value(&store.skill_drafts(project_id)?)?,
+        "environmentProposal": to_value(&store.environment_proposal(project_id)?)?,
     }))
 }
 

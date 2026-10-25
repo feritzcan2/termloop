@@ -2,12 +2,13 @@ use std::collections::BTreeSet;
 
 use serde_json::{Value, json};
 
+use super::handlers::EnvironmentsProposeParams;
 use super::*;
 use crate::ChannelWatermark;
 use crate::ProposalChange;
 use crate::agent::{
-    PM_OWNER_EVIDENCE_READ, PM_SKILL_DISCOVERY_READ, PM_SKILL_DRY_RUN_REQUEST,
-    PM_SKILL_TOOL_VERIFY, PM_TICKET_NOTE_ADD, PM_TOOLS,
+    PM_ENVIRONMENTS_PROPOSE, PM_OWNER_EVIDENCE_READ, PM_SKILL_DISCOVERY_READ,
+    PM_SKILL_DRY_RUN_REQUEST, PM_SKILL_TOOL_VERIFY, PM_TICKET_NOTE_ADD, PM_TOOLS,
 };
 use crate::skill::{Evidence, NeededTool, SkillChannel, SkillPrefilter, SkillSource, SkillTrigger};
 use crate::{
@@ -220,6 +221,23 @@ fn samples() -> Vec<(&'static str, Value)> {
         ),
         (PM_SKILL_DRY_RUN_REQUEST, json!({ "draftId": "d1" })),
         (PM_OWNER_EVIDENCE_READ, json!({ "ticketId": "t1" })),
+        (
+            PM_ENVIRONMENTS_PROPOSE,
+            sample(EnvironmentsProposeParams {
+                summary: "Two environments in the deploy workflow".into(),
+                environments: vec![crate::ProposedEnvironment {
+                    name: "staging".into(),
+                    production: false,
+                    evidence: ".github/workflows/deploy.yml".into(),
+                }],
+                probes: vec![ProbeProposalParams {
+                    environment: "staging".into(),
+                    argv: vec!["curl".into(), "https://staging.example/version".into()],
+                    matcher: ProbeMatcher::CommitAncestry,
+                    reason: Some("Prints the deployed commit".into()),
+                }],
+            }),
+        ),
         (
             PM_TICKET_NOTE_ADD,
             sample(NoteAddParams {

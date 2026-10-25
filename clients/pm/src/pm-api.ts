@@ -67,6 +67,8 @@ export const RENDERER_METHODS = [
   "pm_skill_feedback_read",
   "pm_skill_draft_dry_run",
   "pm_skill_draft_discard",
+  "pm_environment_proposal_apply",
+  "pm_environment_proposal_discard",
 ] as const satisfies readonly Method[];
 
 export type RendererMethod = typeof RENDERER_METHODS[number];

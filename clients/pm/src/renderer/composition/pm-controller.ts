@@ -19,7 +19,7 @@ import type { PmApi, PmEvent, RendererMethod } from "../../pm-api.js";
 import type { PmState, PmStore, PmView } from "../state/presentation-store.js";
 import { touchesJira } from "../ui/proposal-change.js";
 import type { NoteDraft } from "../ui/NoteDialog.js";
-import type { DescriptionSaveOutcome, SkillKind, TicketCapture } from "../ui/types.js";
+import type { DescriptionSaveOutcome, TicketCapture } from "../ui/types.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -503,15 +503,28 @@ export class PmController {
   }
 
   /**
-   * A skill row's Set up: Deployment control turns on once an environment
-   * is listed (Settings otherwise); other skills open their own creator.
+   * A skill row's Set up opens that skill's own creator. Deployment control
+   * turns on directly when the project already lists its environments.
    */
-  async setUpSkill(kind: SkillKind): Promise<void> {
-    if (kind !== "deploymentControl") return this.launchSkillCreator({ setup: kind });
+  async setUpSkill(kind: PmSkillSetup): Promise<void> {
     const builtin = this.state.skills?.skills.find((skill) => skill.builtin === "deploymentControl");
-    if (builtin) return this.setSkillEnabled(builtin.id, true);
-    this.setView("settings");
-    this.#set({ notice: { tone: "info", text: "List an environment, then set up Deployment control." } });
+    if (kind === "deploymentControl" && builtin) return this.setSkillEnabled(builtin.id, true);
+    return this.launchSkillCreator({ setup: kind });
+  }
+
+  /** Lists the environments and approves the probes the PM ticked; Deployment control turns on. */
+  async applyEnvironmentProposal(environments: string[], probeIds: string[]): Promise<boolean> {
+    const projectId = this.state.projectId;
+    if (!projectId) return false;
+    const applied = await this.call("pm_environment_proposal_apply", { projectId, environments, probeIds });
+    if (!applied) return false;
+    this.#set({ notice: { tone: "info", text: "Deployment control is on." } });
+    return true;
+  }
+
+  async discardEnvironmentProposal(): Promise<void> {
+    const projectId = this.state.projectId;
+    if (projectId) await this.call("pm_environment_proposal_discard", { projectId });
   }
 
   /** Runs a skill now; a run with nothing new says so instead of starting an agent. */

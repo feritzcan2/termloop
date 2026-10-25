@@ -169,6 +169,38 @@ with the tool's reason and evidence. When the tool returns a limitation, say \
 it plainly in the suggestion's summary. Without a code folder or GitHub it \
 still works from ticket history; say so when you offer it.";
 
+/// The Deployment control setup: it reads the project itself, so it does
+/// not take the creator's no-commands rule.
+const DEPLOYMENT_CONTROL_SETUP: &str = "\
+Mode: Deployment control setup. You find out where this project's changes \
+are deployed, so the PM app can track which environment runs each ticket. \
+The project manager is not technical; speak plainly.
+1. Look, read-only: in the project folder read the CI and deploy \
+configuration (GitHub Actions workflows with their environment: keys and \
+deploy jobs, other CI files, deploy scripts, Helm charts, Kubernetes \
+manifests, Terraform, Procfiles). When gh is logged in, read the \
+repository's GitHub environments and recent deployments with gh api. Never \
+deploy, change, or write anything, and never print a secret.
+2. Environments: list them in delivery order (for example dev, staging, \
+production), mark which are production, and give each the file or command \
+you read it from.
+3. Probes: for each environment you can, give a read-only command whose \
+output tells what it runs: commitAncestry when it prints a commit SHA, agent \
+when a delivery check has to read it. Prefer a version endpoint, gh api \
+deployments, or a kubectl get of the image tag. Run each once to see that it \
+works, and leave out any that needs a secret on the command line.
+4. Propose with pm_environments_propose. The project manager ticks the \
+environments and probes to keep in the Skills panel, which turns Deployment \
+control on. Nothing is listed or run before that.";
+
+/// The Deployment control setup's first message.
+const DEPLOYMENT_CONTROL_KICKOFF: &str = "\
+Look at the project now and call pm_environments_propose with what you \
+found. Then tell the project manager in at most 6 lines what you found, what \
+you could not tell, and that they confirm it in the Skills panel. When you \
+find no environment, say what you looked at and ask where the project is \
+deployed.";
+
 /// The creator's first message: discover first, then plain offers.
 const SKILL_CREATOR_KICKOFF: &str = "\
 Open this conversation with at most 10 lines. Call pm_skill_discovery_read \
@@ -192,23 +224,29 @@ project manager installs it from the draft card in the Skills panel.";
 /// each with its own creator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkillSetup {
+    /// Finds the environments and probes; the built-in skill turns on when
+    /// the PM applies them.
+    DeploymentControl,
     BugOwnerFinder,
     SlackTracker,
 }
 
 impl SkillSetup {
-    fn name(self) -> &'static str {
+    fn mode_copy(self) -> String {
         match self {
-            Self::BugOwnerFinder => "Bug owner finder",
-            Self::SlackTracker => "Slack tracker",
+            Self::DeploymentControl => DEPLOYMENT_CONTROL_SETUP.to_owned(),
+            Self::BugOwnerFinder => format!("{SKILL_CREATOR}\n{BUG_OWNER_FINDER_SETUP}"),
+            Self::SlackTracker => format!("{SKILL_CREATOR}\n{SLACK_TRACKER_SETUP}"),
         }
     }
 
-    fn copy(self) -> &'static str {
-        match self {
-            Self::BugOwnerFinder => BUG_OWNER_FINDER_SETUP,
-            Self::SlackTracker => SLACK_TRACKER_SETUP,
-        }
+    fn kickoff(self) -> String {
+        let name = match self {
+            Self::DeploymentControl => return DEPLOYMENT_CONTROL_KICKOFF.to_owned(),
+            Self::BugOwnerFinder => "Bug owner finder",
+            Self::SlackTracker => "Slack tracker",
+        };
+        format!("{SKILL_SETUP_KICKOFF}\nThe skill to set up is the {name}.")
     }
 }
 
@@ -641,7 +679,7 @@ impl PmAgentProfile {
         let mode_copy = match (mode, &creator) {
             (PmAgentMode::Assistant, _) => ASSISTANT.to_owned(),
             (PmAgentMode::DeliveryCheck, _) => DELIVERY_CHECK.to_owned(),
-            (_, CreatorFocus::Setup(setup)) => format!("{SKILL_CREATOR}\n{}", setup.copy()),
+            (_, CreatorFocus::Setup(setup)) => setup.mode_copy(),
             _ => format!("{SKILL_CREATOR}\n{SLACK_TRACKER_SETUP}\n{BUG_OWNER_FINDER_SETUP}"),
         };
         let mut sections = vec![
@@ -683,10 +721,7 @@ impl PmAgentProfile {
             ),
             PmAgentMode::SkillCreator | PmAgentMode::SkillRun => match creator {
                 CreatorFocus::Offer => SKILL_CREATOR_KICKOFF.to_owned(),
-                CreatorFocus::Setup(setup) => format!(
-                    "{SKILL_SETUP_KICKOFF}\nThe skill to set up is the {}.",
-                    setup.name()
-                ),
+                CreatorFocus::Setup(setup) => setup.kickoff(),
                 CreatorFocus::Revise { kickoff, .. } => kickoff,
             },
         });

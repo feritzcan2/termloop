@@ -348,6 +348,8 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 onDiscard={(id) => void controller.discardDraft(id)}
                 onInstall={(id, tools, channels) => controller.installDraft(id, tools, channels.length > 0 ? channels : undefined)}
                 onOpenLink={(url) => void controller.bridge.openExternal(url)}
+                onApplyEnvironments={(environments, probeIds) => controller.applyEnvironmentProposal(environments, probeIds)}
+                onDiscardEnvironments={() => void controller.discardEnvironmentProposal()}
               />
             )}
           </RightSidebar>

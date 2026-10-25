@@ -67,6 +67,10 @@ pub(crate) async fn dispatch(
         "pm_skill_feedback_read" => skill_methods::feedback_read(state, params),
         "pm_skill_draft_dry_run" => skill_methods::draft_dry_run(state, params),
         "pm_skill_draft_discard" => skill_methods::draft_discard(state, params),
+        "pm_environment_proposal_apply" => skill_methods::environment_proposal_apply(state, params),
+        "pm_environment_proposal_discard" => {
+            skill_methods::environment_proposal_discard(state, params)
+        }
         "pm_ticket_proposal_accept" => skill_methods::proposal_accept(state, params),
         "pm_ticket_proposal_reject" => skill_methods::proposal_reject(state, params),
         _ => {

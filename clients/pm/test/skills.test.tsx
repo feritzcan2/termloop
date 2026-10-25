@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { PmController } from "../src/renderer/composition/pm-controller.js";
 import { createPmStore } from "../src/renderer/state/presentation-store.js";
 import { ProposalCard } from "../src/renderer/ui/ProposalCard.js";
+import type { PmEnvironmentProposal } from "@termloop/pm-contract/pm";
 import { SkillsPanel, type SkillsPanelProps } from "../src/renderer/ui/SkillsPanel.js";
 import { fakeBridge, manifest, ok, proposal, skill, skillDraft, ticket } from "./fixtures.js";
 import { render } from "./render.js";
@@ -12,7 +13,7 @@ const BOARD = { projectId: "project-1", sprints: [], tickets: [], environments: 
 
 function panel(overrides: Partial<SkillsPanelProps> = {}): SkillsPanelProps {
   return {
-    skills: { projectId: "project-1", skills: [skill()], drafts: [] },
+    skills: { projectId: "project-1", environmentProposal: null, skills: [skill()], drafts: [] },
     tier: "deploy",
     tickets: [ticket()],
     now: 0,
@@ -26,6 +27,8 @@ function panel(overrides: Partial<SkillsPanelProps> = {}): SkillsPanelProps {
     onDiscard: () => undefined,
     onInstall: async () => true,
     onOpenLink: () => undefined,
+    onApplyEnvironments: async () => true,
+    onDiscardEnvironments: () => undefined,
     ...overrides,
   };
 }
@@ -39,7 +42,7 @@ describe("SkillsPanel", () => {
     const onRun = vi.fn();
     const onCreate = vi.fn();
     const { container, unmount } = render(
-      <SkillsPanel {...panel({ onSetEnabled, onRun, onCreate, skills: { projectId: "project-1", skills: [skill({ pendingSuggestionCount: 2, runsToday: 3 })], drafts: [] } })} />,
+      <SkillsPanel {...panel({ onSetEnabled, onRun, onCreate, skills: { projectId: "project-1", environmentProposal: null, skills: [skill({ pendingSuggestionCount: 2, runsToday: 3 })], drafts: [] } })} />,
     );
     expect(container.textContent).toContain("2 pending");
     expect(container.textContent).toContain("3 today");
@@ -54,12 +57,12 @@ describe("SkillsPanel", () => {
 
   it("shows why a paused skill stopped and when a failed one retries", () => {
     const paused = render(
-      <SkillsPanel {...panel({ skills: { projectId: "project-1", skills: [skill({ enabled: false, pausedReason: "Paused after 3 failed runs in a row." })], drafts: [] } })} />,
+      <SkillsPanel {...panel({ skills: { projectId: "project-1", environmentProposal: null, skills: [skill({ enabled: false, pausedReason: "Paused after 3 failed runs in a row." })], drafts: [] } })} />,
     );
     expect(paused.container.textContent).toContain("Paused after 3 failed runs in a row.");
     paused.unmount();
     const waiting = render(
-      <SkillsPanel {...panel({ now: 1_000, skills: { projectId: "project-1", skills: [skill({ consecutiveFailures: 1, nextAttemptAtEpochMs: 1_000 + 15 * 60_000 })], drafts: [] } })} />,
+      <SkillsPanel {...panel({ now: 1_000, skills: { projectId: "project-1", environmentProposal: null, skills: [skill({ consecutiveFailures: 1, nextAttemptAtEpochMs: 1_000 + 15 * 60_000 })], drafts: [] } })} />,
     );
     expect(waiting.container.textContent).toContain("The last run failed; it tries again in 15m.");
     waiting.unmount();
@@ -68,7 +71,7 @@ describe("SkillsPanel", () => {
   it("installs a draft only after a dry run and every first-use tool is ticked", async () => {
     const onInstall = vi.fn(async () => true);
     const draft = skillDraft({ firstUseTools: ["pm_board_read", "pm_risks_read"], samples: [{ ticketId: "ticket-1", change: { kind: "assignee", assignee: "ada", shortlist: [] }, summary: "Ada touched the checkout last.", evidence: [] }] });
-    const { container, unmount } = render(<SkillsPanel {...panel({ onInstall, skills: { projectId: "project-1", skills: [], drafts: [draft] } })} />);
+    const { container, unmount } = render(<SkillsPanel {...panel({ onInstall, skills: { projectId: "project-1", environmentProposal: null, skills: [], drafts: [draft] } })} />);
     expect(container.textContent).toContain("Ada touched the checkout last.");
     const install = button(container, "Install");
     expect(install.disabled).toBe(true);
@@ -91,7 +94,7 @@ describe("SkillsPanel", () => {
       firstUseTools: [slackTool],
       manifest: { ...base.manifest, sources: ["slack"], prefilter: "slackMentions", agentTools: [slackTool], channels: [{ id: "C0SHOP", name: "shop" }, { id: "C0OPS", name: "ops" }] },
     });
-    const { container, unmount } = render(<SkillsPanel {...panel({ onInstall, skills: { projectId: "project-1", skills: [], drafts: [draft] } })} />);
+    const { container, unmount } = render(<SkillsPanel {...panel({ onInstall, skills: { projectId: "project-1", environmentProposal: null, skills: [], drafts: [draft] } })} />);
     expect(container.textContent).toContain("Your agent's slack_read_channel");
     expect(container.textContent).toContain("#shop");
     const [toolTick, shopTick, opsTick] = [...container.querySelectorAll<HTMLInputElement>(".tool-approvals input")];
@@ -113,11 +116,11 @@ describe("SkillsPanel", () => {
     act(() => button(plain.container, "Revise").click());
     expect(onRevise).toHaveBeenCalledWith("skill-1");
     plain.unmount();
-    const builtin = render(<SkillsPanel {...panel({ skills: { projectId: "project-1", skills: [skill({ builtin: "deploymentControl" })], drafts: [] } })} />);
+    const builtin = render(<SkillsPanel {...panel({ skills: { projectId: "project-1", environmentProposal: null, skills: [skill({ builtin: "deploymentControl" })], drafts: [] } })} />);
     expect(button(builtin.container, "Revise")).toBeUndefined();
     builtin.unmount();
     const offered = render(
-      <SkillsPanel {...panel({ onRevise, skills: { projectId: "project-1", skills: [skill({ revisionReason: "You rejected 13 of its last 20 suggestions." })], drafts: [] } })} />,
+      <SkillsPanel {...panel({ onRevise, skills: { projectId: "project-1", environmentProposal: null, skills: [skill({ revisionReason: "You rejected 13 of its last 20 suggestions." })], drafts: [] } })} />,
     );
     expect(offered.container.querySelector(".revision-offer")?.textContent).toContain("You rejected 13 of its last 20 suggestions.");
     expect([...offered.container.querySelectorAll("button")].filter((candidate) => candidate.textContent === "Revise")).toHaveLength(1);
@@ -132,7 +135,7 @@ describe("SkillsPanel", () => {
       changelog: "Skips bugs that already have an owner.",
       manifest: { ...installed.manifest, instructions: "Suggest an owner only for unassigned bugs." },
     });
-    const { container, unmount } = render(<SkillsPanel {...panel({ skills: { projectId: "project-1", skills: [installed], drafts: [draft] } })} />);
+    const { container, unmount } = render(<SkillsPanel {...panel({ skills: { projectId: "project-1", environmentProposal: null, skills: [installed], drafts: [draft] } })} />);
     expect(container.textContent).toContain("Skill revision");
     expect(container.textContent).toContain("What changed: Skips bugs that already have an owner.");
     const diff = container.querySelector('[aria-label="Changes from v3"]')!;
@@ -153,7 +156,7 @@ describe("SkillsPanel", () => {
 
   it("lists every known skill greyed out with its own Set up", () => {
     const onSetUp = vi.fn();
-    const empty = render(<SkillsPanel {...panel({ onSetUp, skills: { projectId: "project-1", skills: [], drafts: [] } })} />);
+    const empty = render(<SkillsPanel {...panel({ onSetUp, skills: { projectId: "project-1", environmentProposal: null, skills: [], drafts: [] } })} />);
     const rows = [...empty.container.querySelectorAll(".skill-row.setup")];
     expect(rows.map((row) => row.querySelector(".skill-name")?.textContent)).toEqual(["Deployment control", "Bug owner finder", "Slack tracker"]);
     expect(rows.every((row) => row.querySelector<HTMLInputElement>("input")!.disabled)).toBe(true);
@@ -161,7 +164,7 @@ describe("SkillsPanel", () => {
     expect(onSetUp).toHaveBeenCalledWith("slackTracker");
     empty.unmount();
     const set = render(
-      <SkillsPanel {...panel({ skills: { projectId: "project-1", skills: [skill(), skill({ id: "skill-2", builtin: "deploymentControl", enabled: false })], drafts: [skillDraft({ manifest: manifest({ prefilter: "slackMentions" }) })] } })} />,
+      <SkillsPanel {...panel({ skills: { projectId: "project-1", environmentProposal: null, skills: [skill(), skill({ id: "skill-2", builtin: "deploymentControl", enabled: false })], drafts: [skillDraft({ manifest: manifest({ prefilter: "slackMentions" }) })] } })} />,
     );
     const setup = [...set.container.querySelectorAll(".skill-row.setup")];
     expect(setup.map((row) => row.querySelector(".skill-name")?.textContent)).toEqual(["Deployment control", "Slack tracker"]);
@@ -170,23 +173,56 @@ describe("SkillsPanel", () => {
     set.unmount();
   });
 
-  it("sets up each skill with its own creator, and Deployment control in place", async () => {
+  it("sets up each skill with its own creator, and Deployment control in place once its environments are listed", async () => {
     const bridge = fakeBridge((method) => {
       if (method === "pm_skill_creator_launch") return ok({ sessionId: "session-1" });
       return ok({ projectId: "project-1", sessions: [] });
     });
     const store = createPmStore({ projectId: "project-1" });
     const controller = new PmController(bridge, store);
+    const launches = () => bridge.calls.filter((call) => call.method === "pm_skill_creator_launch").map((call) => call.params);
     await controller.setUpSkill("bugOwnerFinder");
-    expect(bridge.calls[0]).toEqual({ method: "pm_skill_creator_launch", params: { projectId: "project-1", setup: "bugOwnerFinder" } });
     await controller.setUpSkill("deploymentControl");
-    expect(store.getState().view).toBe("settings");
+    expect(launches()).toEqual([{ projectId: "project-1", setup: "bugOwnerFinder" }, { projectId: "project-1", setup: "deploymentControl" }]);
+    store.setState({ skills: { projectId: "project-1", environmentProposal: null, skills: [skill({ builtin: "deploymentControl", enabled: false })], drafts: [] } });
+    await controller.setUpSkill("deploymentControl");
+    expect(launches()).toHaveLength(2);
+    expect(bridge.calls.at(-1)).toEqual({ method: "pm_skill_set_enabled", params: { skillId: "skill-1", enabled: true } });
+  });
+
+  it("turns Deployment control on with only the environments and probes the PM ticked", async () => {
+    const onApplyEnvironments = vi.fn(async () => true);
+    const proposal: PmEnvironmentProposal = {
+      projectId: "project-1",
+      summary: "Staging and production deploy from the workflow.",
+      environments: [
+        { name: "staging", production: false, evidence: ".github/workflows/deploy.yml" },
+        { name: "production", production: true, evidence: ".github/workflows/deploy.yml" },
+      ],
+      probes: [
+        { id: "probe-1", projectId: "project-1", environment: "staging", argv: ["curl", "https://staging.example/version"], matcher: "commitAncestry", status: "proposed", author: "agent", reason: null, createdAtEpochMs: 0, lastRun: null },
+        { id: "probe-2", projectId: "project-1", environment: "production", argv: ["curl", "https://example/version"], matcher: "commitAncestry", status: "proposed", author: "agent", reason: null, createdAtEpochMs: 0, lastRun: null },
+      ],
+      createdAtEpochMs: 0,
+    };
+    const { container, unmount } = render(
+      <SkillsPanel {...panel({ onApplyEnvironments, skills: { projectId: "project-1", environmentProposal: proposal, skills: [], drafts: [] } })} />,
+    );
+    const setup = container.querySelector(".skill-row.setup")!;
+    expect(setup.textContent).toContain("A draft is waiting below.");
+    const card = container.querySelector('[aria-label="Deployment control setup"]')!;
+    expect(card.textContent).toContain("curl https://staging.example/version");
+    const [, production] = [...card.querySelectorAll<HTMLInputElement>("input")];
+    act(() => production!.click());
+    await act(async () => button(container, "Turn on Deployment control").click());
+    expect(onApplyEnvironments).toHaveBeenCalledWith(["staging"], ["probe-1"]);
+    unmount();
   });
 
   it("keeps Install off until the dry run completed", () => {
     const draft = skillDraft({ dryRunState: "none", firstUseTools: [] });
     const onDryRun = vi.fn();
-    const { container, unmount } = render(<SkillsPanel {...panel({ onDryRun, skills: { projectId: "project-1", skills: [], drafts: [draft] } })} />);
+    const { container, unmount } = render(<SkillsPanel {...panel({ onDryRun, skills: { projectId: "project-1", environmentProposal: null, skills: [], drafts: [draft] } })} />);
     expect(button(container, "Install").disabled).toBe(true);
     act(() => button(container, "Dry run").click());
     expect(onDryRun).toHaveBeenCalledWith("draft-1");

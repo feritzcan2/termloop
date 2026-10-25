@@ -115,6 +115,38 @@ pub(super) fn insert_probe_row(
     Ok(())
 }
 
+/// Inserts an agent's proposed probe; one the project already has, or one
+/// past its probe bound, is left out and reported as not inserted.
+pub(super) fn insert_proposed_probe(
+    connection: &Connection,
+    probe: &DeliveryProbe,
+) -> Result<bool, PmError> {
+    match insert_probe_row(connection, probe) {
+        Ok(()) => Ok(true),
+        Err(PmError::Constraint(_)) => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+pub(super) fn approve_probe_row(connection: &Connection, probe_id: &str) -> Result<(), PmError> {
+    connection.execute(
+        "UPDATE delivery_probes SET status = 'approved' WHERE id = ?1",
+        [probe_id],
+    )?;
+    Ok(())
+}
+
+/// Removes a probe that is still a proposal; an approved one stays.
+pub(super) fn delete_proposed_probe_row(
+    connection: &Connection,
+    probe_id: &str,
+) -> Result<bool, PmError> {
+    Ok(connection.execute(
+        "DELETE FROM delivery_probes WHERE id = ?1 AND status = 'proposed'",
+        [probe_id],
+    )? == 1)
+}
+
 impl PmStore {
     /// The PM writes a probe; it is approved as written.
     pub fn create_probe(&mut self, probe: NewProbe) -> Result<DeliveryProbe, PmError> {
@@ -141,10 +173,7 @@ impl PmStore {
     pub fn approve_probe(&mut self, probe_id: &str) -> Result<DeliveryProbe, PmError> {
         self.write(|transaction| {
             require_probe(transaction, probe_id)?;
-            transaction.execute(
-                "UPDATE delivery_probes SET status = 'approved' WHERE id = ?1",
-                [probe_id],
-            )?;
+            approve_probe_row(transaction, probe_id)?;
             require_probe(transaction, probe_id)
         })
     }
@@ -153,10 +182,10 @@ impl PmStore {
     /// with [`Self::delete_probe`] instead.
     pub fn reject_probe(&mut self, probe_id: &str) -> Result<(), PmError> {
         self.write(|transaction| {
-            if require_probe(transaction, probe_id)?.status != ProbeStatus::Proposed {
+            require_probe(transaction, probe_id)?;
+            if !delete_proposed_probe_row(transaction, probe_id)? {
                 return Err(PmError::Constraint("only a proposed probe can be rejected"));
             }
-            transaction.execute("DELETE FROM delivery_probes WHERE id = ?1", [probe_id])?;
             Ok(())
         })
     }

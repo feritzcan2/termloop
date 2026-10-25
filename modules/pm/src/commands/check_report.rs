@@ -5,7 +5,7 @@
 
 use super::checks::close_check;
 use super::facts::{current_facts, store_facts};
-use super::probe::{insert_probe_row, probe_value, require_probe};
+use super::probe::{insert_proposed_probe, probe_value, require_probe};
 use super::{check_id, require_ticket};
 use crate::delivery::checks::{DeliveryCheck, DeliveryCheckOutcome};
 use crate::delivery::facts::{CheckNotes, TICKET_CHECK_NOTES_MAX_BYTES};
@@ -147,11 +147,9 @@ impl PmStore {
                     return Err(PmError::Invalid("probeProposals"));
                 }
                 let probe = probe_value(new, ProbeAuthor::Agent, ids(), now)?;
-                match insert_probe_row(transaction, &probe) {
-                    Err(PmError::Constraint(_)) => continue,
-                    result => result?,
+                if insert_proposed_probe(transaction, &probe)? {
+                    proposed_probe_ids.push(probe.id);
                 }
-                proposed_probe_ids.push(probe.id);
             }
             let finished_check = running_check(transaction, &ticket.id)?
                 .map(|check| close_check(transaction, &check, DeliveryCheckOutcome::Reported, now))

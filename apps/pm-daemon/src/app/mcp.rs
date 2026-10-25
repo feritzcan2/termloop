@@ -9,10 +9,10 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde_json::{Value, json};
 use termloop_pm::agent::{
-    PM_BOARD_READ, PM_CHECK_REPORT, PM_HOST_TOOLS, PM_OWNER_EVIDENCE_READ, PM_RISKS_READ,
-    PM_SKILL_DISCOVERY_READ, PM_SKILL_DRAFT_SUBMIT, PM_SKILL_RUN_FINISH, PM_SKILL_TOOL_VERIFY,
-    PM_TICKET_READ, PM_TICKET_SUGGEST, PmToolError, call_pm_tool, pm_tool_access,
-    pm_tool_definitions,
+    PM_BOARD_READ, PM_CHECK_REPORT, PM_ENVIRONMENTS_PROPOSE, PM_HOST_TOOLS, PM_OWNER_EVIDENCE_READ,
+    PM_RISKS_READ, PM_SKILL_DISCOVERY_READ, PM_SKILL_DRAFT_SUBMIT, PM_SKILL_RUN_FINISH,
+    PM_SKILL_TOOL_VERIFY, PM_TICKET_READ, PM_TICKET_SUGGEST, PmToolError, call_pm_tool,
+    pm_tool_access, pm_tool_definitions,
 };
 use termloop_pm::skill::SkillEvent;
 use termloop_pm_contract::pm::EventName;
@@ -154,7 +154,10 @@ pub(crate) async fn handle_message(
             if outcome.is_ok()
                 && matches!(
                     name,
-                    PM_TICKET_SUGGEST | PM_SKILL_DRAFT_SUBMIT | PM_SKILL_RUN_FINISH
+                    PM_TICKET_SUGGEST
+                        | PM_SKILL_DRAFT_SUBMIT
+                        | PM_SKILL_RUN_FINISH
+                        | PM_ENVIRONMENTS_PROPOSE
                 )
             {
                 skills::publish(state, &context.project_id);

@@ -2,10 +2,14 @@
 //! of them are production. Without a list, an environment whose name contains
 //! "prod" counts as production.
 
-use crate::validation::valid_label;
+use crate::DeliveryProbe;
+use crate::validation::{valid_label, valid_non_blank_text};
 
 pub const PROJECT_ENVIRONMENTS_MAX: usize = 12;
 pub const ENVIRONMENT_NAME_MAX_CHARS: usize = 120;
+pub const ENVIRONMENT_EVIDENCE_MAX_CHARS: usize = 300;
+pub const ENVIRONMENT_PROPOSAL_SUMMARY_MAX_CHARS: usize = 600;
+pub const ENVIRONMENT_PROPOSAL_PROBES_MAX: usize = 12;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -28,6 +32,57 @@ pub fn valid_project_environments(environments: &[ProjectEnvironment]) -> bool {
                     .iter()
                     .any(|other| other.name.eq_ignore_ascii_case(&environment.name))
         })
+}
+
+/// An environment the Deployment control setup found, and where it read it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ProposedEnvironment {
+    pub name: String,
+    pub production: bool,
+    pub evidence: String,
+}
+
+impl ProposedEnvironment {
+    /// The environment as the project lists it once the PM ticks it.
+    pub fn listed(&self) -> ProjectEnvironment {
+        ProjectEnvironment {
+            name: self.name.clone(),
+            production: self.production,
+        }
+    }
+}
+
+/// What the Deployment control setup found, for the PM to tick: the
+/// environments and the probes it proposed for them. Nothing is listed or
+/// run until the PM applies it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct EnvironmentProposal {
+    pub project_id: String,
+    pub summary: String,
+    pub environments: Vec<ProposedEnvironment>,
+    /// The proposed probes still waiting; one approved or rejected
+    /// elsewhere drops out.
+    pub probes: Vec<DeliveryProbe>,
+    pub created_at_epoch_ms: u64,
+}
+
+/// A bounded, non-empty list of unique, valid environments with evidence.
+pub fn valid_proposed_environments(environments: &[ProposedEnvironment]) -> bool {
+    let listed: Vec<ProjectEnvironment> = environments
+        .iter()
+        .map(ProposedEnvironment::listed)
+        .collect();
+    !environments.is_empty()
+        && valid_project_environments(&listed)
+        && environments
+            .iter()
+            .all(|environment| valid_label(&environment.evidence, ENVIRONMENT_EVIDENCE_MAX_CHARS))
+}
+
+pub fn valid_environment_proposal_summary(summary: &str) -> bool {
+    valid_non_blank_text(summary, ENVIRONMENT_PROPOSAL_SUMMARY_MAX_CHARS)
 }
 
 /// Whether an environment counts as production: the project's own list

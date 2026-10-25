@@ -25,6 +25,7 @@ pub use check_report::{
     ReportedEnvironment,
 };
 pub use checks::NewCheck;
+pub use environment::NewEnvironmentProposal;
 pub use facts::{
     CheckNotesObservation, EnvironmentObservation, FactRead, FactsObservation, JiraObservation,
     PullRequestsObservation,

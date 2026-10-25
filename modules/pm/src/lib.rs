@@ -30,10 +30,11 @@ pub use commands::{
     CheckReport, ClosedSprint, EnvironmentObservation, FactRead, FactsObservation,
     JIRA_PULL_NEW_TICKETS_MAX, JiraChange, JiraIssueState, JiraObservation, JiraPullChanges,
     JiraPullOutcome, JiraSprintPull, JiraSprintRead, JiraWriteDiff, JiraWriteOutcome,
-    JiraWriteTarget, NewCheck, NewProbe, NewTicket, ProposalOrigin, PullRequestsObservation,
-    RecordedCheckReport, RecordedProbeRun, ReportedEnvironment, SKILL_DISCOVERY_MAX_BYTES,
-    SKILL_PAUSE_AFTER_FAILURES, SKILL_RETRY_AFTER_MS, SKILL_SLACK_RETENTION_MS, TicketEdit,
-    apply_jira_write, read_jira_issue_state, read_jira_sprints, slack_ts_at, slack_ts_key,
+    JiraWriteTarget, NewCheck, NewEnvironmentProposal, NewProbe, NewTicket, ProposalOrigin,
+    PullRequestsObservation, RecordedCheckReport, RecordedProbeRun, ReportedEnvironment,
+    SKILL_DISCOVERY_MAX_BYTES, SKILL_PAUSE_AFTER_FAILURES, SKILL_RETRY_AFTER_MS,
+    SKILL_SLACK_RETENTION_MS, TicketEdit, apply_jira_write, read_jira_issue_state,
+    read_jira_sprints, slack_ts_at, slack_ts_key,
 };
 pub use delivery::check_reasons::{check_reasons, deploy_tracking_enabled};
 pub use delivery::checks::{
@@ -58,8 +59,10 @@ pub use delivery::tracking::{DataTier, Tracking};
 pub use delivery::{FactsSummary, TicketDelivery};
 pub use digest::{DIGEST_ENTRIES_MAX, Digest, DigestEntry, DigestKind, DigestSource, digest};
 pub use environment::{
-    ENVIRONMENT_NAME_MAX_CHARS, PROJECT_ENVIRONMENTS_MAX, ProjectEnvironment,
-    environment_is_production, valid_environment_name, valid_project_environments,
+    ENVIRONMENT_EVIDENCE_MAX_CHARS, ENVIRONMENT_NAME_MAX_CHARS, ENVIRONMENT_PROPOSAL_PROBES_MAX,
+    ENVIRONMENT_PROPOSAL_SUMMARY_MAX_CHARS, EnvironmentProposal, PROJECT_ENVIRONMENTS_MAX,
+    ProjectEnvironment, ProposedEnvironment, environment_is_production, valid_environment_name,
+    valid_project_environments,
 };
 pub use error::PmError;
 pub use note::{

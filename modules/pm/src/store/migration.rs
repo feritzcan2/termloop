@@ -375,6 +375,18 @@ CREATE TABLE skill_channel_watermarks (
 ) STRICT;
 "#;
 
+/// What a Deployment control setup found, waiting for the PM: at most one
+/// per project, replaced by the next setup.
+const V11: &str = r#"
+CREATE TABLE environment_proposals (
+    project_id TEXT PRIMARY KEY,
+    summary TEXT NOT NULL,
+    environments_json TEXT NOT NULL,
+    probe_ids_json TEXT NOT NULL,
+    created_at_epoch_ms INTEGER NOT NULL
+) STRICT;
+"#;
+
 /// Every migration in order; a version is never edited once released.
 const MIGRATIONS: &[(u32, &str)] = &[
     (1, V1),
@@ -387,6 +399,7 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (8, V8),
     (9, V9),
     (10, V10),
+    (11, V11),
 ];
 
 pub const SCHEMA_VERSION: u32 = MIGRATIONS[MIGRATIONS.len() - 1].0;

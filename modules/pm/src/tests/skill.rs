@@ -10,8 +10,9 @@ use crate::skill::{
     evidence_sources, revision_reason,
 };
 use crate::{
-    PmError, PmStore, ProjectEnvironment, ProposalChange, ProposalOrigin,
-    SKILL_PAUSE_AFTER_FAILURES, SKILL_RETRY_AFTER_MS, TicketStatus,
+    NewEnvironmentProposal, NewProbe, PmError, PmStore, ProbeMatcher, ProjectEnvironment,
+    ProposalChange, ProposalOrigin, ProposedEnvironment, SKILL_PAUSE_AFTER_FAILURES,
+    SKILL_RETRY_AFTER_MS, TicketStatus,
 };
 
 pub(super) fn manifest() -> SkillManifest {
@@ -486,6 +487,120 @@ fn each_skill_has_its_own_setup_creator() {
             .unwrap()
             .ends_with("The skill to set up is the Slack tracker.")
     );
+}
+
+#[test]
+fn deployment_control_sets_up_with_its_own_reader_of_the_project() {
+    let store = store();
+    let setup =
+        PmAgentProfile::build_skill_setup(&store, "p1", SkillSetup::DeploymentControl).unwrap();
+    assert!(setup.tools.contains(&crate::agent::PM_ENVIRONMENTS_PROPOSE));
+    assert!(
+        setup
+            .system_prompt
+            .contains("Mode: Deployment control setup.")
+    );
+    // It reads the project itself, so the creator's no-commands rule is out.
+    assert!(!setup.system_prompt.contains("never run commands"));
+    assert!(
+        setup
+            .first_message
+            .unwrap()
+            .starts_with("Look at the project now and call pm_environments_propose")
+    );
+}
+
+fn proposed(name: &str, production: bool) -> ProposedEnvironment {
+    ProposedEnvironment {
+        name: name.into(),
+        production,
+        evidence: ".github/workflows/deploy.yml".into(),
+    }
+}
+
+fn probe(environment: &str, url: &str) -> NewProbe {
+    NewProbe {
+        project_id: "p1".into(),
+        environment: environment.into(),
+        argv: vec!["curl".into(), url.into()],
+        matcher: ProbeMatcher::CommitAncestry,
+        reason: None,
+    }
+}
+
+fn environment_proposal(store: &mut PmStore) -> crate::EnvironmentProposal {
+    store
+        .propose_environments(NewEnvironmentProposal {
+            project_id: "p1".into(),
+            summary: "Staging and production deploy from the workflow.".into(),
+            environments: vec![proposed("staging", false), proposed("production", true)],
+            probes: vec![
+                probe("staging", "https://staging.example/version"),
+                probe("production", "https://example/version"),
+            ],
+        })
+        .unwrap()
+}
+
+#[test]
+fn an_environment_proposal_lists_and_runs_nothing_until_the_pm_applies_it() {
+    let mut store = store();
+    let proposal = environment_proposal(&mut store);
+    assert_eq!(proposal.probes.len(), 2);
+    assert!(store.project_environments("p1").unwrap().is_empty());
+    assert!(!store.deploy_tracking_enabled("p1").unwrap());
+    // A probe must name a proposed environment.
+    assert!(matches!(
+        store.propose_environments(NewEnvironmentProposal {
+            project_id: "p1".into(),
+            summary: "x".into(),
+            environments: vec![proposed("staging", false)],
+            probes: vec![probe("qa", "https://qa.example/version")],
+        }),
+        Err(PmError::Invalid("probes"))
+    ));
+
+    let staging_probe = proposal.probes[0].id.clone();
+    let listed = store
+        .apply_environment_proposal(
+            "p1",
+            &["staging".into()],
+            std::slice::from_ref(&staging_probe),
+        )
+        .unwrap();
+    assert_eq!(
+        listed,
+        [ProjectEnvironment {
+            name: "staging".into(),
+            production: false
+        }]
+    );
+    assert!(store.environment_proposal("p1").unwrap().is_none());
+    let probes = store.project_probes("p1").unwrap();
+    assert_eq!(probes.len(), 1, "the unticked probe is dropped");
+    assert_eq!(probes[0].id, staging_probe);
+    assert_eq!(probes[0].status, crate::ProbeStatus::Approved);
+    assert!(store.deployment_control_enabled("p1").unwrap());
+}
+
+#[test]
+fn a_new_environment_proposal_replaces_the_last_and_discard_drops_its_probes() {
+    let mut store = store();
+    let first = environment_proposal(&mut store);
+    let second = environment_proposal(&mut store);
+    assert_ne!(first.probes[0].id, second.probes[0].id);
+    assert_eq!(store.project_probes("p1").unwrap().len(), 2);
+    assert!(matches!(
+        store.apply_environment_proposal("p1", &["qa".into()], &[]),
+        Err(PmError::Invalid("environments"))
+    ));
+    store.discard_environment_proposal("p1").unwrap();
+    assert!(store.environment_proposal("p1").unwrap().is_none());
+    assert!(store.project_probes("p1").unwrap().is_empty());
+    assert!(matches!(
+        store.discard_environment_proposal("p1"),
+        Err(PmError::NotFound)
+    ));
 }
 
 #[test]

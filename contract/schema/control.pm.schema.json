@@ -66,7 +66,9 @@
       "pm_skill_creator_launch",
       "pm_skill_feedback_read",
       "pm_skill_draft_dry_run",
-      "pm_skill_draft_discard"
+      "pm_skill_draft_discard",
+      "pm_environment_proposal_apply",
+      "pm_environment_proposal_discard"
     ]
   },
   "x-events": {
@@ -584,6 +586,22 @@
       "result": {
         "$ref": "#/$defs/pmSkillDraftDiscardResult"
       }
+    },
+    "pm_environment_proposal_apply": {
+      "params": {
+        "$ref": "#/$defs/pmEnvironmentProposalApplyParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmEnvironmentsSetResult"
+      }
+    },
+    "pm_environment_proposal_discard": {
+      "params": {
+        "$ref": "#/$defs/pmProjectRef"
+      },
+      "result": {
+        "$ref": "#/$defs/pmEnvironmentProposalDiscardResult"
+      }
     }
   },
   "$defs": {
@@ -769,7 +787,9 @@
         "pm_skill_creator_launch",
         "pm_skill_feedback_read",
         "pm_skill_draft_dry_run",
-        "pm_skill_draft_discard"
+        "pm_skill_draft_discard",
+        "pm_environment_proposal_apply",
+        "pm_environment_proposal_discard"
       ]
     },
     "eventName": {
@@ -5611,7 +5631,8 @@
       "required": [
         "projectId",
         "skills",
-        "drafts"
+        "drafts",
+        "environmentProposal"
       ],
       "properties": {
         "projectId": {
@@ -5633,6 +5654,16 @@
             "$ref": "#/$defs/pmSkillDraft"
           },
           "maxItems": 16
+        },
+        "environmentProposal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/pmEnvironmentProposal"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },
@@ -5782,6 +5813,7 @@
       "x-codegen": true,
       "type": "string",
       "enum": [
+        "deploymentControl",
         "bugOwnerFinder",
         "slackTracker"
       ]
@@ -5819,6 +5851,129 @@
       }
     },
     "pmSkillDraftDiscardResult": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "discarded"
+      ],
+      "properties": {
+        "discarded": {
+          "const": true
+        }
+      }
+    },
+    "pmProposedEnvironment": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "production",
+        "evidence"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "production": {
+          "type": "boolean"
+        },
+        "evidence": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        }
+      }
+    },
+    "pmEnvironmentProposal": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "summary",
+        "environments",
+        "probes",
+        "createdAtEpochMs"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 600
+        },
+        "environments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmProposedEnvironment"
+          },
+          "minItems": 1,
+          "maxItems": 12
+        },
+        "probes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmProbe"
+          },
+          "maxItems": 12
+        },
+        "createdAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "pmEnvironmentProposalApplyParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "environments",
+        "probeIds"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "environments": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "minItems": 1,
+          "maxItems": 12,
+          "uniqueItems": true
+        },
+        "probeIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[!-~]+$"
+          },
+          "maxItems": 12,
+          "uniqueItems": true
+        }
+      }
+    },
+    "pmEnvironmentProposalDiscardResult": {
       "x-codegen": true,
       "type": "object",
       "additionalProperties": false,

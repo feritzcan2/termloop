@@ -855,6 +855,60 @@ async fn deployment_control_gates_automatic_checks_and_can_be_turned_off() {
 }
 
 #[tokio::test]
+async fn the_pm_applies_the_environments_the_deployment_setup_found() {
+    let fixture = fixture();
+    let state = &fixture.state;
+    let project_id = project(state).await;
+    let read = call(state, "pm_skills_read", json!({ "projectId": project_id }))
+        .await
+        .unwrap();
+    assert_eq!(read["environmentProposal"], Value::Null);
+    let none = call(
+        state,
+        "pm_environment_proposal_discard",
+        json!({ "projectId": project_id }),
+    )
+    .await;
+    assert!(none.is_err());
+
+    state
+        .store
+        .lock()
+        .propose_environments(termloop_pm::NewEnvironmentProposal {
+            project_id: project_id.clone(),
+            summary: "Production deploys from the workflow.".into(),
+            environments: vec![termloop_pm::ProposedEnvironment {
+                name: "production".into(),
+                production: true,
+                evidence: ".github/workflows/deploy.yml".into(),
+            }],
+            probes: Vec::new(),
+        })
+        .unwrap();
+    let read = call(state, "pm_skills_read", json!({ "projectId": project_id }))
+        .await
+        .unwrap();
+    assert_eq!(
+        read["environmentProposal"]["environments"][0]["name"],
+        "production"
+    );
+    let applied = call(
+        state,
+        "pm_environment_proposal_apply",
+        json!({ "projectId": project_id, "environments": ["production"], "probeIds": [] }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(applied["environments"][0]["production"], true);
+    let read = call(state, "pm_skills_read", json!({ "projectId": project_id }))
+        .await
+        .unwrap();
+    assert_eq!(read["environmentProposal"], Value::Null);
+    assert_eq!(read["skills"][0]["builtin"], "deploymentControl");
+    assert_eq!(read["skills"][0]["enabled"], true);
+}
+
+#[tokio::test]
 async fn the_skill_creator_verifies_only_through_the_daemon() {
     let fixture = fixture();
     let state = &fixture.state;

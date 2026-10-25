@@ -6,10 +6,10 @@ use serde_json::{Value, json};
 
 use super::PmToolContext;
 use crate::agent::{
-    PM_BOARD_READ, PM_CHECK_REPORT, PM_OWNER_EVIDENCE_READ, PM_RISKS_READ, PM_SKILL_DISCOVERY_READ,
-    PM_SKILL_DRAFT_SUBMIT, PM_SKILL_DRY_RUN_REQUEST, PM_SKILL_RUN_FINISH, PM_SKILL_TOOL_VERIFY,
-    PM_TICKET_NOTE_ADD, PM_TICKET_PROPOSE_ACCEPTANCE_CRITERIA, PM_TICKET_PROPOSE_DESCRIPTION,
-    PM_TICKET_READ, PM_TICKET_SUGGEST, SKILL_READ_TOOLS,
+    PM_BOARD_READ, PM_CHECK_REPORT, PM_ENVIRONMENTS_PROPOSE, PM_OWNER_EVIDENCE_READ, PM_RISKS_READ,
+    PM_SKILL_DISCOVERY_READ, PM_SKILL_DRAFT_SUBMIT, PM_SKILL_DRY_RUN_REQUEST, PM_SKILL_RUN_FINISH,
+    PM_SKILL_TOOL_VERIFY, PM_TICKET_NOTE_ADD, PM_TICKET_PROPOSE_ACCEPTANCE_CRITERIA,
+    PM_TICKET_PROPOSE_DESCRIPTION, PM_TICKET_READ, PM_TICKET_SUGGEST, SKILL_READ_TOOLS,
 };
 use crate::commands::{TS_FRACTION_MAX_DIGITS, TS_SECONDS_MAX_DIGITS};
 use crate::proposal::{ASSIGNEE_SHORTLIST_MAX, JIRA_COMMENT_MAX_CHARS};
@@ -22,11 +22,12 @@ use crate::skill::{
     SKILL_WHAT_IT_DOES_MAX_CHARS,
 };
 use crate::{
-    CHECK_PROBE_PROPOSALS_MAX, ENVIRONMENT_NAME_MAX_CHARS, PROPOSAL_SUMMARY_MAX_CHARS,
-    TICKET_ASSIGNEE_MAX_CHARS, TICKET_BLOCKERS_MAX, TICKET_CHECK_NOTES_MAX_BYTES,
-    TICKET_CRITERIA_MAX, TICKET_DESCRIPTION_MAX_CHARS, TICKET_ENVIRONMENT_FACTS_MAX,
-    TICKET_ITEM_MAX_CHARS, TICKET_NOTE_LABEL_MAX_CHARS, TICKET_NOTE_MAX_CHARS,
-    TICKET_NOTE_URL_MAX_BYTES,
+    CHECK_PROBE_PROPOSALS_MAX, ENVIRONMENT_EVIDENCE_MAX_CHARS, ENVIRONMENT_NAME_MAX_CHARS,
+    ENVIRONMENT_PROPOSAL_PROBES_MAX, ENVIRONMENT_PROPOSAL_SUMMARY_MAX_CHARS,
+    PROJECT_ENVIRONMENTS_MAX, PROPOSAL_SUMMARY_MAX_CHARS, TICKET_ASSIGNEE_MAX_CHARS,
+    TICKET_BLOCKERS_MAX, TICKET_CHECK_NOTES_MAX_BYTES, TICKET_CRITERIA_MAX,
+    TICKET_DESCRIPTION_MAX_CHARS, TICKET_ENVIRONMENT_FACTS_MAX, TICKET_ITEM_MAX_CHARS,
+    TICKET_NOTE_LABEL_MAX_CHARS, TICKET_NOTE_MAX_CHARS, TICKET_NOTE_URL_MAX_BYTES,
 };
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -252,19 +253,7 @@ fn definition(name: &'static str) -> PmToolDefinition {
                     "probeProposals": {
                         "type": "array",
                         "maxItems": CHECK_PROBE_PROPOSALS_MAX,
-                        "items": object(
-                            json!({
-                                "environment": { "type": "string", "minLength": 1 },
-                                "argv": {
-                                    "type": "array",
-                                    "minItems": 1,
-                                    "items": { "type": "string" }
-                                },
-                                "matcher": { "type": "string", "enum": ["commitAncestry", "agent"] },
-                                "reason": { "type": "string", "minLength": 1 }
-                            }),
-                            &["environment", "argv", "matcher"],
-                        )
+                        "items": probe_proposal()
                     }
                 }),
                 &["ticketId", "environments", "notesMarkdown"],
@@ -449,6 +438,46 @@ fn definition(name: &'static str) -> PmToolDefinition {
                 &["ticketId", "kind", "text"],
             ),
         ),
+        PM_ENVIRONMENTS_PROPOSE => (
+            "Propose the environments this project deploys to, in delivery order, with where \
+             you read each one, and probe commands that tell what each environment runs. The \
+             PM ticks what to keep in the Skills panel; nothing is listed or run until then. \
+             A new proposal replaces the previous one.",
+            object(
+                json!({
+                    "summary": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": ENVIRONMENT_PROPOSAL_SUMMARY_MAX_CHARS,
+                        "description": "What you found and how, in a few lines for the PM."
+                    },
+                    "environments": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": PROJECT_ENVIRONMENTS_MAX,
+                        "items": object(
+                            json!({
+                                "name": { "type": "string", "minLength": 1, "maxLength": ENVIRONMENT_NAME_MAX_CHARS },
+                                "production": { "type": "boolean" },
+                                "evidence": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": ENVIRONMENT_EVIDENCE_MAX_CHARS,
+                                    "description": "Where you read it, e.g. .github/workflows/deploy.yml (environment: staging)."
+                                }
+                            }),
+                            &["name", "production", "evidence"],
+                        )
+                    },
+                    "probes": {
+                        "type": "array",
+                        "maxItems": ENVIRONMENT_PROPOSAL_PROBES_MAX,
+                        "items": probe_proposal()
+                    }
+                }),
+                &["summary", "environments"],
+            ),
+        ),
         _ => unreachable!("every PM tool has a definition"),
     };
     PmToolDefinition {
@@ -461,6 +490,24 @@ fn definition(name: &'static str) -> PmToolDefinition {
 /// The tools a caller lists over MCP, in a stable order.
 pub fn pm_tool_definitions(context: &PmToolContext) -> Vec<PmToolDefinition> {
     context.tools().into_iter().map(definition).collect()
+}
+
+/// One probe an agent proposes; it runs only once the PM approves it.
+fn probe_proposal() -> Value {
+    object(
+        json!({
+            "environment": { "type": "string", "minLength": 1, "description": "The environment the probe reads." },
+            "argv": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string" },
+                "description": "A read-only command, as argv, whose output tells what the environment runs."
+            },
+            "matcher": { "type": "string", "enum": ["commitAncestry", "agent"] },
+            "reason": { "type": "string", "minLength": 1 }
+        }),
+        &["environment", "argv", "matcher"],
+    )
 }
 
 fn channel_id_pattern() -> String {

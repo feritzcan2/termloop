@@ -264,6 +264,37 @@ pub(super) fn close_run(
     Ok(())
 }
 
+/// Adds a built-in skill, off, unless the project has it; either way
+/// returns its id.
+pub(super) fn insert_builtin_skill(
+    connection: &Connection,
+    project_id: &str,
+    builtin: BuiltinSkill,
+    id: String,
+    now: u64,
+) -> Result<String, PmError> {
+    if let Some(record) = builtin_skill_record(connection, project_id, builtin)? {
+        return Ok(record.id);
+    }
+    connection.execute(
+        "INSERT INTO skills (id, project_id, builtin, enabled, version, \
+             created_at_epoch_ms) VALUES (?1, ?2, ?3, 0, 1, ?4)",
+        params![id, project_id, builtin.as_str(), now],
+    )?;
+    insert_version(connection, &id, 1, &builtin.manifest(), &[], None, now)?;
+    Ok(id)
+}
+
+/// Turns a skill on and clears any pause, so it starts over.
+pub(super) fn enable_skill_row(connection: &Connection, skill_id: &str) -> Result<(), PmError> {
+    connection.execute(
+        "UPDATE skills SET enabled = 1, paused_reason = NULL, \
+             consecutive_failures = 0, next_attempt_at_epoch_ms = NULL WHERE id = ?1",
+        [skill_id],
+    )?;
+    Ok(())
+}
+
 fn outcome_words(outcome: SkillRunOutcome) -> &'static str {
     match outcome {
         SkillRunOutcome::Abandoned => "it took too long and was stopped",
@@ -287,15 +318,7 @@ impl PmStore {
         let id = self.new_id();
         let now = self.now();
         self.write(|transaction| {
-            if builtin_skill_record(transaction, project_id, builtin)?.is_some() {
-                return Ok(());
-            }
-            transaction.execute(
-                "INSERT INTO skills (id, project_id, builtin, enabled, version, \
-                     created_at_epoch_ms) VALUES (?1, ?2, ?3, 0, 1, ?4)",
-                params![id, project_id, builtin.as_str(), now],
-            )?;
-            insert_version(transaction, &id, 1, &builtin.manifest(), &[], None, now)
+            insert_builtin_skill(transaction, project_id, builtin, id, now).map(drop)
         })
     }
 
@@ -334,11 +357,7 @@ impl PmStore {
         self.write(|transaction| {
             require_skill(transaction, skill_id)?;
             if enabled {
-                transaction.execute(
-                    "UPDATE skills SET enabled = 1, paused_reason = NULL, \
-                         consecutive_failures = 0, next_attempt_at_epoch_ms = NULL WHERE id = ?1",
-                    [skill_id],
-                )?;
+                enable_skill_row(transaction, skill_id)?;
             } else {
                 transaction.execute("UPDATE skills SET enabled = 0 WHERE id = ?1", [skill_id])?;
             }

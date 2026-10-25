@@ -1,13 +1,15 @@
 //! Method handlers for skills and the suggestions they make: the skills
 //! list, enabling, installing a reviewed draft, runs, the skill creator,
-//! feedback, and accepting or rejecting a suggestion.
+//! feedback, accepting or rejecting a suggestion, and applying what the
+//! Deployment control setup found.
 
 use serde_json::{Value, json};
 use termloop_pm::agent::SkillSetup;
 use termloop_pm::skill::SkillRunTrigger;
 use termloop_pm_contract::pm::{
-    PmProjectRef, PmProposalAcceptParams, PmProposalRejectParams, PmSkillCreatorLaunchParams,
-    PmSkillDraftRef, PmSkillInstallParams, PmSkillRef, PmSkillSetEnabledParams, PmSkillSetup,
+    PmEnvironmentProposalApplyParams, PmProjectRef, PmProposalAcceptParams, PmProposalRejectParams,
+    PmSkillCreatorLaunchParams, PmSkillDraftRef, PmSkillInstallParams, PmSkillRef,
+    PmSkillSetEnabledParams, PmSkillSetup,
 };
 
 use super::dispatch::{parse, require_project, require_ticket, to_value};
@@ -65,6 +67,7 @@ pub(super) fn creator_launch(state: &AppState, params: &Value) -> Result<Value, 
         (None, None) => CreatorLaunch::Offer,
         (Some(skill_id), None) => CreatorLaunch::Revise(skill_id),
         (None, Some(setup)) => CreatorLaunch::Setup(match setup {
+            PmSkillSetup::DeploymentControl => SkillSetup::DeploymentControl,
             PmSkillSetup::BugOwnerFinder => SkillSetup::BugOwnerFinder,
             PmSkillSetup::SlackTracker => SkillSetup::SlackTracker,
         }),
@@ -93,6 +96,45 @@ pub(super) fn draft_discard(state: &AppState, params: &Value) -> Result<Value, C
     let params: PmSkillDraftRef = parse(params)?;
     let draft = state.store.lock().discard_skill_draft(&params.draft_id)?;
     skills::publish(state, &draft.project_id);
+    Ok(json!({ "discarded": true }))
+}
+
+/// Lists the environments and approves the probes the PM ticked, and turns
+/// Deployment control on.
+pub(super) fn environment_proposal_apply(
+    state: &AppState,
+    params: &Value,
+) -> Result<Value, ControlError> {
+    let params: PmEnvironmentProposalApplyParams = parse(params)?;
+    let environments = {
+        let mut store = state.store.lock();
+        require_project(&store, &params.project_id)?;
+        store.apply_environment_proposal(
+            &params.project_id,
+            &params.environments,
+            &params.probe_ids,
+        )?
+    };
+    state.board_changed(&params.project_id);
+    skills::publish(state, &params.project_id);
+    Ok(json!({
+        "projectId": params.project_id,
+        "environments": to_value(&environments)?,
+    }))
+}
+
+pub(super) fn environment_proposal_discard(
+    state: &AppState,
+    params: &Value,
+) -> Result<Value, ControlError> {
+    let params: PmProjectRef = parse(params)?;
+    {
+        let mut store = state.store.lock();
+        require_project(&store, &params.project_id)?;
+        store.discard_environment_proposal(&params.project_id)?;
+    }
+    state.board_changed(&params.project_id);
+    skills::publish(state, &params.project_id);
     Ok(json!({ "discarded": true }))
 }
 

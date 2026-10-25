@@ -126,7 +126,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:91d7f374205ad7693c363a8a9ce47c668be259598d4ac4799b675de0f6f1a288";
+    "sha256:b229012e9b21c6afbb201a808a1c2006c06e495dca26f485af066698977b0f64";
 pub const CAPABILITY_SCOPE: &str = "pm.full";
 pub const METHODS: &[&str] = &[
     "pm_system_version",
@@ -190,6 +190,8 @@ pub const METHODS: &[&str] = &[
     "pm_skill_feedback_read",
     "pm_skill_draft_dry_run",
     "pm_skill_draft_discard",
+    "pm_environment_proposal_apply",
+    "pm_environment_proposal_discard",
 ];
 pub const EVENTS: &[&str] = &[
     "pmBoardChanged",
@@ -2177,6 +2179,11 @@ pub struct PmSkillsReadResult {
     pub project_id: String,
     pub skills: Vec<PmSkill>,
     pub drafts: Vec<PmSkillDraft>,
+    #[serde(
+        rename = "environmentProposal",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub environment_proposal: Option<PmEnvironmentProposal>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -2235,6 +2242,8 @@ pub struct PmSkillCreatorLaunchParams {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum PmSkillSetup {
+    #[serde(rename = "deploymentControl")]
+    DeploymentControl,
     #[serde(rename = "bugOwnerFinder")]
     BugOwnerFinder,
     #[serde(rename = "slackTracker")]
@@ -2253,6 +2262,42 @@ pub struct PmSkillFeedbackReadResult {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct PmSkillDraftDiscardResult {
+    pub discarded: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmProposedEnvironment {
+    pub name: String,
+    pub production: bool,
+    pub evidence: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmEnvironmentProposal {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    pub summary: String,
+    pub environments: Vec<PmProposedEnvironment>,
+    pub probes: Vec<PmProbe>,
+    #[serde(rename = "createdAtEpochMs")]
+    pub created_at_epoch_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmEnvironmentProposalApplyParams {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    pub environments: Vec<String>,
+    #[serde(rename = "probeIds")]
+    pub probe_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmEnvironmentProposalDiscardResult {
     pub discarded: bool,
 }
 
@@ -2343,6 +2388,8 @@ pub type PmSkillFeedbackReadParams = PmSkillRef;
 pub type PmSkillDraftDryRunParams = PmSkillDraftRef;
 pub type PmSkillDraftDryRunResult = PmSkillRun;
 pub type PmSkillDraftDiscardParams = PmSkillDraftRef;
+pub type PmEnvironmentProposalApplyResult = PmEnvironmentsSetResult;
+pub type PmEnvironmentProposalDiscardParams = PmProjectRef;
 
 #[allow(
     dead_code,
@@ -2549,6 +2596,8 @@ fn validate_method(value: &Value) -> bool {
             "pm_skill_feedback_read",
             "pm_skill_draft_dry_run",
             "pm_skill_draft_discard",
+            "pm_environment_proposal_apply",
+            "pm_environment_proposal_discard",
         ]
         .contains(&text)
     })
@@ -7692,8 +7741,11 @@ fn validate_pm_skills_read_result(value: &Value) -> bool {
                 items.len() <= 16 && items.iter().all(|item| validate_pm_skill_draft(item))
             })
         }) && object
-            .keys()
-            .all(|key| ["projectId", "skills", "drafts"].contains(&key.as_str()))
+            .get("environmentProposal")
+            .is_some_and(|field| (validate_pm_environment_proposal(field) || field.is_null()))
+            && object.keys().all(|key| {
+                ["projectId", "skills", "drafts", "environmentProposal"].contains(&key.as_str())
+            })
     })
 }
 
@@ -7884,7 +7936,7 @@ fn validate_pm_skill_creator_launch_params(value: &Value) -> bool {
 fn validate_pm_skill_setup(value: &Value) -> bool {
     value
         .as_str()
-        .is_some_and(|text| ["bugOwnerFinder", "slackTracker"].contains(&text))
+        .is_some_and(|text| ["deploymentControl", "bugOwnerFinder", "slackTracker"].contains(&text))
 }
 
 #[allow(
@@ -7928,6 +7980,152 @@ fn validate_pm_skill_feedback_read_result(value: &Value) -> bool {
     clippy::redundant_closure
 )]
 fn validate_pm_skill_draft_discard_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("discarded")
+            .is_some_and(|field| field == &serde_json::json!(true))
+            && object
+                .keys()
+                .all(|key| ["discarded"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_proposed_environment(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("name").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 120)
+        }) && object
+            .get("production")
+            .is_some_and(|field| field.is_boolean())
+            && object.get("evidence").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 300)
+            })
+            && object
+                .keys()
+                .all(|key| ["name", "production", "evidence"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_environment_proposal(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("projectId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("summary").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 600)
+        }) && object.get("environments").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() >= 1
+                    && items.len() <= 12
+                    && items
+                        .iter()
+                        .all(|item| validate_pm_proposed_environment(item))
+            })
+        }) && object.get("probes").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() <= 12 && items.iter().all(|item| validate_pm_probe(item))
+            })
+        }) && object.get("createdAtEpochMs").is_some_and(|field| {
+            field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 0_u64))
+            })
+        }) && object.keys().all(|key| {
+            [
+                "projectId",
+                "summary",
+                "environments",
+                "probes",
+                "createdAtEpochMs",
+            ]
+            .contains(&key.as_str())
+        })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_environment_proposal_apply_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("projectId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("environments").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() >= 1
+                    && items.len() <= 12
+                    && json_array_unique(items)
+                    && items.iter().all(|item| {
+                        item.as_str().is_some_and(|text| {
+                            text.chars().count() >= 1 && text.chars().count() <= 120
+                        })
+                    })
+            })
+        }) && object.get("probeIds").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() <= 12
+                    && json_array_unique(items)
+                    && items.iter().all(|item| {
+                        item.as_str().is_some_and(|text| {
+                            text.chars().count() >= 1
+                                && text.chars().count() <= 128
+                                && contract_pattern_matches("^[!-~]+$", text)
+                        })
+                    })
+            })
+        }) && object
+            .keys()
+            .all(|key| ["projectId", "environments", "probeIds"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_environment_proposal_discard_result(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object
             .get("discarded")
@@ -8266,6 +8464,14 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<PmSkillDraftDiscardParams>(params.clone()).is_ok()
                 && validate_pm_skill_draft_ref(params)
         }
+        "pm_environment_proposal_apply" => {
+            serde_json::from_value::<PmEnvironmentProposalApplyParams>(params.clone()).is_ok()
+                && validate_pm_environment_proposal_apply_params(params)
+        }
+        "pm_environment_proposal_discard" => {
+            serde_json::from_value::<PmEnvironmentProposalDiscardParams>(params.clone()).is_ok()
+                && validate_pm_project_ref(params)
+        }
         _ => false,
     }
 }
@@ -8520,6 +8726,14 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         "pm_skill_draft_discard" => {
             serde_json::from_value::<PmSkillDraftDiscardResult>(result.clone()).is_ok()
                 && validate_pm_skill_draft_discard_result(result)
+        }
+        "pm_environment_proposal_apply" => {
+            serde_json::from_value::<PmEnvironmentProposalApplyResult>(result.clone()).is_ok()
+                && validate_pm_environments_set_result(result)
+        }
+        "pm_environment_proposal_discard" => {
+            serde_json::from_value::<PmEnvironmentProposalDiscardResult>(result.clone()).is_ok()
+                && validate_pm_environment_proposal_discard_result(result)
         }
         _ => false,
     }

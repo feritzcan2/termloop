@@ -56,6 +56,7 @@ pub const PM_SKILL_DRAFT_SUBMIT: &str = "pm_skill_draft_submit";
 pub const PM_SKILL_DRY_RUN_REQUEST: &str = "pm_skill_dry_run_request";
 pub const PM_TICKET_NOTE_ADD: &str = "pm_ticket_note_add";
 pub const PM_OWNER_EVIDENCE_READ: &str = "pm_owner_evidence_read";
+pub const PM_ENVIRONMENTS_PROPOSE: &str = "pm_environments_propose";
 
 /// The read tools a skill manifest may approve. A run sees exactly the
 /// ones its manifest approved, plus [`SKILL_PROPOSAL_TOOLS`].
@@ -100,6 +101,7 @@ pub const PM_TOOLS: &[&str] = &[
     PM_SKILL_DRY_RUN_REQUEST,
     PM_TICKET_NOTE_ADD,
     PM_OWNER_EVIDENCE_READ,
+    PM_ENVIRONMENTS_PROPOSE,
 ];
 
 impl PmAgentMode {
@@ -142,6 +144,7 @@ impl PmAgentMode {
                 PM_SKILL_TOOL_VERIFY,
                 PM_SKILL_DRAFT_SUBMIT,
                 PM_SKILL_DRY_RUN_REQUEST,
+                PM_ENVIRONMENTS_PROPOSE,
             ],
         }
     }

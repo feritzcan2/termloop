@@ -14,10 +14,10 @@ use crate::skill::{
 };
 use crate::{
     AgentProbeReading, Board, ChannelWatermark, CheckReport, DataTier, DeliveryRisk, DeliveryStage,
-    EnvironmentDeployState, NewProbe, NewTicketNote, PmError, PmStore, ProbeMatcher,
-    ProposalChange, ProposalOrigin, ReportedEnvironment, SprintState, Ticket, TicketAuthor,
-    TicketDelivery, TicketDeliveryFacts, TicketNote, TicketNoteKind, TicketPriority,
-    TicketProposal, TicketStatus,
+    EnvironmentDeployState, NewEnvironmentProposal, NewProbe, NewTicketNote, PmError, PmStore,
+    ProbeMatcher, ProposalChange, ProposalOrigin, ProposedEnvironment, ReportedEnvironment,
+    SprintState, Ticket, TicketAuthor, TicketDelivery, TicketDeliveryFacts, TicketNote,
+    TicketNoteKind, TicketPriority, TicketProposal, TicketStatus,
 };
 
 /// Which tickets a board read lists.
@@ -260,6 +260,18 @@ pub struct ProbeProposalParams {
     pub matcher: ProbeMatcher,
     #[serde(default)]
     pub reason: Option<String>,
+}
+
+impl ProbeProposalParams {
+    fn into_new_probe(self, project_id: &str) -> NewProbe {
+        NewProbe {
+            project_id: project_id.to_owned(),
+            environment: self.environment,
+            argv: self.argv,
+            matcher: self.matcher,
+            reason: self.reason,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -598,6 +610,43 @@ pub(super) fn draft_submit(
     })
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct EnvironmentsProposeParams {
+    pub summary: String,
+    pub environments: Vec<ProposedEnvironment>,
+    #[serde(default)]
+    pub probes: Vec<ProbeProposalParams>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvironmentsProposeResult {
+    pub proposed_probe_ids: Vec<String>,
+}
+
+/// The Deployment control setup proposes what it found; the PM ticks it in
+/// the Skills panel.
+pub(super) fn environments_propose(
+    store: &mut PmStore,
+    context: &PmToolContext,
+    params: EnvironmentsProposeParams,
+) -> Result<EnvironmentsProposeResult, PmToolError> {
+    let proposal = store.propose_environments(NewEnvironmentProposal {
+        project_id: context.project_id.clone(),
+        summary: params.summary,
+        environments: params.environments,
+        probes: params
+            .probes
+            .into_iter()
+            .map(|probe| probe.into_new_probe(&context.project_id))
+            .collect(),
+    })?;
+    Ok(EnvironmentsProposeResult {
+        proposed_probe_ids: proposal.probes.into_iter().map(|probe| probe.id).collect(),
+    })
+}
+
 pub(super) fn risks_read(
     store: &PmStore,
     context: &PmToolContext,
@@ -662,13 +711,7 @@ pub(super) fn check_report(
         probe_proposals: params
             .probe_proposals
             .into_iter()
-            .map(|probe| NewProbe {
-                project_id: context.project_id.clone(),
-                environment: probe.environment,
-                argv: probe.argv,
-                matcher: probe.matcher,
-                reason: probe.reason,
-            })
+            .map(|probe| probe.into_new_probe(&context.project_id))
             .collect(),
     };
     let recorded = store.record_check_report(&context.project_id, report)?;

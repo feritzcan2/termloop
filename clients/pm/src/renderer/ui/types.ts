@@ -1,9 +1,6 @@
 // UI-local types. The UI imports contract types only; it never imports the
 // bridge, a transport, or the terminal adapter.
-import type { PmAgentProvider, PmAgentState, PmJiraApplyResult, PmJiraDiff, PmSkillSetup, PmTicketPriority } from "@termloop/pm-contract/pm";
-
-/** A skill the Skills panel always lists, set up from its own row. */
-export type SkillKind = "deploymentControl" | PmSkillSetup;
+import type { PmAgentProvider, PmAgentState, PmJiraApplyResult, PmJiraDiff, PmTicketPriority } from "@termloop/pm-contract/pm";
 
 /**
  * The stage's content; `jira` is the Jira issue browser the activity bar
