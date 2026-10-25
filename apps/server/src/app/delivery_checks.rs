@@ -314,6 +314,28 @@ pub(super) async fn record(
     Ok(json!({ "status": "recorded", "taskIds": recorded["taskIds"] }))
 }
 
+/// `task_ticket_write`: saves an Agent's ticket change as a new version.
+pub(super) async fn write_ticket(
+    token: &str,
+    params: protocol::TaskTicketWriteParams,
+    state: &AppState,
+) -> Result<Value, CoreError> {
+    let written = state.core.lock().await.write_project_manager_ticket(
+        token,
+        termloop_core::project::AgentTicketWrite {
+            task_id: params.task_id,
+            title: params.title,
+            description: params.description,
+            change_summary: params.change_summary,
+            expected_ticket_version: params.expected_ticket_version,
+        },
+    )?;
+    if written["ticketChanged"] == true {
+        publish_task_change(state).await;
+    }
+    Ok(written)
+}
+
 /// Terminates and retires every delivery check Session no running check owns.
 pub(super) async fn reap(state: &AppState) {
     let sessions = state
@@ -353,7 +375,7 @@ pub(super) async fn reap(state: &AppState) {
     }
 }
 
-async fn publish_task_change(state: &AppState) {
+pub(super) async fn publish_task_change(state: &AppState) {
     let state_revision = state.core.lock().await.state_revision();
     let _ = state.invalidation_requests.try_send(InvalidationRequest {
         topics: vec![ProjectionTopic::Task],

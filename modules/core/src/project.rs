@@ -8,6 +8,7 @@ mod probes;
 mod risks;
 mod sprint;
 mod ticket;
+mod ticket_tools;
 pub(crate) use changes::ProjectChangeObservationCache;
 pub use changes::{
     ObservedProjectWorktreeChanges, ObservedProjectWorktreeDiff, ObservedProjectWorktreePreImage,
@@ -16,6 +17,7 @@ pub use changes::{
 pub use jira_sprints::JiraSprintSyncPlan;
 pub(crate) use jira_sprints::JiraSprintSyncStatus;
 pub use probes::DeliveryCheckProbeProposal;
+pub use ticket_tools::AgentTicketWrite;
 
 use crate::{
     CodexRuntime, CoreError, CoreRuntime, ProjectDeleteBlocker, json_error, required_string,

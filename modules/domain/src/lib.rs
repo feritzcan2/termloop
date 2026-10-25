@@ -215,10 +215,14 @@ pub enum McpToolName {
     DeliveryCheckRead,
     #[serde(rename = "delivery_check_record")]
     DeliveryCheckRecord,
+    #[serde(rename = "task_ticket_read")]
+    TaskTicketRead,
+    #[serde(rename = "task_ticket_write")]
+    TaskTicketWrite,
 }
 
 impl McpToolName {
-    pub const ALL: [Self; 40] = [
+    pub const ALL: [Self; 42] = [
         Self::AskTo,
         Self::SendToAgent,
         Self::ReplyToRequest,
@@ -259,6 +263,8 @@ impl McpToolName {
         Self::PlaybookStepReport,
         Self::DeliveryCheckRead,
         Self::DeliveryCheckRecord,
+        Self::TaskTicketRead,
+        Self::TaskTicketWrite,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -303,6 +309,8 @@ impl McpToolName {
             Self::PlaybookStepReport => "playbook_step_report",
             Self::DeliveryCheckRead => "delivery_check_read",
             Self::DeliveryCheckRecord => "delivery_check_record",
+            Self::TaskTicketRead => "task_ticket_read",
+            Self::TaskTicketWrite => "task_ticket_write",
         }
     }
 }
@@ -354,6 +362,8 @@ impl std::str::FromStr for McpToolName {
             "playbook_step_report" => Ok(Self::PlaybookStepReport),
             "delivery_check_read" => Ok(Self::DeliveryCheckRead),
             "delivery_check_record" => Ok(Self::DeliveryCheckRecord),
+            "task_ticket_read" => Ok(Self::TaskTicketRead),
+            "task_ticket_write" => Ok(Self::TaskTicketWrite),
             _ => Err(()),
         }
     }
@@ -1566,6 +1576,8 @@ mod tests {
                 "playbook_step_report",
                 "delivery_check_read",
                 "delivery_check_record",
+                "task_ticket_read",
+                "task_ticket_write",
             ]
         );
         assert!("unknown".parse::<McpToolName>().is_err());

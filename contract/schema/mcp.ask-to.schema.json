@@ -694,9 +694,128 @@
         "idempotentHint": false,
         "openWorldHint": false
       }
+    },
+    "task_ticket_read": {
+      "description": "Read Project Manager tickets in this Session's Project, which must be opened as Project Manager. Without taskId it lists the Project's open Tasks with their taskId, Jira key, title, sprint, and ticketVersion. With taskId it returns that Task's ticket (title and complete Markdown description) with ticketVersion, its Jira link and key, the facts TermLoop read (Jira status and assignee, the pull requests that name the Jira key, environment states), and what the project manager stated. Read a Task before every task_ticket_write. capabilityDenied means this Session's Project is not opened as Project Manager.",
+      "role": "interactive",
+      "params": {
+        "$ref": "#/$defs/taskTicketReadParams"
+      },
+      "result": {
+        "$ref": "#/$defs/assistantTextResult"
+      },
+      "annotations": {
+        "title": "Read Project Manager tickets",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    "task_ticket_write": {
+      "description": "Save a new version of one Project Manager ticket in this Session's Project, only when the project manager asks for that change. The ticket is the work the developers are given: what to build and why, scope, acceptance criteria, technical notes, and open questions. Never put Jira status, assignee, pull requests, merges, or environments into it. Give the complete new description (keep everything the project manager did not ask to change), and/or a new title, a one-line changeSummary, and the expectedTicketVersion from task_ticket_read. Every write becomes a version the project manager can compare and restore. revisionConflict means the ticket changed since your read: read again, merge, and retry. invalidArguments means nothing was saved.",
+      "role": "interactive",
+      "params": {
+        "$ref": "#/$defs/taskTicketWriteParams"
+      },
+      "result": {
+        "$ref": "#/$defs/taskTicketWriteResult"
+      },
+      "annotations": {
+        "title": "Save a Project Manager ticket version",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     }
   },
   "$defs": {
+    "taskTicketReadParams": {
+      "x-codegen": true,
+      "x-codegen-name": "TaskTicketReadParams",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "taskId": {
+          "description": "The Task to read; omit to list the Project's open Tasks.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "taskTicketWriteParams": {
+      "x-codegen": true,
+      "x-codegen-name": "TaskTicketWriteParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskId",
+        "changeSummary",
+        "expectedTicketVersion"
+      ],
+      "properties": {
+        "taskId": {
+          "description": "The Task whose ticket changes, from task_ticket_read.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "title": {
+          "description": "A new ticket title; omit to keep it.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "description": {
+          "description": "The complete new ticket description in Markdown; omit to keep it.",
+          "type": "string",
+          "maxLength": 8000
+        },
+        "changeSummary": {
+          "description": "One line saying what changed and why.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "expectedTicketVersion": {
+          "description": "The ticketVersion returned by task_ticket_read; null when the ticket has none yet.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "taskTicketWriteResult": {
+      "x-codegen": true,
+      "x-codegen-name": "TaskTicketWriteResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskId",
+        "ticketVersion",
+        "ticketChanged"
+      ],
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ticketVersion": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "ticketChanged": {
+          "type": "boolean"
+        }
+      }
+    },
     "configurationVersionWriteParams": {
       "x-codegen": true,
       "x-codegen-name": "ConfigurationVersionWriteParams",

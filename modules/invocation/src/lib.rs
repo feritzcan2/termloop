@@ -56,7 +56,7 @@ const PROJECT_MANAGER_PLAYBOOK_POLICY_TEMPLATE: PromptTemplate = PromptTemplate 
 };
 const PROJECT_MANAGER_AGENT_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.agent.project-manager",
-    version: 4,
+    version: 5,
     authored_body: include_str!("../../../resources/prompts/builtin.agent.project-manager.md"),
 };
 #[cfg(test)]

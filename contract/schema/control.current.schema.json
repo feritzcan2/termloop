@@ -3051,7 +3051,9 @@
         "playbook_step_read",
         "playbook_step_report",
         "delivery_check_read",
-        "delivery_check_record"
+        "delivery_check_record",
+        "task_ticket_read",
+        "task_ticket_write"
       ]
     },
     "mcpToolRole": {
@@ -3134,8 +3136,8 @@
           "items": {
             "$ref": "#/$defs/mcpToolSettingsDto"
           },
-          "minItems": 40,
-          "maxItems": 40,
+          "minItems": 42,
+          "maxItems": 42,
           "uniqueItems": true
         }
       }

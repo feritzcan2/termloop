@@ -2087,7 +2087,7 @@ fn project_manager_profile_delivers_its_own_visible_protocol_with_interactive_to
             .expect("protocol part");
         assert_eq!(
             protocol.source,
-            "resources/prompts/builtin.agent.project-manager@4"
+            "resources/prompts/builtin.agent.project-manager@5"
         );
         assert_eq!(
             protocol.content,

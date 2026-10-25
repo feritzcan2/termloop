@@ -2,7 +2,7 @@ use super::*;
 
 pub(super) const DELIVERY_CHECK_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.agent.delivery-check",
-    version: 2,
+    version: 3,
     authored_body: include_str!("../../../resources/prompts/builtin.agent.delivery-check.md"),
 };
 

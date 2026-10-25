@@ -3992,7 +3992,7 @@ fn a_project_manager_project_launches_agents_under_the_project_manager_protocol(
         .unwrap();
     assert_eq!(
         protocol_source(&mut runtime).as_deref(),
-        Some("resources/prompts/builtin.agent.project-manager@4")
+        Some("resources/prompts/builtin.agent.project-manager@5")
     );
     let _ = std::fs::remove_dir_all(root);
 }
