@@ -3,11 +3,19 @@
 //! touching a row.
 
 mod environment;
+mod facts;
+mod probe;
+mod sources;
 mod sprint;
 mod ticket;
 
 use rusqlite::{Connection, OptionalExtension, params};
 
+pub use facts::{
+    CheckNotesObservation, EnvironmentObservation, FactRead, FactsObservation, JiraObservation,
+    PullRequestsObservation,
+};
+pub use probe::{NewProbe, RecordedProbeRun};
 pub use sprint::ClosedSprint;
 pub use ticket::{NewTicket, TicketEdit};
 

@@ -1,11 +1,14 @@
 //! The Project Manager app's model and its own SQLite store: sprints,
-//! tickets with immutable description versions, and project environments.
+//! tickets with immutable description versions, project environments and
+//! sources, delivery facts and probes, and what is derived from them.
 //! It never reads or writes the developer daemon's `termloop-store` state.
 
 mod board;
 mod commands;
+mod delivery;
 mod environment;
 mod error;
+mod sources;
 mod sprint;
 mod store;
 mod ticket;
@@ -15,12 +18,32 @@ mod validation;
 mod tests;
 
 pub use board::Board;
-pub use commands::{ClosedSprint, NewTicket, TicketEdit};
+pub use commands::{
+    CheckNotesObservation, ClosedSprint, EnvironmentObservation, FactRead, FactsObservation,
+    JiraObservation, NewProbe, NewTicket, PullRequestsObservation, RecordedProbeRun, TicketEdit,
+};
+pub use delivery::check_reasons::{check_reasons, deploy_tracking_enabled};
+pub use delivery::facts::{
+    CheckNotes, EnvironmentDeployState, EnvironmentFact, FACTS_STALE_AFTER_MS, FactReadFailure,
+    FactSource, JiraFact, JiraStatusCategory, PullRequestFact, PullRequestFactChecks,
+    PullRequestFactReview, PullRequestFactState, PullRequestsFact, TICKET_CHECK_NOTES_MAX_BYTES,
+    TICKET_ENVIRONMENT_FACTS_MAX, TICKET_PULL_REQUEST_FACTS_MAX, TicketDeliveryFacts, valid_commit,
+};
+pub use delivery::probe::{
+    CommitAncestryFact, DeliveryProbe, PROJECT_PROBES_MAX, ProbeAuthor, ProbeMatcher, ProbeOutcome,
+    ProbeRun, ProbeStatus, commit_ancestry_states, named_commit, valid_probe_argv,
+    valid_probe_environment,
+};
+pub use delivery::risks::{DeliveryRisk, DeliveryRiskKind, RiskInputs, delivery_risks};
+pub use delivery::stage::{DeliveryStage, DeliveryStageKind, delivery_stage};
+pub use delivery::tracking::{DataTier, Tracking};
+pub use delivery::{FactsSummary, TicketDelivery};
 pub use environment::{
     ENVIRONMENT_NAME_MAX_CHARS, PROJECT_ENVIRONMENTS_MAX, ProjectEnvironment,
     environment_is_production, valid_environment_name, valid_project_environments,
 };
 pub use error::PmError;
+pub use sources::{GitHubSource, JiraSource, ProjectSources};
 pub use sprint::{
     PROJECT_OPEN_SPRINTS_MAX, SPRINT_GOAL_MAX_CHARS, SPRINT_NAME_MAX_CHARS, Sprint, SprintState,
     valid_sprint_goal, valid_sprint_name,

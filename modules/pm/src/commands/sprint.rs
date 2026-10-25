@@ -52,6 +52,7 @@ impl PmStore {
             created_at_epoch_ms: self.now(),
             activated_at_epoch_ms: None,
             closed_at_epoch_ms: None,
+            ends_at_epoch_ms: None,
         };
         self.write(|transaction| {
             let open: usize = transaction.query_row(
@@ -105,6 +106,25 @@ impl PmStore {
             transaction.execute(
                 "UPDATE sprints SET goal = ?2 WHERE id = ?1",
                 params![sprint_id, goal],
+            )?;
+            require_sprint(transaction, sprint_id)
+        })
+    }
+
+    /// Sets or clears (`None`) when an open sprint is planned to end.
+    pub fn set_sprint_end(
+        &mut self,
+        sprint_id: &str,
+        ends_at_epoch_ms: Option<u64>,
+    ) -> Result<Sprint, PmError> {
+        if ends_at_epoch_ms.is_some_and(|ends_at| i64::try_from(ends_at).is_err()) {
+            return Err(PmError::Invalid("endsAtEpochMs"));
+        }
+        self.write(|transaction| {
+            require_open_sprint(transaction, sprint_id)?;
+            transaction.execute(
+                "UPDATE sprints SET ends_at_epoch_ms = ?2 WHERE id = ?1",
+                params![sprint_id, ends_at_epoch_ms],
             )?;
             require_sprint(transaction, sprint_id)
         })

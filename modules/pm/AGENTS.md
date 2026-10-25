@@ -4,8 +4,10 @@
 
 - Own the Project Manager app's model and its own SQLite file
   (`<state directory>/pm/pm.sqlite`): sprints, tickets, immutable ticket
-  description versions, and project environments. PM-only concepts live here,
-  not in `domain`.
+  description versions, project environments and sources, delivery facts,
+  and delivery probes. PM-only concepts live here, not in `domain`.
+- Do no network or Git I/O here. Callers read Jira, pull requests, and Git
+  through `providers`/`gitio` and hand the answers to `PmStore` commands.
 
 ## Dependencies
 
@@ -13,7 +15,8 @@
   `invocation`, `agent-runtime`, `terminal`, `llm` (see
   `tools/ci/dag-rules.mjs`). Add an edge only when code here uses it.
 - Never depend on `core` or `store`; the developer daemon's state is not PM
-  state. External: `rusqlite`, `serde`, `thiserror`.
+  state. External: `rusqlite`, `serde`, `serde_json`,
+  `thiserror`.
 
 ## Invariants
 
@@ -28,6 +31,17 @@
   carry-over count.
 - Description versions are immutable (an `UPDATE` trigger aborts); only whole
   oldest versions beyond the retention bound are dropped.
+- Project sources hold only non-secret identifiers: the normalized Jira site
+  URL, board id, account email, a `platform` credential handle name, and the
+  GitHub owner/name. Never a token.
+- Delivery facts are observations, stored per ticket. A failed or missing
+  read keeps the last good value and records the failure; facts older than
+  `FACTS_STALE_AFTER_MS` are shown as stale. Stages, risks, check reasons,
+  and the data tier are derived on read and never stored.
+- Deploy tracking is on only when the project lists environments or has an
+  approved probe. With neither, a ticket never gets a check reason.
+- A proposed probe never runs; only the PM's approval (or a PM-written
+  probe) lets it. A run of a probe that changed meanwhile is refused.
 - Migrations are forward-only, recorded in `schema_migrations`, never edited
   once released; a database newer than the build is refused.
 

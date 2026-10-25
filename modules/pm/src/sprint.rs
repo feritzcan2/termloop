@@ -54,6 +54,9 @@ pub struct Sprint {
     pub activated_at_epoch_ms: Option<u64>,
     #[serde(default)]
     pub closed_at_epoch_ms: Option<u64>,
+    /// When the sprint is planned to end; risks look at it near the end.
+    #[serde(default)]
+    pub ends_at_epoch_ms: Option<u64>,
 }
 
 impl Sprint {
@@ -102,6 +105,7 @@ mod tests {
             created_at_epoch_ms: 1,
             activated_at_epoch_ms: None,
             closed_at_epoch_ms: None,
+            ends_at_epoch_ms: Some(10),
         };
         assert!(sprint.is_valid());
         assert!(

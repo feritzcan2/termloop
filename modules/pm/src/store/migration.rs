@@ -82,8 +82,48 @@ CREATE UNIQUE INDEX project_environments_unique_name
     ON project_environments (project_id, name COLLATE NOCASE);
 "#;
 
+/// Delivery: sprint end dates, per-ticket delivery facts (one current JSON
+/// record each), delivery probes, and each project's non-secret sources.
+const V2: &str = r#"
+ALTER TABLE sprints ADD COLUMN ends_at_epoch_ms INTEGER CHECK (ends_at_epoch_ms >= 0);
+
+CREATE TABLE ticket_delivery_facts (
+    ticket_id TEXT PRIMARY KEY REFERENCES tickets (id) ON DELETE CASCADE,
+    facts_json TEXT NOT NULL,
+    recorded_at_epoch_ms INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE delivery_probes (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    environment TEXT NOT NULL,
+    argv_json TEXT NOT NULL,
+    matcher TEXT NOT NULL CHECK (matcher IN ('commitAncestry', 'agent')),
+    status TEXT NOT NULL CHECK (status IN ('proposed', 'approved')),
+    author TEXT NOT NULL CHECK (author IN ('projectManager', 'agent')),
+    reason TEXT,
+    created_at_epoch_ms INTEGER NOT NULL,
+    last_run_json TEXT
+) STRICT;
+CREATE INDEX delivery_probes_by_project ON delivery_probes (project_id, created_at_epoch_ms);
+
+CREATE TABLE project_sources (
+    project_id TEXT PRIMARY KEY,
+    jira_site_url TEXT,
+    jira_board_id INTEGER CHECK (jira_board_id > 0),
+    jira_account_email TEXT,
+    jira_credential_handle TEXT,
+    github_owner TEXT,
+    github_name TEXT,
+    CHECK ((jira_site_url IS NULL) = (jira_account_email IS NULL)
+        AND (jira_site_url IS NULL) = (jira_credential_handle IS NULL)
+        AND (jira_site_url IS NOT NULL OR jira_board_id IS NULL)),
+    CHECK ((github_owner IS NULL) = (github_name IS NULL))
+) STRICT;
+"#;
+
 /// Every migration in order; a version is never edited once released.
-const MIGRATIONS: &[(u32, &str)] = &[(1, V1)];
+const MIGRATIONS: &[(u32, &str)] = &[(1, V1), (2, V2)];
 
 pub const SCHEMA_VERSION: u32 = MIGRATIONS[MIGRATIONS.len() - 1].0;
 

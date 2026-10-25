@@ -1,6 +1,7 @@
 //! The PM app's own SQLite file. It is separate from the developer daemon's
 //! store: nothing here reads or writes `termloop-store` state.
 
+mod delivery_rows;
 mod migration;
 mod rows;
 
@@ -8,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, Transaction};
 
+pub(crate) use delivery_rows::*;
 pub use migration::SCHEMA_VERSION;
 pub(crate) use rows::*;
 
@@ -90,6 +92,11 @@ impl PmStore {
         let value = command(&transaction)?;
         transaction.commit()?;
         Ok(value)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_clock(&mut self, clock: fn() -> u64) {
+        self.clock = clock;
     }
 
     #[cfg(test)]

@@ -10,7 +10,11 @@ use crate::{
     TicketAuthor, TicketPriority, TicketStatus, TicketVersion, TicketVersionsSummary,
 };
 
-fn parsed<T>(row: &Row<'_>, index: usize, parse: fn(&str) -> Option<T>) -> rusqlite::Result<T> {
+pub(crate) fn parsed<T>(
+    row: &Row<'_>,
+    index: usize,
+    parse: fn(&str) -> Option<T>,
+) -> rusqlite::Result<T> {
     let value: String = row.get(index)?;
     parse(&value).ok_or_else(|| {
         rusqlite::Error::FromSqlConversionFailure(
@@ -22,7 +26,7 @@ fn parsed<T>(row: &Row<'_>, index: usize, parse: fn(&str) -> Option<T>) -> rusql
 }
 
 const SPRINT_COLUMNS: &str = "id, project_id, name, goal, state, created_at_epoch_ms, \
-     activated_at_epoch_ms, closed_at_epoch_ms";
+     activated_at_epoch_ms, closed_at_epoch_ms, ends_at_epoch_ms";
 
 fn sprint_row(row: &Row<'_>) -> rusqlite::Result<Sprint> {
     Ok(Sprint {
@@ -34,6 +38,7 @@ fn sprint_row(row: &Row<'_>) -> rusqlite::Result<Sprint> {
         created_at_epoch_ms: row.get(5)?,
         activated_at_epoch_ms: row.get(6)?,
         closed_at_epoch_ms: row.get(7)?,
+        ends_at_epoch_ms: row.get(8)?,
     })
 }
 

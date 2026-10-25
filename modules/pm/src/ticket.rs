@@ -56,6 +56,7 @@ macro_rules! stored_names {
         }
     };
 }
+pub(crate) use stored_names;
 
 stored_names!(TicketStatus {
     Todo => "todo",
