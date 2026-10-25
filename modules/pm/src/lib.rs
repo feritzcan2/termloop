@@ -76,7 +76,8 @@ pub use store::{PmStore, SCHEMA_VERSION};
 pub use ticket::{
     AcceptanceCriterion, Blocker, TICKET_ASSIGNEE_MAX_CHARS, TICKET_BLOCKERS_MAX,
     TICKET_CRITERIA_MAX, TICKET_DESCRIPTION_MAX_CHARS, TICKET_ITEM_MAX_CHARS,
-    TICKET_TITLE_MAX_CHARS, TICKET_VERSIONS_MAX, Ticket, TicketAuthor, TicketPriority,
-    TicketStatus, TicketVersion, TicketVersionsSummary, valid_jira_url,
+    TICKET_TITLE_MAX_CHARS, TICKET_VERSIONS_MAX, Ticket, TicketActivity, TicketActivityKind,
+    TicketAuthor, TicketPriority, TicketStatus, TicketVersion, TicketVersionsSummary,
+    valid_jira_url,
 };
 pub use validation::{ID_MAX_BYTES, valid_id};

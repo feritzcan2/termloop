@@ -11,9 +11,34 @@ use crate::ticket::{
     valid_ticket_description, valid_ticket_item, valid_ticket_title,
 };
 use crate::{
-    AcceptanceCriterion, Blocker, PmError, PmStore, SprintState, Ticket, TicketAuthor,
-    TicketPriority, TicketStatus,
+    AcceptanceCriterion, Blocker, PmError, PmStore, SprintState, Ticket, TicketActivityKind,
+    TicketAuthor, TicketPriority, TicketStatus,
 };
+
+/// Recorded changes kept per ticket; older ones fall out of the digest.
+const TICKET_ACTIVITY_MAX: u32 = 64;
+
+/// Records one ticket change for the digest, keeping the newest
+/// [`TICKET_ACTIVITY_MAX`] of the ticket.
+fn record_activity(
+    connection: &Connection,
+    ticket_id: &str,
+    kind: TicketActivityKind,
+    detail: Option<&str>,
+    now: u64,
+) -> Result<(), PmError> {
+    connection.execute(
+        "INSERT INTO ticket_activity (ticket_id, kind, detail, recorded_at_epoch_ms) \
+         VALUES (?1, ?2, ?3, ?4)",
+        params![ticket_id, kind.as_str(), detail, now],
+    )?;
+    connection.execute(
+        "DELETE FROM ticket_activity WHERE ticket_id = ?1 AND id NOT IN \
+             (SELECT id FROM ticket_activity WHERE ticket_id = ?1 ORDER BY id DESC LIMIT ?2)",
+        params![ticket_id, TICKET_ACTIVITY_MAX],
+    )?;
+    Ok(())
+}
 
 /// Everything a new ticket starts with. A non-empty description becomes its
 /// version 1.
@@ -269,7 +294,12 @@ impl PmStore {
         ticket_id: &str,
         status: TicketStatus,
     ) -> Result<Ticket, PmError> {
-        self.set_ticket_column(ticket_id, "status", Some(status.as_str()))
+        self.set_ticket_column(
+            ticket_id,
+            "status",
+            Some(status.as_str()),
+            Some(TicketActivityKind::Status),
+        )
     }
 
     pub fn set_ticket_priority(
@@ -277,7 +307,7 @@ impl PmStore {
         ticket_id: &str,
         priority: TicketPriority,
     ) -> Result<Ticket, PmError> {
-        self.set_ticket_column(ticket_id, "priority", Some(priority.as_str()))
+        self.set_ticket_column(ticket_id, "priority", Some(priority.as_str()), None)
     }
 
     /// Assigns the ticket, or unassigns it with `None`.
@@ -287,26 +317,36 @@ impl PmStore {
         assignee: Option<&str>,
     ) -> Result<Ticket, PmError> {
         check_assignee(assignee)?;
-        self.set_ticket_column(ticket_id, "assignee", assignee)
+        self.set_ticket_column(
+            ticket_id,
+            "assignee",
+            assignee,
+            Some(TicketActivityKind::Assignee),
+        )
     }
 
-    /// `column` is one of a fixed set of names, never caller text.
+    /// `column` is one of a fixed set of names, never caller text. A change
+    /// is recorded as `activity` when one is named.
     fn set_ticket_column(
         &mut self,
         ticket_id: &str,
         column: &'static str,
         value: Option<&str>,
+        activity: Option<TicketActivityKind>,
     ) -> Result<Ticket, PmError> {
         let now = self.now();
         self.write(|transaction| {
             require_ticket(transaction, ticket_id)?;
-            transaction.execute(
+            let changed = transaction.execute(
                 &format!(
                     "UPDATE tickets SET {column} = ?2, updated_at_epoch_ms = ?3 \
                      WHERE id = ?1 AND {column} IS NOT ?2"
                 ),
                 params![ticket_id, value, now],
             )?;
+            if let Some(kind) = activity.filter(|_| changed > 0) {
+                record_activity(transaction, ticket_id, kind, value, now)?;
+            }
             require_ticket(transaction, ticket_id)
         })
     }
@@ -335,6 +375,13 @@ impl PmStore {
                      carry_over_count = carry_over_count + ?4, updated_at_epoch_ms = ?5 \
                  WHERE id = ?1",
                 params![ticket_id, sprint_id, rank, leaves_closed_sprint, now],
+            )?;
+            record_activity(
+                transaction,
+                ticket_id,
+                TicketActivityKind::Moved,
+                sprint_id,
+                now,
             )?;
             require_ticket(transaction, ticket_id)
         })
@@ -396,6 +443,13 @@ impl PmStore {
                      (SELECT COALESCE(MAX(position) + 1, 0) FROM ticket_blockers \
                       WHERE ticket_id = ?2), ?3)",
                 params![blocker.id, ticket_id, blocker.text],
+            )?;
+            record_activity(
+                transaction,
+                ticket_id,
+                TicketActivityKind::BlockerAdded,
+                Some(&blocker.text),
+                now,
             )?;
             touch_ticket(transaction, ticket_id, now)
         })?;
@@ -487,13 +541,22 @@ impl PmStore {
         check_id(item_id, item_name)?;
         let now = self.now();
         self.write(|transaction| {
-            require_ticket(transaction, ticket_id)?;
+            let ticket = require_ticket(transaction, ticket_id)?;
             let removed = transaction.execute(
                 &format!("DELETE FROM {table} WHERE id = ?1 AND ticket_id = ?2"),
                 params![item_id, ticket_id],
             )?;
             if removed == 0 {
                 return Err(PmError::NotFound);
+            }
+            if let Some(blocker) = ticket.blockers.iter().find(|blocker| blocker.id == item_id) {
+                record_activity(
+                    transaction,
+                    ticket_id,
+                    TicketActivityKind::BlockerRemoved,
+                    Some(&blocker.text),
+                    now,
+                )?;
             }
             touch_ticket(transaction, ticket_id, now)?;
             require_ticket(transaction, ticket_id)

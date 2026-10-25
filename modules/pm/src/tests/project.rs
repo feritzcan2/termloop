@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use super::{sprint, store, ticket};
 use crate::{
     DIGEST_ENTRIES_MAX, DigestKind, DigestSource, PmError, PmSettings, SettingsEdit, Ticket,
-    TicketAuthor, digest,
+    TicketAuthor, TicketStatus, digest,
 };
 
 #[test]
@@ -109,7 +109,6 @@ fn the_digest_reads_what_changed_after_a_moment() {
         kinds,
         vec![
             (DigestKind::TicketCreated, 2_000),
-            (DigestKind::TicketUpdated, 3_000),
             (DigestKind::DescriptionVersioned, 3_000),
             (DigestKind::SprintActivated, 3_000),
         ]
@@ -119,10 +118,69 @@ fn the_digest_reads_what_changed_after_a_moment() {
         Some(fresh.id.as_str())
     );
     assert_eq!(
-        digest.entries[2].summary,
+        digest.entries[1].summary,
         "Description of Old work saved as version 1 by the project manager"
     );
     assert!(store.digest("p1", 3_000).unwrap().entries.is_empty());
+}
+
+static ACTIVITY_NOW: AtomicU64 = AtomicU64::new(1_000);
+
+#[test]
+fn the_digest_names_status_assignee_moves_and_blockers() {
+    let mut store = store();
+    store.set_clock(|| ACTIVITY_NOW.load(Ordering::SeqCst));
+    let at = |moment: u64| ACTIVITY_NOW.store(moment, Ordering::SeqCst);
+    at(1_000);
+    let planned = sprint(&mut store, "p1", "Sprint 1");
+    let work = ticket(&mut store, "p1", "Checkout", None);
+    at(2_000);
+    store
+        .set_ticket_status(&work.id, TicketStatus::InProgress)
+        .unwrap();
+    at(2_100);
+    store.set_ticket_assignee(&work.id, Some("ada")).unwrap();
+    at(2_200);
+    store
+        .move_ticket_to_sprint(&work.id, Some(&planned.id))
+        .unwrap();
+    at(2_300);
+    let blocker = store
+        .add_ticket_blocker(&work.id, "Waiting on API")
+        .unwrap();
+    at(2_400);
+    store.remove_ticket_blocker(&work.id, &blocker.id).unwrap();
+    at(2_500);
+    // Setting the value a ticket already has records nothing.
+    store
+        .set_ticket_status(&work.id, TicketStatus::InProgress)
+        .unwrap();
+    store.set_ticket_assignee(&work.id, None).unwrap();
+
+    let digest = store.digest("p1", 1_500).unwrap();
+    let entries: Vec<_> = digest
+        .entries
+        .iter()
+        .map(|entry| (entry.kind, entry.summary.as_str()))
+        .collect();
+    assert_eq!(
+        entries,
+        vec![
+            (DigestKind::StatusChanged, "Checkout moved to In progress"),
+            (DigestKind::AssigneeChanged, "Checkout assigned to ada"),
+            (DigestKind::TicketMoved, "Checkout moved to Sprint 1"),
+            (DigestKind::BlockerAdded, "Checkout blocked: Waiting on API"),
+            (
+                DigestKind::BlockerRemoved,
+                "Checkout unblocked: Waiting on API"
+            ),
+            (DigestKind::AssigneeChanged, "Checkout unassigned"),
+        ]
+    );
+    assert_eq!(
+        digest.entries[2].sprint_id.as_deref(),
+        Some(planned.id.as_str())
+    );
 }
 
 #[test]
@@ -147,6 +205,7 @@ fn the_digest_keeps_the_newest_entries_within_its_bound() {
             versions: &[],
             proposals: &[],
             checks: &[],
+            activity: &[],
         },
         0,
         u64::MAX,

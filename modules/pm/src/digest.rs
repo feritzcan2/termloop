@@ -1,14 +1,16 @@
-//! What changed in a project since a moment: a pure reading of the store's
-//! own timestamps (ticket creation and edits, description versions, pending
-//! proposals, finished checks, sprint activation and closing, Jira pulls).
-//! Nothing is recorded to produce it.
+//! What changed in a project since a moment: a reading of the store's own
+//! timestamps (ticket creation and edits, description versions, pending
+//! proposals, finished checks, sprint activation and closing, Jira pulls)
+//! and of the ticket activity commands record (status, assignee, sprint
+//! moves, blockers).
 
 use rusqlite::params;
 
 use crate::store::{project_checks, project_sprints, project_tickets, ticket_proposals};
 use crate::validation::check_id;
 use crate::{
-    DeliveryCheck, PmError, PmStore, Sprint, Ticket, TicketAuthor, TicketProposal, TicketVersion,
+    DeliveryCheck, PmError, PmStore, Sprint, Ticket, TicketActivity, TicketActivityKind,
+    TicketAuthor, TicketProposal, TicketStatus, TicketVersion,
 };
 
 /// The most entries one digest returns; the newest are kept.
@@ -26,6 +28,11 @@ pub enum DigestKind {
     SprintActivated,
     SprintClosed,
     JiraPulled,
+    StatusChanged,
+    AssigneeChanged,
+    TicketMoved,
+    BlockerAdded,
+    BlockerRemoved,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -57,6 +64,7 @@ pub struct DigestSource<'a> {
     pub versions: &'a [TicketVersion],
     pub proposals: &'a [TicketProposal],
     pub checks: &'a [DeliveryCheck],
+    pub activity: &'a [TicketActivity],
 }
 
 fn bounded(summary: String) -> String {
@@ -76,6 +84,16 @@ fn bounded(summary: String) -> String {
         "Changed".to_owned()
     } else {
         line.to_owned()
+    }
+}
+
+fn status_label(status: &str) -> &str {
+    match TicketStatus::parse(status) {
+        Some(TicketStatus::Todo) => "To do",
+        Some(TicketStatus::InProgress) => "In progress",
+        Some(TicketStatus::InReview) => "In review",
+        Some(TicketStatus::Done) => "Done",
+        None => status,
     }
 }
 
@@ -115,6 +133,26 @@ pub fn digest(
             });
         }
     };
+    let sprint_name = |sprint_id: &str| {
+        source
+            .sprints
+            .iter()
+            .find(|sprint| sprint.id == sprint_id)
+            .map_or_else(|| sprint_id.to_owned(), |sprint| sprint.name.clone())
+    };
+    // A ticket edit that a more specific entry already names (a status
+    // change, a new description version, a blocker) is not repeated as a
+    // bare "Updated" line.
+    let explained = |ticket_id: &str, at: u64| {
+        source
+            .activity
+            .iter()
+            .any(|activity| activity.ticket_id == ticket_id && activity.at_epoch_ms == at)
+            || source
+                .versions
+                .iter()
+                .any(|version| version.ticket_id == ticket_id && version.recorded_at_epoch_ms == at)
+    };
     for ticket in source.tickets {
         let sprint = ticket.sprint_id.as_deref();
         push(
@@ -124,7 +162,9 @@ pub fn digest(
             sprint,
             format!("Created {}", ticket.title),
         );
-        if ticket.updated_at_epoch_ms > ticket.created_at_epoch_ms {
+        if ticket.updated_at_epoch_ms > ticket.created_at_epoch_ms
+            && !explained(&ticket.id, ticket.updated_at_epoch_ms)
+        {
             push(
                 DigestKind::TicketUpdated,
                 ticket.updated_at_epoch_ms,
@@ -133,6 +173,48 @@ pub fn digest(
                 format!("Updated {}", ticket.title),
             );
         }
+    }
+    for activity in source.activity {
+        let ticket = title(&activity.ticket_id);
+        let detail = activity.detail.as_deref();
+        let (kind, summary) = match activity.kind {
+            TicketActivityKind::Status => (
+                DigestKind::StatusChanged,
+                format!("{ticket} moved to {}", status_label(detail.unwrap_or("?"))),
+            ),
+            TicketActivityKind::Assignee => (
+                DigestKind::AssigneeChanged,
+                match detail {
+                    Some(assignee) => format!("{ticket} assigned to {assignee}"),
+                    None => format!("{ticket} unassigned"),
+                },
+            ),
+            TicketActivityKind::Moved => (
+                DigestKind::TicketMoved,
+                match detail {
+                    Some(sprint_id) => format!("{ticket} moved to {}", sprint_name(sprint_id)),
+                    None => format!("{ticket} moved to the backlog"),
+                },
+            ),
+            TicketActivityKind::BlockerAdded => (
+                DigestKind::BlockerAdded,
+                format!("{ticket} blocked: {}", detail.unwrap_or_default()),
+            ),
+            TicketActivityKind::BlockerRemoved => (
+                DigestKind::BlockerRemoved,
+                format!("{ticket} unblocked: {}", detail.unwrap_or_default()),
+            ),
+        };
+        let sprint = (activity.kind == TicketActivityKind::Moved)
+            .then_some(detail)
+            .flatten();
+        push(
+            kind,
+            activity.at_epoch_ms,
+            Some(&activity.ticket_id),
+            sprint,
+            summary,
+        );
     }
     for version in source.versions {
         push(
@@ -260,6 +342,21 @@ impl PmStore {
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
+        let mut statement = connection.prepare(
+            "SELECT a.ticket_id, a.kind, a.detail, a.recorded_at_epoch_ms \
+             FROM ticket_activity a JOIN tickets t ON t.id = a.ticket_id \
+             WHERE t.project_id = ?1 AND a.recorded_at_epoch_ms > ?2 ORDER BY a.id",
+        )?;
+        let activity = statement
+            .query_map(params![project_id, since_epoch_ms], |row| {
+                Ok(TicketActivity {
+                    ticket_id: row.get(0)?,
+                    kind: crate::store::parsed(row, 1, TicketActivityKind::parse)?,
+                    detail: row.get(2)?,
+                    at_epoch_ms: row.get(3)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(digest(
             project_id,
             DigestSource {
@@ -268,6 +365,7 @@ impl PmStore {
                 versions: &versions,
                 proposals: &proposals,
                 checks: &checks,
+                activity: &activity,
             },
             since_epoch_ms,
             until,

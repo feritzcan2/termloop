@@ -47,6 +47,7 @@ pub(crate) async fn dispatch(
         "pm_agent_launch" => operations::agent_launch(state, params),
         "pm_agent_list" => operations::agent_list(state, params),
         "pm_agent_stop" => operations::agent_stop(state, params),
+        "pm_agent_catalog_read" => operations::agent_catalog_read(),
         "pm_settings_read" => operations::settings_read(state),
         "pm_settings_update" => operations::settings_update(state, params),
         _ => planning(state, method, params),

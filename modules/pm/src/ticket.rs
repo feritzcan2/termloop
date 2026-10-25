@@ -71,6 +71,34 @@ stored_names!(TicketPriority {
     High => "high",
     Highest => "highest",
 });
+/// A ticket change recorded for the digest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TicketActivityKind {
+    Status,
+    Assignee,
+    Moved,
+    BlockerAdded,
+    BlockerRemoved,
+}
+
+/// One recorded ticket change. `detail` is the new status, assignee, or
+/// sprint id, or the blocker text; `None` for an unassignment or a move to
+/// the backlog.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TicketActivity {
+    pub ticket_id: String,
+    pub kind: TicketActivityKind,
+    pub detail: Option<String>,
+    pub at_epoch_ms: u64,
+}
+
+stored_names!(TicketActivityKind {
+    Status => "status",
+    Assignee => "assignee",
+    Moved => "moved",
+    BlockerAdded => "blockerAdded",
+    BlockerRemoved => "blockerRemoved",
+});
 stored_names!(TicketAuthor {
     Pm => "pm",
     Agent => "agent",

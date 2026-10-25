@@ -189,8 +189,31 @@ CREATE TABLE pm_settings (
 ) STRICT;
 "#;
 
+/// Ticket changes the digest names that leave no other trace: status,
+/// assignee, sprint moves, and blockers. Bounded per ticket on write.
+const V7: &str = r#"
+CREATE TABLE ticket_activity (
+    id INTEGER PRIMARY KEY,
+    ticket_id TEXT NOT NULL REFERENCES tickets (id) ON DELETE CASCADE,
+    kind TEXT NOT NULL
+        CHECK (kind IN ('status', 'assignee', 'moved', 'blockerAdded', 'blockerRemoved')),
+    detail TEXT,
+    recorded_at_epoch_ms INTEGER NOT NULL
+) STRICT;
+CREATE INDEX ticket_activity_by_ticket ON ticket_activity (ticket_id, id);
+CREATE INDEX ticket_activity_by_time ON ticket_activity (recorded_at_epoch_ms);
+"#;
+
 /// Every migration in order; a version is never edited once released.
-const MIGRATIONS: &[(u32, &str)] = &[(1, V1), (2, V2), (3, V3), (4, V4), (5, V5), (6, V6)];
+const MIGRATIONS: &[(u32, &str)] = &[
+    (1, V1),
+    (2, V2),
+    (3, V3),
+    (4, V4),
+    (5, V5),
+    (6, V6),
+    (7, V7),
+];
 
 pub const SCHEMA_VERSION: u32 = MIGRATIONS[MIGRATIONS.len() - 1].0;
 

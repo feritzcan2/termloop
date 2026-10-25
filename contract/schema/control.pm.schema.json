@@ -47,6 +47,7 @@
       "pm_agent_launch",
       "pm_agent_list",
       "pm_agent_stop",
+      "pm_agent_catalog_read",
       "pm_settings_read",
       "pm_settings_update"
     ]
@@ -402,6 +403,14 @@
         "$ref": "#/$defs/pmAgentStopResult"
       }
     },
+    "pm_agent_catalog_read": {
+      "params": {
+        "$ref": "#/$defs/emptyParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmAgentCatalog"
+      }
+    },
     "pm_settings_read": {
       "params": {
         "$ref": "#/$defs/emptyParams"
@@ -583,6 +592,7 @@
         "pm_agent_launch",
         "pm_agent_list",
         "pm_agent_stop",
+        "pm_agent_catalog_read",
         "pm_settings_read",
         "pm_settings_update"
       ]
@@ -2456,7 +2466,12 @@
         "checkFinished",
         "sprintActivated",
         "sprintClosed",
-        "jiraPulled"
+        "jiraPulled",
+        "statusChanged",
+        "assigneeChanged",
+        "ticketMoved",
+        "blockerAdded",
+        "blockerRemoved"
       ]
     },
     "pmDigestReadParams": {
@@ -3589,6 +3604,92 @@
         "sessionId": {
           "type": "string",
           "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        }
+      }
+    },
+    "pmAgentCatalog": {
+      "x-codegen": true,
+      "$comment": "The providers, models, and permission modes the PM agent may launch with, read from the agent catalog. Delivery checks run unattended, so their permission list holds only modes that never wait for a human.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "providers"
+      ],
+      "properties": {
+        "providers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmAgentCatalogProvider"
+          },
+          "maxItems": 8
+        }
+      }
+    },
+    "pmAgentCatalogProvider": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "models",
+        "permissions"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/pmAgentProvider"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9._-]+$"
+          },
+          "minItems": 1,
+          "maxItems": 64
+        },
+        "permissions": {
+          "$ref": "#/$defs/pmAgentCatalogPermissions"
+        }
+      }
+    },
+    "pmAgentCatalogPermissions": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assistant",
+        "check"
+      ],
+      "properties": {
+        "assistant": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9._-]+$"
+          },
+          "minItems": 1,
+          "maxItems": 16
+        },
+        "check": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9._-]+$"
+          },
+          "minItems": 1,
+          "maxItems": 16
         }
       }
     },

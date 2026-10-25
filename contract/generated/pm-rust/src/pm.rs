@@ -71,7 +71,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:d9ee07340d2cca004587291e137e10ff7a413e783a7c990c7f0fa0ad709ac308";
+    "sha256:57fa3714a00109b0ea67be754b3168675b9844fd596854c88551fab6bf3e22ab";
 pub const CAPABILITY_SCOPE: &str = "pm.full";
 pub const METHODS: &[&str] = &[
     "pm_system_version",
@@ -115,6 +115,7 @@ pub const METHODS: &[&str] = &[
     "pm_agent_launch",
     "pm_agent_list",
     "pm_agent_stop",
+    "pm_agent_catalog_read",
     "pm_settings_read",
     "pm_settings_update",
 ];
@@ -997,6 +998,16 @@ pub enum PmDigestKind {
     SprintClosed,
     #[serde(rename = "jiraPulled")]
     JiraPulled,
+    #[serde(rename = "statusChanged")]
+    StatusChanged,
+    #[serde(rename = "assigneeChanged")]
+    AssigneeChanged,
+    #[serde(rename = "ticketMoved")]
+    TicketMoved,
+    #[serde(rename = "blockerAdded")]
+    BlockerAdded,
+    #[serde(rename = "blockerRemoved")]
+    BlockerRemoved,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1408,6 +1419,28 @@ pub struct PmAgentStopParams {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
+pub struct PmAgentCatalog {
+    pub providers: Vec<PmAgentCatalogProvider>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmAgentCatalogProvider {
+    pub id: PmAgentProvider,
+    pub label: String,
+    pub models: Vec<String>,
+    pub permissions: PmAgentCatalogPermissions,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmAgentCatalogPermissions {
+    pub assistant: Vec<String>,
+    pub check: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct PmAgentStopResult {
     pub stopped: bool,
 }
@@ -1505,6 +1538,8 @@ pub type PmJiraDiffReadParams = PmTicketRef;
 pub type PmJiraDiffReadResult = PmJiraDiff;
 pub type PmAgentLaunchResult = PmAgentSession;
 pub type PmAgentListParams = PmProjectRef;
+pub type PmAgentCatalogReadParams = EmptyParams;
+pub type PmAgentCatalogReadResult = PmAgentCatalog;
 pub type PmSettingsReadParams = EmptyParams;
 pub type PmSettingsReadResult = PmSettings;
 pub type PmSettingsUpdateResult = PmSettings;
@@ -1694,6 +1729,7 @@ fn validate_method(value: &Value) -> bool {
             "pm_agent_launch",
             "pm_agent_list",
             "pm_agent_stop",
+            "pm_agent_catalog_read",
             "pm_settings_read",
             "pm_settings_update",
         ]
@@ -3656,6 +3692,11 @@ fn validate_pm_digest_kind(value: &Value) -> bool {
             "sprintActivated",
             "sprintClosed",
             "jiraPulled",
+            "statusChanged",
+            "assigneeChanged",
+            "ticketMoved",
+            "blockerAdded",
+            "blockerRemoved",
         ]
         .contains(&text)
     })
@@ -4903,6 +4944,112 @@ fn validate_pm_agent_stop_params(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_pm_agent_catalog(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("providers").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() <= 8
+                    && items
+                        .iter()
+                        .all(|item| validate_pm_agent_catalog_provider(item))
+            })
+        }) && object
+            .keys()
+            .all(|key| ["providers"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_agent_catalog_provider(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("id")
+            .is_some_and(|field| validate_pm_agent_provider(field))
+            && object.get("label").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+            })
+            && object.get("models").is_some_and(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() >= 1
+                        && items.len() <= 64
+                        && items.iter().all(|item| {
+                            item.as_str().is_some_and(|text| {
+                                text.chars().count() >= 1
+                                    && text.chars().count() <= 64
+                                    && contract_pattern_matches("^[A-Za-z0-9._-]+$", text)
+                            })
+                        })
+                })
+            })
+            && object
+                .get("permissions")
+                .is_some_and(|field| validate_pm_agent_catalog_permissions(field))
+            && object
+                .keys()
+                .all(|key| ["id", "label", "models", "permissions"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_agent_catalog_permissions(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("assistant").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() >= 1
+                    && items.len() <= 16
+                    && items.iter().all(|item| {
+                        item.as_str().is_some_and(|text| {
+                            text.chars().count() >= 1
+                                && text.chars().count() <= 64
+                                && contract_pattern_matches("^[A-Za-z0-9._-]+$", text)
+                        })
+                    })
+            })
+        }) && object.get("check").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() >= 1
+                    && items.len() <= 16
+                    && items.iter().all(|item| {
+                        item.as_str().is_some_and(|text| {
+                            text.chars().count() >= 1
+                                && text.chars().count() <= 64
+                                && contract_pattern_matches("^[A-Za-z0-9._-]+$", text)
+                        })
+                    })
+            })
+        }) && object
+            .keys()
+            .all(|key| ["assistant", "check"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_pm_agent_stop_result(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object
@@ -5253,6 +5400,10 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<PmAgentStopParams>(params.clone()).is_ok()
                 && validate_pm_agent_stop_params(params)
         }
+        "pm_agent_catalog_read" => {
+            serde_json::from_value::<PmAgentCatalogReadParams>(params.clone()).is_ok()
+                && validate_empty_params(params)
+        }
         "pm_settings_read" => {
             serde_json::from_value::<PmSettingsReadParams>(params.clone()).is_ok()
                 && validate_empty_params(params)
@@ -5435,6 +5586,10 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         "pm_agent_stop" => {
             serde_json::from_value::<PmAgentStopResult>(result.clone()).is_ok()
                 && validate_pm_agent_stop_result(result)
+        }
+        "pm_agent_catalog_read" => {
+            serde_json::from_value::<PmAgentCatalogReadResult>(result.clone()).is_ok()
+                && validate_pm_agent_catalog(result)
         }
         "pm_settings_read" => {
             serde_json::from_value::<PmSettingsReadResult>(result.clone()).is_ok()

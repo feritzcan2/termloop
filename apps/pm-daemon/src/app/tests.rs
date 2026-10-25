@@ -396,3 +396,35 @@ async fn settings_are_checked_against_the_agent_catalog() {
         updated
     );
 }
+
+#[tokio::test]
+async fn every_catalog_value_is_accepted_by_settings_update() {
+    let fixture = fixture();
+    let state = &fixture.state;
+    let catalog = call(state, "pm_agent_catalog_read", json!({}))
+        .await
+        .unwrap();
+    let providers = catalog["providers"].as_array().unwrap();
+    assert!(providers.iter().any(|provider| provider["id"] == "claude"));
+    for provider in providers {
+        let check = provider["permissions"]["check"].as_array().unwrap();
+        assert_eq!(check, &vec![json!("bypassPermissions")]);
+        for model in provider["models"].as_array().unwrap() {
+            for permission in provider["permissions"]["assistant"].as_array().unwrap() {
+                let updated = call(
+                    state,
+                    "pm_settings_update",
+                    json!({
+                        "agentProvider": provider["id"],
+                        "agentModel": model,
+                        "assistantPermission": permission,
+                        "checkPermission": check[0],
+                    }),
+                )
+                .await
+                .unwrap();
+                assert_eq!(updated["agentModel"], *model);
+            }
+        }
+    }
+}

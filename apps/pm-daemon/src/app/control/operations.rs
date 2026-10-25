@@ -5,12 +5,12 @@ use serde_json::{Value, json};
 use termloop_pm::agent::PmAgentMode;
 use termloop_pm::{
     CHECK_ENVIRONMENTS_MAX, DeliveryCheckReason, NewCheck, PM_AGENT_PROVIDERS, PmSettings,
-    SettingsEdit,
+    SettingsEdit, valid_setting_value,
 };
 use termloop_pm_contract::pm::{
-    PmAgentLaunchParams, PmAgentStopParams, PmCheckStartParams, PmChecksReadParams,
-    PmCredentialClearParams, PmCredentialStoreParams, PmJiraApplyParams, PmProjectRef,
-    PmSettingsUpdateParams, PmTicketRef,
+    PmAgentCatalog, PmAgentCatalogPermissions, PmAgentCatalogProvider, PmAgentLaunchParams,
+    PmAgentStopParams, PmCheckStartParams, PmChecksReadParams, PmCredentialClearParams,
+    PmCredentialStoreParams, PmJiraApplyParams, PmProjectRef, PmSettingsUpdateParams, PmTicketRef,
 };
 
 use super::dispatch::{check_value, convert, nullable_string, parse, require_project, to_value};
@@ -123,6 +123,36 @@ pub(super) fn checks_read(state: &AppState, params: &Value) -> Result<Value, Con
         .map(|check| check_value(state, check))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(json!({ "checks": checks }))
+}
+
+/// The providers, models, and permission modes `pm_settings_update` accepts,
+/// read from the agent catalog: exactly the values `validate_settings` allows.
+pub(super) fn agent_catalog_read() -> Result<Value, ControlError> {
+    let providers = PM_AGENT_PROVIDERS
+        .iter()
+        .filter_map(|id| termloop_agents::agent_descriptor(id))
+        .map(|descriptor| {
+            let owned = |values: &[&str], keep: fn(&str) -> bool| {
+                values
+                    .iter()
+                    .filter(|value| keep(value))
+                    .map(|value| (*value).to_owned())
+                    .collect()
+            };
+            Ok(PmAgentCatalogProvider {
+                id: convert(&descriptor.id)?,
+                label: descriptor.label.to_owned(),
+                models: owned(descriptor.models, valid_setting_value),
+                permissions: PmAgentCatalogPermissions {
+                    assistant: owned(descriptor.permissions, |_| true),
+                    check: owned(descriptor.permissions, |permission| {
+                        permission == NON_INTERACTIVE_PERMISSION
+                    }),
+                },
+            })
+        })
+        .collect::<Result<Vec<_>, ControlError>>()?;
+    to_value(&PmAgentCatalog { providers })
 }
 
 pub(super) fn settings_read(state: &AppState) -> Result<Value, ControlError> {
