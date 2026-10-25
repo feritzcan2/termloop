@@ -5,9 +5,10 @@ import { CAPABILITY_SCOPE, CONTRACT_IDENTITY, EVENTS, METHODS, TermLoopPmClient,
 test("generated PM contract surface is stable", () => {
   assert.match(CONTRACT_IDENTITY, /^sha256:[0-9a-f]{64}$/);
   assert.equal(CAPABILITY_SCOPE, "pm.full");
-  assert.deepEqual(METHODS, ["pm_system_version","pm_subscribe","pm_cancel","pm_project_list","pm_project_create","pm_board_read","pm_digest_read","pm_sprint_create","pm_sprint_update","pm_sprint_activate","pm_sprint_close","pm_ticket_create","pm_ticket_update","pm_ticket_move","pm_ticket_description_save","pm_ticket_versions_read","pm_ticket_blocker_add","pm_ticket_blocker_remove","pm_ticket_criterion_add","pm_ticket_criterion_set_done","pm_ticket_criterion_remove","pm_ticket_proposals_read","pm_ticket_proposal_accept","pm_ticket_proposal_reject","pm_environments_set","pm_sources_read","pm_sources_set","pm_credential_store","pm_credential_clear","pm_probe_create","pm_probe_approve","pm_probe_reject","pm_probe_delete","pm_check_start","pm_checks_read","pm_jira_pull","pm_jira_diff_read","pm_jira_apply","pm_agent_launch","pm_agent_list","pm_agent_stop","pm_agent_catalog_read","pm_settings_read","pm_settings_update"]);
+  assert.deepEqual(METHODS, ["pm_system_version","pm_subscribe","pm_cancel","pm_project_list","pm_project_create","pm_board_read","pm_digest_read","pm_sprint_create","pm_sprint_update","pm_sprint_activate","pm_sprint_close","pm_ticket_create","pm_ticket_update","pm_ticket_move","pm_ticket_description_save","pm_ticket_versions_read","pm_ticket_blocker_add","pm_ticket_blocker_remove","pm_ticket_criterion_add","pm_ticket_criterion_set_done","pm_ticket_criterion_remove","pm_ticket_proposals_read","pm_ticket_proposal_accept","pm_ticket_proposal_reject","pm_environments_set","pm_sources_read","pm_sources_set","pm_credential_store","pm_credential_clear","pm_probe_create","pm_probe_approve","pm_probe_reject","pm_probe_delete","pm_check_start","pm_checks_read","pm_jira_pull","pm_jira_diff_read","pm_jira_apply","pm_jira_projects_read","pm_jira_statuses_read","pm_jira_favourite_filters_read","pm_jira_search","pm_agent_launch","pm_agent_list","pm_agent_stop","pm_agent_catalog_read","pm_settings_read","pm_settings_update"]);
   assert.deepEqual(EVENTS, ["pmBoardChanged","pmAgentChanged","pmCheckChanged","pmJiraPulled"]);
   assert.equal(pmRequestTimeoutMs("pm_jira_apply"), 300_000);
+  assert.equal(pmRequestTimeoutMs("pm_jira_search"), 300_000);
   assert.equal(pmRequestTimeoutMs("pm_board_read"), 12_000);
 });
 
@@ -19,6 +20,14 @@ test("PM results reject secrets and unknown fields", () => {
   assert.equal(validateMethodResult("pm_sources_read", { ...sources, jira: { ...sources.jira, siteUrl: "https://acme.atlassian.net/?token=x" } }), false);
   assert.equal(validateEventPayload("pmBoardChanged", { projectId: "p1" }), true);
   assert.equal(validateEventPayload("pmBoardChanged", { projectId: "" }), false);
+});
+
+test("Jira browse results validate issue rows", () => {
+  const issue = { id: "10042", key: "PAY-42", url: "https://acme.atlassian.net/browse/PAY-42", title: "Checkout fails", issueType: null, status: { name: "In Progress", category: "indeterminate" }, priority: "High", assignee: { displayName: "Ada", avatarUrl: "https://avatars.example/a.png" }, reporter: null, labels: [], sprint: "Sprint 8", updatedAtEpochMs: 2, createdAtEpochMs: 1, pmTicketId: null };
+  const result = { projectId: "p1", issues: [issue], truncated: false, jql: "statusCategory != Done ORDER BY updated DESC" };
+  assert.equal(validateMethodResult("pm_jira_search", result), true);
+  assert.equal(validateMethodResult("pm_jira_search", { ...result, issues: [{ ...issue, url: "https://acme.atlassian.net/browse/PAY-42?x=1" }] }), false);
+  assert.equal(validateMethodResult("pm_jira_statuses_read", { projectId: "p1", statuses: [{ id: "1", name: "To Do", category: "new" }], columns: [] }), true);
 });
 
 test("PM client sends the PM identity and maps typed errors", async () => {

@@ -4,7 +4,7 @@ use std::time::Duration;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 
-const JIRA_SEARCH_LIMIT: usize = 50;
+pub(crate) const JIRA_SEARCH_LIMIT: usize = 50;
 const JIRA_BOARD_PAGE_LIMIT: usize = 50;
 const JIRA_BOARD_DISCOVERY_LIMIT: usize = 500;
 const JIRA_SELECTED_BOARDS_MAX: usize = 10;
@@ -668,7 +668,7 @@ fn combined_board_jql(
     Ok(Some(combined))
 }
 
-fn split_top_level_order_by(jql: &str) -> (&str, &str) {
+pub(crate) fn split_top_level_order_by(jql: &str) -> (&str, &str) {
     let bytes = jql.as_bytes();
     let mut quote = None;
     let mut escaped = false;
@@ -737,7 +737,9 @@ fn decode_search_response(
     decode_search_bytes(site, &bytes)
 }
 
-fn read_search_response(response: reqwest::blocking::Response) -> Result<Vec<u8>, JiraSearchError> {
+pub(crate) fn read_search_response(
+    response: reqwest::blocking::Response,
+) -> Result<Vec<u8>, JiraSearchError> {
     let status = response.status();
     let retry_after_seconds = response
         .headers()
@@ -840,7 +842,9 @@ struct StatusValue {
     name: String,
 }
 
-fn read_board_response(response: reqwest::blocking::Response) -> Result<Vec<u8>, JiraSearchError> {
+pub(crate) fn read_board_response(
+    response: reqwest::blocking::Response,
+) -> Result<Vec<u8>, JiraSearchError> {
     let status = response.status();
     let retry_after_seconds = response
         .headers()
@@ -1042,7 +1046,7 @@ fn sort_boards(boards: &mut [JiraBoard]) {
     });
 }
 
-fn valid_board_id(value: &str) -> bool {
+pub(crate) fn valid_board_id(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 20
         && value.as_bytes()[0] != b'0'
@@ -1051,7 +1055,7 @@ fn valid_board_id(value: &str) -> bool {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct SearchResponse {
+pub(crate) struct SearchResponse {
     #[serde(default)]
     issues: Vec<serde_json::Value>,
     #[serde(default)]
@@ -1124,6 +1128,19 @@ fn decode_search_page(
     site: &str,
     parsed: SearchResponse,
 ) -> Result<JiraSearchResult, JiraSearchError> {
+    let (issues, truncated) = decode_search_page_with(site, parsed, |_| Some(()))?;
+    let issues = issues.into_iter().map(|(issue, ())| issue).collect();
+    Ok(JiraSearchResult { issues, truncated })
+}
+
+/// One bounded search page: each issue's snapshot beside what `extra` reads
+/// from the issue's raw JSON. An issue that cannot decode is skipped and
+/// marks the page truncated.
+pub(crate) fn decode_search_page_with<T>(
+    site: &str,
+    parsed: SearchResponse,
+    extra: impl Fn(&serde_json::Value) -> Option<T>,
+) -> Result<(Vec<(JiraIssueSnapshot, T)>, bool), JiraSearchError> {
     let mut truncated = parsed.issues.len() > JIRA_SEARCH_LIMIT
         || parsed.next_page_token.is_some()
         || parsed.is_last == Some(false);
@@ -1131,6 +1148,10 @@ fn decode_search_page(
     let mut external_ids = std::collections::HashSet::new();
     let mut issue_keys = std::collections::HashSet::new();
     for value in parsed.issues.into_iter().take(JIRA_SEARCH_LIMIT) {
+        let Some(extra) = extra(&value) else {
+            truncated = true;
+            continue;
+        };
         let Ok(issue) = serde_json::from_value::<SearchIssue>(value) else {
             truncated = true;
             continue;
@@ -1146,9 +1167,9 @@ fn decode_search_page(
             truncated = true;
             continue;
         }
-        issues.push(issue);
+        issues.push((issue, extra));
     }
-    Ok(JiraSearchResult { issues, truncated })
+    Ok((issues, truncated))
 }
 
 fn decode_search_issue(site: &str, issue: SearchIssue) -> Option<JiraIssueSnapshot> {
@@ -1228,7 +1249,7 @@ fn jira_description_plain_text(value: &serde_json::Value) -> Option<String> {
     (!output.is_empty()).then_some(output)
 }
 
-fn truncate_utf8(value: &str, max_bytes: usize) -> String {
+pub(crate) fn truncate_utf8(value: &str, max_bytes: usize) -> String {
     if value.len() <= max_bytes {
         return value.to_owned();
     }

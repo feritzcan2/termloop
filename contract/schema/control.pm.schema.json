@@ -44,6 +44,10 @@
       "pm_jira_pull",
       "pm_jira_diff_read",
       "pm_jira_apply",
+      "pm_jira_projects_read",
+      "pm_jira_statuses_read",
+      "pm_jira_favourite_filters_read",
+      "pm_jira_search",
       "pm_agent_launch",
       "pm_agent_list",
       "pm_agent_stop",
@@ -379,6 +383,38 @@
         "$ref": "#/$defs/pmJiraApplyResult"
       }
     },
+    "pm_jira_projects_read": {
+      "params": {
+        "$ref": "#/$defs/pmProjectRef"
+      },
+      "result": {
+        "$ref": "#/$defs/pmJiraProjectsReadResult"
+      }
+    },
+    "pm_jira_statuses_read": {
+      "params": {
+        "$ref": "#/$defs/pmJiraStatusesReadParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmJiraStatusesReadResult"
+      }
+    },
+    "pm_jira_favourite_filters_read": {
+      "params": {
+        "$ref": "#/$defs/pmProjectRef"
+      },
+      "result": {
+        "$ref": "#/$defs/pmJiraFavouriteFiltersReadResult"
+      }
+    },
+    "pm_jira_search": {
+      "params": {
+        "$ref": "#/$defs/pmJiraSearchParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmJiraSearchResult"
+      }
+    },
     "pm_agent_launch": {
       "params": {
         "$ref": "#/$defs/pmAgentLaunchParams"
@@ -589,6 +625,10 @@
         "pm_jira_pull",
         "pm_jira_diff_read",
         "pm_jira_apply",
+        "pm_jira_projects_read",
+        "pm_jira_statuses_read",
+        "pm_jira_favourite_filters_read",
+        "pm_jira_search",
         "pm_agent_launch",
         "pm_agent_list",
         "pm_agent_stop",
@@ -3834,6 +3874,483 @@
             "sprintsUnsupported",
             "failed"
           ]
+        }
+      }
+    },
+    "pmJiraStatusCategory": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "new",
+        "indeterminate",
+        "done"
+      ]
+    },
+    "pmJiraSearchPreset": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "assigned",
+        "reported",
+        "allOpen",
+        "done",
+        "custom"
+      ]
+    },
+    "pmJiraSearchOrder": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "updated",
+        "created",
+        "priority"
+      ]
+    },
+    "pmJiraProject": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "name"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "pmJiraProjectsReadResult": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "projects",
+        "truncated"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "projects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmJiraProject"
+          },
+          "maxItems": 50
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      }
+    },
+    "pmJiraStatusesReadParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "jiraProjectKey": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+        }
+      }
+    },
+    "pmJiraStatus": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "category"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,19}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "category": {
+          "$ref": "#/$defs/pmJiraStatusCategory"
+        }
+      }
+    },
+    "pmJiraBoardColumn": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "statusIds"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "statusIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{0,19}$"
+          },
+          "maxItems": 500
+        }
+      }
+    },
+    "pmJiraStatusesReadResult": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "statuses",
+        "columns"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "statuses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmJiraStatus"
+          },
+          "maxItems": 500
+        },
+        "columns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmJiraBoardColumn"
+          },
+          "maxItems": 100
+        }
+      }
+    },
+    "pmJiraFavouriteFilter": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "jql"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,19}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "jql": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        }
+      }
+    },
+    "pmJiraFavouriteFiltersReadResult": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "filters",
+        "truncated"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "filters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmJiraFavouriteFilter"
+          },
+          "maxItems": 100
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      }
+    },
+    "pmJiraSearchParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "preset"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "preset": {
+          "$ref": "#/$defs/pmJiraSearchPreset"
+        },
+        "jql": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "jiraProjectKey": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+        },
+        "statuses": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "maxItems": 20,
+          "uniqueItems": true
+        },
+        "currentSprint": {
+          "type": "boolean"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "orderBy": {
+          "$ref": "#/$defs/pmJiraSearchOrder"
+        }
+      }
+    },
+    "pmJiraIssueStatus": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "category"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "category": {
+          "$ref": "#/$defs/pmJiraStatusCategory"
+        }
+      }
+    },
+    "pmJiraIssueUser": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "displayName",
+        "avatarUrl"
+      ],
+      "properties": {
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "avatarUrl": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2048,
+          "pattern": "^https://[^\\s@/]+/[^\\s]*$"
+        }
+      }
+    },
+    "pmJiraIssue": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "key",
+        "url",
+        "title",
+        "issueType",
+        "status",
+        "priority",
+        "assignee",
+        "reporter",
+        "labels",
+        "sprint",
+        "updatedAtEpochMs",
+        "createdAtEpochMs",
+        "pmTicketId"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9]{1,64}$"
+        },
+        "key": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{0,63}-[1-9][0-9]{0,19}$"
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 2048,
+          "pattern": "^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net/browse/[A-Z][A-Z0-9_]{0,63}-[1-9][0-9]{0,19}$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8000
+        },
+        "issueType": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "status": {
+          "$ref": "#/$defs/pmJiraIssueStatus"
+        },
+        "priority": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "assignee": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/pmJiraIssueUser"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reporter": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "maxItems": 20
+        },
+        "sprint": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "updatedAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "createdAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "pmTicketId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        }
+      }
+    },
+    "pmJiraSearchResult": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "issues",
+        "truncated",
+        "jql"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmJiraIssue"
+          },
+          "maxItems": 50
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "jql": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16384
         }
       }
     }

@@ -9,7 +9,11 @@ use serde_json::{Value, json};
 use termloop_platform::test_support::MemorySecureCredentialStore;
 use termloop_pm::agent::PmAgentMode;
 use termloop_pm::{DeliveryCheck, DeliveryCheckReason, NewCheck, PmStore};
-use termloop_pm_contract::pm::{CONTRACT_IDENTITY, ControlRequest, ErrorCode, EventName};
+use termloop_pm_contract::pm::{
+    CONTRACT_IDENTITY, ControlRequest, ErrorCode, EventName, PmJiraFailure, PmJiraSearchParams,
+    ProtocolError, ProtocolErrorDetails, validate_method_result,
+};
+use termloop_providers::{JiraIssueDetails, JiraIssueSnapshot, JiraListedIssue};
 use termloop_terminal::TerminalService;
 use tokio::sync::{Notify, broadcast};
 
@@ -427,4 +431,214 @@ async fn every_catalog_value_is_accepted_by_settings_update() {
             }
         }
     }
+}
+
+async fn call_error(state: &AppState, method: &str, params: Value) -> ProtocolError {
+    let request: ControlRequest = decode_request(&request_text(method, params, TOKEN), TOKEN)
+        .unwrap_or_else(|reply| panic!("{method} was rejected: {reply:?}"));
+    run_request(state, &request)
+        .await
+        .error
+        .expect("the request must fail")
+}
+
+fn jira_reason(error: &ProtocolError) -> PmJiraFailure {
+    assert_eq!(error.code, ErrorCode::OperationFailed);
+    match &error.details {
+        Some(ProtocolErrorDetails::JiraFailed { reason }) => reason.clone(),
+        other => panic!("not a Jira failure: {other:?}"),
+    }
+}
+
+type ParamsFor = fn(&str) -> Value;
+
+const JIRA_BROWSE_READS: [(&str, ParamsFor); 4] = [
+    (
+        "pm_jira_projects_read",
+        |project| json!({ "projectId": project }),
+    ),
+    (
+        "pm_jira_statuses_read",
+        |project| json!({ "projectId": project, "jiraProjectKey": "PAY" }),
+    ),
+    (
+        "pm_jira_favourite_filters_read",
+        |project| json!({ "projectId": project }),
+    ),
+    (
+        "pm_jira_search",
+        |project| json!({ "projectId": project, "preset": "assigned", "jiraProjectKey": null }),
+    ),
+];
+
+#[tokio::test]
+async fn jira_browse_reads_need_a_source_and_a_stored_token() {
+    let fixture = fixture();
+    let state = &fixture.state;
+    let project_id = project(state).await;
+    for (method, params) in JIRA_BROWSE_READS {
+        assert_eq!(
+            call(state, method, params("no-such-project")).await,
+            Err(ErrorCode::NotFound),
+            "{method}"
+        );
+        let error = call_error(state, method, params(&project_id)).await;
+        assert_eq!(
+            jira_reason(&error),
+            PmJiraFailure::NotConfigured,
+            "{method}"
+        );
+    }
+
+    let handle = format!("pm-jira-{}", uuid::Uuid::new_v4());
+    call(
+        state,
+        "pm_sources_set",
+        json!({ "projectId": project_id, "github": null, "jira": {
+            "siteUrl": "https://acme.atlassian.net", "boardId": 84,
+            "accountEmail": "ada@acme.example", "credentialHandle": handle,
+        }}),
+    )
+    .await
+    .unwrap();
+    for (method, params) in JIRA_BROWSE_READS {
+        let error = call_error(state, method, params(&project_id)).await;
+        assert_eq!(
+            jira_reason(&error),
+            PmJiraFailure::CredentialMissing,
+            "{method}"
+        );
+        assert!(!error.message.contains(&handle));
+    }
+}
+
+#[tokio::test]
+async fn jira_search_rejects_unsafe_input_before_calling_jira() {
+    let fixture = fixture();
+    let state = &fixture.state;
+    let project_id = project(state).await;
+    let search = |extra: Value| {
+        let mut params = json!({ "projectId": project_id, "preset": "allOpen" });
+        params
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        params
+    };
+    for (extra, parameter) in [
+        (json!({ "preset": "custom" }), "jql"),
+        (
+            json!({ "preset": "custom", "jql": "status = Open) OR (x = y" }),
+            "jql",
+        ),
+        (json!({ "statuses": ["In\nProgress"] }), "statuses"),
+        (json!({ "text": "login\u{0}" }), "text"),
+    ] {
+        let error = call_error(state, "pm_jira_search", search(extra.clone())).await;
+        assert_eq!(error.code, ErrorCode::InvalidParams, "{extra}");
+        assert_eq!(
+            error.details,
+            Some(ProtocolErrorDetails::InvalidParameter {
+                parameter: parameter.to_owned()
+            })
+        );
+    }
+    for extra in [
+        json!({ "jql": "x".repeat(8193) }),
+        json!({ "jiraProjectKey": "pay" }),
+        json!({ "statuses": vec!["A"; 21] }),
+        json!({ "text": "x".repeat(201) }),
+        json!({ "orderBy": "rank" }),
+    ] {
+        assert_eq!(
+            rejected_code(&request_text("pm_jira_search", search(extra), TOKEN)),
+            ErrorCode::InvalidParams
+        );
+    }
+    let error = call_error(
+        state,
+        "pm_jira_statuses_read",
+        json!({ "projectId": project_id, "jiraProjectKey": null }),
+    )
+    .await;
+    assert_eq!(jira_reason(&error), PmJiraFailure::NotConfigured);
+}
+
+#[test]
+fn only_a_custom_search_reads_its_jql() {
+    let params = |preset: &str| -> PmJiraSearchParams {
+        serde_json::from_value(json!({
+            "projectId": "p1", "preset": preset, "jql": "project = OPS",
+            "jiraProjectKey": "PAY", "currentSprint": true,
+        }))
+        .unwrap()
+    };
+    let assigned = super::jira_browse::issue_query(&params("assigned"));
+    assert_eq!(assigned.custom_jql, None);
+    assert_eq!(assigned.project_keys, ["PAY"]);
+    assert!(assigned.current_sprint);
+    let custom = super::jira_browse::issue_query(&params("custom"));
+    assert_eq!(custom.custom_jql.as_deref(), Some("project = OPS"));
+}
+
+fn listed_issue(key: &str) -> JiraListedIssue {
+    JiraListedIssue {
+        snapshot: JiraIssueSnapshot {
+            external_id: "10042".to_owned(),
+            key: key.to_owned(),
+            url: format!("https://acme.atlassian.net/browse/{key}"),
+            summary: "Checkout fails".to_owned(),
+            description: None,
+            status_name: "In Progress".to_owned(),
+            status_category: Some("indeterminate".to_owned()),
+            assignee_display: Some("Ada".to_owned()),
+            updated_at: "2026-10-25T09:30:00.000+0000".to_owned(),
+        },
+        details: JiraIssueDetails {
+            issue_type: Some("Bug".to_owned()),
+            priority: Some("High".to_owned()),
+            reporter_display: Some("Grace".to_owned()),
+            assignee_avatar_url: Some("https://avatars.example/ada.png?s=48".to_owned()),
+            labels: vec!["payments".to_owned()],
+            sprint: Some("Sprint 8".to_owned()),
+            created_at_epoch_ms: None,
+            updated_at_epoch_ms: 1_792_920_600_000,
+        },
+    }
+}
+
+#[tokio::test]
+async fn searched_issues_name_the_ticket_that_links_them() {
+    let fixture = fixture();
+    let state = &fixture.state;
+    let project_id = project(state).await;
+    let linked = ticket(
+        state,
+        &project_id,
+        json!({ "jiraUrl": "https://acme.atlassian.net/browse/PAY-42" }),
+    )
+    .await;
+    ticket(state, &project_id, json!({})).await;
+    let links = super::jira_browse::linked_tickets(&state.store.lock(), &project_id).unwrap();
+    assert_eq!(links.len(), 1);
+
+    let issue = super::jira_browse::issue_value(listed_issue("PAY-42"), &links).unwrap();
+    assert_eq!(issue.pm_ticket_id.as_deref(), linked["id"].as_str());
+    assert_eq!(issue.created_at_epoch_ms, issue.updated_at_epoch_ms);
+    let other = super::jira_browse::issue_value(listed_issue("PAY-43"), &links).unwrap();
+    assert_eq!(other.pm_ticket_id, None);
+    assert!(super::jira_browse::issue_value(listed_issue("pay-44"), &links).is_none());
+
+    let result = json!({
+        "projectId": project_id,
+        "issues": [issue, other],
+        "truncated": false,
+        "jql": "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC",
+    });
+    assert!(validate_method_result("pm_jira_search", &result));
+    assert_eq!(result["issues"][0]["status"]["category"], "indeterminate");
+    assert_eq!(
+        result["issues"][0]["assignee"],
+        json!({ "displayName": "Ada", "avatarUrl": "https://avatars.example/ada.png?s=48" })
+    );
 }

@@ -22,6 +22,7 @@ mod control;
 mod credentials;
 mod discovery;
 mod jira;
+mod jira_browse;
 mod mcp;
 mod scheduler;
 mod terminal;

@@ -20,7 +20,7 @@ use termloop_pm_contract::pm::{
 
 use super::errors::{ControlError, error, internal, not_found};
 use super::operations;
-use crate::app::AppState;
+use crate::app::{AppState, jira_browse};
 
 const PRODUCT: &str = "termloop-pm";
 const TERMINAL_DATA_PLANE: &str = "binary-websocket";
@@ -44,6 +44,12 @@ pub(crate) async fn dispatch(
         "pm_jira_pull" => operations::jira_pull(state, params).await,
         "pm_jira_diff_read" => operations::jira_diff_read(state, params).await,
         "pm_jira_apply" => operations::jira_apply(state, params).await,
+        "pm_jira_projects_read" => jira_browse::projects_read(state, parse(params)?).await,
+        "pm_jira_statuses_read" => jira_browse::statuses_read(state, parse(params)?).await,
+        "pm_jira_favourite_filters_read" => {
+            jira_browse::favourite_filters_read(state, parse(params)?).await
+        }
+        "pm_jira_search" => jira_browse::search(state, parse(params)?).await,
         "pm_agent_launch" => operations::agent_launch(state, params),
         "pm_agent_list" => operations::agent_list(state, params),
         "pm_agent_stop" => operations::agent_stop(state, params),

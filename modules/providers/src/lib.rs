@@ -5,6 +5,7 @@ mod claude_usage;
 mod integration_status;
 mod issue_key_pull_requests;
 mod jira;
+mod jira_browse;
 mod jira_write;
 mod openai_voice;
 mod pull_request_changes;
@@ -32,6 +33,15 @@ pub use jira::{
     JiraSearchResult, JiraSearchScope, JiraSprint, JiraSprintListResult, JiraSprintSource,
     JiraSprintState, NormalizedJiraIssueRef, normalize_jira_issue_url,
     normalize_jira_site_base_url,
+};
+
+pub use jira_browse::{
+    JIRA_BROWSE_JQL_MAX_BYTES, JIRA_BROWSE_PROJECTS_MAX, JIRA_BROWSE_STATUSES_MAX,
+    JIRA_BROWSE_TEXT_MAX_CHARS, JiraBoardColumn, JiraCategorizedStatus, JiraFavouriteFilter,
+    JiraFavouriteFilterList, JiraIssueDetails, JiraIssueListing, JiraIssueOrder, JiraIssuePreset,
+    JiraIssueQuery, JiraListedIssue, JiraProject, JiraProjectList, JiraQueryError,
+    JiraStatusCatalog, JiraStatusCategory, build_jira_issue_jql, valid_custom_jql,
+    valid_project_key,
 };
 
 pub use jira_write::{

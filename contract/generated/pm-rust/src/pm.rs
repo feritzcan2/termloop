@@ -20,58 +20,85 @@ fn json_array_unique(values: &[Value]) -> bool {
 static CONTRACT_PATTERN_0: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| regex::Regex::new("^[!-~]+$").expect("generated contract pattern"));
 static CONTRACT_PATTERN_1: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^[0-9a-f]{64}$").expect("generated contract pattern")
+    regex::Regex::new("^[0-9]{1,64}$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_2: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^[0-9a-f]{7,64}$").expect("generated contract pattern")
+    regex::Regex::new("^[0-9a-f]{64}$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_3: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new("^[0-9a-f]{7,64}$").expect("generated contract pattern")
+});
+static CONTRACT_PATTERN_4: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_4: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
-});
 static CONTRACT_PATTERN_5: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^[A-Za-z0-9._-]+$").expect("generated contract pattern")
+    regex::Regex::new("^[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_6: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^[A-Za-z0-9_-][A-Za-z0-9_.-]*$").expect("generated contract pattern")
+    regex::Regex::new("^[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_7: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^[^\\s@]+@[^\\s@]+$").expect("generated contract pattern")
+    regex::Regex::new("^[A-Z][A-Z0-9_]{0,63}$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_8: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
+    regex::Regex::new("^[A-Z][A-Z0-9_]{0,63}-[1-9][0-9]{0,19}$")
+        .expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_9: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new("^[A-Za-z0-9._-]+$").expect("generated contract pattern")
+});
+static CONTRACT_PATTERN_10: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new("^[A-Za-z0-9_-][A-Za-z0-9_.-]*$").expect("generated contract pattern")
+});
+static CONTRACT_PATTERN_11: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new("^[^\\s@]+@[^\\s@]+$").expect("generated contract pattern")
+});
+static CONTRACT_PATTERN_12: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
+});
+static CONTRACT_PATTERN_13: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new("^https://[^\\s@/]+/[^\\s]*$").expect("generated contract pattern")
+});
+static CONTRACT_PATTERN_14: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net$").expect("generated contract pattern")
+});
+static CONTRACT_PATTERN_15: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new("^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net/browse/[A-Z][A-Z0-9_]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
 
 fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
     match pattern {
         "^[!-~]+$" => CONTRACT_PATTERN_0.is_match(text),
-        "^[0-9a-f]{64}$" => CONTRACT_PATTERN_1.is_match(text),
-        "^[0-9a-f]{7,64}$" => CONTRACT_PATTERN_2.is_match(text),
+        "^[0-9]{1,64}$" => CONTRACT_PATTERN_1.is_match(text),
+        "^[0-9a-f]{64}$" => CONTRACT_PATTERN_2.is_match(text),
+        "^[0-9a-f]{7,64}$" => CONTRACT_PATTERN_3.is_match(text),
         "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" => {
-            CONTRACT_PATTERN_3.is_match(text)
+            CONTRACT_PATTERN_4.is_match(text)
         }
-        "^[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_4.is_match(text),
-        "^[A-Za-z0-9._-]+$" => CONTRACT_PATTERN_5.is_match(text),
-        "^[A-Za-z0-9_-][A-Za-z0-9_.-]*$" => CONTRACT_PATTERN_6.is_match(text),
-        "^[^\\s@]+@[^\\s@]+$" => CONTRACT_PATTERN_7.is_match(text),
+        "^[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_5.is_match(text),
+        "^[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_6.is_match(text),
+        "^[A-Z][A-Z0-9_]{0,63}$" => CONTRACT_PATTERN_7.is_match(text),
+        "^[A-Z][A-Z0-9_]{0,63}-[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_8.is_match(text),
+        "^[A-Za-z0-9._-]+$" => CONTRACT_PATTERN_9.is_match(text),
+        "^[A-Za-z0-9_-][A-Za-z0-9_.-]*$" => CONTRACT_PATTERN_10.is_match(text),
+        "^[^\\s@]+@[^\\s@]+$" => CONTRACT_PATTERN_11.is_match(text),
         "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$" => {
-            CONTRACT_PATTERN_8.is_match(text)
+            CONTRACT_PATTERN_12.is_match(text)
         }
+        "^https://[^\\s@/]+/[^\\s]*$" => CONTRACT_PATTERN_13.is_match(text),
         "^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net$" => {
-            CONTRACT_PATTERN_9.is_match(text)
+            CONTRACT_PATTERN_14.is_match(text)
+        }
+        "^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net/browse/[A-Z][A-Z0-9_]{0,63}-[1-9][0-9]{0,19}$" => {
+            CONTRACT_PATTERN_15.is_match(text)
         }
         _ => false,
     }
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:57fa3714a00109b0ea67be754b3168675b9844fd596854c88551fab6bf3e22ab";
+    "sha256:845f524110462aea9d14677252f592593530e0003bebe1f83ebbacd93d12a4a3";
 pub const CAPABILITY_SCOPE: &str = "pm.full";
 pub const METHODS: &[&str] = &[
     "pm_system_version",
@@ -112,6 +139,10 @@ pub const METHODS: &[&str] = &[
     "pm_jira_pull",
     "pm_jira_diff_read",
     "pm_jira_apply",
+    "pm_jira_projects_read",
+    "pm_jira_statuses_read",
+    "pm_jira_favourite_filters_read",
+    "pm_jira_search",
     "pm_agent_launch",
     "pm_agent_list",
     "pm_agent_stop",
@@ -1498,6 +1529,189 @@ pub struct PmJiraPulledPayload {
     pub outcome: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PmJiraStatusCategory {
+    #[serde(rename = "new")]
+    New,
+    #[serde(rename = "indeterminate")]
+    Indeterminate,
+    #[serde(rename = "done")]
+    Done,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PmJiraSearchPreset {
+    #[serde(rename = "assigned")]
+    Assigned,
+    #[serde(rename = "reported")]
+    Reported,
+    #[serde(rename = "allOpen")]
+    AllOpen,
+    #[serde(rename = "done")]
+    Done,
+    #[serde(rename = "custom")]
+    Custom,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PmJiraSearchOrder {
+    #[serde(rename = "updated")]
+    Updated,
+    #[serde(rename = "created")]
+    Created,
+    #[serde(rename = "priority")]
+    Priority,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmJiraProject {
+    pub key: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmJiraProjectsReadResult {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    pub projects: Vec<PmJiraProject>,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmJiraStatusesReadParams {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    #[serde(rename = "jiraProjectKey", skip_serializing_if = "Option::is_none")]
+    pub jira_project_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmJiraStatus {
+    pub id: String,
+    pub name: String,
+    pub category: PmJiraStatusCategory,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmJiraBoardColumn {
+    pub name: String,
+    #[serde(rename = "statusIds")]
+    pub status_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmJiraStatusesReadResult {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    pub statuses: Vec<PmJiraStatus>,
+    pub columns: Vec<PmJiraBoardColumn>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmJiraFavouriteFilter {
+    pub id: String,
+    pub name: String,
+    pub jql: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmJiraFavouriteFiltersReadResult {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    pub filters: Vec<PmJiraFavouriteFilter>,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmJiraSearchParams {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    pub preset: PmJiraSearchPreset,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub jql: Option<String>,
+    #[serde(rename = "jiraProjectKey", skip_serializing_if = "Option::is_none")]
+    pub jira_project_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub statuses: Option<Vec<String>>,
+    #[serde(rename = "currentSprint", skip_serializing_if = "Option::is_none")]
+    pub current_sprint: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(rename = "orderBy", skip_serializing_if = "Option::is_none")]
+    pub order_by: Option<PmJiraSearchOrder>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmJiraIssueStatus {
+    pub name: String,
+    pub category: PmJiraStatusCategory,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmJiraIssueUser {
+    #[serde(rename = "displayName")]
+    pub display_name: String,
+    #[serde(
+        rename = "avatarUrl",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub avatar_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmJiraIssue {
+    pub id: String,
+    pub key: String,
+    pub url: String,
+    pub title: String,
+    #[serde(
+        rename = "issueType",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub issue_type: Option<String>,
+    pub status: PmJiraIssueStatus,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub priority: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub assignee: Option<PmJiraIssueUser>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub reporter: Option<String>,
+    pub labels: Vec<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub sprint: Option<String>,
+    #[serde(rename = "updatedAtEpochMs")]
+    pub updated_at_epoch_ms: u64,
+    #[serde(rename = "createdAtEpochMs")]
+    pub created_at_epoch_ms: u64,
+    #[serde(
+        rename = "pmTicketId",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub pm_ticket_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmJiraSearchResult {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    pub issues: Vec<PmJiraIssue>,
+    pub truncated: bool,
+    pub jql: String,
+}
+
 pub type PmSystemVersionParams = EmptyParams;
 pub type PmProjectListParams = EmptyParams;
 pub type PmProjectCreateResult = PmProject;
@@ -1536,6 +1750,8 @@ pub type PmProbeDeleteResult = PmDeletedResult;
 pub type PmJiraPullParams = PmProjectRef;
 pub type PmJiraDiffReadParams = PmTicketRef;
 pub type PmJiraDiffReadResult = PmJiraDiff;
+pub type PmJiraProjectsReadParams = PmProjectRef;
+pub type PmJiraFavouriteFiltersReadParams = PmProjectRef;
 pub type PmAgentLaunchResult = PmAgentSession;
 pub type PmAgentListParams = PmProjectRef;
 pub type PmAgentCatalogReadParams = EmptyParams;
@@ -1726,6 +1942,10 @@ fn validate_method(value: &Value) -> bool {
             "pm_jira_pull",
             "pm_jira_diff_read",
             "pm_jira_apply",
+            "pm_jira_projects_read",
+            "pm_jira_statuses_read",
+            "pm_jira_favourite_filters_read",
+            "pm_jira_search",
             "pm_agent_launch",
             "pm_agent_list",
             "pm_agent_stop",
@@ -5230,6 +5450,452 @@ fn validate_pm_jira_pulled_payload(value: &Value) -> bool {
 }
 
 #[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_jira_status_category(value: &Value) -> bool {
+    value
+        .as_str()
+        .is_some_and(|text| ["new", "indeterminate", "done"].contains(&text))
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_jira_search_preset(value: &Value) -> bool {
+    value
+        .as_str()
+        .is_some_and(|text| ["assigned", "reported", "allOpen", "done", "custom"].contains(&text))
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_jira_search_order(value: &Value) -> bool {
+    value
+        .as_str()
+        .is_some_and(|text| ["updated", "created", "priority"].contains(&text))
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_jira_project(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("key").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| contract_pattern_matches("^[A-Z][A-Z0-9_]{0,63}$", text))
+        }) && object.get("name").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 256)
+        }) && object
+            .keys()
+            .all(|key| ["key", "name"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_jira_projects_read_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("projectId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("projects").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() <= 50 && items.iter().all(|item| validate_pm_jira_project(item))
+            })
+        }) && object
+            .get("truncated")
+            .is_some_and(|field| field.is_boolean())
+            && object
+                .keys()
+                .all(|key| ["projectId", "projects", "truncated"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_jira_statuses_read_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("projectId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("jiraProjectKey").is_none_or(|field| {
+            (field
+                .as_str()
+                .is_some_and(|text| contract_pattern_matches("^[A-Z][A-Z0-9_]{0,63}$", text))
+                || field.is_null())
+        }) && object
+            .keys()
+            .all(|key| ["projectId", "jiraProjectKey"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_jira_status(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("id").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| contract_pattern_matches("^[1-9][0-9]{0,19}$", text))
+        }) && object.get("name").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 256)
+        }) && object
+            .get("category")
+            .is_some_and(|field| validate_pm_jira_status_category(field))
+            && object
+                .keys()
+                .all(|key| ["id", "name", "category"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_jira_board_column(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("name").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 256)
+        }) && object.get("statusIds").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() <= 500
+                    && items.iter().all(|item| {
+                        item.as_str().is_some_and(|text| {
+                            contract_pattern_matches("^[1-9][0-9]{0,19}$", text)
+                        })
+                    })
+            })
+        }) && object
+            .keys()
+            .all(|key| ["name", "statusIds"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_jira_statuses_read_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("projectId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("statuses").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() <= 500 && items.iter().all(|item| validate_pm_jira_status(item))
+            })
+        }) && object.get("columns").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() <= 100 && items.iter().all(|item| validate_pm_jira_board_column(item))
+            })
+        }) && object
+            .keys()
+            .all(|key| ["projectId", "statuses", "columns"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_jira_favourite_filter(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("id").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| contract_pattern_matches("^[1-9][0-9]{0,19}$", text))
+        }) && object.get("name").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 200)
+        }) && object.get("jql").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 8192)
+        }) && object
+            .keys()
+            .all(|key| ["id", "name", "jql"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_jira_favourite_filters_read_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("projectId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("filters").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() <= 100
+                    && items
+                        .iter()
+                        .all(|item| validate_pm_jira_favourite_filter(item))
+            })
+        }) && object
+            .get("truncated")
+            .is_some_and(|field| field.is_boolean())
+            && object
+                .keys()
+                .all(|key| ["projectId", "filters", "truncated"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_jira_search_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("projectId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object
+            .get("preset")
+            .is_some_and(|field| validate_pm_jira_search_preset(field))
+            && object.get("jql").is_none_or(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 8192)
+            })
+            && object.get("jiraProjectKey").is_none_or(|field| {
+                (field
+                    .as_str()
+                    .is_some_and(|text| contract_pattern_matches("^[A-Z][A-Z0-9_]{0,63}$", text))
+                    || field.is_null())
+            })
+            && object.get("statuses").is_none_or(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() <= 20
+                        && json_array_unique(items)
+                        && items.iter().all(|item| {
+                            item.as_str().is_some_and(|text| {
+                                text.chars().count() >= 1 && text.chars().count() <= 128
+                            })
+                        })
+                })
+            })
+            && object
+                .get("currentSprint")
+                .is_none_or(|field| field.is_boolean())
+            && object.get("text").is_none_or(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() <= 200)
+            })
+            && object
+                .get("orderBy")
+                .is_none_or(|field| validate_pm_jira_search_order(field))
+            && object.keys().all(|key| {
+                [
+                    "projectId",
+                    "preset",
+                    "jql",
+                    "jiraProjectKey",
+                    "statuses",
+                    "currentSprint",
+                    "text",
+                    "orderBy",
+                ]
+                .contains(&key.as_str())
+            })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_jira_issue_status(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("name").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 256)
+        }) && object
+            .get("category")
+            .is_some_and(|field| validate_pm_jira_status_category(field))
+            && object
+                .keys()
+                .all(|key| ["name", "category"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_jira_issue_user(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("displayName").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 256)
+        }) && object.get("avatarUrl").is_some_and(|field| {
+            (field.as_str().is_some_and(|text| {
+                text.chars().count() <= 2048
+                    && contract_pattern_matches("^https://[^\\s@/]+/[^\\s]*$", text)
+            }) || field.is_null())
+        }) && object
+            .keys()
+            .all(|key| ["displayName", "avatarUrl"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_jira_issue(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| object.get("id").is_some_and(|field| field.as_str().is_some_and(|text| contract_pattern_matches("^[0-9]{1,64}$", text))) && object.get("key").is_some_and(|field| field.as_str().is_some_and(|text| contract_pattern_matches("^[A-Z][A-Z0-9_]{0,63}-[1-9][0-9]{0,19}$", text))) && object.get("url").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() <= 2048 && contract_pattern_matches("^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net/browse/[A-Z][A-Z0-9_]{0,63}-[1-9][0-9]{0,19}$", text))) && object.get("title").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 8000)) && object.get("issueType").is_some_and(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 256) || field.is_null())) && object.get("status").is_some_and(|field| validate_pm_jira_issue_status(field)) && object.get("priority").is_some_and(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 256) || field.is_null())) && object.get("assignee").is_some_and(|field| (validate_pm_jira_issue_user(field) || field.is_null())) && object.get("reporter").is_some_and(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 256) || field.is_null())) && object.get("labels").is_some_and(|field| field.as_array().is_some_and(|items| items.len() <= 20 && items.iter().all(|item| item.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 255)))) && object.get("sprint").is_some_and(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 256) || field.is_null())) && object.get("updatedAtEpochMs").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64)))) && object.get("createdAtEpochMs").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64)))) && object.get("pmTicketId").is_some_and(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128 && contract_pattern_matches("^[!-~]+$", text)) || field.is_null())) && object.keys().all(|key| ["id", "key", "url", "title", "issueType", "status", "priority", "assignee", "reporter", "labels", "sprint", "updatedAtEpochMs", "createdAtEpochMs", "pmTicketId"].contains(&key.as_str())))
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_jira_search_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("projectId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("issues").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() <= 50 && items.iter().all(|item| validate_pm_jira_issue(item))
+            })
+        }) && object
+            .get("truncated")
+            .is_some_and(|field| field.is_boolean())
+            && object.get("jql").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 16384)
+            })
+            && object
+                .keys()
+                .all(|key| ["projectId", "issues", "truncated", "jql"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
     clippy::absurd_extreme_comparisons,
     clippy::len_zero,
     clippy::redundant_closure
@@ -5387,6 +6053,22 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
         "pm_jira_apply" => {
             serde_json::from_value::<PmJiraApplyParams>(params.clone()).is_ok()
                 && validate_pm_jira_apply_params(params)
+        }
+        "pm_jira_projects_read" => {
+            serde_json::from_value::<PmJiraProjectsReadParams>(params.clone()).is_ok()
+                && validate_pm_project_ref(params)
+        }
+        "pm_jira_statuses_read" => {
+            serde_json::from_value::<PmJiraStatusesReadParams>(params.clone()).is_ok()
+                && validate_pm_jira_statuses_read_params(params)
+        }
+        "pm_jira_favourite_filters_read" => {
+            serde_json::from_value::<PmJiraFavouriteFiltersReadParams>(params.clone()).is_ok()
+                && validate_pm_project_ref(params)
+        }
+        "pm_jira_search" => {
+            serde_json::from_value::<PmJiraSearchParams>(params.clone()).is_ok()
+                && validate_pm_jira_search_params(params)
         }
         "pm_agent_launch" => {
             serde_json::from_value::<PmAgentLaunchParams>(params.clone()).is_ok()
@@ -5574,6 +6256,22 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         "pm_jira_apply" => {
             serde_json::from_value::<PmJiraApplyResult>(result.clone()).is_ok()
                 && validate_pm_jira_apply_result(result)
+        }
+        "pm_jira_projects_read" => {
+            serde_json::from_value::<PmJiraProjectsReadResult>(result.clone()).is_ok()
+                && validate_pm_jira_projects_read_result(result)
+        }
+        "pm_jira_statuses_read" => {
+            serde_json::from_value::<PmJiraStatusesReadResult>(result.clone()).is_ok()
+                && validate_pm_jira_statuses_read_result(result)
+        }
+        "pm_jira_favourite_filters_read" => {
+            serde_json::from_value::<PmJiraFavouriteFiltersReadResult>(result.clone()).is_ok()
+                && validate_pm_jira_favourite_filters_read_result(result)
+        }
+        "pm_jira_search" => {
+            serde_json::from_value::<PmJiraSearchResult>(result.clone()).is_ok()
+                && validate_pm_jira_search_result(result)
         }
         "pm_agent_launch" => {
             serde_json::from_value::<PmAgentLaunchResult>(result.clone()).is_ok()
