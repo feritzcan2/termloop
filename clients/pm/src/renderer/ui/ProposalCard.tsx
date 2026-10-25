@@ -9,6 +9,8 @@ export type ProposalCardProps = {
   /** The description version the agent drafted against. */
   headVersion: number;
   now: number;
+  /** The name of the skill that made it; the inbox tags each suggestion with it. */
+  source?: string;
   /** A sprint's name for a sprint move; the backlog for `null`. */
   sprintName(sprintId: string | null): string;
   /** `assignee` is the shortlisted person the PM picked. */
@@ -28,7 +30,7 @@ export function ProposalCard(props: ProposalCardProps) {
   return (
     <section className="draft-card" aria-label="Agent proposal">
       <div className="draft-head">
-        <span className="sec-label">{proposal.skillId ? "Skill suggestion" : "Assistant draft"}</span>
+        <span className="sec-label">{proposal.skillId ? (props.source ?? "Skill suggestion") : "Assistant draft"}</span>
         <span className="meta">{proposalKindLabel(change)} · {relativeTime(proposal.createdAtEpochMs, props.now)}</span>
         <span className="sp" />
         {text && <button type="button" className="btn sm ghost" onClick={() => setShowDiff(!showDiff)}>{showDiff ? "Hide changes" : "Show changes"}</button>}

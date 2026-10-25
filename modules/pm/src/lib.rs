@@ -32,8 +32,8 @@ pub use commands::{
     JiraPullOutcome, JiraSprintPull, JiraSprintRead, JiraWriteDiff, JiraWriteOutcome,
     JiraWriteTarget, NewCheck, NewProbe, NewTicket, ProposalOrigin, PullRequestsObservation,
     RecordedCheckReport, RecordedProbeRun, ReportedEnvironment, SKILL_DISCOVERY_MAX_BYTES,
-    SKILL_PAUSE_AFTER_FAILURES, SKILL_SLACK_RETENTION_MS, TicketEdit, apply_jira_write,
-    read_jira_issue_state, read_jira_sprints, slack_ts_at, slack_ts_key,
+    SKILL_PAUSE_AFTER_FAILURES, SKILL_RETRY_AFTER_MS, SKILL_SLACK_RETENTION_MS, TicketEdit,
+    apply_jira_write, read_jira_issue_state, read_jira_sprints, slack_ts_at, slack_ts_key,
 };
 pub use delivery::check_reasons::{check_reasons, deploy_tracking_enabled};
 pub use delivery::checks::{

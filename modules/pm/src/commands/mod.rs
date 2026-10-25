@@ -39,7 +39,7 @@ pub use jira_write::{
 };
 pub use probe::{NewProbe, RecordedProbeRun};
 pub use proposal::ProposalOrigin;
-pub use skill::{SKILL_DISCOVERY_MAX_BYTES, SKILL_PAUSE_AFTER_FAILURES};
+pub use skill::{SKILL_DISCOVERY_MAX_BYTES, SKILL_PAUSE_AFTER_FAILURES, SKILL_RETRY_AFTER_MS};
 pub use skill_channels::{ChannelWatermark, SKILL_SLACK_RETENTION_MS, slack_ts_at, slack_ts_key};
 pub(crate) use skill_channels::{TS_FRACTION_MAX_DIGITS, TS_SECONDS_MAX_DIGITS};
 pub use sprint::ClosedSprint;

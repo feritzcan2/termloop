@@ -58,8 +58,10 @@ describe("right activity bar", () => {
     const view = render(<RightActivityBar open view="sprints" onSelect={onSelect} />);
     cleanup = view.unmount;
     const buttons = [...view.container.querySelectorAll<HTMLButtonElement>(".activity-bar button")];
-    expect(buttons.map((button) => [button.textContent, button.getAttribute("aria-pressed")])).toEqual([["Sprints", "true"], ["Skills", "false"]]);
+    expect(buttons.map((button) => [button.textContent, button.getAttribute("aria-pressed")])).toEqual([["Sprints", "true"], ["Inbox", "false"], ["Skills", "false"]]);
     act(() => buttons[1]!.click());
+    expect(onSelect).toHaveBeenLastCalledWith("suggestions");
+    act(() => buttons[2]!.click());
     expect(onSelect).toHaveBeenLastCalledWith("skills");
   });
 });
@@ -74,7 +76,7 @@ describe("left sprint rail", () => {
     const view = render(
       <SprintSidebar
         sprints={[next, active, oldest]}
-        tickets={[boardTicket({ id: "a", sprintId: "active", status: "done" }), boardTicket({ id: "b", sprintId: "active", status: "todo" })]}
+        tickets={[boardTicket({ id: "a", sprintId: "active", status: "done" }), { ...boardTicket({ id: "b", sprintId: "active", status: "todo" }), pendingProposalCount: 2 }]}
         tier="tickets"
         selectedSprintId="next"
         selectedTicketId={undefined}
@@ -91,6 +93,7 @@ describe("left sprint rail", () => {
     expect(head.querySelector(".meta")!.textContent).toBe("1/2");
     expect(view.container.querySelector(".pm-other-sprints")!.textContent).toBe("Other sprints2");
     expect(view.container.textContent).not.toContain("Sprint 13");
+    expect(view.container.querySelector(".row-sub .draft")!.textContent).toBe("2 suggestions");
   });
 });
 

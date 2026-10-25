@@ -20,6 +20,16 @@ pub(super) fn skills_read(state: &AppState, params: &Value) -> Result<Value, Con
     skills::skills_value(&mut store, &params.project_id)
 }
 
+pub(super) fn suggestions_read(state: &AppState, params: &Value) -> Result<Value, ControlError> {
+    let params: PmProjectRef = parse(params)?;
+    let store = state.store.lock();
+    require_project(&store, &params.project_id)?;
+    Ok(json!({
+        "projectId": params.project_id,
+        "proposals": to_value(&store.skill_suggestions(&params.project_id)?)?,
+    }))
+}
+
 pub(super) fn set_enabled(state: &AppState, params: &Value) -> Result<Value, ControlError> {
     let params: PmSkillSetEnabledParams = parse(params)?;
     let skill = state

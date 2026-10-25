@@ -6,7 +6,7 @@
 
 use rusqlite::{Connection, params};
 
-use super::skill::record_feedback;
+use super::skill::{SKILL_SUGGESTIONS_READ_MAX, record_feedback};
 use super::ticket::{
     add_blocker, check_target_sprint, move_ticket, record_version, set_ticket_column,
 };
@@ -15,7 +15,9 @@ use crate::proposal::{TICKET_JIRA_COMMENTS_MAX, TICKET_PROPOSALS_MAX, valid_prop
 use crate::skill::{
     Evidence, FeedbackOutcome, SKILL_FEEDBACK_REASON_MAX_CHARS, evidence_key, valid_evidence,
 };
-use crate::store::{evidence_rejected, proposal_by_id, ticket_proposals, to_json};
+use crate::store::{
+    evidence_rejected, project_skill_proposals, proposal_by_id, ticket_proposals, to_json,
+};
 use crate::ticket::{TICKET_BLOCKERS_MAX, TICKET_CRITERIA_MAX};
 use crate::validation::valid_label;
 use crate::{
@@ -263,20 +265,11 @@ impl PmStore {
         ticket_proposals(self.connection(), ticket_id)
     }
 
-    /// The pending proposals of a project's skills, by ticket then age.
+    /// The pending proposals of a project's skills, by ticket then age; at
+    /// most [`SKILL_SUGGESTIONS_READ_MAX`].
     pub fn skill_suggestions(&self, project_id: &str) -> Result<Vec<TicketProposal>, PmError> {
         check_id(project_id, "projectId")?;
-        let mut statement = self.connection().prepare(
-            "SELECT p.id FROM ticket_proposals p JOIN tickets t ON t.id = p.ticket_id \
-             WHERE t.project_id = ?1 AND p.skill_id IS NOT NULL \
-             ORDER BY t.rank, t.id, p.created_at_epoch_ms, p.id",
-        )?;
-        let ids = statement
-            .query_map([project_id], |row| row.get::<_, String>(0))?
-            .collect::<Result<Vec<_>, _>>()?;
-        ids.iter()
-            .map(|id| require_proposal(self.connection(), id))
-            .collect()
+        project_skill_proposals(self.connection(), project_id, SKILL_SUGGESTIONS_READ_MAX)
     }
 }
 

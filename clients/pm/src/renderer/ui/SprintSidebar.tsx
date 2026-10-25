@@ -349,7 +349,11 @@ function TicketRow(props: {
               {risks.map((risk, index) => (
                 <span key={index} className={riskTone(risk.kind)} title={risk.detail}>{RISK_LABEL[risk.kind].toLowerCase()}</span>
               ))}
-              {pendingProposalCount > 0 && <span className="draft">draft</span>}
+              {pendingProposalCount > 0 && (
+                <span className="draft" title="Suggestions waiting for review">
+                  {pendingProposalCount} {pendingProposalCount === 1 ? "suggestion" : "suggestions"}
+                </span>
+              )}
               {delivery.checking && <span className="warn">checking…</span>}
             </span>
           </span>

@@ -10,8 +10,8 @@ use crate::skill::{
     BuiltinSkill, DryRunState, FeedbackOutcome, NewSkillDraft, PROJECT_SKILL_DRAFTS_MAX,
     PROJECT_SKILLS_MAX, SKILL_DRAFT_SAMPLES_MAX, SKILL_FEEDBACK_KEPT, SKILL_RUN_DEADLINE_MS,
     SKILL_RUN_SUMMARY_MAX_CHARS, SKILL_RUNS_KEPT, Skill, SkillDraft, SkillEvent, SkillFeedback,
-    SkillManifest, SkillRun, SkillRunOutcome, SkillRunTrigger, SkillSample, evidence_sources,
-    valid_evidence,
+    SkillManifest, SkillRun, SkillRunOutcome, SkillRunTrigger, SkillSample, bounded_line,
+    evidence_sources, valid_evidence,
 };
 use crate::store::{
     SkillRecord, ToolApproval, approved_tools_ever, builtin_skill_record, draft_by_id, json_column,
@@ -26,6 +26,12 @@ use crate::{DeliveryCheckOutcome, PmError, PmStore, ProbeStatus, TicketProposal}
 pub const SKILL_DISCOVERY_MAX_BYTES: usize = 64 * 1024;
 /// After this many failed runs in a row a skill pauses until re-enabled.
 pub const SKILL_PAUSE_AFTER_FAILURES: u32 = 3;
+/// A failed skill waits this long before it is due again, doubling with
+/// each further failure in a row.
+pub const SKILL_RETRY_AFTER_MS: u64 = 15 * 60_000;
+/// Suggestions one inbox read returns at most.
+pub const SKILL_SUGGESTIONS_READ_MAX: usize = 200;
+const PAUSE_DETAIL_MAX_CHARS: usize = 200;
 
 fn require_skill(connection: &Connection, skill_id: &str) -> Result<SkillRecord, PmError> {
     check_id(skill_id, "skillId")?;
@@ -71,6 +77,7 @@ fn skill_view(connection: &Connection, record: SkillRecord, now: u64) -> Result<
         runs_today: 0,
         consecutive_failures: record.consecutive_failures,
         paused_reason: record.paused_reason,
+        next_attempt_at_epoch_ms: record.next_attempt_at_epoch_ms,
         created_at_epoch_ms: record.created_at_epoch_ms,
     };
     match skill.builtin {
@@ -206,28 +213,42 @@ pub(super) fn close_run(
         match outcome {
             SkillRunOutcome::Reported | SkillRunOutcome::Skipped => {
                 connection.execute(
-                    "UPDATE skills SET consecutive_failures = 0 WHERE id = ?1",
+                    "UPDATE skills SET consecutive_failures = 0, next_attempt_at_epoch_ms = NULL \
+                     WHERE id = ?1",
                     [skill_id],
                 )?;
             }
             SkillRunOutcome::Failed | SkillRunOutcome::Abandoned => {
-                connection.execute(
-                    "UPDATE skills SET consecutive_failures = consecutive_failures + 1 \
-                     WHERE id = ?1",
-                    [skill_id],
+                // The retry wait doubles with each failure in a row, up to 256x.
+                let failures: u32 = connection.query_row(
+                    "UPDATE skills SET consecutive_failures = consecutive_failures + 1, \
+                         next_attempt_at_epoch_ms = ?2 + (?3 << min(consecutive_failures, 8)) \
+                     WHERE id = ?1 RETURNING consecutive_failures",
+                    params![skill_id, now, SKILL_RETRY_AFTER_MS],
+                    |row| row.get(0),
                 )?;
-                connection.execute(
-                    "UPDATE skills SET enabled = 0, paused_reason = ?2 \
-                     WHERE id = ?1 AND consecutive_failures >= ?3 AND paused_reason IS NULL",
-                    params![
-                        skill_id,
-                        format!(
-                            "Paused after {SKILL_PAUSE_AFTER_FAILURES} failed runs in a row; \
-                             turn it on to try again."
-                        ),
-                        SKILL_PAUSE_AFTER_FAILURES
-                    ],
-                )?;
+                if failures >= SKILL_PAUSE_AFTER_FAILURES {
+                    let last = summary.map_or_else(
+                        || outcome_words(outcome).to_owned(),
+                        |summary| bounded_line(summary, PAUSE_DETAIL_MAX_CHARS),
+                    );
+                    let stop = if last.ends_with(['.', '!', '?']) {
+                        ""
+                    } else {
+                        "."
+                    };
+                    connection.execute(
+                        "UPDATE skills SET enabled = 0, paused_reason = ?2 \
+                         WHERE id = ?1 AND paused_reason IS NULL",
+                        params![
+                            skill_id,
+                            format!(
+                                "Paused after {failures} failed runs in a row. Last run: {last}{stop} \
+                                 Turn it on to try again."
+                            )
+                        ],
+                    )?;
+                }
             }
         }
         connection.execute(
@@ -238,6 +259,13 @@ pub(super) fn close_run(
         )?;
     }
     Ok(())
+}
+
+fn outcome_words(outcome: SkillRunOutcome) -> &'static str {
+    match outcome {
+        SkillRunOutcome::Abandoned => "it took too long and was stopped",
+        _ => "it failed",
+    }
 }
 
 impl PmStore {
@@ -550,8 +578,8 @@ impl PmStore {
                 ],
             )?;
             transaction.execute(
-                "UPDATE skills SET event_pending_at_epoch_ms = NULL, consecutive_failures = 0 \
-                 WHERE id = ?1",
+                "UPDATE skills SET event_pending_at_epoch_ms = NULL, consecutive_failures = 0, \
+                     next_attempt_at_epoch_ms = NULL WHERE id = ?1",
                 [skill_id],
             )?;
             require_run(transaction, &id)

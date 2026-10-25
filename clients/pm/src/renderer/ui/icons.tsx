@@ -20,6 +20,7 @@ const PATHS = {
   list: <path d="M5.5 4h8M5.5 8h8M5.5 12h8M2.5 4h.01M2.5 8h.01M2.5 12h.01" />,
   board: <><rect x="2" y="2.5" width="3.2" height="11" rx="1" /><rect x="6.4" y="2.5" width="3.2" height="7.5" rx="1" /><rect x="10.8" y="2.5" width="3.2" height="9.5" rx="1" /></>,
   skill: <><path d="M2.5 4.5l1.5 1.5 3-3" /><path d="M2.5 11l1.5 1.5 3-3" /><path d="M9 4.5h4.5M9 11h4.5" /></>,
+  inbox: <><path d="M2 9.5l2-6.5h8l2 6.5V13H2z" /><path d="M2 9.5h3.5l1 1.5h3l1-1.5H14" /></>,
   more: <path d="M4 8h.01M8 8h.01M12 8h.01" strokeWidth={2.4} />,
 } satisfies Record<string, ReactElement>;
 

@@ -37,6 +37,7 @@ import { RightActivityBar } from "../ui/RightActivityBar.js";
 import { RightSidebar } from "../ui/RightSidebar.js";
 import { SettingsPage } from "../ui/SettingsPage.js";
 import { SkillsPanel } from "../ui/SkillsPanel.js";
+import { SuggestionsPanel } from "../ui/SuggestionsPanel.js";
 import { Sidebar } from "../ui/Sidebar.js";
 import { SprintOverview } from "../ui/SprintOverview.js";
 import { SprintsPanel } from "../ui/SprintsPanel.js";
@@ -317,6 +318,19 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 onSelectSprint={(id) => controller.selectSprint(id)}
                 onActivateSprint={(id) => void controller.activateSprint(id)}
                 onCreateSprint={(name, goal) => void controller.createSprint(name, goal)}
+              />
+            ) : right.view === "suggestions" ? (
+              <SuggestionsPanel
+                suggestions={state.suggestions}
+                tickets={allTickets}
+                sprints={sprints}
+                skills={state.skills?.skills ?? EMPTY}
+                now={now}
+                onAccept={(id, proposalId, assignee) => void controller.acceptProposal(id, proposalId, assignee)}
+                onReject={(id, proposalId) => void controller.rejectProposal(id, proposalId)}
+                onAcceptAll={(id) => void controller.acceptAllSuggestions(id)}
+                onOpenTicket={(id) => void controller.selectTicket(id)}
+                onOpenLink={(url) => void controller.bridge.openExternal(url)}
               />
             ) : (
               <SkillsPanel

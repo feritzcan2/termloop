@@ -7,6 +7,7 @@ import type {
   PmAssistantTask,
   PmEnvironment,
   PmProbeMatcher,
+  PmProposal,
   PmSettingsUpdateParams,
   PmTicket,
   PmTicketCreateParams,
@@ -137,6 +138,7 @@ export class PmController {
       activeAgentSessionId: undefined,
       sources: undefined,
       skills: undefined,
+      suggestions: undefined,
       view: this.state.view === "ticket" || this.state.view === "agent" ? "overview" : this.state.view,
     });
     await this.refreshProject();
@@ -148,8 +150,8 @@ export class PmController {
 
   /**
    * Coalesces concurrent rereads into one in flight plus one trailing read.
-   * The digest is reread beside the board: every board change may add an
-   * entry to "since yesterday".
+   * The digest and the skill suggestions are reread beside the board: every
+   * board change may add an entry to "since yesterday" or a suggestion.
    */
   refreshBoard(): Promise<void> {
     if (this.#boardRead) {
@@ -159,7 +161,7 @@ export class PmController {
     this.#boardRead = (async () => {
       do {
         this.#boardStale = false;
-        await Promise.all([this.#readBoard(), this.refreshDigest()]);
+        await Promise.all([this.#readBoard(), this.refreshDigest(), this.loadSuggestions()]);
       } while (this.#boardStale);
     })().finally(() => { this.#boardRead = undefined; });
     return this.#boardRead;
@@ -336,6 +338,17 @@ export class PmController {
     await this.launchAgent(ticketId, true, "updateDescription");
   }
 
+  async loadSuggestions(): Promise<void> {
+    const projectId = this.state.projectId;
+    if (!projectId) return;
+    const result = await this.call("pm_skill_suggestions_read", { projectId });
+    if (result && this.state.projectId === projectId) this.#set({ suggestions: result.proposals });
+  }
+
+  #proposal(ticketId: string, proposalId: string): PmProposal | undefined {
+    return [...(this.state.proposals[ticketId] ?? []), ...(this.state.suggestions ?? [])].find((candidate) => candidate.id === proposalId);
+  }
+
   async loadProposals(ticketId: string): Promise<void> {
     const result = await this.call("pm_ticket_proposals_read", { ticketId });
     if (result) this.#set({ proposals: { ...this.state.proposals, [ticketId]: result.proposals } });
@@ -346,12 +359,29 @@ export class PmController {
    * the "Write to Jira" diff, where the PM confirms the external write.
    */
   async acceptProposal(ticketId: string, proposalId: string, assignee?: string): Promise<void> {
-    const proposal = this.state.proposals[ticketId]?.find((candidate) => candidate.id === proposalId);
-    const ticket = await this.call("pm_ticket_proposal_accept", { proposalId, ...(assignee ? { assignee } : {}) });
-    await this.loadProposals(ticketId);
-    if (!ticket) return;
-    await this.refreshBoard();
-    if (proposal && touchesJira(proposal.change) && ticket.jiraUrl) await this.openJiraDialog(ticketId);
+    await this.#accept(ticketId, [this.#proposal(ticketId, proposalId) ?? { id: proposalId }], assignee);
+  }
+
+  /**
+   * Accepts every skill suggestion for a ticket in order, each with its
+   * proposed value, and stops at the first refusal.
+   */
+  async acceptAllSuggestions(ticketId: string): Promise<void> {
+    await this.#accept(ticketId, (this.state.suggestions ?? []).filter((proposal) => proposal.ticketId === ticketId));
+  }
+
+  /** Accepts in order until a refusal; the Jira diff opens once if any accepted change touches Jira. */
+  async #accept(ticketId: string, proposals: (Pick<PmProposal, "id"> & Partial<PmProposal>)[], assignee?: string): Promise<void> {
+    let ticket: PmTicket | undefined;
+    let jira = false;
+    for (const proposal of proposals) {
+      const accepted = await this.call("pm_ticket_proposal_accept", { proposalId: proposal.id, ...(assignee ? { assignee } : {}) });
+      if (!accepted) break;
+      ticket = accepted;
+      jira ||= proposal.change !== undefined && touchesJira(proposal.change);
+    }
+    await Promise.all([this.loadProposals(ticketId), this.refreshBoard()]);
+    if (jira && ticket?.jiraUrl) await this.openJiraDialog(ticketId);
   }
 
   async rejectProposal(ticketId: string, proposalId: string, reason?: string): Promise<void> {

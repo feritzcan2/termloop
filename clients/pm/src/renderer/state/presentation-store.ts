@@ -44,6 +44,8 @@ export type PmState = {
   sources: PmSources | undefined;
   /** The project's skills and drafts waiting for review. */
   skills: PmSkillsReadResult | undefined;
+  /** The project's pending skill suggestions, by ticket then age. */
+  suggestions: PmProposal[] | undefined;
   lastPull: PmJiraPullResult | undefined;
   pulling: boolean;
   jiraDialog: JiraDialogState | undefined;
@@ -68,6 +70,7 @@ export const initialPmState: PmState = {
   catalog: undefined,
   sources: undefined,
   skills: undefined,
+  suggestions: undefined,
   lastPull: undefined,
   pulling: false,
   jiraDialog: undefined,

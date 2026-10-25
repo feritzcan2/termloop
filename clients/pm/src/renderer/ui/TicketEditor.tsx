@@ -5,7 +5,7 @@ import { ProposalCard } from "./ProposalCard.js";
 import { TicketFields } from "./TicketFields.js";
 import { TicketNotes, type TicketNotesProps } from "./TicketNotes.js";
 import { AUTHOR_LABEL, VersionsList } from "./VersionsList.js";
-import { RISK_LABEL, jiraKey, relativeTime, riskTone, ticketLabel } from "./format.js";
+import { RISK_LABEL, jiraKey, relativeTime, riskTone, sprintName, ticketLabel } from "./format.js";
 import { ticketScope } from "./scope.js";
 import { descriptionEdited, isSaveShortcut, titleUpdate, type DescriptionDraft, type TicketFieldUpdate } from "./ticket-edit.js";
 import type { DescriptionSaveOutcome } from "./types.js";
@@ -182,7 +182,7 @@ export function TicketEditor(props: TicketEditorProps) {
             ticket={ticket}
             headVersion={headVersion}
             now={props.now}
-            sprintName={(sprintId) => props.sprints.find((sprint) => sprint.id === sprintId)?.name ?? "Backlog"}
+            sprintName={(sprintId) => sprintName(props.sprints, sprintId)}
             onAccept={(assignee) => props.onAcceptProposal(proposal.id, assignee)}
             onReject={() => props.onRejectProposal(proposal.id)}
             onOpenLink={props.onOpenLink}

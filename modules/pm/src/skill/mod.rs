@@ -231,6 +231,8 @@ pub struct Skill {
     pub consecutive_failures: u32,
     /// Set when the skill was paused after repeated failures.
     pub paused_reason: Option<String>,
+    /// After a failure: when the skill is next due, backing off.
+    pub next_attempt_at_epoch_ms: Option<u64>,
     pub created_at_epoch_ms: u64,
 }
 

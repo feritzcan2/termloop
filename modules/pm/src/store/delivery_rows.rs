@@ -215,6 +215,25 @@ pub(crate) fn ticket_proposals(
     Ok(proposals)
 }
 
+/// The pending proposals of a project's skills, by ticket rank then age;
+/// at most `limit`.
+pub(crate) fn project_skill_proposals(
+    connection: &Connection,
+    project_id: &str,
+    limit: usize,
+) -> Result<Vec<TicketProposal>, PmError> {
+    let mut statement = connection.prepare(&format!(
+        "SELECT {PROPOSAL_COLUMNS} FROM (SELECT p.*, t.rank AS ticket_rank \
+             FROM ticket_proposals p JOIN tickets t ON t.id = p.ticket_id \
+             WHERE t.project_id = ?1 AND p.skill_id IS NOT NULL) \
+         ORDER BY ticket_rank, ticket_id, created_at_epoch_ms, id LIMIT ?2"
+    ))?;
+    let proposals = statement
+        .query_map(params![project_id, limit], proposal_row)?
+        .collect::<Result<_, _>>()?;
+    Ok(proposals)
+}
+
 /// The pending proposals a skill made, oldest first.
 pub(crate) fn skill_proposal_count(
     connection: &Connection,

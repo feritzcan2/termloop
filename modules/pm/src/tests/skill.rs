@@ -11,7 +11,7 @@ use crate::skill::{
 };
 use crate::{
     PmError, PmStore, ProjectEnvironment, ProposalChange, ProposalOrigin,
-    SKILL_PAUSE_AFTER_FAILURES, TicketStatus,
+    SKILL_PAUSE_AFTER_FAILURES, SKILL_RETRY_AFTER_MS, TicketStatus,
 };
 
 pub(super) fn manifest() -> SkillManifest {
@@ -468,6 +468,68 @@ fn a_skill_pauses_after_repeated_failures_and_runs_are_counted() {
         .unwrap();
     assert_eq!(abandoned[0].id, run.id);
     assert_eq!(abandoned[0].outcome, Some(SkillRunOutcome::Abandoned));
+}
+
+#[test]
+fn a_failing_skill_backs_off_doubling_and_pauses_with_the_reason() {
+    static NOW: AtomicU64 = AtomicU64::new(1_000);
+    let mut store = store();
+    store.set_clock(|| NOW.load(Ordering::SeqCst));
+    let mut waiting = manifest();
+    waiting.trigger = SkillTrigger::Event {
+        event: SkillEvent::JiraPulled,
+    };
+    let skill = installed(&mut store, waiting);
+    let fail = |store: &mut PmStore, summary: Option<&str>| {
+        let run = store
+            .start_skill_run(&skill.id, SkillRunTrigger::Event, 1)
+            .unwrap();
+        store
+            .finish_skill_run(&run.id, SkillRunOutcome::Failed, summary)
+            .unwrap();
+        store.skill(&skill.id).unwrap().unwrap()
+    };
+    let due = |store: &PmStore, now: u64| store.due_skills("p1", now).unwrap().len();
+
+    let first = fail(&mut store, None);
+    assert_eq!(
+        first.next_attempt_at_epoch_ms,
+        Some(1_000 + SKILL_RETRY_AFTER_MS)
+    );
+    store
+        .note_skill_event("p1", SkillEvent::JiraPulled)
+        .unwrap();
+    assert_eq!(due(&store, 1_000 + SKILL_RETRY_AFTER_MS - 1), 0);
+    assert_eq!(due(&store, 1_000 + SKILL_RETRY_AFTER_MS), 1);
+
+    // A run that reports clears the backoff.
+    let run = store
+        .start_skill_run(&skill.id, SkillRunTrigger::Event, 1)
+        .unwrap();
+    store
+        .finish_skill_run(&run.id, SkillRunOutcome::Reported, None)
+        .unwrap();
+    let cleared = store.skill(&skill.id).unwrap().unwrap();
+    assert_eq!(cleared.next_attempt_at_epoch_ms, None);
+    assert_eq!(cleared.consecutive_failures, 0);
+
+    fail(&mut store, None);
+    let second = fail(&mut store, None);
+    assert_eq!(
+        second.next_attempt_at_epoch_ms,
+        Some(1_000 + 2 * SKILL_RETRY_AFTER_MS)
+    );
+    assert!(second.enabled);
+    let paused = fail(&mut store, Some("Jira said 401"));
+    assert!(!paused.enabled);
+    assert_eq!(
+        paused.paused_reason.as_deref(),
+        Some(
+            "Paused after 3 failed runs in a row. Last run: Jira said 401. Turn it on to try again."
+        )
+    );
+    let resumed = store.set_skill_enabled(&skill.id, true).unwrap();
+    assert_eq!(resumed.next_attempt_at_epoch_ms, None);
 }
 
 #[test]

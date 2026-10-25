@@ -59,6 +59,7 @@
       "pm_settings_read",
       "pm_settings_update",
       "pm_skills_read",
+      "pm_skill_suggestions_read",
       "pm_skill_set_enabled",
       "pm_skill_install",
       "pm_skill_run",
@@ -520,6 +521,14 @@
         "$ref": "#/$defs/pmSkillsReadResult"
       }
     },
+    "pm_skill_suggestions_read": {
+      "params": {
+        "$ref": "#/$defs/pmProjectRef"
+      },
+      "result": {
+        "$ref": "#/$defs/pmSkillSuggestionsReadResult"
+      }
+    },
     "pm_skill_set_enabled": {
       "params": {
         "$ref": "#/$defs/pmSkillSetEnabledParams"
@@ -753,6 +762,7 @@
         "pm_settings_read",
         "pm_settings_update",
         "pm_skills_read",
+        "pm_skill_suggestions_read",
         "pm_skill_set_enabled",
         "pm_skill_install",
         "pm_skill_run",
@@ -3381,6 +3391,30 @@
         }
       }
     },
+    "pmSkillSuggestionsReadResult": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "proposals"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "proposals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmProposal"
+          },
+          "maxItems": 200
+        }
+      }
+    },
     "pmTicketNoteKind": {
       "x-codegen": true,
       "type": "string",
@@ -5114,6 +5148,7 @@
         "runsToday",
         "consecutiveFailures",
         "pausedReason",
+        "nextAttemptAtEpochMs",
         "createdAtEpochMs"
       ],
       "properties": {
@@ -5193,6 +5228,14 @@
           ],
           "minLength": 1,
           "maxLength": 300
+        },
+        "nextAttemptAtEpochMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "x-rust-type": "u64"
         },
         "createdAtEpochMs": {
           "type": "integer",

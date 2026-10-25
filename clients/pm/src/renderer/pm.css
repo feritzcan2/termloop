@@ -316,6 +316,51 @@ h3.s .r { margin-left: auto; color: var(--dimmer); font: 400 10px/1 var(--font-m
 .sprints-panel { flex: 1; min-height: 0; overflow-y: auto; }
 .right-sidebar-tools { display: flex; align-items: center; gap: 6px; padding: 8px 10px 2px 13px; }
 .right-sidebar-tools .view-action { margin-left: 0; }
+.skills-panel, .suggestions-panel { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 16px; }
+.skills-panel .pad, .suggestions-panel .pad { margin: 8px 13px; }
+.skills-panel .empty-state, .suggestions-panel .empty-state { padding-top: 24px; }
+.skill-list { margin: 6px 0 0; padding: 0; list-style: none; }
+.skill-row { padding: 9px 13px; border-bottom: 1px solid var(--border); }
+.skill-row.off .skill-name, .skill-row.off .skill-description { color: var(--dimmer); }
+.skill-tick { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.skill-tick input { margin: 0; accent-color: var(--accent); }
+.skill-name { margin: 0; font-size: 13px; font-weight: 600; }
+.skill-description { margin: 4px 0 0 21px; color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
+.skill-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 6px; color: var(--dimmer); font: 10px/1.6 var(--font-mono); }
+.skill-row .skill-meta, .skill-row > .hint { margin-left: 21px; }
+.skills-panel .draft-card { max-width: none; margin: 10px 10px 0; padding: 12px 14px; }
+.skill-draft h3.skill-name { margin-top: 8px; font-size: 14px; }
+.skill-draft .draft-summary { color: var(--text-secondary); }
+.needed-tool { margin-top: 10px; padding: 8px 10px; border: 1px solid rgba(217, 170, 95, .3); border-radius: 6px; background: rgba(217, 170, 95, .06); }
+.needed-tool b { color: var(--warning); font-size: 11.5px; }
+.needed-tool p { margin: 4px 0 0; color: var(--text-secondary); font-size: 11.5px; line-height: 1.5; }
+.tool-approvals { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin: 12px 0 0; padding: 0; border: 0; }
+.tool-approvals legend { margin-bottom: 6px; padding: 0; color: var(--dimmer); font: 700 9px/1.4 var(--font-mono); letter-spacing: .1em; text-transform: uppercase; }
+.tool-approvals label { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-raised); font-size: 12px; cursor: pointer; }
+.tool-approvals label:hover { border-color: var(--border-strong); }
+.tool-approvals input { margin: 0; accent-color: var(--accent); }
+.dry-run { display: flex; align-items: baseline; gap: 10px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+.dry-run-state { color: var(--text-secondary); font-size: 11.5px; }
+.dry-run.completed .dry-run-state { color: var(--success); }
+.dry-run.failed .dry-run-state { color: var(--danger); }
+.samples { margin: 8px 0 0; padding: 0; list-style: none; }
+.samples li { padding: 6px 0; border-top: 1px dashed var(--border); }
+.samples li .meta { color: var(--dimmer); font: 10px/1.4 var(--font-mono); }
+.samples li p { margin: 3px 0 0; font-size: 12px; }
+.install-hint { margin: 10px 0 0; }
+.draft-actions { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
+.evidence { margin: 6px 0 0; padding: 0 0 0 12px; color: var(--text-secondary); font-size: 11.5px; }
+.evidence li { margin-top: 2px; }
+.evidence q { display: block; margin-top: 1px; color: var(--dimmer); font-style: italic; }
+.shortlist { margin: 8px 0 0; padding-left: 18px; font-size: 12px; }
+.shortlist li { margin-top: 6px; }
+.shortlist .btn { margin-top: 4px; }
+.suggestion-group { padding: 8px 10px 10px 13px; border-bottom: 1px solid var(--border); }
+.suggestion-group-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.suggestion-group-head .link { flex: none; }
+.suggestion-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.suggestion-group .draft-card { max-width: none; margin-top: 8px; }
+.suggestion-title { color: var(--text-secondary); font-size: 12px; }
 .pm-sprint-item { position: relative; border-radius: 8px; }
 .pm-sprint-item.drop-over > .row { border-color: rgba(102, 179, 255, .45); background: var(--accent-wash); }
 .sprint-row { grid-template-columns: 24px minmax(0, 1fr) auto; }

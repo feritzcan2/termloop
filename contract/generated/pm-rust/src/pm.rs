@@ -126,7 +126,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:3a312f5a9315aeb2f922085e0f0b91d0c962ce5313d064720e3bcd920d367988";
+    "sha256:fc8ba4f7b1131d0f4f62eae96ba2db0a13a3f126215244da9bf3dfddeb05aafb";
 pub const CAPABILITY_SCOPE: &str = "pm.full";
 pub const METHODS: &[&str] = &[
     "pm_system_version",
@@ -182,6 +182,7 @@ pub const METHODS: &[&str] = &[
     "pm_settings_read",
     "pm_settings_update",
     "pm_skills_read",
+    "pm_skill_suggestions_read",
     "pm_skill_set_enabled",
     "pm_skill_install",
     "pm_skill_run",
@@ -1335,6 +1336,14 @@ pub struct PmTicketProposalsReadResult {
     pub proposals: Vec<PmProposal>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmSkillSuggestionsReadResult {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    pub proposals: Vec<PmProposal>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum PmTicketNoteKind {
     #[serde(rename = "fact")]
@@ -2021,6 +2030,11 @@ pub struct PmSkill {
         deserialize_with = "deserialize_required_nullable"
     )]
     pub paused_reason: Option<String>,
+    #[serde(
+        rename = "nextAttemptAtEpochMs",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub next_attempt_at_epoch_ms: Option<u64>,
     #[serde(rename = "createdAtEpochMs")]
     pub created_at_epoch_ms: u64,
 }
@@ -2303,6 +2317,7 @@ pub type PmSettingsReadParams = EmptyParams;
 pub type PmSettingsReadResult = PmSettings;
 pub type PmSettingsUpdateResult = PmSettings;
 pub type PmSkillsReadParams = PmProjectRef;
+pub type PmSkillSuggestionsReadParams = PmProjectRef;
 pub type PmSkillSetEnabledResult = PmSkill;
 pub type PmSkillInstallResult = PmSkill;
 pub type PmSkillRunParams = PmSkillRef;
@@ -2509,6 +2524,7 @@ fn validate_method(value: &Value) -> bool {
             "pm_settings_read",
             "pm_settings_update",
             "pm_skills_read",
+            "pm_skill_suggestions_read",
             "pm_skill_set_enabled",
             "pm_skill_install",
             "pm_skill_run",
@@ -5196,6 +5212,33 @@ fn validate_pm_ticket_proposals_read_result(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_pm_skill_suggestions_read_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("projectId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("proposals").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() <= 200 && items.iter().all(|item| validate_pm_proposal(item))
+            })
+        }) && object
+            .keys()
+            .all(|key| ["projectId", "proposals"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_pm_ticket_note_kind(value: &Value) -> bool {
     value
         .as_str()
@@ -7184,6 +7227,12 @@ fn validate_pm_skill(value: &Value) -> bool {
                     .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 300)
                     || field.is_null())
             })
+            && object.get("nextAttemptAtEpochMs").is_some_and(|field| {
+                (field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                }) || field.is_null())
+            })
             && object.get("createdAtEpochMs").is_some_and(|field| {
                 field.as_number().is_some_and(|number| {
                     (number.as_i64().is_some() || number.as_u64().is_some())
@@ -7205,6 +7254,7 @@ fn validate_pm_skill(value: &Value) -> bool {
                     "runsToday",
                     "consecutiveFailures",
                     "pausedReason",
+                    "nextAttemptAtEpochMs",
                     "createdAtEpochMs",
                 ]
                 .contains(&key.as_str())
@@ -8136,6 +8186,10 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<PmSkillsReadParams>(params.clone()).is_ok()
                 && validate_pm_project_ref(params)
         }
+        "pm_skill_suggestions_read" => {
+            serde_json::from_value::<PmSkillSuggestionsReadParams>(params.clone()).is_ok()
+                && validate_pm_project_ref(params)
+        }
         "pm_skill_set_enabled" => {
             serde_json::from_value::<PmSkillSetEnabledParams>(params.clone()).is_ok()
                 && validate_pm_skill_set_enabled_params(params)
@@ -8386,6 +8440,10 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         "pm_skills_read" => {
             serde_json::from_value::<PmSkillsReadResult>(result.clone()).is_ok()
                 && validate_pm_skills_read_result(result)
+        }
+        "pm_skill_suggestions_read" => {
+            serde_json::from_value::<PmSkillSuggestionsReadResult>(result.clone()).is_ok()
+                && validate_pm_skill_suggestions_read_result(result)
         }
         "pm_skill_set_enabled" => {
             serde_json::from_value::<PmSkillSetEnabledResult>(result.clone()).is_ok()

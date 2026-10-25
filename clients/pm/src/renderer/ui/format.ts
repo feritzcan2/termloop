@@ -122,6 +122,19 @@ export function relativeTime(epochMs: number, now: number): string {
   return `${Math.round(hours / 24)}d ago`;
 }
 
+/** How long until a time ahead of `now`: "in 15m", "in 2h", "in 1d". */
+export function timeUntil(epochMs: number, now: number): string {
+  const minutes = Math.max(1, Math.ceil((epochMs - now) / 60_000));
+  if (minutes < 60) return `in ${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  return hours < 24 ? `in ${hours}h` : `in ${Math.round(hours / 24)}d`;
+}
+
+/** A sprint's name by id; the backlog for `null` or an unknown id. */
+export function sprintName(sprints: readonly PmSprint[], sprintId: string | null): string {
+  return sprints.find((sprint) => sprint.id === sprintId)?.name ?? "Backlog";
+}
+
 export const PRIORITY_LABEL: Record<PmTicketPriority, string> = {
   lowest: "Lowest",
   low: "Low",

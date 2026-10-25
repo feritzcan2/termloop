@@ -50,12 +50,17 @@ describe("SkillsPanel", () => {
     unmount();
   });
 
-  it("shows why a paused skill stopped", () => {
-    const { container, unmount } = render(
-      <SkillsPanel {...panel({ skills: { projectId: "project-1", skills: [skill({ pausedReason: "It failed 3 times in a row." })], drafts: [] } })} />,
+  it("shows why a paused skill stopped and when a failed one retries", () => {
+    const paused = render(
+      <SkillsPanel {...panel({ skills: { projectId: "project-1", skills: [skill({ enabled: false, pausedReason: "Paused after 3 failed runs in a row." })], drafts: [] } })} />,
     );
-    expect(container.textContent).toContain("Paused: It failed 3 times in a row.");
-    unmount();
+    expect(paused.container.textContent).toContain("Paused after 3 failed runs in a row.");
+    paused.unmount();
+    const waiting = render(
+      <SkillsPanel {...panel({ now: 1_000, skills: { projectId: "project-1", skills: [skill({ consecutiveFailures: 1, nextAttemptAtEpochMs: 1_000 + 15 * 60_000 })], drafts: [] } })} />,
+    );
+    expect(waiting.container.textContent).toContain("The last run failed; it tries again in 15m.");
+    waiting.unmount();
   });
 
   it("installs a draft only after a dry run and every first-use tool is ticked", async () => {
@@ -65,6 +70,7 @@ describe("SkillsPanel", () => {
     expect(container.textContent).toContain("Ada touched the checkout last.");
     const install = button(container, "Install");
     expect(install.disabled).toBe(true);
+    expect(container.textContent).toContain("Approve each new tool first.");
     const ticks = [...container.querySelectorAll<HTMLInputElement>(".tool-approvals input")];
     act(() => ticks[0]!.click());
     expect(install.disabled).toBe(true);

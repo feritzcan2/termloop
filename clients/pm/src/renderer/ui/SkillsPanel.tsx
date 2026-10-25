@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { PmSkill, PmSkillDraft, PmSkillsReadResult, PmTicket, PmDataTier } from "@termloop/pm-contract/pm";
 import { Icon } from "./icons.js";
-import { relativeTime } from "./format.js";
+import { relativeTime, timeUntil } from "./format.js";
 import { EvidenceList } from "./ProposalCard.js";
 import { proposalKindLabel } from "./proposal-change.js";
 
@@ -106,7 +106,11 @@ function SkillRow({ skill, now, onSetEnabled, onRun }: { skill: PmSkill; now: nu
         <span className="sp" />
         <button type="button" className="btn sm" disabled={skill.running} onClick={() => onRun(skill.id)}>{skill.running ? "Running…" : "Run now"}</button>
       </div>
-      {skill.pausedReason && <p className="hint bad" role="status">Paused: {skill.pausedReason}</p>}
+      {skill.pausedReason
+        ? <p className="hint bad" role="status">{skill.pausedReason}</p>
+        : skill.nextAttemptAtEpochMs !== null && skill.nextAttemptAtEpochMs > now && (
+          <p className="hint" role="status">The last run failed; it tries again {timeUntil(skill.nextAttemptAtEpochMs, now)}.</p>
+        )}
     </li>
   );
 }
@@ -139,6 +143,9 @@ function DraftCard(props: {
   const dryRunDone = draft.dryRunState === "completed";
   const allApproved = draft.firstUseTools.every((tool) => approved.includes(tool));
   const ticketLabel = (id: string) => props.tickets.find((ticket) => ticket.id === id)?.title ?? "a ticket";
+  const blocked = !dryRunDone
+    ? "Run a dry run first."
+    : !allApproved ? "Approve each new tool first." : needsChannel ? "Tick at least one channel." : undefined;
   const install = async () => {
     setInstalling(true);
     await props.onInstall(approved, channels);
@@ -153,11 +160,11 @@ function DraftCard(props: {
       <h3 className="skill-name">{draft.manifest.name}</h3>
       <p className="draft-summary">{draft.whatItWillDo}</p>
       {draft.changelog && <p className="hint">What changed: {draft.changelog}</p>}
-      <p className="hint">{triggerText(draft.manifest)}</p>
+      <div className="skill-meta"><span className="chip">{triggerText(draft.manifest)}</span></div>
       {draft.neededTools.filter((tool) => !tool.available).map((tool) => (
         <div key={tool.name} className="needed-tool">
           <b>Missing: {tool.name}</b>
-          {tool.steps && <p className="hint">{tool.steps}</p>}
+          {tool.steps && <p>{tool.steps}</p>}
         </div>
       ))}
       {draft.firstUseTools.length > 0 && (
@@ -186,9 +193,9 @@ function DraftCard(props: {
           ))}
         </fieldset>
       )}
-      <div className="dry-run">
-        <b>Dry run</b>
-        <span className="hint">
+      <div className={`dry-run ${draft.dryRunState}`}>
+        <span className="sec-label">Dry run</span>
+        <span className="dry-run-state">
           {draft.dryRunState === "none" && "Not run yet: it runs over the last 3 days and changes nothing."}
           {draft.dryRunState === "running" && "Running…"}
           {draft.dryRunState === "failed" && "The dry run failed; try again."}
@@ -206,15 +213,15 @@ function DraftCard(props: {
           ))}
         </ul>
       )}
+      {blocked && <p className="hint install-hint">{blocked}</p>}
       <div className="draft-actions">
-        <button type="button" className="btn sm" onClick={props.onDiscard}>Discard</button>
+        <button type="button" className="btn sm ghost" onClick={props.onDiscard}>Discard</button>
         <span className="sp" />
         <button type="button" className="btn sm" disabled={draft.dryRunState === "running"} onClick={props.onDryRun}>{dryRunDone || draft.dryRunState === "failed" ? "Dry run again" : "Dry run"}</button>
         <button
           type="button"
           className="btn sm pri"
-          disabled={!dryRunDone || !allApproved || needsChannel || installing}
-          title={!dryRunDone ? "Run a dry run first" : !allApproved ? "Approve each new tool first" : needsChannel ? "Tick at least one channel" : undefined}
+          disabled={blocked !== undefined || installing}
           onClick={() => void install()}
         >
           Install
