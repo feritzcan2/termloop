@@ -86,6 +86,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
           onSelectTicket={(id) => void controller.selectTicket(id)}
           onCreateSprint={(name, goal) => void controller.createSprint(name, goal)}
           onCreateTicket={(title) => void controller.createTicket(title)}
+          onMoveTicket={(ticketId, sprintId, index) => void controller.moveTicket(ticketId, sprintId, index)}
         />
         <main className="pm-center">
           {!project ? (
@@ -97,6 +98,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
             <SettingsPage
               projectName={project.name}
               settings={state.settings}
+              catalog={state.catalog}
               sources={state.sources}
               tracking={board?.tracking}
               environments={board?.environments ?? EMPTY}

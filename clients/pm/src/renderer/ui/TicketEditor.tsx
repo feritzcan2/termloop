@@ -72,6 +72,7 @@ export function TicketEditor(props: TicketEditorProps) {
   const showCode = tierAtLeast(props.tier, "code");
   const doneCount = ticket.acceptanceCriteria.filter((item) => item.done).length;
   const saveDescription = async () => {
+    if (!dirty || saving) return;
     setSaving(true);
     try {
       await props.onSaveDescription(draft, draftBase);
@@ -125,7 +126,7 @@ export function TicketEditor(props: TicketEditorProps) {
             <button type="button" aria-label="Remove blocker" onClick={() => props.onRemoveBlocker(item.id)}>×</button>
           </span>
         ))}
-        <form className="pm-inline-form" onSubmit={(event) => { event.preventDefault(); props.onAddBlocker(blocker); setBlocker(""); }}>
+        <form className="pm-inline-form" onSubmit={(event) => { event.preventDefault(); if (blocker.trim()) props.onAddBlocker(blocker); setBlocker(""); }}>
           <input className="pm-chip-input" placeholder="+ blocker" aria-label="Add blocker" value={blocker} onChange={(event) => setBlocker(event.target.value)} />
         </form>
         <span className="pm-chip-actions">
@@ -167,11 +168,17 @@ export function TicketEditor(props: TicketEditorProps) {
           value={draft}
           rows={10}
           onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "s") {
+              event.preventDefault();
+              void saveDescription();
+            }
+          }}
         />
         <div className="pm-card-foot">
           {draftBase !== headVersion && dirty && <span className="pm-hint">Saved meanwhile as v{headVersion}; saving will be refused until you reload it.</span>}
           <button type="button" className="pm-button ghost" disabled={!dirty} onClick={() => { setDraft(ticket.description); setDraftBase(headVersion); }}>Discard</button>
-          <button type="button" className="pm-button primary" disabled={!dirty || saving} onClick={() => void saveDescription()}>Save</button>
+          <button type="button" className="pm-button primary" title="Save (⌘S / Ctrl+S)" disabled={!dirty || saving} onClick={() => void saveDescription()}>Save</button>
         </div>
         {showVersions && <VersionsList versions={props.versions} now={props.now} onRestore={setDraft} />}
       </section>

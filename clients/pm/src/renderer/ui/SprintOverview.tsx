@@ -112,16 +112,16 @@ export function SprintOverview(props: SprintOverviewProps) {
         <div className="pm-card-head"><h3>Needs attention</h3><span className="pm-muted">{atRisk.length}</span></div>
         {atRisk.length === 0 ? <p className="pm-hint">No risks on this sprint.</p> : (
           <table className="pm-table">
-            <thead><tr><th>Ticket</th><th>Risk</th><th>Detail</th><th /></tr></thead>
+            <thead><tr><th>Ticket</th><th>Risks</th><th>Detail</th><th /></tr></thead>
             <tbody>
-              {atRisk.flatMap((entry) => entry.delivery.risks.map((risk, index) => (
-                <tr key={`${entry.ticket.id}-${index}`}>
+              {atRisk.map((entry) => (
+                <tr key={entry.ticket.id}>
                   <td><span className="pm-mono">{ticketLabel(entry.ticket)}</span> {entry.ticket.title}</td>
-                  <td>{RISK_LABEL[risk.kind]}</td>
-                  <td className="pm-muted">{risk.detail}</td>
+                  <td>{entry.delivery.risks.map((risk) => RISK_LABEL[risk.kind]).join(", ")}</td>
+                  <td className="pm-muted">{entry.delivery.risks.map((risk) => risk.detail).filter(Boolean).join("; ")}</td>
                   <td><button type="button" className="pm-link" onClick={() => props.onOpenTicket(entry.ticket.id)}>Open</button></td>
                 </tr>
-              )))}
+              ))}
             </tbody>
           </table>
         )}
@@ -147,21 +147,44 @@ export function SprintOverview(props: SprintOverviewProps) {
   );
 }
 
-/** A local, editable standup draft from the board and digest. */
+const UNASSIGNED = "Unassigned";
+
+/**
+ * A local, editable standup draft from the board and digest, grouped per
+ * assignee into done, in progress (in progress or in review), and blocked
+ * (a blocker or a delivery risk). Nothing is sent anywhere.
+ */
 export function standupNote(sprint: PmSprint, tickets: PmBoardTicket[], digest: PmDigestEntry[]): string {
-  const line = (entry: PmBoardTicket) => `- ${ticketLabel(entry.ticket)} ${entry.ticket.title}`;
-  const done = tickets.filter((entry) => entry.ticket.status === "done");
-  const active = tickets.filter((entry) => entry.ticket.status === "inProgress" || entry.ticket.status === "inReview");
-  const risky = tickets.filter((entry) => entry.delivery.risks.length > 0);
-  return [
-    `${sprint.name}${sprint.goal ? ` — ${sprint.goal}` : ""}`,
-    "",
-    `Done (${done.length}):`, ...done.map(line),
-    "",
-    `In flight (${active.length}):`, ...active.map(line),
-    "",
-    `Risks (${risky.length}):`, ...risky.map((entry) => `${line(entry)}: ${entry.delivery.risks.map((risk) => RISK_LABEL[risk.kind]).join(", ")}`),
-    "",
-    `Changes since yesterday: ${digest.length}`,
-  ].join("\n");
+  const line = (entry: PmBoardTicket) => `  - ${ticketLabel(entry.ticket)} ${entry.ticket.title}`;
+  const blockedLine = (entry: PmBoardTicket) => {
+    const reasons = [
+      ...entry.ticket.blockers.map((blocker) => blocker.text),
+      // A blocker already names why; its "Blocked" risk would repeat it.
+      ...entry.delivery.risks
+        .filter((risk) => !(risk.kind === "blocked" && entry.ticket.blockers.length > 0))
+        .map((risk) => RISK_LABEL[risk.kind]),
+    ];
+    return `${line(entry)}: ${reasons.join(", ")}`;
+  };
+  const people = new Map<string, PmBoardTicket[]>();
+  for (const entry of tickets) {
+    const name = entry.ticket.assignee ?? UNASSIGNED;
+    people.set(name, [...(people.get(name) ?? []), entry]);
+  }
+  const names = [...people.keys()].sort((left, right) =>
+    left === UNASSIGNED ? 1 : right === UNASSIGNED ? -1 : left.localeCompare(right));
+  const lines = [`${sprint.name}${sprint.goal ? ` — ${sprint.goal}` : ""}`];
+  for (const name of names) {
+    const own = people.get(name)!;
+    const blocked = own.filter((entry) => entry.ticket.status !== "done" && (entry.ticket.blockers.length > 0 || entry.delivery.risks.length > 0));
+    const done = own.filter((entry) => entry.ticket.status === "done");
+    const active = own.filter((entry) => (entry.ticket.status === "inProgress" || entry.ticket.status === "inReview") && !blocked.includes(entry));
+    if (done.length + active.length + blocked.length === 0) continue;
+    lines.push("", `${name}:`);
+    if (done.length) lines.push(` Done (${done.length}):`, ...done.map(line));
+    if (active.length) lines.push(` In progress (${active.length}):`, ...active.map(line));
+    if (blocked.length) lines.push(` Blocked (${blocked.length}):`, ...blocked.map(blockedLine));
+  }
+  lines.push("", `Changes since yesterday: ${digest.length}`);
+  return lines.join("\n");
 }

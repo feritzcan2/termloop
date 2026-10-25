@@ -43,7 +43,7 @@ export function Header(props: HeaderProps) {
                 {props.projects.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
               </select>
             ) : <span className="pm-muted">No project</span>}
-            <button type="button" className="pm-icon-button" title="New project" onClick={() => setCreating(true)}>+</button>
+            <button type="button" className="pm-icon-button pm-project-add" title="New project" aria-label="New project" onClick={() => setCreating(true)}>+</button>
           </>
         )}
       </div>

@@ -116,10 +116,14 @@ export class PmController {
   }
 
   async refreshProject(): Promise<void> {
-    await Promise.all([this.refreshBoard(), this.refreshAgents(), this.refreshDigest(), this.loadSources()]);
+    await Promise.all([this.refreshBoard(), this.refreshAgents(), this.loadSources()]);
   }
 
-  /** Coalesces concurrent rereads into one in flight plus one trailing read. */
+  /**
+   * Coalesces concurrent rereads into one in flight plus one trailing read.
+   * The digest is reread beside the board: every board change may add an
+   * entry to "since yesterday".
+   */
   refreshBoard(): Promise<void> {
     if (this.#boardRead) {
       this.#boardStale = true;
@@ -128,7 +132,7 @@ export class PmController {
     this.#boardRead = (async () => {
       do {
         this.#boardStale = false;
-        await this.#readBoard();
+        await Promise.all([this.#readBoard(), this.refreshDigest()]);
       } while (this.#boardStale);
     })().finally(() => { this.#boardRead = undefined; });
     return this.#boardRead;
@@ -211,8 +215,10 @@ export class PmController {
     await this.updateTicket(ticketId, { status });
   }
 
-  async moveTicket(ticketId: string, sprintId: string | null): Promise<void> {
-    if (await this.call("pm_ticket_move", { ticketId, sprintId })) await this.refreshBoard();
+  /** Moves a ticket to a lane (a sprint, or the backlog for `null`), at `index` within it when given. */
+  async moveTicket(ticketId: string, sprintId: string | null, index?: number): Promise<void> {
+    const params = index === undefined ? { ticketId, sprintId } : { ticketId, sprintId, index };
+    if (await this.call("pm_ticket_move", params)) await this.refreshBoard();
   }
 
   async saveDescription(ticketId: string, description: string, baseVersion: number): Promise<boolean> {
@@ -361,8 +367,12 @@ export class PmController {
   // Settings ---------------------------------------------------------------
 
   async loadSettings(): Promise<void> {
-    const settings = await this.call("pm_settings_read", {});
+    const [settings, catalog] = await Promise.all([
+      this.call("pm_settings_read", {}),
+      this.state.catalog ? Promise.resolve(this.state.catalog) : this.call("pm_agent_catalog_read", {}),
+    ]);
     if (settings) this.#set({ settings });
+    if (catalog) this.#set({ catalog });
     await this.loadSources();
   }
 

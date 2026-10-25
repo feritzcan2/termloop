@@ -47,6 +47,7 @@ export const RENDERER_METHODS = [
   "pm_agent_launch",
   "pm_agent_list",
   "pm_agent_stop",
+  "pm_agent_catalog_read",
   "pm_settings_read",
   "pm_settings_update",
 ] as const satisfies readonly Method[];

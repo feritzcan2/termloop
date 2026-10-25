@@ -14,6 +14,9 @@
     "smoke": "pnpm build && electron . --smoke"
   },
   "dependencies": {
+    "@dnd-kit/core": "6.3.1",
+    "@dnd-kit/sortable": "10.0.0",
+    "@dnd-kit/utilities": "3.2.2",
     "@termloop/pm-contract": "workspace:*",
     "@termloop/terminal-surface": "workspace:*",
     "@termloop/terminal-wire": "workspace:*",

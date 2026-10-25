@@ -68,7 +68,21 @@ code, .pm-mono { font-family: var(--font-mono); font-size: 12px; }
 .pm-brand { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .pm-brand-name { font-weight: 600; }
 .pm-brand-sep { color: var(--text-muted); }
-.pm-project-select { border: 0; background: transparent; font-weight: 600; padding: 2px 4px; }
+/* An obvious dropdown: a bordered control with its own chevron. */
+.pm-project-select {
+  appearance: none; -webkit-appearance: none; cursor: pointer; font-weight: 600;
+  min-width: 140px; max-width: 260px; padding: 4px 28px 4px 10px;
+  background-color: var(--bg-raised); border: 1px solid var(--border); border-radius: 6px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238a92a3' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center;
+  text-overflow: ellipsis; white-space: nowrap; overflow: hidden;
+}
+.pm-project-select:hover { background-color: var(--bg-hover); border-color: #3a4152; }
+.pm-project-select:focus-visible { border-color: var(--accent); }
+.pm-project-add {
+  width: 26px; height: 26px; padding: 0; font-size: 16px;
+  border: 1px solid var(--border); background: var(--bg-raised); color: var(--text);
+}
 .pm-tabs { display: flex; gap: 2px; }
 .pm-tabs button { background: none; border: 0; padding: 13px 12px 11px; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; }
 .pm-tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
@@ -102,6 +116,24 @@ code, .pm-mono { font-family: var(--font-mono); font-size: 12px; }
 .pm-sprint-state.active { background: var(--ok); }
 .pm-sprint-state.planned { background: var(--accent); }
 .pm-ticket-list { list-style: none; margin: 0; padding: 0 0 8px; }
+.pm-ticket-item { position: relative; touch-action: none; }
+.pm-ticket-item.dragging { z-index: 2; opacity: 0.85; }
+.pm-ticket-item.dragging .pm-ticket-row { background: var(--bg-raised); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45); }
+.pm-move-menu { position: absolute; top: 6px; right: 6px; }
+.pm-move-menu > .pm-icon-button { opacity: 0; }
+.pm-ticket-item:hover .pm-move-menu > .pm-icon-button,
+.pm-move-menu > .pm-icon-button:focus-visible,
+.pm-move-menu > .pm-icon-button[aria-expanded="true"] { opacity: 1; }
+.pm-menu {
+  position: absolute; right: 0; top: 100%; z-index: 10; min-width: 180px; padding: 4px;
+  display: flex; flex-direction: column; background: var(--bg-raised); border: 1px solid var(--border); border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+.pm-menu button { background: none; border: 0; text-align: left; padding: 5px 8px; border-radius: 4px; cursor: pointer; }
+.pm-menu button:hover:not(:disabled), .pm-menu button:focus-visible { background: var(--bg-hover); outline: none; }
+.pm-menu button:disabled { opacity: 0.4; cursor: default; }
+.pm-sprint-row.drop-over { background: var(--bg-hover); box-shadow: inset 0 0 0 1px var(--accent); }
+.pm-no-sprint { cursor: default; color: var(--text-muted); }
 .pm-ticket-row {
   display: flex; gap: 8px; align-items: flex-start; width: 100%; padding: 7px 8px; background: none;
   border: 0; border-radius: 6px; cursor: pointer; text-align: left;
@@ -174,6 +206,9 @@ select.pm-pill { padding: 1px 8px; line-height: 18px; }
 .pm-versions li { padding: 6px 0; border-bottom: 1px solid var(--border); }
 .pm-version-head { display: flex; gap: 10px; align-items: center; }
 .pm-version-head button { margin-left: auto; }
+.pm-pill.author-pm { border-color: var(--accent); color: var(--accent); }
+.pm-pill.author-agent { border-color: var(--info); color: var(--info); }
+.pm-pill.author-jira { border-color: var(--ok); color: var(--ok); }
 .pm-version-text { margin: 4px 0 0; color: var(--text-muted); white-space: pre-wrap; font-size: 12px; }
 
 /* Overview */
@@ -198,10 +233,16 @@ select.pm-pill { padding: 1px 8px; line-height: 18px; }
 .pm-agent-panel { background: var(--bg-panel); border-left: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
 .pm-agent-tabs { display: flex; gap: 2px; padding: 6px 8px 0; border-bottom: 1px solid var(--border); overflow-x: auto; flex: none; }
 .pm-agent-tabs [role="tab"] { display: flex; align-items: center; gap: 6px; background: none; border: 0; padding: 6px 10px; border-radius: 6px 6px 0 0; color: var(--text-muted); cursor: pointer; white-space: nowrap; }
-.pm-agent-tabs [role="tab"].active { background: var(--bg-terminal); color: var(--text); }
-.pm-terminal-host { flex: 1; min-height: 0; background: var(--bg-terminal); }
-.pm-terminal-host .terminal-surface { width: 100%; height: 100%; overflow: hidden; background: var(--bg-terminal); }
-.pm-terminal-host .terminal-surface .xterm { height: 100%; padding: 4px 6px; }
+.pm-agent-tabs [role="tab"].active { background: #282c34; color: var(--text); }
+/* The fit addon sizes the grid from the host and subtracts only the padding
+   it finds on `.xterm`, so the inset lives there and stays horizontal. The
+   viewport carries the terminal ground and hides its scrollbar so the fit
+   addon's reserved band does not show. */
+.pm-terminal-host { position: relative; flex: 1; min-height: 0; min-width: 0; overflow: hidden; background: #282c34; }
+.pm-terminal-host .terminal-surface { width: 100%; height: 100%; overflow: hidden; background: #282c34; }
+.pm-terminal-host .terminal-surface .xterm { height: 100%; padding: 2px 4px 0 10px; }
+.pm-terminal-host .terminal-surface .xterm .xterm-viewport { background-color: #282c34; scrollbar-width: none; }
+.pm-terminal-host .terminal-surface .xterm-viewport::-webkit-scrollbar { width: 0; height: 0; }
 .pm-agent-foot { display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 8px 10px; border-top: 1px solid var(--border); font-size: 12px; flex: none; }
 .pm-agent-empty { padding: 24px 18px; }
 

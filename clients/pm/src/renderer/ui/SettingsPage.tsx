@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type {
+  PmAgentCatalog,
   PmAgentProvider,
   PmEnvironment,
   PmProbe,
@@ -16,6 +17,7 @@ export type JiraSourceDraft = { siteUrl: string; boardId: number | null; account
 export type SettingsPageProps = {
   projectName: string | undefined;
   settings: PmSettings | undefined;
+  catalog: PmAgentCatalog | undefined;
   sources: PmSources | undefined;
   tracking: PmTracking | undefined;
   environments: PmEnvironment[];
@@ -40,7 +42,7 @@ export function SettingsPage(props: SettingsPageProps) {
       <h2>Settings · {props.projectName}</h2>
       <SourcesCards {...props} />
       <DeployCard {...props} />
-      <AgentCard settings={props.settings} onSave={props.onSaveSettings} />
+      <AgentCard settings={props.settings} catalog={props.catalog} onSave={props.onSaveSettings} />
       <section className="pm-card">
         <div className="pm-card-head"><h3>Data</h3></div>
         <p>All PM data lives in the local PM daemon's store at <code className="pm-mono">&lt;TermLoop state directory&gt;/pm/pm.sqlite</code>.</p>
@@ -216,36 +218,74 @@ function DeployCard(props: SettingsPageProps) {
   );
 }
 
-function AgentCard(props: { settings: PmSettings | undefined; onSave(edit: PmSettingsUpdateParams): void }) {
+/** Keeps `value` selectable even when the catalog no longer lists it. */
+function choices(options: readonly string[], value: string): string[] {
+  return value && !options.includes(value) ? [value, ...options] : [...options];
+}
+
+function AgentCard(props: { settings: PmSettings | undefined; catalog: PmAgentCatalog | undefined; onSave(edit: PmSettingsUpdateParams): void }) {
   const [provider, setProvider] = useState<PmAgentProvider>(props.settings?.agentProvider ?? "claude");
   const [model, setModel] = useState(props.settings?.agentModel ?? "");
   const [permission, setPermission] = useState(props.settings?.assistantPermission ?? "");
+  const [checkPermission, setCheckPermission] = useState(props.settings?.checkPermission ?? "");
   useEffect(() => {
     if (!props.settings) return;
     setProvider(props.settings.agentProvider);
     setModel(props.settings.agentModel);
     setPermission(props.settings.assistantPermission);
+    setCheckPermission(props.settings.checkPermission);
   }, [props.settings]);
-  if (!props.settings) return <section className="pm-card"><div className="pm-card-head"><h3>Agent</h3></div><p className="pm-hint">Loading agent settings…</p></section>;
+  if (!props.settings || !props.catalog) return <section className="pm-card"><div className="pm-card-head"><h3>Agent</h3></div><p className="pm-hint">Loading agent settings…</p></section>;
+  const providers = props.catalog.providers;
+  const entry = providers.find((candidate) => candidate.id === provider);
+  const models = entry?.models ?? [];
+  const assistant = entry?.permissions.assistant ?? [];
+  const check = entry?.permissions.check ?? [];
+  const changeProvider = (next: PmAgentProvider) => {
+    // Another provider's names mean nothing here; start from its first choices.
+    const nextEntry = providers.find((candidate) => candidate.id === next);
+    setProvider(next);
+    setModel(nextEntry?.models[0] ?? "");
+    setPermission(nextEntry?.permissions.assistant[0] ?? "");
+    setCheckPermission(nextEntry?.permissions.check[0] ?? "");
+  };
   return (
     <section className="pm-card">
       <div className="pm-card-head"><h3>Agent</h3><span className="pm-muted">Applies to every project</span></div>
       <div className="pm-field-row">
         <label className="pm-field"><span>Provider</span>
-          <select value={provider} onChange={(event) => setProvider(event.target.value as PmAgentProvider)}>
-            <option value="claude">Claude</option>
-            <option value="codex">Codex</option>
+          <select aria-label="Agent provider" value={provider} onChange={(event) => changeProvider(event.target.value as PmAgentProvider)}>
+            {providers.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.label}</option>)}
           </select>
         </label>
-        <label className="pm-field"><span>Model</span><input value={model} onChange={(event) => setModel(event.target.value)} /></label>
+        <label className="pm-field"><span>Model</span>
+          <select aria-label="Agent model" value={model} onChange={(event) => setModel(event.target.value)}>
+            {choices(models, model).map((name) => <option key={name} value={name}>{name}</option>)}
+          </select>
+        </label>
       </div>
       <div className="pm-field-row">
-        <label className="pm-field"><span>PM agent permission</span><input value={permission} onChange={(event) => setPermission(event.target.value)} /></label>
-        <label className="pm-field"><span>Delivery check permission</span><input value={props.settings.checkPermission} readOnly /></label>
+        <label className="pm-field"><span>PM agent permission</span>
+          <select aria-label="PM agent permission" value={permission} onChange={(event) => setPermission(event.target.value)}>
+            {choices(assistant, permission).map((name) => <option key={name} value={name}>{name}</option>)}
+          </select>
+        </label>
+        <label className="pm-field"><span>Delivery check permission</span>
+          <select aria-label="Delivery check permission" value={checkPermission} disabled={check.length <= 1} onChange={(event) => setCheckPermission(event.target.value)}>
+            {choices(check, checkPermission).map((name) => <option key={name} value={name}>{name}</option>)}
+          </select>
+        </label>
       </div>
-      <p className="pm-hint">Delivery checks run unattended, so their permission is fixed. Unknown models or permissions are refused by the daemon.</p>
+      <p className="pm-hint">Choices come from the agent catalog the daemon knows. Delivery checks run unattended, so only non-interactive permissions are offered for them.</p>
       <div className="pm-card-foot">
-        <button type="button" className="pm-button primary" onClick={() => props.onSave({ agentProvider: provider, agentModel: model.trim(), assistantPermission: permission.trim() })}>Save agent settings</button>
+        <button
+          type="button"
+          className="pm-button primary"
+          disabled={!model || !permission || !checkPermission}
+          onClick={() => props.onSave({ agentProvider: provider, agentModel: model, assistantPermission: permission, checkPermission })}
+        >
+          Save agent settings
+        </button>
       </div>
     </section>
   );

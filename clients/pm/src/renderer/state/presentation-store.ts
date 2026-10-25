@@ -4,6 +4,7 @@
 import { useStore } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
 import type {
+  PmAgentCatalog,
   PmAgentSession,
   PmBoard,
   PmDigestReadResult,
@@ -35,6 +36,7 @@ export type PmState = {
   agents: PmAgentSession[];
   activeAgentSessionId: string | undefined;
   settings: PmSettings | undefined;
+  catalog: PmAgentCatalog | undefined;
   sources: PmSources | undefined;
   lastPull: PmJiraPullResult | undefined;
   pulling: boolean;
@@ -56,6 +58,7 @@ export const initialPmState: PmState = {
   agents: [],
   activeAgentSessionId: undefined,
   settings: undefined,
+  catalog: undefined,
   sources: undefined,
   lastPull: undefined,
   pulling: false,

@@ -45,4 +45,37 @@ describe("PmController", () => {
     expect(JSON.stringify(sourcesCall?.params)).not.toContain("s3cret");
     expect(sourcesCall?.params).toMatchObject({ jira: { credentialHandle: "handle-1" } });
   });
+
+  it("rereads the digest with every board reread, so board changes reach Since yesterday", async () => {
+    const bridge = fakeBridge((method) => {
+      if (method === "pm_board_read") return ok({ projectId: "project-1", sprints: [], tickets: [], environments: [], probes: [], runningChecks: [], tracking: { jira: false, code: false, deploy: false, tier: "tickets" } });
+      if (method === "pm_digest_read") return ok({ projectId: "project-1", sinceEpochMs: 0, untilEpochMs: 1, entries: [], truncated: false });
+      return ok({});
+    });
+    const controller = new PmController(bridge, createPmStore({ projectId: "project-1" }), () => 2 * 86_400_000);
+    controller.handleEvent({ event: "pmBoardChanged", payload: { projectId: "project-1" } });
+    await controller.refreshBoard();
+    const digestReads = bridge.calls.filter((call) => call.method === "pm_digest_read");
+    expect(digestReads.length).toBeGreaterThan(0);
+    for (const call of digestReads) expect(call.params).toEqual({ projectId: "project-1", sinceEpochMs: 86_400_000 });
+  });
+
+  it("sends a sidebar reorder as pm_ticket_move with the lane index", async () => {
+    const bridge = fakeBridge((method) => method === "pm_ticket_move" ? ok({}) : { ok: false, error: { code: "unavailable", message: "offline" } });
+    const controller = new PmController(bridge, createPmStore({ projectId: "project-1" }));
+    await controller.moveTicket("ticket-1", "sprint-1", 2);
+    await controller.moveTicket("ticket-1", null);
+    expect(bridge.calls.filter((call) => call.method === "pm_ticket_move").map((call) => call.params)).toEqual([
+      { ticketId: "ticket-1", sprintId: "sprint-1", index: 2 },
+      { ticketId: "ticket-1", sprintId: null },
+    ]);
+  });
+
+  it("loads the agent catalog with the settings", async () => {
+    const catalog = { providers: [{ id: "claude", label: "Claude", models: ["default"], permissions: { assistant: ["default"], check: ["bypassPermissions"] } }] };
+    const bridge = fakeBridge((method) => method === "pm_agent_catalog_read" ? ok(catalog) : ok({}));
+    const store = createPmStore({ projectId: "project-1" });
+    await new PmController(bridge, store).loadSettings();
+    expect(store.getState().catalog).toEqual(catalog);
+  });
 });
