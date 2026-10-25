@@ -14,6 +14,11 @@ pub struct PmSettings {
     #[serde(default)]
     pub agent_account_id: Option<String>,
     pub agent_model: String,
+    /// The model delivery checks launch with: they run often and read a
+    /// little, so a small model is enough. Settings saved before it existed
+    /// read as the default.
+    #[serde(default = "default_check_model")]
+    pub check_model: String,
     pub assistant_permission: String,
     /// A delivery check runs unattended, so it needs a permission mode that
     /// never waits for a human.
@@ -26,10 +31,15 @@ impl Default for PmSettings {
             agent_provider: "claude".to_owned(),
             agent_account_id: None,
             agent_model: "default".to_owned(),
+            check_model: default_check_model(),
             assistant_permission: "default".to_owned(),
             check_permission: "bypassPermissions".to_owned(),
         }
     }
+}
+
+fn default_check_model() -> String {
+    "haiku".to_owned()
 }
 
 /// A partial settings change; `agent_account_id: Some(None)` clears it.
@@ -38,6 +48,7 @@ pub struct SettingsEdit {
     pub agent_provider: Option<String>,
     pub agent_account_id: Option<Option<String>>,
     pub agent_model: Option<String>,
+    pub check_model: Option<String>,
     pub assistant_permission: Option<String>,
     pub check_permission: Option<String>,
 }
@@ -66,6 +77,7 @@ impl PmSettings {
         }
         [
             ("agentModel", &self.agent_model),
+            ("checkModel", &self.check_model),
             ("assistantPermission", &self.assistant_permission),
             ("checkPermission", &self.check_permission),
         ]
@@ -84,6 +96,7 @@ impl PmSettings {
                 .agent_account_id
                 .unwrap_or_else(|| self.agent_account_id.clone()),
             agent_model: edit.agent_model.unwrap_or_else(|| self.agent_model.clone()),
+            check_model: edit.check_model.unwrap_or_else(|| self.check_model.clone()),
             assistant_permission: edit
                 .assistant_permission
                 .unwrap_or_else(|| self.assistant_permission.clone()),

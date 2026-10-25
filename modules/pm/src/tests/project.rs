@@ -83,6 +83,14 @@ fn settings_default_until_updated_and_keep_absent_fields() {
 }
 
 #[test]
+fn settings_saved_before_check_model_read_it_as_haiku() {
+    let mut saved = serde_json::to_value(PmSettings::default()).unwrap();
+    saved.as_object_mut().unwrap().remove("checkModel");
+    let settings: PmSettings = serde_json::from_value(saved).unwrap();
+    assert_eq!(settings.check_model, "haiku");
+}
+
+#[test]
 fn invalid_settings_change_nothing() {
     let mut store = store();
     let error = store

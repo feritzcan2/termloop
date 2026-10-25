@@ -531,6 +531,16 @@ async fn settings_are_checked_against_the_agent_catalog() {
         .await,
         Err(ErrorCode::InvalidParams)
     );
+    assert_eq!(defaults["checkModel"], "haiku");
+    assert_eq!(
+        call(
+            state,
+            "pm_settings_update",
+            json!({ "checkModel": "no-such-model" })
+        )
+        .await,
+        Err(ErrorCode::InvalidParams)
+    );
     let updated = call(
         state,
         "pm_settings_update",
@@ -565,6 +575,7 @@ async fn every_catalog_value_is_accepted_by_settings_update() {
                     json!({
                         "agentProvider": provider["id"],
                         "agentModel": model,
+                        "checkModel": model,
                         "assistantPermission": permission,
                         "checkPermission": check[0],
                     }),
@@ -572,6 +583,7 @@ async fn every_catalog_value_is_accepted_by_settings_update() {
                 .await
                 .unwrap();
                 assert_eq!(updated["agentModel"], *model);
+                assert_eq!(updated["checkModel"], *model);
             }
         }
     }

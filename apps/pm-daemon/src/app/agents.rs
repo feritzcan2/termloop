@@ -10,7 +10,7 @@ use termloop_pm::agent::{
     AssistantTask, PmAgentMode, PmAgentProfile, PmLaunchRequest, PmToolContext, SkillRunContext,
     claude_mcp_config, pm_launch_plan,
 };
-use termloop_pm::{DeliveryCheck, DeliveryCheckOutcome};
+use termloop_pm::{DeliveryCheck, DeliveryCheckOutcome, PmSettings};
 use termloop_pm_contract::pm::EventName;
 
 use crate::app::AppState;
@@ -245,6 +245,18 @@ pub(crate) fn launch_assistant(
     launch_profile(state, project_id, &profile, focus_ticket_id, None, None)
 }
 
+/// The model a delivery check launches with. One the provider does not
+/// offer (the `haiku` default under Codex) falls back to the agent model.
+fn check_model(settings: &PmSettings) -> &str {
+    let offered = termloop_agents::agent_descriptor(&settings.agent_provider)
+        .is_some_and(|descriptor| descriptor.models.contains(&settings.check_model.as_str()));
+    if offered {
+        &settings.check_model
+    } else {
+        &settings.agent_model
+    }
+}
+
 /// Launches an agent with a built profile; a skill-run agent is bound to
 /// its run and the tools that run may call.
 pub(crate) fn launch_profile(
@@ -299,7 +311,10 @@ pub(crate) fn launch_profile(
         &mcp_token,
         config_text,
     );
-    request.model = &settings.agent_model;
+    request.model = match mode {
+        PmAgentMode::DeliveryCheck => check_model(&settings),
+        _ => &settings.agent_model,
+    };
     request.permission = permission;
     request.read_only_workspace = read_only_workspace;
     let plan = pm_launch_plan(request).map_err(|error| {

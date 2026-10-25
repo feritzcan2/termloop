@@ -172,6 +172,7 @@ pub(super) fn settings_update(state: &AppState, params: &Value) -> Result<Value,
         agent_provider: parsed.agent_provider.as_ref().map(convert).transpose()?,
         agent_account_id: nullable_string(params, "agentAccountId"),
         agent_model: parsed.agent_model,
+        check_model: parsed.check_model,
         assistant_permission: parsed.assistant_permission,
         check_permission: parsed.check_permission,
     };
@@ -188,6 +189,9 @@ pub(crate) fn validate_settings(settings: &PmSettings) -> Result<(), ControlErro
         .ok_or_else(|| invalid_parameter("agentProvider"))?;
     if !descriptor.models.contains(&settings.agent_model.as_str()) {
         return Err(invalid_parameter("agentModel"));
+    }
+    if !descriptor.models.contains(&settings.check_model.as_str()) {
+        return Err(invalid_parameter("checkModel"));
     }
     if !descriptor
         .permissions

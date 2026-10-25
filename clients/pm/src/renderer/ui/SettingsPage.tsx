@@ -285,12 +285,14 @@ function choices(options: readonly string[], value: string): string[] {
 function AgentCard(props: { settings: PmSettings | undefined; catalog: PmAgentCatalog | undefined; onSave(edit: PmSettingsUpdateParams): void }) {
   const [provider, setProvider] = useState<PmAgentProvider>(props.settings?.agentProvider ?? "claude");
   const [model, setModel] = useState(props.settings?.agentModel ?? "");
+  const [checkModel, setCheckModel] = useState(props.settings?.checkModel ?? "");
   const [permission, setPermission] = useState(props.settings?.assistantPermission ?? "");
   const [checkPermission, setCheckPermission] = useState(props.settings?.checkPermission ?? "");
   useEffect(() => {
     if (!props.settings) return;
     setProvider(props.settings.agentProvider);
     setModel(props.settings.agentModel);
+    setCheckModel(props.settings.checkModel);
     setPermission(props.settings.assistantPermission);
     setCheckPermission(props.settings.checkPermission);
   }, [props.settings]);
@@ -306,6 +308,7 @@ function AgentCard(props: { settings: PmSettings | undefined; catalog: PmAgentCa
     const nextEntry = providers.find((candidate) => candidate.id === next);
     setProvider(next);
     setModel(nextEntry?.models[0] ?? "");
+    setCheckModel(nextEntry?.models[0] ?? "");
     setPermission(nextEntry?.permissions.assistant[0] ?? "");
     setCheckPermission(nextEntry?.permissions.check[0] ?? "");
   };
@@ -327,19 +330,24 @@ function AgentCard(props: { settings: PmSettings | undefined; catalog: PmAgentCa
             {choices(assistant, permission).map((name) => <option key={name} value={name}>{name}</option>)}
           </select>
         </Field>
+        <Field label="Delivery check model">
+          <select aria-label="Delivery check model" value={checkModel} onChange={(event) => setCheckModel(event.target.value)}>
+            {choices(models, checkModel).map((name) => <option key={name} value={name}>{name}</option>)}
+          </select>
+        </Field>
         <Field label="Delivery checks">
           <select aria-label="Delivery check permission" value={checkPermission} disabled={check.length <= 1} onChange={(event) => setCheckPermission(event.target.value)}>
             {choices(check, checkPermission).map((name) => <option key={name} value={name}>{name}</option>)}
           </select>
         </Field>
       </div>
-      <p className="hint">Choices come from the agent catalog the daemon knows. Delivery checks run on their own in the background, so only modes that do not wait for an answer are offered for them.</p>
+      <p className="hint">Choices come from the agent catalog the daemon knows. Delivery checks run on their own in the background, often, so a small model such as haiku keeps them cheap, and only modes that do not wait for an answer are offered for them.</p>
       <div className="actions">
         <button
           type="button"
           className="btn pri"
-          disabled={!model || !permission || !checkPermission}
-          onClick={() => props.onSave({ agentProvider: provider, agentModel: model, assistantPermission: permission, checkPermission })}
+          disabled={!model || !checkModel || !permission || !checkPermission}
+          onClick={() => props.onSave({ agentProvider: provider, agentModel: model, checkModel, assistantPermission: permission, checkPermission })}
         >
           Save agent settings
         </button>

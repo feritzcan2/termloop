@@ -2576,6 +2576,7 @@
         "agentProvider",
         "agentAccountId",
         "agentModel",
+        "checkModel",
         "assistantPermission",
         "checkPermission"
       ],
@@ -2593,6 +2594,12 @@
           "pattern": "^[!-~]+$"
         },
         "agentModel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9._-]+$"
+        },
+        "checkModel": {
           "type": "string",
           "minLength": 1,
           "maxLength": 64,
@@ -4295,6 +4302,12 @@
           "pattern": "^[!-~]+$"
         },
         "agentModel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9._-]+$"
+        },
+        "checkModel": {
           "type": "string",
           "minLength": 1,
           "maxLength": 64,

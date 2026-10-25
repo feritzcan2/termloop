@@ -65,22 +65,23 @@ describe("SettingsPage", () => {
   it("offers the catalog's models and permissions as choices and saves the picked ones", () => {
     const catalog: PmAgentCatalog = {
       providers: [
-        { id: "claude", label: "Claude", models: ["default", "opus", "sonnet"], permissions: { assistant: ["default", "acceptEdits", "bypassPermissions"], check: ["bypassPermissions"] } },
+        { id: "claude", label: "Claude", models: ["default", "opus", "sonnet", "haiku"], permissions: { assistant: ["default", "acceptEdits", "bypassPermissions"], check: ["bypassPermissions"] } },
         { id: "codex", label: "Codex", models: ["default", "gpt-5"], permissions: { assistant: ["default", "full-auto"], check: [] } },
       ],
     };
-    const settings: PmSettings = { agentProvider: "claude", agentAccountId: null, agentModel: "default", assistantPermission: "default", checkPermission: "bypassPermissions" };
+    const settings: PmSettings = { agentProvider: "claude", agentAccountId: null, agentModel: "default", checkModel: "haiku", assistantPermission: "default", checkPermission: "bypassPermissions" };
     const onSaveSettings = vi.fn();
     const { container, unmount } = render(<SettingsPage {...props({ settings, catalog, onSaveSettings })} />);
     const select = (label: string) => container.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)!;
-    expect([...select("Agent model").options].map((option) => option.value)).toEqual(["default", "opus", "sonnet"]);
+    expect([...select("Agent model").options].map((option) => option.value)).toEqual(["default", "opus", "sonnet", "haiku"]);
+    expect(select("Delivery check model").value).toBe("haiku");
     expect(container.querySelector('input[aria-label="Agent model"]')).toBeNull();
     act(() => {
       select("Agent model").value = "opus";
       select("Agent model").dispatchEvent(new Event("change", { bubbles: true }));
     });
     act(() => { [...container.querySelectorAll("button")].find((button) => button.textContent === "Save agent settings")!.click(); });
-    expect(onSaveSettings).toHaveBeenCalledWith({ agentProvider: "claude", agentModel: "opus", assistantPermission: "default", checkPermission: "bypassPermissions" });
+    expect(onSaveSettings).toHaveBeenCalledWith({ agentProvider: "claude", agentModel: "opus", checkModel: "haiku", assistantPermission: "default", checkPermission: "bypassPermissions" });
     unmount();
   });
 });

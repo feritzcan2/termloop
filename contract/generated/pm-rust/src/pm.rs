@@ -126,7 +126,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:b229012e9b21c6afbb201a808a1c2006c06e495dca26f485af066698977b0f64";
+    "sha256:4d1475cc6464abec4c3257a9d07d0a00e8d36793f83ea19ee4017c64451fad4d";
 pub const CAPABILITY_SCOPE: &str = "pm.full";
 pub const METHODS: &[&str] = &[
     "pm_system_version",
@@ -1002,6 +1002,8 @@ pub struct PmSettings {
     pub agent_account_id: Option<String>,
     #[serde(rename = "agentModel")]
     pub agent_model: String,
+    #[serde(rename = "checkModel")]
+    pub check_model: String,
     #[serde(rename = "assistantPermission")]
     pub assistant_permission: String,
     #[serde(rename = "checkPermission")]
@@ -1649,6 +1651,8 @@ pub struct PmSettingsUpdateParams {
     pub agent_account_id: Option<String>,
     #[serde(rename = "agentModel", skip_serializing_if = "Option::is_none")]
     pub agent_model: Option<String>,
+    #[serde(rename = "checkModel", skip_serializing_if = "Option::is_none")]
+    pub check_model: Option<String>,
     #[serde(
         rename = "assistantPermission",
         skip_serializing_if = "Option::is_none"
@@ -4363,6 +4367,13 @@ fn validate_pm_settings(value: &Value) -> bool {
                         && contract_pattern_matches("^[A-Za-z0-9._-]+$", text)
                 })
             })
+            && object.get("checkModel").is_some_and(|field| {
+                field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 1
+                        && text.chars().count() <= 64
+                        && contract_pattern_matches("^[A-Za-z0-9._-]+$", text)
+                })
+            })
             && object.get("assistantPermission").is_some_and(|field| {
                 field.as_str().is_some_and(|text| {
                     text.chars().count() >= 1
@@ -4382,6 +4393,7 @@ fn validate_pm_settings(value: &Value) -> bool {
                     "agentProvider",
                     "agentAccountId",
                     "agentModel",
+                    "checkModel",
                     "assistantPermission",
                     "checkPermission",
                 ]
@@ -6324,6 +6336,13 @@ fn validate_pm_settings_update_params(value: &Value) -> bool {
                         && contract_pattern_matches("^[A-Za-z0-9._-]+$", text)
                 })
             })
+            && object.get("checkModel").is_none_or(|field| {
+                field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 1
+                        && text.chars().count() <= 64
+                        && contract_pattern_matches("^[A-Za-z0-9._-]+$", text)
+                })
+            })
             && object.get("assistantPermission").is_none_or(|field| {
                 field.as_str().is_some_and(|text| {
                     text.chars().count() >= 1
@@ -6343,6 +6362,7 @@ fn validate_pm_settings_update_params(value: &Value) -> bool {
                     "agentProvider",
                     "agentAccountId",
                     "agentModel",
+                    "checkModel",
                     "assistantPermission",
                     "checkPermission",
                 ]
