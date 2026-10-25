@@ -1,0 +1,36 @@
+{
+  "name": "@termloop/pm",
+  "version": "2.0.10",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.js",
+  "description": "TermLoop Project Manager desktop client",
+  "scripts": {
+    "deps": "pnpm --filter @termloop/pm-contract build && pnpm --filter @termloop/terminal-wire build && pnpm --filter @termloop/terminal-surface build",
+    "build": "pnpm deps && node build.mjs",
+    "start": "pnpm build && electron .",
+    "check": "pnpm deps && tsc --noEmit",
+    "test": "pnpm build && vitest run",
+    "smoke": "pnpm build && electron . --smoke"
+  },
+  "dependencies": {
+    "@termloop/pm-contract": "workspace:*",
+    "@termloop/terminal-surface": "workspace:*",
+    "@termloop/terminal-wire": "workspace:*",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "ws": "8.21.2",
+    "zustand": "5.0.8"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.2",
+    "@types/react": "19.1.10",
+    "@types/react-dom": "19.1.7",
+    "@types/ws": "8.18.1",
+    "electron": "43.3.0",
+    "esbuild": "0.28.1",
+    "jsdom": "26.1.0",
+    "typescript": "7.0.2",
+    "vitest": "3.2.4"
+  }
+}

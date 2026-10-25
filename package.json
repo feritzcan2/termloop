@@ -53,6 +53,7 @@
     "f1:agent-signal-spike": "node spikes/f1-agent-signals/run.mjs",
     "acceptance:playbook-evaluation": "cargo build -p termloop-server -p termloop-companion && node tests/e2e/playbook-evaluation/acceptance.mjs",
     "acceptance:mcp-ask-to": "node tests/e2e/mcp/acceptance.mjs",
+    "pm:dev": "cargo build -p termloop-pm-daemon && pnpm --filter @termloop/pm start",
     "acceptance:pm-smoke": "pnpm --filter @termloop/pm-contract build && cargo build -p termloop-pm-daemon && node tests/e2e/pm/smoke.mjs",
     "acceptance:access-plane": "pnpm --filter @termloop/contract build && cargo build -p termloop-server && node tests/e2e/access-plane.mjs",
     "check:server-management": "node --check tools/server/termloop-server-manager.mjs && node --check tools/server/server-release.mjs && node --check tools/release/package-server.mjs && bash -n tools/server/install.sh .github/runner/cleanup.sh",

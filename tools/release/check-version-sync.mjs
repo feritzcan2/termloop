@@ -37,6 +37,7 @@ const checks = [
   ["Cargo.toml", await readCargoWorkspaceVersion("Cargo.toml")],
   ["clients/desktop/package.json", await readJsonVersion("clients/desktop/package.json")],
   ["clients/cli/package.json", await readJsonVersion("clients/cli/package.json")],
+  ["clients/pm/package.json", await readJsonVersion("clients/pm/package.json")],
   ["contract/generated/typescript/package.json", await readJsonVersion("contract/generated/typescript/package.json")],
   ["contract/generated/pm-typescript/package.json", await readJsonVersion("contract/generated/pm-typescript/package.json")],
 ];

@@ -22,12 +22,13 @@ for (const pkg of metadata.packages) {
 const cycle = findCycle(graph);
 if (cycle) errors.push(`DAG_CYCLE: ${cycle.join(" -> ")}`);
 
-const packagePaths = ["contract/generated/typescript", "contract/generated/pm-typescript", "clients/cli", "clients/desktop", "clients/terminal-surface", "clients/terminal-wire", "clients/ghostty-host", "spikes/r0-terminal/desktop"];
+const packagePaths = ["contract/generated/typescript", "contract/generated/pm-typescript", "clients/cli", "clients/desktop", "clients/pm", "clients/terminal-surface", "clients/terminal-wire", "clients/ghostty-host", "spikes/r0-terminal/desktop"];
 for (const packagePath of process.argv.includes("--rust-only") ? [] : packagePaths) {
   const manifest = JSON.parse(await readFile(path.join(packagePath, "package.json"), "utf8"));
   const internal = Object.keys({ ...manifest.dependencies, ...manifest.devDependencies }).filter((name) => name.startsWith("@termloop/"));
   const allowed = ["@termloop/contract", "@termloop/pm-contract", "@termloop/terminal-wire", "@termloop/ghostty-host"].includes(manifest.name) ? []
     : manifest.name === "@termloop/terminal-surface" ? ["@termloop/terminal-wire"]
+    : manifest.name === "@termloop/pm" ? ["@termloop/pm-contract", "@termloop/terminal-surface", "@termloop/terminal-wire"]
     : manifest.name === "@termloop/desktop" ? ["@termloop/contract", "@termloop/terminal-surface", "@termloop/terminal-wire", "@termloop/ghostty-host"] : ["@termloop/contract"];
   if (internal.some((name) => !allowed.includes(name))) {
     errors.push(`DAG_FORBIDDEN_JS_EDGE: ${manifest.name} -> ${internal.join(",")}`);
