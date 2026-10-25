@@ -19,6 +19,50 @@ describe("sprint sidebar moves", () => {
     expect(dropTarget("a", undefined, lane, "sprint-1")).toBeUndefined();
   });
 
+  it("takes the status of a ticket dropped on in another status section", () => {
+    const mixed = [boardTicket({ id: "a", rank: 0, status: "todo" }), boardTicket({ id: "b", rank: 1, status: "done" })];
+    expect(dropTarget("a", "b", mixed, "sprint-1")).toEqual({ sprintId: "sprint-1", index: 1, status: "done" });
+    expect(dropTarget("b", "lane:sprint-2", mixed, "sprint-1")).toEqual({ sprintId: "sprint-2" });
+  });
+
+  it("groups the focused sprint into status sections and keeps move up/down inside one", () => {
+    const onMoveTicket = vi.fn();
+    const tickets = [
+      boardTicket({ id: "a", rank: 0, status: "done", title: "A" }),
+      boardTicket({ id: "b", rank: 1, status: "todo", title: "B" }),
+      boardTicket({ id: "c", rank: 2, status: "done", title: "C" }),
+    ];
+    const { container, unmount } = render(
+      <SprintSidebar
+        sprints={[sprint()]}
+        tickets={tickets}
+        tier="tickets"
+        selectedSprintId="sprint-1"
+        selectedTicketId={undefined}
+        onSelectSprint={noop}
+        onSelectTicket={noop}
+        onCreateSprint={noop}
+        onCreateTicket={noop}
+        onMoveTicket={onMoveTicket}
+        onSetStatus={noop}
+      />,
+    );
+    const items = [...container.querySelectorAll(".group .list > li")].map((item) =>
+      item.classList.contains("pm-status-head") ? `# ${item.textContent}` : item.querySelector(".row-title")!.textContent);
+    expect(items).toEqual(["# To do1", "SHOP-7B", "# Done2", "SHOP-7A", "SHOP-7C"]);
+    const menuOf = (index: number) => {
+      act(() => container.querySelectorAll<HTMLButtonElement>(".pm-move-menu > button")[index]!.click());
+      return [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
+    };
+    const b = menuOf(0);
+    expect([b[0]!.disabled, b[1]!.disabled]).toEqual([true, true]);
+    act(() => container.querySelectorAll<HTMLButtonElement>(".pm-move-menu > button")[0]!.click());
+    const a = menuOf(1);
+    act(() => a[1]!.click());
+    expect(onMoveTicket).toHaveBeenLastCalledWith("a", "sprint-1", 2);
+    unmount();
+  });
+
   it("offers move up, move down, and other sprints from each ticket's menu", () => {
     const onMoveTicket = vi.fn();
     const { container, unmount } = render(
@@ -33,6 +77,7 @@ describe("sprint sidebar moves", () => {
         onCreateSprint={noop}
         onCreateTicket={noop}
         onMoveTicket={onMoveTicket}
+        onSetStatus={noop}
       />,
     );
     const menuOf = (index: number) => {

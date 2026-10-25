@@ -2,7 +2,7 @@
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { ProjectSwitcher } from "../src/renderer/ui/ProjectSwitcher.js";
-import { STATUS_DOT, agentTone, attentionRows, dayRuler, lastJiraPull, sprintDay, statusRibbon } from "../src/renderer/ui/format.js";
+import { STATUS_DOT, agentTone, attentionRows, dayRuler, lastJiraPull, sprintDay, statusRibbon, statusSections } from "../src/renderer/ui/format.js";
 import { boardTicket, sprint } from "./fixtures.js";
 import { render } from "./render.js";
 
@@ -70,6 +70,16 @@ describe("sidebar tones", () => {
     const counts = (tier: "tickets" | "code") => Object.fromEntries(statusRibbon(tickets, tier).map((segment) => [segment.key, segment.count]));
     expect(counts("tickets")).toEqual({ todo: 1, inProgress: 0, inReview: 1, done: 1 });
     expect(counts("code")).toEqual({ todo: 1, inProgress: 0, inReview: 0, merged: 1, done: 1 });
+  });
+
+  it("splits a lane into ordered status sections, skipping empty ones and keeping lane order", () => {
+    const lane = [
+      boardTicket({ id: "a", status: "done" }),
+      boardTicket({ id: "b", status: "todo" }),
+      boardTicket({ id: "c", status: "done" }),
+    ];
+    expect(statusSections(lane).map((section) => [section.status, section.tickets.map((entry) => entry.ticket.id)]))
+      .toEqual([["todo", ["b"]], ["done", ["a", "c"]]]);
   });
 
   it("finds the newest Jira pull on sprints and tickets", () => {

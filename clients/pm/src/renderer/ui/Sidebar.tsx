@@ -1,9 +1,8 @@
 import { useState, type ReactNode } from "react";
-import type { PmBoardTicket } from "@termloop/pm-contract/pm";
 import { Icon, type IconName } from "./icons.js";
 import { ProjectSwitcher, type ProjectSwitcherProps } from "./ProjectSwitcher.js";
 import { SprintSidebar, type SprintComposer, type SprintSidebarProps } from "./SprintSidebar.js";
-import { STATUS_DOT, agentTone, attentionRows, relativeTime } from "./format.js";
+import { agentTone, relativeTime } from "./format.js";
 import type { AgentTab, PmView } from "./types.js";
 
 export type SidebarProps = ProjectSwitcherProps &
@@ -13,8 +12,6 @@ export type SidebarProps = ProjectSwitcherProps &
     jira: { configured: boolean; status: string; lastPullEpochMs: number | undefined };
     pulling: boolean;
     now: number;
-    /** Tickets of the selected sprint, for "Needs attention". */
-    sprintTickets: PmBoardTicket[];
     agents: AgentTab[];
     activeAgentSessionId: string | undefined;
     onView(view: PmView): void;
@@ -31,7 +28,6 @@ export function Sidebar(props: SidebarProps) {
   const [composer, setComposer] = useState<SprintComposer>(undefined);
   const [folded, setFolded] = useState<Record<string, boolean>>({});
   const toggle = (rail: string) => setFolded((current) => ({ ...current, [rail]: !current[rail] }));
-  const attention = attentionRows(props.sprintTickets);
   const drafts = props.tickets.some((entry) => entry.pendingProposalCount > 0);
   const pickMode = (next: Mode) => {
     setMode(next);
@@ -71,30 +67,6 @@ export function Sidebar(props: SidebarProps) {
       )}
     </Rail>
   );
-  const attentionRail = (
-    <Rail key="attention" glyph="warn" title="Needs attention" count={attention.length} folded={folded.attention ?? false} onToggle={() => toggle("attention")}>
-      {attention.length === 0 ? <p className="rail-empty">Nothing at risk in this sprint.</p> : (
-        <div className="list">
-          {attention.map((row) => (
-            <button
-              key={row.ticketId}
-              type="button"
-              className={`row ${row.ticketId === props.selectedTicketId && props.view === "ticket" ? "active" : ""}`}
-              onClick={() => props.onSelectTicket(row.ticketId)}
-            >
-              <span className={`dot ${STATUS_DOT[row.status]}`} />
-              <span className="copy">
-                <span className="row-title"><span className="key">{row.label}</span>{row.title}</span>
-                <span className="row-sub"><span className={row.tone}>{row.detail || row.title.toLowerCase()}</span></span>
-              </span>
-              <span />
-            </button>
-          ))}
-        </div>
-      )}
-    </Rail>
-  );
-
   return (
     <aside className="sidebar" aria-label="Sidebar">
       <div className="brand">
@@ -143,7 +115,7 @@ export function Sidebar(props: SidebarProps) {
         </div>
       </div>
       <div className="sidebar-scroll">
-        {mode === "agents" ? <>{agentsRail}{sprintsRail}{attentionRail}</> : <>{sprintsRail}{attentionRail}{agentsRail}</>}
+        {mode === "agents" ? <>{agentsRail}{sprintsRail}</> : <>{sprintsRail}{agentsRail}</>}
       </div>
       <div className="sidebar-footer">
         <span className={`fchip ${props.jira.configured ? "" : "off"}`} title={props.jira.status}>

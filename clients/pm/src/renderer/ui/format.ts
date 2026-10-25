@@ -75,6 +75,13 @@ export function sprintTickets(tickets: PmBoardTicket[], sprintId: string | undef
     .sort((left, right) => left.ticket.rank - right.ticket.rank);
 }
 
+/** A lane split by status in {@link STATUS_ORDER}, empty statuses left out, lane order kept within each. */
+export function statusSections(lane: PmBoardTicket[]): { status: PmTicketStatus; tickets: PmBoardTicket[] }[] {
+  return STATUS_ORDER
+    .map((status) => ({ status, tickets: lane.filter((entry) => entry.ticket.status === status) }))
+    .filter((section) => section.tickets.length > 0);
+}
+
 /** Tickets whose code shipped but whose deployment is not known. */
 export function unknownDeployment(tickets: PmBoardTicket[]): PmBoardTicket[] {
   return tickets.filter((entry) =>

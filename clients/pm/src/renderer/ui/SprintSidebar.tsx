@@ -10,9 +10,9 @@ import {
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useState } from "react";
-import type { PmBoardTicket, PmDataTier, PmSprint } from "@termloop/pm-contract/pm";
+import type { PmBoardTicket, PmDataTier, PmSprint, PmTicketStatus } from "@termloop/pm-contract/pm";
 import { Icon } from "./icons.js";
-import { RISK_LABEL, STAGE_LABEL, STATUS_DOT, STATUS_LABEL, daysLeft, jiraKey, riskTone, sprintTickets, tierAtLeast } from "./format.js";
+import { RISK_LABEL, STAGE_LABEL, STATUS_DOT, STATUS_LABEL, daysLeft, jiraKey, riskTone, sprintTickets, statusSections, tierAtLeast } from "./format.js";
 
 /** Which inline form the sprint rail shows. */
 export type SprintComposer = "sprint" | "ticket" | undefined;
@@ -35,6 +35,7 @@ export type SprintSidebarProps = {
   onCreateTicket(title: string): void;
   /** Moves a ticket into a lane (`null` is "no sprint"), at `index` within it when given. */
   onMoveTicket(ticketId: string, sprintId: string | null, index?: number): void;
+  onSetStatus(ticketId: string, status: PmTicketStatus): void;
 };
 
 /** Drop target id of a sprint row; "no sprint" uses {@link NO_SPRINT}. */
@@ -43,22 +44,25 @@ const NO_SPRINT = `${LANE_PREFIX}none`;
 
 /**
  * Where a drag ends: onto a sprint row (move to its end), or onto another
- * ticket of the shown lane (reorder to that position). `undefined` is a no-op.
+ * ticket of the shown lane (reorder to that position, taking that ticket's
+ * status when it sits in another status section). `undefined` is a no-op.
  */
 export function dropTarget(
   activeId: string,
   overId: string | undefined,
   lane: PmBoardTicket[],
   laneSprintId: string,
-): { sprintId: string | null; index?: number } | undefined {
+): { sprintId: string | null; index?: number; status?: PmTicketStatus } | undefined {
   if (!overId || overId === activeId) return undefined;
   if (overId.startsWith(LANE_PREFIX)) {
     const sprintId = overId === NO_SPRINT ? null : overId.slice(LANE_PREFIX.length);
     return sprintId === laneSprintId ? undefined : { sprintId };
   }
   const index = lane.findIndex((entry) => entry.ticket.id === overId);
-  if (index < 0 || !lane.some((entry) => entry.ticket.id === activeId)) return undefined;
-  return { sprintId: laneSprintId, index };
+  const active = lane.find((entry) => entry.ticket.id === activeId);
+  if (index < 0 || !active) return undefined;
+  const status = lane[index]!.ticket.status;
+  return { sprintId: laneSprintId, index, ...(status !== active.ticket.status && { status }) };
 }
 
 const OPEN_ORDER: Record<PmSprint["state"], number> = { active: 0, planned: 1, backlog: 2, closed: 3 };
@@ -82,7 +86,10 @@ export function SprintSidebar(props: SprintSidebarProps) {
   const dragEnd = (event: DragEndEvent) => {
     if (!selected) return;
     const target = dropTarget(String(event.active.id), event.over ? String(event.over.id) : undefined, tickets, selected.id);
-    if (target) props.onMoveTicket(String(event.active.id), target.sprintId, target.index);
+    if (!target) return;
+    const ticketId = String(event.active.id);
+    if (target.status) props.onSetStatus(ticketId, target.status);
+    props.onMoveTicket(ticketId, target.sprintId, target.index);
   };
   const others = props.sprints
     .filter((sprint) => sprint.id !== selected?.id)
@@ -215,6 +222,11 @@ function FocusedSprint(props: {
   const left = remaining === undefined ? sprint.state === "active" ? "" : `${sprint.state} · ` : remaining >= 0 ? `${remaining}d left · ` : `${-remaining}d over · `;
   const showStage = tierAtLeast(props.tier, "code");
   const moveTargets = props.all.filter((candidate) => candidate.state !== "closed" && candidate.id !== sprint.id);
+  const sections = statusSections(tickets);
+  // Move up/down stays within a status section, landing at the neighbour's
+  // position in the whole lane.
+  const step = (entry: PmBoardTicket, neighbour: PmBoardTicket | undefined) =>
+    neighbour ? () => props.onMoveTicket(entry.ticket.id, sprint.id, tickets.indexOf(neighbour)) : undefined;
   return (
     // Not a drop target itself: its tickets are, and a large group would win
     // closest-center collisions over them.
@@ -234,23 +246,30 @@ function FocusedSprint(props: {
       {sprint.goal && <div className="gsub">{sprint.goal}</div>}
       <div className="bar"><i style={{ width: `${tickets.length ? Math.round((done / tickets.length) * 100) : 0}%` }} /></div>
       {!folded && (
-        <SortableContext items={tickets.map((entry) => entry.ticket.id)} strategy={verticalListSortingStrategy}>
+        // One sortable context in display order, so a drag can cross status
+        // sections; the subheads are plain list items between the rows.
+        <SortableContext items={sections.flatMap((section) => section.tickets.map((entry) => entry.ticket.id))} strategy={verticalListSortingStrategy}>
           <ul className="list" aria-label={`${sprint.name} tickets`}>
-            {tickets.map((entry, index) => (
-              <TicketRow
-                key={entry.ticket.id}
-                entry={entry}
-                showStage={showStage}
-                selected={entry.ticket.id === props.selectedTicketId}
-                onSelect={() => props.onSelectTicket(entry.ticket.id)}
-                moves={{
-                  up: index > 0 ? () => props.onMoveTicket(entry.ticket.id, sprint.id, index - 1) : undefined,
-                  down: index < tickets.length - 1 ? () => props.onMoveTicket(entry.ticket.id, sprint.id, index + 1) : undefined,
-                  to: moveTargets.map((target) => ({ label: target.name, move: () => props.onMoveTicket(entry.ticket.id, target.id) })),
-                  toNoSprint: () => props.onMoveTicket(entry.ticket.id, null),
-                }}
-              />
-            ))}
+            {sections.map((section) => [
+              <li key={section.status} className="rail-subhead pm-status-head">
+                {STATUS_LABEL[section.status]}<span className="n">{section.tickets.length}</span>
+              </li>,
+              ...section.tickets.map((entry, index) => (
+                <TicketRow
+                  key={entry.ticket.id}
+                  entry={entry}
+                  showStage={showStage}
+                  selected={entry.ticket.id === props.selectedTicketId}
+                  onSelect={() => props.onSelectTicket(entry.ticket.id)}
+                  moves={{
+                    up: step(entry, section.tickets[index - 1]),
+                    down: step(entry, section.tickets[index + 1]),
+                    to: moveTargets.map((target) => ({ label: target.name, move: () => props.onMoveTicket(entry.ticket.id, target.id) })),
+                    toNoSprint: () => props.onMoveTicket(entry.ticket.id, null),
+                  }}
+                />
+              )),
+            ])}
             {tickets.length === 0 && <li className="rail-empty">No tickets in this sprint.</li>}
           </ul>
         </SortableContext>

@@ -81,7 +81,6 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
         now={now}
         sprints={sprints}
         tickets={allTickets}
-        sprintTickets={tickets}
         tier={tier}
         selectedSprintId={state.selectedSprintId}
         selectedTicketId={state.selectedTicketId}
@@ -98,6 +97,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
         onCreateSprint={(name, goal) => void controller.createSprint(name, goal)}
         onCreateTicket={(title) => void controller.createTicket(title)}
         onMoveTicket={(id, sprintId, index) => void controller.moveTicket(id, sprintId, index)}
+        onSetStatus={(id, status) => void controller.setStatus(id, status)}
       />
       <main className="stage">
         <StageTabs tabs={stageTabs} view={view} onView={(next) => controller.setView(next)} />

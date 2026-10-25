@@ -224,6 +224,10 @@ code { font: 11px var(--font-mono); background: var(--bg-raised); padding: 1px 5
 .pm-menu button:hover:not(:disabled), .pm-menu button:focus-visible { outline: none; background: var(--bg-hover); color: var(--text); }
 .pm-menu button:disabled { opacity: .4; }
 
+/* status sections inside the focused sprint group */
+.group .pm-status-head { padding: 6px 6px 3px 26px; }
+.pm-status-head .n { color: var(--dim); letter-spacing: 0; }
+
 .sidebar-footer { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 6px; min-height: 37px; padding: 6px 8px; border-top: 1px solid var(--border); flex: none; }
 .fchip {
   display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border: 1px solid var(--border); border-radius: 5px;
