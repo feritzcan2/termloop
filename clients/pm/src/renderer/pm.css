@@ -570,3 +570,9 @@ li:hover > .icb.remove, .icb.remove:focus-visible { opacity: 1; }
   box-shadow: 0 10px 30px rgba(0, 0, 0, .45); font-size: 12px;
 }
 .capture-toast b { color: var(--success); font-weight: 600; }
+
+/* Ticket pane: a lighter surface than the app chrome so the document reads as paper. */
+.ticket-pane { background: #2a2e30; }
+.ticket-pane .pane-head { background: #2a2e30; }
+.ticket-pane .md-editor { background: #33383a; border-color: #4a4f52; }
+.ticket-pane .md-editor:focus-within { border-color: var(--accent); }
