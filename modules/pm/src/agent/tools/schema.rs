@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use super::PmToolContext;
 use crate::agent::{
     PM_BOARD_READ, PM_CHECK_REPORT, PM_RISKS_READ, PM_SKILL_DISCOVERY_READ, PM_SKILL_DRAFT_SUBMIT,
-    PM_SKILL_DRY_RUN_REQUEST, PM_SKILL_RUN_FINISH, PM_SKILL_TOOL_VERIFY,
+    PM_SKILL_DRY_RUN_REQUEST, PM_SKILL_RUN_FINISH, PM_SKILL_TOOL_VERIFY, PM_TICKET_NOTE_ADD,
     PM_TICKET_PROPOSE_ACCEPTANCE_CRITERIA, PM_TICKET_PROPOSE_DESCRIPTION, PM_TICKET_READ,
     PM_TICKET_SUGGEST, SKILL_READ_TOOLS,
 };
@@ -23,7 +23,8 @@ use crate::{
     CHECK_PROBE_PROPOSALS_MAX, ENVIRONMENT_NAME_MAX_CHARS, PROPOSAL_SUMMARY_MAX_CHARS,
     TICKET_ASSIGNEE_MAX_CHARS, TICKET_BLOCKERS_MAX, TICKET_CHECK_NOTES_MAX_BYTES,
     TICKET_CRITERIA_MAX, TICKET_DESCRIPTION_MAX_CHARS, TICKET_ENVIRONMENT_FACTS_MAX,
-    TICKET_ITEM_MAX_CHARS,
+    TICKET_ITEM_MAX_CHARS, TICKET_NOTE_LABEL_MAX_CHARS, TICKET_NOTE_MAX_CHARS,
+    TICKET_NOTE_URL_MAX_BYTES,
 };
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -167,7 +168,8 @@ fn definition(name: &'static str) -> PmToolDefinition {
         ),
         PM_TICKET_READ => (
             "Read one ticket: its description, acceptance criteria, blockers, delivery stage, \
-             risks, recorded facts, and pending proposals. Read-only.",
+             risks, recorded facts, pending proposals, and notes (facts learned and sources \
+             followed; a pending note is not in the description yet). Read-only.",
             object(json!({ "ticketId": ticket_id() }), &["ticketId"]),
         ),
         PM_TICKET_PROPOSE_DESCRIPTION => (
@@ -384,6 +386,39 @@ fn definition(name: &'static str) -> PmToolDefinition {
             object(
                 json!({ "draftId": { "type": "string", "minLength": 1 } }),
                 &["draftId"],
+            ),
+        ),
+        PM_TICKET_NOTE_ADD => (
+            "Record what you learned about a ticket as a note: a fact (a decision, a changed \
+             scope, an answer to an open question) or a source to read again for new facts \
+             (a Slack thread, a document). A note never changes the ticket; propose a \
+             description that merges the pending notes afterwards. A note already recorded \
+             from the same sourceKey or source link is refused.",
+            object(
+                json!({
+                    "ticketId": ticket_id(),
+                    "kind": { "type": "string", "enum": ["fact", "source"] },
+                    "text": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": TICKET_NOTE_MAX_CHARS,
+                        "description": format!("A fact in your own words, or a source's one-line label of at most {TICKET_NOTE_LABEL_MAX_CHARS} characters.")
+                    },
+                    "url": {
+                        "type": "string",
+                        "maxLength": TICKET_NOTE_URL_MAX_BYTES,
+                        "pattern": "^https://",
+                        "description": "Where the fact was read (e.g. a Slack permalink); required for a source."
+                    },
+                    "sourceKey": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "pattern": "^[!-~]+$",
+                        "description": "A stable id of what the fact was read from, e.g. slack:<channel>:<message ts>."
+                    }
+                }),
+                &["ticketId", "kind", "text"],
             ),
         ),
         _ => unreachable!("every PM tool has a definition"),

@@ -58,21 +58,24 @@ static CONTRACT_PATTERN_12: std::sync::LazyLock<regex::Regex> = std::sync::LazyL
     regex::Regex::new("^[^\\s@]+@[^\\s@]+$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_13: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^https://[!-~]+$").expect("generated contract pattern")
+    regex::Regex::new("^https://").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_14: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
+    regex::Regex::new("^https://[!-~]+$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_15: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^https://[^\\s@/]+/[^\\s]*$").expect("generated contract pattern")
+    regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_16: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net$").expect("generated contract pattern")
+    regex::Regex::new("^https://[^\\s@/]+/[^\\s]*$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_17: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net/browse/[A-Z][A-Z0-9_]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
+    regex::Regex::new("^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_18: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new("^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net/browse/[A-Z][A-Z0-9_]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
+});
+static CONTRACT_PATTERN_19: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^pm_[a-z_]{1,60}$").expect("generated contract pattern")
 });
 
@@ -93,24 +96,25 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
         "^[A-Za-z0-9]{1,32}$" => CONTRACT_PATTERN_10.is_match(text),
         "^[A-Za-z0-9_-][A-Za-z0-9_.-]*$" => CONTRACT_PATTERN_11.is_match(text),
         "^[^\\s@]+@[^\\s@]+$" => CONTRACT_PATTERN_12.is_match(text),
-        "^https://[!-~]+$" => CONTRACT_PATTERN_13.is_match(text),
+        "^https://" => CONTRACT_PATTERN_13.is_match(text),
+        "^https://[!-~]+$" => CONTRACT_PATTERN_14.is_match(text),
         "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$" => {
-            CONTRACT_PATTERN_14.is_match(text)
+            CONTRACT_PATTERN_15.is_match(text)
         }
-        "^https://[^\\s@/]+/[^\\s]*$" => CONTRACT_PATTERN_15.is_match(text),
+        "^https://[^\\s@/]+/[^\\s]*$" => CONTRACT_PATTERN_16.is_match(text),
         "^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net$" => {
-            CONTRACT_PATTERN_16.is_match(text)
-        }
-        "^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net/browse/[A-Z][A-Z0-9_]{0,63}-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_17.is_match(text)
         }
-        "^pm_[a-z_]{1,60}$" => CONTRACT_PATTERN_18.is_match(text),
+        "^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net/browse/[A-Z][A-Z0-9_]{0,63}-[1-9][0-9]{0,19}$" => {
+            CONTRACT_PATTERN_18.is_match(text)
+        }
+        "^pm_[a-z_]{1,60}$" => CONTRACT_PATTERN_19.is_match(text),
         _ => false,
     }
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:3af2a49a2bb7555ce66d2f56502d107497434de0b67dfebfb64d0c0d8a26b3e8";
+    "sha256:4e65a71d41582fbe5ecc71c5506e76d501b7316b240c155a6c3348bf02d9f842";
 pub const CAPABILITY_SCOPE: &str = "pm.full";
 pub const METHODS: &[&str] = &[
     "pm_system_version",
@@ -137,6 +141,9 @@ pub const METHODS: &[&str] = &[
     "pm_ticket_proposals_read",
     "pm_ticket_proposal_accept",
     "pm_ticket_proposal_reject",
+    "pm_ticket_notes_read",
+    "pm_ticket_note_add",
+    "pm_ticket_note_remove",
     "pm_environments_set",
     "pm_sources_read",
     "pm_sources_set",
@@ -1306,6 +1313,61 @@ pub struct PmTicketProposalsReadResult {
     pub proposals: Vec<PmProposal>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PmTicketNoteKind {
+    #[serde(rename = "fact")]
+    Fact,
+    #[serde(rename = "source")]
+    Source,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmTicketNote {
+    pub id: String,
+    #[serde(rename = "ticketId")]
+    pub ticket_id: String,
+    pub kind: PmTicketNoteKind,
+    pub text: String,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub url: Option<String>,
+    #[serde(
+        rename = "sourceKey",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub source_key: Option<String>,
+    pub author: PmTicketAuthor,
+    #[serde(rename = "createdAtEpochMs")]
+    pub created_at_epoch_ms: u64,
+    pub pending: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmTicketNotesReadResult {
+    #[serde(rename = "ticketId")]
+    pub ticket_id: String,
+    pub notes: Vec<PmTicketNote>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmTicketNoteAddParams {
+    #[serde(rename = "ticketId")]
+    pub ticket_id: String,
+    pub kind: PmTicketNoteKind,
+    pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmTicketNoteRef {
+    #[serde(rename = "noteId")]
+    pub note_id: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct PmRejectedResult {
@@ -1492,6 +1554,16 @@ pub struct PmAgentLaunchParams {
     pub project_id: String,
     #[serde(rename = "focusTicketId", skip_serializing_if = "Option::is_none")]
     pub focus_ticket_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task: Option<PmAssistantTask>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PmAssistantTask {
+    #[serde(rename = "brief")]
+    Brief,
+    #[serde(rename = "updateDescription")]
+    UpdateDescription,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -2171,6 +2243,10 @@ pub type PmTicketProposalAcceptParams = PmProposalAcceptParams;
 pub type PmTicketProposalAcceptResult = PmTicket;
 pub type PmTicketProposalRejectParams = PmProposalRejectParams;
 pub type PmTicketProposalRejectResult = PmRejectedResult;
+pub type PmTicketNotesReadParams = PmTicketRef;
+pub type PmTicketNoteAddResult = PmTicketNote;
+pub type PmTicketNoteRemoveParams = PmTicketNoteRef;
+pub type PmTicketNoteRemoveResult = PmDeletedResult;
 pub type PmSourcesReadParams = PmProjectRef;
 pub type PmSourcesReadResult = PmSources;
 pub type PmSourcesSetParams = PmSources;
@@ -2372,6 +2448,9 @@ fn validate_method(value: &Value) -> bool {
             "pm_ticket_proposals_read",
             "pm_ticket_proposal_accept",
             "pm_ticket_proposal_reject",
+            "pm_ticket_notes_read",
+            "pm_ticket_note_add",
+            "pm_ticket_note_remove",
             "pm_environments_set",
             "pm_sources_read",
             "pm_sources_set",
@@ -5056,6 +5135,180 @@ fn validate_pm_ticket_proposals_read_result(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_pm_ticket_note_kind(value: &Value) -> bool {
+    value
+        .as_str()
+        .is_some_and(|text| ["fact", "source"].contains(&text))
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_ticket_note(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("id").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("ticketId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object
+            .get("kind")
+            .is_some_and(|field| validate_pm_ticket_note_kind(field))
+            && object.get("text").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 2000)
+            })
+            && object.get("url").is_some_and(|field| {
+                (field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() <= 2048)
+                    || field.is_null())
+            })
+            && object.get("sourceKey").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 1
+                        && text.chars().count() <= 128
+                        && contract_pattern_matches("^[!-~]+$", text)
+                }) || field.is_null())
+            })
+            && object
+                .get("author")
+                .is_some_and(|field| validate_pm_ticket_author(field))
+            && object.get("createdAtEpochMs").is_some_and(|field| {
+                field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                })
+            })
+            && object
+                .get("pending")
+                .is_some_and(|field| field.is_boolean())
+            && object.keys().all(|key| {
+                [
+                    "id",
+                    "ticketId",
+                    "kind",
+                    "text",
+                    "url",
+                    "sourceKey",
+                    "author",
+                    "createdAtEpochMs",
+                    "pending",
+                ]
+                .contains(&key.as_str())
+            })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_ticket_notes_read_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("ticketId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("notes").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() <= 100 && items.iter().all(|item| validate_pm_ticket_note(item))
+            })
+        }) && object
+            .keys()
+            .all(|key| ["ticketId", "notes"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_ticket_note_add_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("ticketId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object
+            .get("kind")
+            .is_some_and(|field| validate_pm_ticket_note_kind(field))
+            && object.get("text").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 2000)
+            })
+            && object.get("url").is_none_or(|field| {
+                field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 9
+                        && text.chars().count() <= 2048
+                        && contract_pattern_matches("^https://", text)
+                })
+            })
+            && object
+                .keys()
+                .all(|key| ["ticketId", "kind", "text", "url"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_ticket_note_ref(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("noteId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.keys().all(|key| ["noteId"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_pm_rejected_result(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object
@@ -5681,9 +5934,27 @@ fn validate_pm_agent_launch_params(value: &Value) -> bool {
                     && contract_pattern_matches("^[!-~]+$", text)
             })
         }) && object
-            .keys()
-            .all(|key| ["projectId", "focusTicketId"].contains(&key.as_str()))
+            .get("task")
+            .is_none_or(|field| validate_pm_assistant_task(field))
+            && object
+                .keys()
+                .all(|key| ["projectId", "focusTicketId", "task"].contains(&key.as_str()))
     })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_assistant_task(value: &Value) -> bool {
+    value
+        .as_str()
+        .is_some_and(|text| ["brief", "updateDescription"].contains(&text))
 }
 
 #[allow(
@@ -7647,6 +7918,18 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<PmTicketProposalRejectParams>(params.clone()).is_ok()
                 && validate_pm_proposal_reject_params(params)
         }
+        "pm_ticket_notes_read" => {
+            serde_json::from_value::<PmTicketNotesReadParams>(params.clone()).is_ok()
+                && validate_pm_ticket_ref(params)
+        }
+        "pm_ticket_note_add" => {
+            serde_json::from_value::<PmTicketNoteAddParams>(params.clone()).is_ok()
+                && validate_pm_ticket_note_add_params(params)
+        }
+        "pm_ticket_note_remove" => {
+            serde_json::from_value::<PmTicketNoteRemoveParams>(params.clone()).is_ok()
+                && validate_pm_ticket_note_ref(params)
+        }
         "pm_environments_set" => {
             serde_json::from_value::<PmEnvironmentsSetParams>(params.clone()).is_ok()
                 && validate_pm_environments_set_params(params)
@@ -7881,6 +8164,18 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         "pm_ticket_proposal_reject" => {
             serde_json::from_value::<PmTicketProposalRejectResult>(result.clone()).is_ok()
                 && validate_pm_rejected_result(result)
+        }
+        "pm_ticket_notes_read" => {
+            serde_json::from_value::<PmTicketNotesReadResult>(result.clone()).is_ok()
+                && validate_pm_ticket_notes_read_result(result)
+        }
+        "pm_ticket_note_add" => {
+            serde_json::from_value::<PmTicketNoteAddResult>(result.clone()).is_ok()
+                && validate_pm_ticket_note(result)
+        }
+        "pm_ticket_note_remove" => {
+            serde_json::from_value::<PmTicketNoteRemoveResult>(result.clone()).is_ok()
+                && validate_pm_deleted_result(result)
         }
         "pm_environments_set" => {
             serde_json::from_value::<PmEnvironmentsSetResult>(result.clone()).is_ok()

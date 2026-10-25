@@ -2,7 +2,7 @@
 // controller. The only renderer layer that sees both the bridge-backed
 // controller and the terminal adapter.
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import type { PmAgentSession, PmBoardTicket, PmSkill } from "@termloop/pm-contract/pm";
+import type { PmAgentSession, PmBoardTicket, PmSkill, PmTicketNoteKind } from "@termloop/pm-contract/pm";
 import type { PmApi } from "../../pm-api.js";
 import { usePmState, type PmState } from "../state/presentation-store.js";
 import {
@@ -28,6 +28,8 @@ import { mountAgentTerminal } from "../terminal/agent-terminal.js";
 import { agentSurface } from "../terminal/xterm-surface.js";
 import { AgentPanel } from "../ui/AgentPanel.js";
 import { JiraSyncDialog } from "../ui/JiraSyncDialog.js";
+import { NoteDialog } from "../ui/NoteDialog.js";
+import type { ContextMenuItem } from "../ui/TicketContextMenu.js";
 import type { JiraConnection } from "../ui/jira/JiraBrowser.js";
 import { CaptureToast, QuickCapture } from "../ui/QuickCapture.js";
 import type { WidthBounds } from "../ui/ResizeHandle.js";
@@ -123,6 +125,15 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
     [allTickets],
   );
   const launchAgent = (focusTicketId: string | undefined) => void controller.launchAgent(focusTicketId);
+  const [noteDialog, setNoteDialog] = useState<{ ticketId: string; kind: PmTicketNoteKind }>();
+  const noteTicket = noteDialog && allTickets.find((candidate) => candidate.ticket.id === noteDialog.ticketId)?.ticket;
+  const ticketActions = (id: string): ContextMenuItem[] => [
+    { kind: "action", label: "Open", run: () => void controller.selectTicket(id) },
+    { kind: "action", label: "Add note…", run: () => setNoteDialog({ ticketId: id, kind: "fact" }) },
+    { kind: "action", label: "Follow a link…", run: () => setNoteDialog({ ticketId: id, kind: "source" }) },
+    { kind: "action", label: "Update description from notes", disabled: !project, run: () => void controller.updateDescription(id) },
+    { kind: "action", label: "Ask assistant", disabled: !project, run: () => launchAgent(id) },
+  ];
   const stageTabs: StageTab[] = [
     { view: "overview", label: sprint ? `${sprint.name} overview` : "Overview" },
     ...(entry ? [{
@@ -169,6 +180,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
           onPull={() => void controller.pullJira()}
           onStartAssistant={() => launchAgent(view === "ticket" ? ticketId : undefined)}
           onSelectAgent={(id) => controller.selectAgent(id)}
+          ticketActions={ticketActions}
           onSelectSprint={(id) => controller.selectSprint(id)}
           onSelectTicket={(id) => void controller.selectTicket(id)}
           onCreateSprint={(name, goal) => void controller.createSprint(name, goal)}
@@ -255,6 +267,14 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 onAcceptProposal={(id, assignee) => void controller.acceptProposal(ticketId, id, assignee)}
                 onRejectProposal={(id) => void controller.rejectProposal(ticketId, id)}
                 onOpenLink={(url) => void controller.bridge.openExternal(url)}
+                notes={{
+                  notes: state.notes[ticketId],
+                  canUpdate: Boolean(project),
+                  onAddNote: (text) => void controller.addNote(ticketId, { kind: "fact", text, url: null }),
+                  onFollowSource: () => setNoteDialog({ ticketId, kind: "source" }),
+                  onRemoveNote: (id) => void controller.removeNote(ticketId, id),
+                  onUpdateDescription: () => void controller.updateDescription(ticketId),
+                }}
                 onWriteToJira={() => void controller.openJiraDialog(ticketId)}
                 onStartCheck={() => void controller.startCheck(ticketId)}
                 onAskAgent={() => launchAgent(ticketId)}

@@ -10,6 +10,7 @@ mod delivery;
 mod digest;
 mod environment;
 mod error;
+mod note;
 mod project;
 mod proposal;
 mod settings;
@@ -60,6 +61,11 @@ pub use environment::{
     environment_is_production, valid_environment_name, valid_project_environments,
 };
 pub use error::PmError;
+pub use note::{
+    NewTicketNote, TICKET_NOTE_LABEL_MAX_CHARS, TICKET_NOTE_MAX_CHARS, TICKET_NOTE_SOURCES_MAX,
+    TICKET_NOTE_URL_MAX_BYTES, TICKET_NOTES_MAX, TicketNote, TicketNoteKind,
+    valid_ticket_note_text, valid_ticket_note_url,
+};
 pub use project::{
     PROJECT_FOLDER_MAX_CHARS, PROJECT_NAME_MAX_CHARS, PROJECTS_MAX, Project, valid_project_folder,
     valid_project_name,

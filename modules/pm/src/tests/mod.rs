@@ -1,6 +1,7 @@
 mod checks;
 mod delivery;
 mod jira;
+mod note;
 mod project;
 mod skill;
 mod sprint;

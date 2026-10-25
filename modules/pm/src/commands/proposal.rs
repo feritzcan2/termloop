@@ -89,7 +89,9 @@ impl PmStore {
         self.propose_ticket_change_from(ticket_id, change, summary, None)
     }
 
-    /// Records a proposal, from a skill when `origin` names one. A skill's
+    /// Records a proposal, from a skill when `origin` names one. An
+    /// assistant description proposal replaces the assistant's pending one
+    /// for the same ticket. A skill's
     /// suggestion the PM already rejected on the same evidence is refused,
     /// and so is a Jira comment for a ticket without a Jira issue.
     pub fn propose_ticket_change_from(
@@ -131,6 +133,15 @@ impl PmStore {
             } = &change
             {
                 check_target_sprint(transaction, &ticket.project_id, Some(sprint_id))?;
+            }
+            // The assistant keeps one description draft per ticket: a newer
+            // one, merging newer notes, replaces its older pending draft.
+            if origin.is_none() && matches!(change, ProposalChange::Description { .. }) {
+                transaction.execute(
+                    "DELETE FROM ticket_proposals \
+                     WHERE ticket_id = ?1 AND kind = 'description' AND skill_id IS NULL",
+                    [ticket_id],
+                )?;
             }
             if ticket_proposals(transaction, ticket_id)?.len() >= TICKET_PROPOSALS_MAX {
                 return Err(PmError::Constraint("too many pending proposals"));

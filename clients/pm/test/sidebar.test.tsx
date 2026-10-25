@@ -10,6 +10,36 @@ const noop = () => undefined;
 const lane = [boardTicket({ id: "a", rank: 0 }), boardTicket({ id: "b", rank: 1 }), boardTicket({ id: "c", rank: 2 })];
 
 describe("sprint sidebar moves", () => {
+  it("opens a ticket's actions and its moves on right-click", () => {
+    const addNote = vi.fn();
+    const onMoveTicket = vi.fn();
+    const { container, unmount } = render(
+      <SprintSidebar
+        sprints={[sprint()]}
+        tickets={lane}
+        tier="tickets"
+        selectedSprintId="sprint-1"
+        selectedTicketId={undefined}
+        onSelectSprint={noop}
+        onSelectTicket={noop}
+        onCreateSprint={noop}
+        onCreateTicket={noop}
+        onMoveTicket={onMoveTicket}
+        ticketActions={(id) => [{ kind: "action", label: "Add note…", run: () => addNote(id) }]}
+      />,
+    );
+    const row = container.querySelectorAll<HTMLButtonElement>(".pm-ticket-head > .row")[1]!;
+    act(() => { row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, clientX: 10, clientY: 20 })); });
+    const menu = container.querySelector<HTMLElement>(".pm-context-menu")!;
+    const labels = [...menu.querySelectorAll("button")].map((button) => button.textContent);
+    expect(labels).toEqual(["Add note…", "Move up", "Move down", "Remove from sprint"]);
+    expect(menu.querySelector("hr.pm-menu-sep")).not.toBeNull();
+    act(() => menu.querySelector<HTMLButtonElement>("button")!.click());
+    expect(addNote).toHaveBeenCalledWith("b");
+    expect(container.querySelector(".pm-context-menu")).toBeNull();
+    unmount();
+  });
+
   it("turns a drop into a reorder within the lane or a move to another lane", () => {
     expect(dropTarget("a", "c", lane, "sprint-1")).toEqual({ sprintId: "sprint-1", index: 2 });
     expect(dropTarget("c", "a", lane, "sprint-1")).toEqual({ sprintId: "sprint-1", index: 0 });

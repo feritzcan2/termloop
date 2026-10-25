@@ -8,6 +8,7 @@ import {
   RISK_LABEL, STAGE_LABEL, STATUS_DOT, STATUS_LABEL, agentTone, daysLeft, jiraKey, leftSprint, riskTone, sprintDay, sprintTickets, statusSections, tierAtLeast,
 } from "./format.js";
 import { ticketScope, type ScopeGrowth, type ScopeVersion } from "./scope.js";
+import { TicketContextMenu, type ContextMenuAt, type ContextMenuItem } from "./TicketContextMenu.js";
 import type { AgentTab } from "./types.js";
 
 /** Which inline form the sprint rail shows. */
@@ -44,6 +45,8 @@ export type SprintSidebarProps = {
   /** The agent the stage shows, highlighted under its ticket. */
   shownAgentSessionId?: string | undefined;
   onSelectAgent?(sessionId: string): void;
+  /** A ticket's right-click actions; its move actions follow them. */
+  ticketActions?(ticketId: string): ContextMenuItem[];
 };
 
 /**
@@ -94,6 +97,7 @@ export function SprintSidebar(props: SprintSidebarProps) {
               agents={props.agents ?? NO_AGENTS}
               shownAgentSessionId={props.shownAgentSessionId}
               onSelectAgent={props.onSelectAgent}
+              ticketActions={props.ticketActions}
               onSelectSprint={() => props.onSelectSprint(shown.id)}
               onSelectTicket={props.onSelectTicket}
               onCreateTicket={createTicket}
@@ -171,6 +175,7 @@ function FocusedSprint(props: {
   agents: readonly AgentTab[];
   shownAgentSessionId: string | undefined;
   onSelectAgent: ((sessionId: string) => void) | undefined;
+  ticketActions: SprintSidebarProps["ticketActions"];
   onSelectSprint(): void;
   onSelectTicket(ticketId: string): void;
   onCreateTicket(title: string): void;
@@ -226,6 +231,7 @@ function FocusedSprint(props: {
                   agents={props.agents.filter((agent) => agent.focusTicketId === entry.ticket.id)}
                   shownAgentSessionId={props.shownAgentSessionId}
                   onSelectAgent={props.onSelectAgent}
+                  actions={props.ticketActions}
                   onSelect={() => props.onSelectTicket(entry.ticket.id)}
                   moves={{
                     up: step(entry, section.tickets[index - 1]),
@@ -275,6 +281,17 @@ function MoveMenu(props: { moves: TicketMoves; title: string }) {
   );
 }
 
+/** The move menu's actions, after a separator, for the context menu. */
+function moveItems(moves: TicketMoves): ContextMenuItem[] {
+  return [
+    { kind: "separator" },
+    { kind: "action", label: "Move up", disabled: !moves.up, run: () => moves.up?.() },
+    { kind: "action", label: "Move down", disabled: !moves.down, run: () => moves.down?.() },
+    ...moves.to.map((target): ContextMenuItem => ({ kind: "action", label: `Move to ${target.label}`, run: target.move })),
+    { kind: "action", label: "Remove from sprint", run: moves.toNoSprint },
+  ];
+}
+
 function TicketRow(props: {
   entry: PmBoardTicket;
   showStage: boolean;
@@ -286,9 +303,11 @@ function TicketRow(props: {
   agents: readonly AgentTab[];
   shownAgentSessionId: string | undefined;
   onSelectAgent: ((sessionId: string) => void) | undefined;
+  actions: SprintSidebarProps["ticketActions"];
   onSelect(): void;
   moves: TicketMoves;
 }) {
+  const [menuAt, setMenuAt] = useState<ContextMenuAt>();
   const { ticket, delivery, pendingProposalCount } = props.entry;
   const key = jiraKey(ticket);
   const sortable = useSortable({ id: ticket.id });
@@ -303,6 +322,7 @@ function TicketRow(props: {
           className={`row ${props.selected ? "active" : ""}`}
           aria-current={props.selected ? "true" : undefined}
           onClick={props.onSelect}
+          onContextMenu={(event) => { event.preventDefault(); setMenuAt({ x: event.clientX, y: event.clientY }); }}
           {...sortable.listeners}
         >
           <span className={`dot ${STATUS_DOT[ticket.status]}`} aria-hidden="true" />
@@ -331,6 +351,14 @@ function TicketRow(props: {
         </button>
         <MoveMenu moves={props.moves} title={ticket.title} />
       </div>
+      {menuAt && (
+        <TicketContextMenu
+          at={menuAt}
+          label={`Actions for ${ticket.title}`}
+          items={[...(props.actions?.(ticket.id) ?? []), ...moveItems(props.moves)]}
+          onClose={() => setMenuAt(undefined)}
+        />
+      )}
       {props.agents.length > 0 && (
         <ul className="pm-ticket-agents" aria-label={`Agents on ${ticket.title}`}>
           {props.agents.map((agent) => (

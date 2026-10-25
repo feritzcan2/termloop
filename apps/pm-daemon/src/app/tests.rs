@@ -203,6 +203,99 @@ async fn a_mutation_fans_out_a_board_event() {
     assert!(first.try_recv().is_err());
 }
 
+#[tokio::test]
+async fn the_pm_records_and_removes_ticket_notes() {
+    let fixture = fixture();
+    let state = &fixture.state;
+    let project_id = project(state).await;
+    let work = ticket(state, &project_id, json!({})).await;
+    let ticket_id = work["id"].as_str().unwrap();
+    let mut events = state.events.subscribe();
+    let note = call(
+        state,
+        "pm_ticket_note_add",
+        json!({ "ticketId": ticket_id, "kind": "fact", "text": "  CSV export too  " }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(note["text"], "CSV export too");
+    assert_eq!(note["author"], "pm");
+    assert_eq!(note["pending"], true);
+    assert_eq!(events.try_recv().unwrap().event, EventName::PmBoardChanged);
+    assert_eq!(
+        call(
+            state,
+            "pm_ticket_note_add",
+            json!({ "ticketId": ticket_id, "kind": "source", "text": "Slack thread" }),
+        )
+        .await,
+        Err(ErrorCode::InvalidParams)
+    );
+    call(
+        state,
+        "pm_ticket_note_add",
+        json!({
+            "ticketId": ticket_id,
+            "kind": "source",
+            "text": "Slack thread",
+            "url": "https://acme.slack.com/archives/C1/p100",
+        }),
+    )
+    .await
+    .unwrap();
+    let read = call(
+        state,
+        "pm_ticket_notes_read",
+        json!({ "ticketId": ticket_id }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(read["notes"].as_array().unwrap().len(), 2);
+
+    let removed = call(
+        state,
+        "pm_ticket_note_remove",
+        json!({ "noteId": note["id"] }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(removed, json!({ "deleted": true }));
+    assert_eq!(
+        call(
+            state,
+            "pm_ticket_note_remove",
+            json!({ "noteId": note["id"] })
+        )
+        .await,
+        Err(ErrorCode::NotFound)
+    );
+    assert_eq!(
+        call(
+            state,
+            "pm_ticket_notes_read",
+            json!({ "ticketId": "missing" })
+        )
+        .await,
+        Err(ErrorCode::NotFound)
+    );
+}
+
+#[tokio::test]
+async fn a_description_update_needs_the_ticket_in_focus() {
+    let fixture = fixture();
+    let state = &fixture.state;
+    let project_id = project(state).await;
+    assert_eq!(
+        call(
+            state,
+            "pm_agent_launch",
+            json!({ "projectId": project_id, "task": "updateDescription" }),
+        )
+        .await,
+        Err(ErrorCode::InvalidParams)
+    );
+}
+
 fn file_contains(path: &Path, needle: &[u8]) -> bool {
     std::fs::read(path)
         .map(|bytes| bytes.windows(needle.len()).any(|window| window == needle))

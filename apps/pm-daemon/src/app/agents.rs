@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex as StdMutex, MutexGuard, PoisonError};
 
 use serde_json::{Value, json};
 use termloop_pm::agent::{
-    PmAgentMode, PmAgentProfile, PmLaunchRequest, PmToolContext, SkillRunContext,
+    AssistantTask, PmAgentMode, PmAgentProfile, PmLaunchRequest, PmToolContext, SkillRunContext,
     claude_mcp_config, pm_launch_plan,
 };
 use termloop_pm::{DeliveryCheck, DeliveryCheckOutcome};
@@ -221,6 +221,28 @@ pub(crate) fn launch(
         PmAgentProfile::build(&store, project_id, mode, focus_ticket_id)?
     };
     launch_profile(state, project_id, &profile, focus_ticket_id, check_id, None)
+}
+
+/// Launches the project's assistant for a task; `UpdateDescription` needs
+/// the ticket in focus.
+pub(crate) fn launch_assistant(
+    state: &AppState,
+    project_id: &str,
+    focus_ticket_id: Option<&str>,
+    task: AssistantTask,
+) -> Result<AgentRecord, ControlError> {
+    let profile = {
+        let store = state.store.lock();
+        store.project(project_id)?.ok_or_else(not_found)?;
+        PmAgentProfile::build_for(
+            &store,
+            project_id,
+            PmAgentMode::Assistant,
+            focus_ticket_id,
+            task,
+        )?
+    };
+    launch_profile(state, project_id, &profile, focus_ticket_id, None, None)
 }
 
 /// Launches an agent with a built profile; a skill-run agent is bound to

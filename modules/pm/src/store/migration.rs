@@ -342,6 +342,26 @@ CREATE TABLE skill_discovery_cache (
 ) STRICT;
 "#;
 
+/// Ticket notes: facts learned about a ticket and links to read again,
+/// the raw input a description draft merges in. Whether a note is pending
+/// is derived from the newest description version on read.
+const V9: &str = r#"
+CREATE TABLE ticket_notes (
+    id TEXT PRIMARY KEY,
+    ticket_id TEXT NOT NULL REFERENCES tickets (id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('fact', 'source')),
+    text TEXT NOT NULL,
+    url TEXT,
+    source_key TEXT,
+    author TEXT NOT NULL CHECK (author IN ('pm', 'agent', 'jira')),
+    created_at_epoch_ms INTEGER NOT NULL,
+    CHECK (kind = 'fact' OR url IS NOT NULL)
+) STRICT;
+CREATE INDEX ticket_notes_by_ticket ON ticket_notes (ticket_id, created_at_epoch_ms);
+CREATE UNIQUE INDEX ticket_notes_one_per_source_key ON ticket_notes (ticket_id, source_key)
+    WHERE source_key IS NOT NULL;
+"#;
+
 /// Every migration in order; a version is never edited once released.
 const MIGRATIONS: &[(u32, &str)] = &[
     (1, V1),
@@ -352,6 +372,7 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (6, V6),
     (7, V7),
     (8, V8),
+    (9, V9),
 ];
 
 pub const SCHEMA_VERSION: u32 = MIGRATIONS[MIGRATIONS.len() - 1].0;

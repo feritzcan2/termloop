@@ -5,7 +5,8 @@ use serde_json::{Value, json};
 use super::*;
 use crate::ProposalChange;
 use crate::agent::{
-    PM_SKILL_DISCOVERY_READ, PM_SKILL_DRY_RUN_REQUEST, PM_SKILL_TOOL_VERIFY, PM_TOOLS,
+    PM_SKILL_DISCOVERY_READ, PM_SKILL_DRY_RUN_REQUEST, PM_SKILL_TOOL_VERIFY, PM_TICKET_NOTE_ADD,
+    PM_TOOLS,
 };
 use crate::skill::{Evidence, NeededTool, SkillPrefilter, SkillSource, SkillTrigger};
 use crate::{
@@ -209,6 +210,16 @@ fn samples() -> Vec<(&'static str, Value)> {
             }),
         ),
         (PM_SKILL_DRY_RUN_REQUEST, json!({ "draftId": "d1" })),
+        (
+            PM_TICKET_NOTE_ADD,
+            sample(NoteAddParams {
+                ticket_id: "t1".into(),
+                kind: crate::TicketNoteKind::Fact,
+                text: "CSV too".into(),
+                url: Some("https://acme.slack.com/archives/C1/p1".into()),
+                source_key: Some("slack:C1:1.1".into()),
+            }),
+        ),
     ]
 }
 
@@ -598,4 +609,66 @@ fn a_check_report_records_facts_notes_probe_readings_and_proposals() {
     )
     .unwrap_err();
     assert_eq!(error.code(), "invalidArguments");
+}
+
+#[test]
+fn the_assistant_records_notes_the_ticket_read_returns() {
+    let mut store = store();
+    let own = ticket(&mut store, "p1", "Export", None);
+    let foreign = ticket(&mut store, "p2", "Foreign", None);
+    let note = |ticket_id: &str, key: &str| {
+        json!({
+            "ticketId": ticket_id,
+            "kind": "fact",
+            "text": "The client also wants CSV",
+            "url": "https://acme.slack.com/archives/C1/p1",
+            "sourceKey": key,
+        })
+    };
+    let added = call_pm_tool(
+        &mut store,
+        &assistant("p1"),
+        PM_TICKET_NOTE_ADD,
+        note(&own.id, "slack:C1:1.1"),
+    )
+    .unwrap();
+    assert_eq!(added["pending"], true);
+    // The same message again is refused, a ticket of another project is
+    // not found, and the description is left alone.
+    let again = call_pm_tool(
+        &mut store,
+        &assistant("p1"),
+        PM_TICKET_NOTE_ADD,
+        note(&own.id, "slack:C1:1.1"),
+    )
+    .unwrap_err();
+    assert_eq!(again.code(), "refused");
+    let foreign_error = call_pm_tool(
+        &mut store,
+        &assistant("p1"),
+        PM_TICKET_NOTE_ADD,
+        note(&foreign.id, "slack:C1:1.2"),
+    )
+    .unwrap_err();
+    assert_eq!(foreign_error.code(), "notFound");
+    let denied = call_pm_tool(
+        &mut store,
+        &delivery_check("p1", &own.id),
+        PM_TICKET_NOTE_ADD,
+        note(&own.id, "slack:C1:1.3"),
+    )
+    .unwrap_err();
+    assert_eq!(denied.code(), "denied");
+
+    let read = call_pm_tool(
+        &mut store,
+        &assistant("p1"),
+        PM_TICKET_READ,
+        json!({ "ticketId": own.id }),
+    )
+    .unwrap();
+    assert_eq!(read["ticket"]["description"], "");
+    assert_eq!(read["notes"].as_array().unwrap().len(), 1);
+    assert_eq!(read["notes"][0]["author"], "agent");
+    assert_eq!(read["notes"][0]["sourceKey"], "slack:C1:1.1");
 }

@@ -4,6 +4,7 @@
 mod check_rows;
 mod delivery_rows;
 mod migration;
+mod note_rows;
 mod rows;
 mod skill_rows;
 
@@ -14,6 +15,7 @@ use rusqlite::{Connection, Transaction};
 pub(crate) use check_rows::*;
 pub(crate) use delivery_rows::*;
 pub use migration::SCHEMA_VERSION;
+pub(crate) use note_rows::*;
 pub(crate) use rows::*;
 pub(crate) use skill_rows::*;
 

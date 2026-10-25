@@ -2,15 +2,16 @@
 //! delivery checks, and settings.
 
 use serde_json::{Value, json};
-use termloop_pm::agent::PmAgentMode;
+use termloop_pm::agent::AssistantTask;
 use termloop_pm::{
     CHECK_ENVIRONMENTS_MAX, DeliveryCheckReason, NewCheck, PM_AGENT_PROVIDERS, PmSettings,
     SettingsEdit, valid_setting_value,
 };
 use termloop_pm_contract::pm::{
     PmAgentCatalog, PmAgentCatalogPermissions, PmAgentCatalogProvider, PmAgentLaunchParams,
-    PmAgentStopParams, PmCheckStartParams, PmChecksReadParams, PmCredentialClearParams,
-    PmCredentialStoreParams, PmJiraApplyParams, PmProjectRef, PmSettingsUpdateParams, PmTicketRef,
+    PmAgentStopParams, PmAssistantTask, PmCheckStartParams, PmChecksReadParams,
+    PmCredentialClearParams, PmCredentialStoreParams, PmJiraApplyParams, PmProjectRef,
+    PmSettingsUpdateParams, PmTicketRef,
 };
 
 use super::dispatch::{check_value, convert, nullable_string, parse, require_project, to_value};
@@ -53,12 +54,15 @@ pub(super) async fn jira_apply(state: &AppState, params: &Value) -> Result<Value
 
 pub(super) fn agent_launch(state: &AppState, params: &Value) -> Result<Value, ControlError> {
     let params: PmAgentLaunchParams = parse(params)?;
-    let record = agents::launch(
+    let task = match params.task {
+        None | Some(PmAssistantTask::Brief) => AssistantTask::Brief,
+        Some(PmAssistantTask::UpdateDescription) => AssistantTask::UpdateDescription,
+    };
+    let record = agents::launch_assistant(
         state,
         &params.project_id,
-        PmAgentMode::Assistant,
         params.focus_ticket_id.as_deref(),
-        None,
+        task,
     )?;
     Ok(record.value())
 }

@@ -285,6 +285,7 @@ fn cancellable(method: &str) -> bool {
             | "pm_digest_read"
             | "pm_ticket_versions_read"
             | "pm_ticket_proposals_read"
+            | "pm_ticket_notes_read"
             | "pm_sources_read"
             | "pm_checks_read"
             | "pm_jira_diff_read"

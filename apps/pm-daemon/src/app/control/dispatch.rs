@@ -7,8 +7,8 @@ use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
 use termloop_pm::skill::SkillEvent;
 use termloop_pm::{
-    DeliveryCheck, NewProbe, NewTicket, PmStore, ProjectEnvironment, ProjectSources, Ticket,
-    TicketAuthor, TicketEdit,
+    DeliveryCheck, NewProbe, NewTicket, NewTicketNote, PmStore, ProjectEnvironment, ProjectSources,
+    Ticket, TicketAuthor, TicketEdit,
 };
 use termloop_pm_contract::pm::{
     CONTRACT_IDENTITY, ErrorCode, PmDigestReadParams, PmEnvironmentsSetParams, PmProbeCreateParams,
@@ -16,7 +16,7 @@ use termloop_pm_contract::pm::{
     PmSprintCreateParams, PmSprintRef, PmSprintUpdateParams, PmTicketBlockerAddParams,
     PmTicketBlockerRemoveParams, PmTicketCreateParams, PmTicketCriterionAddParams,
     PmTicketCriterionRemoveParams, PmTicketCriterionSetDoneParams, PmTicketDescriptionSaveParams,
-    PmTicketMoveParams, PmTicketRef, PmTicketUpdateParams,
+    PmTicketMoveParams, PmTicketNoteAddParams, PmTicketNoteRef, PmTicketRef, PmTicketUpdateParams,
 };
 
 use super::errors::{ControlError, error, internal, not_found};
@@ -184,6 +184,33 @@ fn planning(state: &AppState, method: &str, params: &Value) -> Result<Value, Con
                 "ticketId": params.ticket_id,
                 "proposals": to_value(&store.ticket_proposals(&params.ticket_id)?)?,
             }))
+        }
+        "pm_ticket_notes_read" => {
+            let params: PmTicketRef = parse(params)?;
+            Ok(json!({
+                "ticketId": params.ticket_id,
+                "notes": to_value(&store.ticket_notes(&params.ticket_id)?)?,
+            }))
+        }
+        "pm_ticket_note_add" => {
+            let params: PmTicketNoteAddParams = parse(params)?;
+            let note = store.add_ticket_note(NewTicketNote {
+                kind: convert(&params.kind)?,
+                text: params.text.trim().to_owned(),
+                ticket_id: params.ticket_id,
+                url: params.url,
+                source_key: None,
+                author: TicketAuthor::Pm,
+            })?;
+            changed_ticket(state, store, &note.ticket_id)?;
+            to_value(&note)
+        }
+        "pm_ticket_note_remove" => {
+            let params: PmTicketNoteRef = parse(params)?;
+            let note = store.ticket_note(&params.note_id)?;
+            store.remove_ticket_note(&note.id)?;
+            changed_ticket(state, store, &note.ticket_id)?;
+            Ok(json!({ "deleted": true }))
         }
         "pm_environments_set" => {
             let params: PmEnvironmentsSetParams = parse(params)?;

@@ -4,6 +4,7 @@
 import type {
   MethodParams,
   MethodResults,
+  PmAssistantTask,
   PmEnvironment,
   PmProbeMatcher,
   PmSettingsUpdateParams,
@@ -15,6 +16,7 @@ import type {
 import type { PmApi, PmEvent, RendererMethod } from "../../pm-api.js";
 import type { PmState, PmStore, PmView } from "../state/presentation-store.js";
 import { touchesJira } from "../ui/proposal-change.js";
+import type { NoteDraft } from "../ui/NoteDialog.js";
 import type { DescriptionSaveOutcome, TicketCapture } from "../ui/types.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -90,7 +92,8 @@ export class PmController {
     if (event.event === "pmAgentChanged") void this.refreshAgents();
     else if (event.event === "pmSkillsChanged") void this.loadSkills();
     else void this.refreshBoard();
-    if (event.event === "pmBoardChanged" && this.state.selectedTicketId) void this.loadProposals(this.state.selectedTicketId);
+    const selected = this.state.selectedTicketId;
+    if (event.event === "pmBoardChanged" && selected) void Promise.all([this.loadProposals(selected), this.loadNotes(selected)]);
   }
 
   // Projects ---------------------------------------------------------------
@@ -120,6 +123,7 @@ export class PmController {
       selectedTicketId: undefined,
       proposals: {},
       versions: {},
+      notes: {},
       agents: [],
       activeAgentSessionId: undefined,
       sources: undefined,
@@ -208,7 +212,7 @@ export class PmController {
 
   async selectTicket(ticketId: string): Promise<void> {
     this.#set({ selectedTicketId: ticketId, view: "ticket" });
-    await this.loadProposals(ticketId);
+    await Promise.all([this.loadProposals(ticketId), this.loadNotes(ticketId)]);
   }
 
   /**
@@ -295,6 +299,32 @@ export class PmController {
 
   async removeBlocker(ticketId: string, blockerId: string): Promise<void> {
     if (await this.call("pm_ticket_blocker_remove", { ticketId, blockerId })) await this.refreshBoard();
+  }
+
+  async loadNotes(ticketId: string): Promise<void> {
+    const result = await this.call("pm_ticket_notes_read", { ticketId });
+    if (result) this.#set({ notes: { ...this.state.notes, [ticketId]: result.notes } });
+  }
+
+  /** Records what the PM learned; the description changes only through a draft the PM applies. */
+  async addNote(ticketId: string, draft: NoteDraft): Promise<boolean> {
+    const note = await this.call("pm_ticket_note_add", { ticketId, kind: draft.kind, text: draft.text, ...(draft.url ? { url: draft.url } : {}) });
+    if (!note) return false;
+    await this.loadNotes(ticketId);
+    return true;
+  }
+
+  async removeNote(ticketId: string, noteId: string): Promise<void> {
+    await this.call("pm_ticket_note_remove", { noteId });
+    await this.loadNotes(ticketId);
+  }
+
+  /**
+   * Starts an assistant that reads the ticket's notes and followed sources
+   * and drafts one description from them; the draft waits for the PM.
+   */
+  async updateDescription(ticketId: string): Promise<void> {
+    await this.launchAgent(ticketId, true, "updateDescription");
   }
 
   async loadProposals(ticketId: string): Promise<void> {
@@ -399,10 +429,10 @@ export class PmController {
   }
 
   /** Starts an assistant and shows it in the stage unless `open` is false. */
-  async launchAgent(focusTicketId: string | undefined, open = true): Promise<void> {
+  async launchAgent(focusTicketId: string | undefined, open = true, task?: PmAssistantTask): Promise<void> {
     const projectId = this.state.projectId;
     if (!projectId) return;
-    const session = await this.call("pm_agent_launch", { projectId, ...(focusTicketId ? { focusTicketId } : {}) });
+    const session = await this.call("pm_agent_launch", { projectId, ...(focusTicketId ? { focusTicketId } : {}), ...(task ? { task } : {}) });
     if (!session) return;
     this.#set(open ? { activeAgentSessionId: session.sessionId, view: "agent" } : { activeAgentSessionId: session.sessionId });
     await this.refreshAgents();

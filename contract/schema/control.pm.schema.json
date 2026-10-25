@@ -30,6 +30,9 @@
       "pm_ticket_proposals_read",
       "pm_ticket_proposal_accept",
       "pm_ticket_proposal_reject",
+      "pm_ticket_notes_read",
+      "pm_ticket_note_add",
+      "pm_ticket_note_remove",
       "pm_environments_set",
       "pm_sources_read",
       "pm_sources_set",
@@ -282,6 +285,30 @@
       },
       "result": {
         "$ref": "#/$defs/pmRejectedResult"
+      }
+    },
+    "pm_ticket_notes_read": {
+      "params": {
+        "$ref": "#/$defs/pmTicketRef"
+      },
+      "result": {
+        "$ref": "#/$defs/pmTicketNotesReadResult"
+      }
+    },
+    "pm_ticket_note_add": {
+      "params": {
+        "$ref": "#/$defs/pmTicketNoteAddParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmTicketNote"
+      }
+    },
+    "pm_ticket_note_remove": {
+      "params": {
+        "$ref": "#/$defs/pmTicketNoteRef"
+      },
+      "result": {
+        "$ref": "#/$defs/pmDeletedResult"
       }
     },
     "pm_environments_set": {
@@ -688,6 +715,9 @@
         "pm_ticket_proposals_read",
         "pm_ticket_proposal_accept",
         "pm_ticket_proposal_reject",
+        "pm_ticket_notes_read",
+        "pm_ticket_note_add",
+        "pm_ticket_note_remove",
         "pm_environments_set",
         "pm_sources_read",
         "pm_sources_set",
@@ -3316,6 +3346,150 @@
         }
       }
     },
+    "pmTicketNoteKind": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "fact",
+        "source"
+      ]
+    },
+    "pmTicketNote": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "ticketId",
+        "kind",
+        "text",
+        "url",
+        "sourceKey",
+        "author",
+        "createdAtEpochMs",
+        "pending"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "ticketId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "kind": {
+          "$ref": "#/$defs/pmTicketNoteKind"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2048
+        },
+        "sourceKey": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "author": {
+          "$ref": "#/$defs/pmTicketAuthor"
+        },
+        "createdAtEpochMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pending": {
+          "type": "boolean"
+        }
+      }
+    },
+    "pmTicketNotesReadResult": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ticketId",
+        "notes"
+      ],
+      "properties": {
+        "ticketId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmTicketNote"
+          },
+          "maxItems": 100
+        }
+      }
+    },
+    "pmTicketNoteAddParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ticketId",
+        "kind",
+        "text"
+      ],
+      "properties": {
+        "ticketId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "kind": {
+          "$ref": "#/$defs/pmTicketNoteKind"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "url": {
+          "type": "string",
+          "minLength": 9,
+          "maxLength": 2048,
+          "pattern": "^https://"
+        }
+      }
+    },
+    "pmTicketNoteRef": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "noteId"
+      ],
+      "properties": {
+        "noteId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        }
+      }
+    },
     "pmRejectedResult": {
       "x-codegen": true,
       "type": "object",
@@ -3869,8 +4043,19 @@
           "minLength": 1,
           "maxLength": 128,
           "pattern": "^[!-~]+$"
+        },
+        "task": {
+          "$ref": "#/$defs/pmAssistantTask"
         }
       }
+    },
+    "pmAssistantTask": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "brief",
+        "updateDescription"
+      ]
     },
     "pmAgentListResult": {
       "x-codegen": true,

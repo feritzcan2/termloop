@@ -14,6 +14,7 @@ import type {
   PmSettings,
   PmSkillsReadResult,
   PmSources,
+  PmTicketNote,
   PmTicketVersion,
 } from "@termloop/pm-contract/pm";
 import type { PmConnectionState } from "../../pm-api.js";
@@ -34,6 +35,8 @@ export type PmState = {
   digest: PmDigestReadResult | undefined;
   proposals: Record<string, PmProposal[]>;
   versions: Record<string, PmTicketVersion[]>;
+  /** Notes read so far, by ticket. */
+  notes: Record<string, PmTicketNote[]>;
   agents: PmAgentSession[];
   activeAgentSessionId: string | undefined;
   settings: PmSettings | undefined;
@@ -58,6 +61,7 @@ export const initialPmState: PmState = {
   digest: undefined,
   proposals: {},
   versions: {},
+  notes: {},
   agents: [],
   activeAgentSessionId: undefined,
   settings: undefined,

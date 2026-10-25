@@ -229,6 +229,9 @@ code { font: 11px var(--font-mono); background: var(--bg-raised); padding: 1px 5
 .pm-menu button { padding: 6px 8px; border: 0; border-radius: 4px; background: none; color: var(--text-secondary); font-size: 12px; text-align: left; }
 .pm-menu button:hover:not(:disabled), .pm-menu button:focus-visible { outline: none; background: var(--bg-hover); color: var(--text); }
 .pm-menu button:disabled { opacity: .4; }
+/* a ticket's right-click menu at the pointer */
+.pm-menu.pm-context-menu { position: fixed; right: auto; top: auto; z-index: 40; width: 240px; }
+.pm-menu-sep { margin: 4px 2px; border: 0; border-top: 1px solid var(--rule); }
 
 /* status sections inside the focused sprint group */
 .group .pm-status-head { padding: 6px 6px 3px 26px; }
@@ -432,6 +435,14 @@ h3.s .r { margin-left: auto; color: var(--dimmer); font: 400 10px/1 var(--font-m
 .checklist, .blockers { max-width: 70ch; margin: 0; padding: 0; list-style: none; }
 .checklist li, .blockers li { display: flex; align-items: flex-start; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--rule); font-size: 12.5px; }
 .checklist label { display: flex; flex: 1; gap: 10px; align-items: flex-start; }
+/* ticket notes: followed sources, then facts; a pending fact is not in the description yet */
+.notes, .note-sources { max-width: 70ch; margin: 0; padding: 0; list-style: none; }
+.notes li, .note-sources li { display: flex; align-items: flex-start; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--rule); font-size: 12.5px; }
+.notes li.pending { border-left: 2px solid var(--accent); padding-left: 8px; }
+.note-text { flex: 1; white-space: pre-wrap; }
+.note-meta, .note-sources .hint { display: inline-flex; flex: none; gap: 6px; align-items: center; color: var(--dimmer); font-size: 11px; }
+.note-meta .draft { color: var(--success); }
+.note-sources .link { flex: 1; text-align: left; }
 .checklist input { margin: 3px 0 0; }
 .checklist li.done { color: var(--dimmer); }
 .blockers li { border-bottom: 0; padding: 4px 0; }
@@ -523,6 +534,10 @@ li:hover > .icb.remove, .icb.remove:focus-visible { opacity: 1; }
 .modal-head b { font-size: 13px; }
 .modal > :not(.modal-head) { margin-left: 14px; margin-right: 14px; }
 .modal > p { margin-top: 12px; }
+.note-dialog { width: min(520px, 92vw); }
+.note-field { display: grid; gap: 4px; margin-top: 12px; font-size: 12px; color: var(--text-secondary); }
+.note-field textarea { resize: vertical; font: inherit; }
+.modal-foot { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
 .diff-table { width: calc(100% - 28px); margin-top: 12px; border-collapse: collapse; font-size: 12px; }
 .diff-table th { padding: 4px 8px 6px 0; border-bottom: 1px solid var(--rule); color: var(--dimmer); font: 700 9px/1 var(--font-mono); letter-spacing: .14em; text-align: left; text-transform: uppercase; }
 .diff-table td { max-width: 300px; padding: 7px 8px 7px 0; border-bottom: 1px solid var(--rule); vertical-align: top; color: var(--text-secondary); }

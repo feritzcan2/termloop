@@ -4,7 +4,7 @@
 
 use super::{PmToolContext, PmToolError, denied};
 use crate::agent::{
-    PM_CHECK_REPORT, PM_RISKS_READ, PM_SKILL_DRAFT_SUBMIT, PM_SKILL_RUN_FINISH,
+    PM_CHECK_REPORT, PM_RISKS_READ, PM_SKILL_DRAFT_SUBMIT, PM_SKILL_RUN_FINISH, PM_TICKET_NOTE_ADD,
     PM_TICKET_PROPOSE_ACCEPTANCE_CRITERIA, PM_TICKET_PROPOSE_DESCRIPTION, PM_TICKET_READ,
     PM_TICKET_SUGGEST, PmAgentMode,
 };
@@ -14,9 +14,10 @@ use crate::skill::{
 };
 use crate::{
     AgentProbeReading, Board, CheckReport, DataTier, DeliveryRisk, DeliveryStage,
-    EnvironmentDeployState, NewProbe, PmError, PmStore, ProbeMatcher, ProposalChange,
-    ProposalOrigin, ReportedEnvironment, SprintState, Ticket, TicketDelivery, TicketDeliveryFacts,
-    TicketPriority, TicketProposal, TicketStatus,
+    EnvironmentDeployState, NewProbe, NewTicketNote, PmError, PmStore, ProbeMatcher,
+    ProposalChange, ProposalOrigin, ReportedEnvironment, SprintState, Ticket, TicketAuthor,
+    TicketDelivery, TicketDeliveryFacts, TicketNote, TicketNoteKind, TicketPriority,
+    TicketProposal, TicketStatus,
 };
 
 /// Which tickets a board read lists.
@@ -89,6 +90,33 @@ pub struct TicketReadResult {
     pub delivery: TicketDelivery,
     pub facts: Option<TicketDeliveryFacts>,
     pub pending_proposals: Vec<TicketProposal>,
+    /// Facts learned and sources followed, oldest first; a pending one is
+    /// not in the description yet.
+    pub notes: Vec<TicketNote>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct NoteAddParams {
+    pub ticket_id: String,
+    pub kind: TicketNoteKind,
+    /// A fact, or a source's one-line label.
+    pub text: String,
+    /// Where the fact was read, or the source's link.
+    #[serde(default)]
+    pub url: Option<String>,
+    /// What the fact was read from, e.g. `slack:<channel>:<ts>`.
+    #[serde(default)]
+    pub source_key: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NoteAddResult {
+    pub note_id: String,
+    pub ticket_id: String,
+    /// Always true for a new note: the description does not reflect it yet.
+    pub pending: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -352,7 +380,31 @@ pub(super) fn ticket_read(
         delivery: delivery_of(&board, &ticket.id)?,
         facts: store.ticket_facts(&ticket.id)?,
         pending_proposals: store.ticket_proposals(&ticket.id)?,
+        notes: store.ticket_notes(&ticket.id)?,
         ticket,
+    })
+}
+
+/// Records what the agent learned about a ticket; the ticket itself is left
+/// alone.
+pub(super) fn note_add(
+    store: &mut PmStore,
+    context: &PmToolContext,
+    params: NoteAddParams,
+) -> Result<NoteAddResult, PmToolError> {
+    let ticket = scoped_ticket(store, context, PM_TICKET_NOTE_ADD, &params.ticket_id)?;
+    let note = store.add_ticket_note(NewTicketNote {
+        ticket_id: ticket.id,
+        kind: params.kind,
+        text: params.text,
+        url: params.url,
+        source_key: params.source_key,
+        author: TicketAuthor::Agent,
+    })?;
+    Ok(NoteAddResult {
+        note_id: note.id,
+        ticket_id: note.ticket_id,
+        pending: note.pending,
     })
 }
 

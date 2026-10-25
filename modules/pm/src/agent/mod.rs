@@ -11,14 +11,15 @@ pub use launch::{
     PM_MCP_SERVER_NAME, PmLaunchError, PmLaunchPlan, PmLaunchRequest, claude_mcp_config,
     pm_launch_plan,
 };
-pub use profile::{PM_SYSTEM_PROMPT_MAX_BYTES, PmAgentProfile, SkillRunBrief};
+pub use profile::{AssistantTask, PM_SYSTEM_PROMPT_MAX_BYTES, PmAgentProfile, SkillRunBrief};
 pub use tools::{
     AcceptanceCriteriaProposalParams, AgentProbeParams, BoardReadParams, BoardReadResult,
     BoardScope, BoardSprint, BoardTicket, CheckReportParams, CheckReportResult,
-    DescriptionProposalParams, PmToolContext, PmToolDefinition, PmToolError, ProbeProposalParams,
-    ProposalResult, ReportedEnvironmentParams, RisksReadParams, RisksReadResult,
-    SkillDraftSubmitParams, SkillRunContext, SkillRunFinishParams, SuggestParams, TicketReadParams,
-    TicketReadResult, TicketRisks, call_pm_tool, pm_tool_access, pm_tool_definitions,
+    DescriptionProposalParams, NoteAddParams, NoteAddResult, PmToolContext, PmToolDefinition,
+    PmToolError, ProbeProposalParams, ProposalResult, ReportedEnvironmentParams, RisksReadParams,
+    RisksReadResult, SkillDraftSubmitParams, SkillRunContext, SkillRunFinishParams, SuggestParams,
+    TicketReadParams, TicketReadResult, TicketRisks, call_pm_tool, pm_tool_access,
+    pm_tool_definitions,
 };
 
 /// What the PM agent is launched for.
@@ -50,6 +51,7 @@ pub const PM_SKILL_DISCOVERY_READ: &str = "pm_skill_discovery_read";
 pub const PM_SKILL_TOOL_VERIFY: &str = "pm_skill_tool_verify";
 pub const PM_SKILL_DRAFT_SUBMIT: &str = "pm_skill_draft_submit";
 pub const PM_SKILL_DRY_RUN_REQUEST: &str = "pm_skill_dry_run_request";
+pub const PM_TICKET_NOTE_ADD: &str = "pm_ticket_note_add";
 
 /// The read tools a skill manifest may approve. A run sees exactly the
 /// ones its manifest approved, plus [`SKILL_PROPOSAL_TOOLS`].
@@ -85,6 +87,7 @@ pub const PM_TOOLS: &[&str] = &[
     PM_SKILL_TOOL_VERIFY,
     PM_SKILL_DRAFT_SUBMIT,
     PM_SKILL_DRY_RUN_REQUEST,
+    PM_TICKET_NOTE_ADD,
 ];
 
 impl PmAgentMode {
@@ -99,6 +102,7 @@ impl PmAgentMode {
                 PM_TICKET_PROPOSE_DESCRIPTION,
                 PM_TICKET_PROPOSE_ACCEPTANCE_CRITERIA,
                 PM_RISKS_READ,
+                PM_TICKET_NOTE_ADD,
             ],
             Self::DeliveryCheck => &[
                 PM_BOARD_READ,

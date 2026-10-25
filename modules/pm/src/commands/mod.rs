@@ -8,6 +8,7 @@ mod environment;
 mod facts;
 mod jira_mirror;
 mod jira_write;
+mod note;
 mod probe;
 mod project;
 mod proposal;

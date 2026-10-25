@@ -3,6 +3,7 @@ import type { PmBoardTicket, PmDataTier, PmProposal, PmSprint, PmTicketVersion }
 import { MarkdownEditor } from "./MarkdownEditor.js";
 import { ProposalCard } from "./ProposalCard.js";
 import { TicketFields } from "./TicketFields.js";
+import { TicketNotes, type TicketNotesProps } from "./TicketNotes.js";
 import { AUTHOR_LABEL, VersionsList } from "./VersionsList.js";
 import { RISK_LABEL, jiraKey, relativeTime, riskTone, ticketLabel } from "./format.js";
 import { ticketScope } from "./scope.js";
@@ -30,6 +31,8 @@ export type TicketEditorProps = {
   onAcceptProposal(proposalId: string, assignee?: string): void;
   onRejectProposal(proposalId: string): void;
   onOpenLink(url: string): void;
+  /** The ticket's notes section; absent hides it. */
+  notes?: Omit<TicketNotesProps, "now" | "onOpenLink">;
   onWriteToJira(): void;
   onStartCheck(): void;
   onAskAgent(): void;
@@ -185,6 +188,8 @@ export function TicketEditor(props: TicketEditorProps) {
             onOpenLink={props.onOpenLink}
           />
         ))}
+
+        {props.notes && <TicketNotes {...props.notes} now={props.now} onOpenLink={props.onOpenLink} />}
 
         <h3 className="s">Acceptance criteria <small>{doneCount} of {ticket.acceptanceCriteria.length} met</small></h3>
         <ul className="checklist">

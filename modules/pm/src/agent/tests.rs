@@ -351,3 +351,67 @@ fn the_claude_config_reads_the_bearer_from_the_environment() {
     );
     assert!(claude_mcp_config("http://10.0.0.1/mcp").is_err());
 }
+
+#[test]
+fn the_assistant_hears_the_focus_notes_and_can_start_a_description_update() {
+    let (mut store, ticket_id) = project_store();
+    store
+        .add_ticket_note(crate::NewTicketNote {
+            ticket_id: ticket_id.clone(),
+            kind: crate::TicketNoteKind::Fact,
+            text: "Login also needs SSO".into(),
+            url: None,
+            source_key: None,
+            author: crate::TicketAuthor::Pm,
+        })
+        .unwrap();
+    store
+        .add_ticket_note(crate::NewTicketNote {
+            ticket_id: ticket_id.clone(),
+            kind: crate::TicketNoteKind::Source,
+            text: "Slack #login thread".into(),
+            url: Some("https://acme.slack.com/archives/C1/p1".into()),
+            source_key: None,
+            author: crate::TicketAuthor::Pm,
+        })
+        .unwrap();
+
+    let brief =
+        PmAgentProfile::build(&store, "p1", PmAgentMode::Assistant, Some(&ticket_id)).unwrap();
+    assert!(brief.system_prompt.contains("(1 pending"));
+    assert!(
+        brief
+            .system_prompt
+            .contains("pending fact: Login also needs SSO")
+    );
+    assert!(
+        brief.system_prompt.contains(
+            "source to read: Slack #login thread <https://acme.slack.com/archives/C1/p1>"
+        )
+    );
+    assert!(brief.tools.contains(&PM_TICKET_NOTE_ADD));
+
+    let update = PmAgentProfile::build_for(
+        &store,
+        "p1",
+        PmAgentMode::Assistant,
+        Some(&ticket_id),
+        AssistantTask::UpdateDescription,
+    )
+    .unwrap();
+    let kickoff = update.first_message.unwrap();
+    assert!(kickoff.starts_with("Bring the description of the ticket in focus up to date"));
+    assert!(kickoff.ends_with(&format!("The ticket in focus is {ticket_id}.")));
+    // The kickoff goes in argv: it names the ticket by id, never its text.
+    assert!(!kickoff.contains("SSO"));
+
+    for (mode, focus) in [
+        (PmAgentMode::Assistant, None),
+        (PmAgentMode::SkillCreator, Some(ticket_id.as_str())),
+    ] {
+        assert!(matches!(
+            PmAgentProfile::build_for(&store, "p1", mode, focus, AssistantTask::UpdateDescription),
+            Err(PmError::Invalid("task"))
+        ));
+    }
+}
