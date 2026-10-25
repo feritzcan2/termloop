@@ -213,6 +213,10 @@ impl JiraCloudClient {
             .map_err(|_| JiraSearchError::Unavailable)?;
         Ok(Self { client })
     }
+
+    pub(crate) fn http(&self) -> &reqwest::blocking::Client {
+        &self.client
+    }
 }
 
 impl JiraIssueSource for JiraCloudClient {

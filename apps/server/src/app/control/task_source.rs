@@ -685,7 +685,7 @@ async fn observe_refresh(
     outcome
 }
 
-async fn read_stored_credential(
+pub(super) async fn read_stored_credential(
     state: &AppState,
     source_id: &str,
 ) -> Result<SecureSecret, TaskSourceFailure> {
@@ -733,7 +733,7 @@ pub(in crate::app::control) async fn credential_presence(
     }
 }
 
-fn expose_credential(secret: &SecureSecret) -> Result<(&str, &str), TaskSourceFailure> {
+pub(super) fn expose_credential(secret: &SecureSecret) -> Result<(&str, &str), TaskSourceFailure> {
     let separator = secret
         .expose()
         .iter()
@@ -746,7 +746,7 @@ fn expose_credential(secret: &SecureSecret) -> Result<(&str, &str), TaskSourceFa
     Ok((email, token))
 }
 
-fn credential_presence_for_failure(
+pub(super) fn credential_presence_for_failure(
     failure: Option<TaskSourceFailure>,
 ) -> TaskSourceCredentialPresence {
     match failure {
@@ -813,7 +813,11 @@ fn cached_credential_state(state: &AppState, source_id: &str) -> &'static str {
         .unwrap_or("unavailable")
 }
 
-fn set_credential_state(state: &AppState, source_id: &str, presence: TaskSourceCredentialPresence) {
+pub(super) fn set_credential_state(
+    state: &AppState,
+    source_id: &str,
+    presence: TaskSourceCredentialPresence,
+) {
     if let Ok(mut states) = state.task_source_credential_states.lock() {
         states.insert(source_id.to_owned(), presence);
     }

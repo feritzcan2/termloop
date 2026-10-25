@@ -144,7 +144,7 @@ async fn run_probes(state: &AppState, project_id: &str) -> Result<bool, CoreErro
 
 /// Mirrors a Project's Jira sprints and copies its active sprint's new
 /// issues into Tasks. A failed read is kept for the board to show.
-async fn sync_sprints(state: &AppState, project_id: &str) -> Result<bool, CoreError> {
+pub(super) async fn sync_sprints(state: &AppState, project_id: &str) -> Result<bool, CoreError> {
     let Some(plan) = state.core.lock().await.plan_jira_sprint_sync(project_id) else {
         return Ok(false);
     };

@@ -408,3 +408,11 @@
 .pm-environment-form input:not([type="checkbox"]) { flex: 1; min-width: 0; }
 .pm-environment-form label { display: flex; align-items: center; gap: 3px; font-size: 11px; }
 .pm-environment-actions { display: flex; gap: 6px; margin-top: 6px; }
+.dialog-card.pm-jira-sync { width: min(880px,calc(100vw - 40px)); }
+.pm-jira-sync-body { display: grid; gap: 10px; max-height: min(66vh,620px); overflow-y: auto; }
+.pm-jira-sync-sides { display: grid; grid-template-columns: repeat(auto-fit,minmax(260px,1fr)); gap: 12px; }
+.pm-jira-sync-sides h3 { margin: 0 0 4px; color: var(--text-muted); font: 600 10.5px/1.4 var(--font-ui); letter-spacing: .04em; text-transform: uppercase; }
+.pm-jira-sync-title { margin: 0 0 6px; color: var(--text); font: 600 13px/1.4 var(--font-ui); }
+.pm-jira-sync-sides .pm-proposal-brief { max-height: 360px; }
+.pm-jira-sync-same { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--text-secondary); font: 12px/1.4 var(--font-ui); }
+.pm-jira-sync-same svg { width: 12px; height: 12px; color: var(--success, #3fb950); }

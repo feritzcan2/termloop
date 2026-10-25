@@ -611,6 +611,21 @@ handleIpc(
     controlCall("projectManager.environmentsSet", params),
 );
 handleIpc(
+  "termloop:project-manager-jira-issue-read",
+  (_event, params: import("@termloop/contract/current").ProjectManagerJiraIssueReadParams) =>
+    controlCall("projectManager.jiraIssueRead", params),
+);
+handleIpc(
+  "termloop:project-manager-jira-issue-push",
+  (_event, params: import("@termloop/contract/current").ProjectManagerJiraIssuePushParams) =>
+    controlCall("projectManager.jiraIssuePush", params),
+);
+handleIpc(
+  "termloop:project-manager-jira-sprint-move",
+  (_event, params: import("@termloop/contract/current").ProjectManagerJiraSprintMoveParams) =>
+    controlCall("projectManager.jiraSprintMove", params),
+);
+handleIpc(
   "termloop:project-manager-proposal-accept",
   (_event, params: import("@termloop/contract/current").ProjectManagerProposalAcceptParams) =>
     controlCall("projectManager.proposalAccept", params),

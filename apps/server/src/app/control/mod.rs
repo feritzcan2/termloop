@@ -1,6 +1,7 @@
 mod dispatch;
 mod errors;
 mod handlers;
+mod jira_write;
 mod task_source;
 
 use std::collections::{HashMap, VecDeque};

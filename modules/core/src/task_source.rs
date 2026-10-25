@@ -15,8 +15,9 @@ pub use termloop_domain::{
 mod observer;
 mod projection;
 pub use observer::{
-    JiraBoardSprints, JiraSprintObservation, JiraTaskSourceRefreshObserver, TaskSourceBoard,
-    TaskSourceBoardList, TaskSourceBoardObserver, TaskSourceJiraObserver,
+    JiraBoardSprints, JiraIssueWrite, JiraIssueWriteOutcome, JiraSprintObservation,
+    JiraTaskSourceRefreshObserver, JiraWriteFailure, TaskSourceBoard, TaskSourceBoardList,
+    TaskSourceBoardObserver, TaskSourceIssueWriter, TaskSourceJiraObserver,
     TaskSourceRefreshObserver, TaskSourceSprintObserver, TaskSourceStatus, TaskSourceStatusList,
     UnavailableTaskSourceRefreshObserver,
 };

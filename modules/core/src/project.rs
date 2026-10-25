@@ -3,6 +3,7 @@
 mod changes;
 mod delivery;
 mod jira_sprints;
+mod jira_write;
 mod mode;
 mod probes;
 mod risks;
@@ -17,6 +18,7 @@ pub use changes::{
 };
 pub use jira_sprints::JiraSprintSyncPlan;
 pub(crate) use jira_sprints::JiraSprintSyncStatus;
+pub use jira_write::{JiraIssueWritePlan, jira_write_failure_wire};
 pub use probes::DeliveryCheckProbeProposal;
 pub use ticket_tools::AgentTicketWrite;
 

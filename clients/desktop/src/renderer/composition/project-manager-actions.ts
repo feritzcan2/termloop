@@ -59,6 +59,12 @@ export function createProjectManagerActions({ api, guard, refresh }: ProjectMana
       guard(api(projectId).projectManagerEnvironmentSet(params)),
     setEnvironments: (projectId: string, environments: ProjectEnvironmentDto[]) =>
       guard(api(projectId).projectManagerEnvironmentsSet({ projectId, environments })),
+    readJiraIssue: (projectId: string, taskId: string) =>
+      guard(api(projectId).projectManagerJiraIssueRead({ projectId, taskId })),
+    pushJiraIssue: (projectId: string, taskId: string, expectedTicketVersion: number, expectedJiraUpdated: string) =>
+      guard(api(projectId).projectManagerJiraIssuePush({ projectId, taskId, expectedTicketVersion, expectedJiraUpdated })),
+    moveJiraSprint: (projectId: string, taskId: string, sprintId: string | null) =>
+      guard(api(projectId).projectManagerJiraSprintMove({ projectId, taskId, sprintId })),
     acceptProposal: async (projectId: string, taskId: string, expectedVersion: number | null) => {
       const result = await guard(api(projectId).projectManagerProposalAccept({ taskId, expectedVersion }));
       await refresh();

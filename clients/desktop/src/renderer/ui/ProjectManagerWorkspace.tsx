@@ -5,6 +5,7 @@ import type {
   ProjectManagerCheckRequestResult,
   ProjectManagerEnvironmentSetParams,
   ProjectManagerProbeCreateParams,
+  ProjectManagerJiraIssueResult,
   ProjectManagerJiraSearchResult,
   ProjectManagerTaskCreateParams,
   ProjectManagerTaskCreateResult,
@@ -45,6 +46,13 @@ export type ProjectManagerWorkspaceActions = {
   setEnvironment(params: ProjectManagerEnvironmentSetParams): Promise<ProjectManagerBoardResult>;
   /// Replaces the Project's environments, in delivery order.
   setEnvironments(environments: ProjectEnvironmentDto[]): Promise<ProjectManagerBoardResult>;
+  /// Reads the Task's Jira issue as Jira holds it now.
+  readJiraIssue(taskId: string): Promise<ProjectManagerJiraIssueResult>;
+  /// Replaces the Jira issue's summary and description with the reviewed
+  /// ticket version, unless either changed since.
+  pushJiraIssue(taskId: string, expectedTicketVersion: number, expectedJiraUpdated: string): Promise<ProjectManagerJiraIssueResult>;
+  /// Moves the Jira issue into a sprint mirrored from Jira, or the backlog.
+  moveJiraSprint(taskId: string, sprintId: string | null): Promise<ProjectManagerJiraIssueResult>;
   acceptProposal(taskId: string, expectedVersion: number | null): Promise<ProjectManagerTicketSaveResult>;
   dismissProposal(taskId: string): Promise<ProjectManagerBoardResult>;
   /// Writes a probe, approved as written.
@@ -69,6 +77,9 @@ export type ProjectManagerProjectActions = {
   refreshFacts(projectId: string): Promise<ProjectManagerBoardResult>;
   setEnvironment(projectId: string, params: ProjectManagerEnvironmentSetParams): Promise<ProjectManagerBoardResult>;
   setEnvironments(projectId: string, environments: ProjectEnvironmentDto[]): Promise<ProjectManagerBoardResult>;
+  readJiraIssue(projectId: string, taskId: string): Promise<ProjectManagerJiraIssueResult>;
+  pushJiraIssue(projectId: string, taskId: string, expectedTicketVersion: number, expectedJiraUpdated: string): Promise<ProjectManagerJiraIssueResult>;
+  moveJiraSprint(projectId: string, taskId: string, sprintId: string | null): Promise<ProjectManagerJiraIssueResult>;
   acceptProposal(projectId: string, taskId: string, expectedVersion: number | null): Promise<ProjectManagerTicketSaveResult>;
   dismissProposal(projectId: string, taskId: string): Promise<ProjectManagerBoardResult>;
   createProbe(projectId: string, params: Omit<ProjectManagerProbeCreateParams, "projectId">): Promise<ProjectManagerBoardResult>;
@@ -154,6 +165,7 @@ export function ProjectManagerStage(props: {
   restoreTicket(taskId: string, number: number, expectedVersion: number | null): Promise<string | undefined>;
   setEnvironment(params: ProjectManagerEnvironmentSetParams): Promise<string | undefined>;
   setEnvironments(environments: ProjectEnvironmentDto[]): Promise<string | undefined>;
+  moveJiraSprint(taskId: string, sprintId: string | null): Promise<string | undefined>;
   acceptProposal(taskId: string, expectedVersion: number | null): Promise<string | undefined>;
   dismissProposal(taskId: string): Promise<string | undefined>;
   requestCheck(taskIds: string[] | null): Promise<string | undefined>;
@@ -193,6 +205,7 @@ export function ProjectManagerStage(props: {
         saveTicket={props.saveTicket}
         restoreTicket={props.restoreTicket}
         setTracking={props.setTracking}
+        moveJiraSprint={props.moveJiraSprint}
         setEnvironment={props.setEnvironment}
         acceptProposal={props.acceptProposal}
         dismissProposal={props.dismissProposal}

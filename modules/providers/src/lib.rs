@@ -5,6 +5,7 @@ mod claude_usage;
 mod integration_status;
 mod issue_key_pull_requests;
 mod jira;
+mod jira_write;
 mod openai_voice;
 mod pull_request_changes;
 mod repository_pull_requests;
@@ -31,6 +32,11 @@ pub use jira::{
     JiraSearchResult, JiraSearchScope, JiraSprint, JiraSprintListResult, JiraSprintSource,
     JiraSprintState, NormalizedJiraIssueRef, normalize_jira_issue_url,
     normalize_jira_site_base_url,
+};
+
+pub use jira_write::{
+    JIRA_DESCRIPTION_MAX_CHARS, JIRA_SUMMARY_MAX_CHARS, JiraIssueText, JiraIssueWriter,
+    JiraWriteError, markdown_to_jira_wiki,
 };
 
 pub use repository_pull_requests::{

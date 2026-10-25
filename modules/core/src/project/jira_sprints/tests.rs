@@ -4,7 +4,7 @@ use termloop_providers::{JiraIssueSnapshot, JiraSearchResult, JiraSprint, JiraSp
 
 use crate::{CoreError, CoreRuntime, JiraBoardSprints, JiraSprintObservation, TaskSourceFailure};
 
-fn issue(key: &str) -> JiraIssueSnapshot {
+pub(crate) fn issue(key: &str) -> JiraIssueSnapshot {
     JiraIssueSnapshot {
         external_id: key.trim_start_matches("PAY-").into(),
         key: key.into(),
@@ -18,7 +18,7 @@ fn issue(key: &str) -> JiraIssueSnapshot {
     }
 }
 
-fn sprint(id: u64, name: &str, state: JiraSprintState) -> JiraSprint {
+pub(crate) fn sprint(id: u64, name: &str, state: JiraSprintState) -> JiraSprint {
     JiraSprint {
         id,
         board_id: 7,
@@ -29,7 +29,10 @@ fn sprint(id: u64, name: &str, state: JiraSprintState) -> JiraSprint {
     }
 }
 
-fn observation(sprints: Vec<JiraSprint>, active_issues: &[&str]) -> JiraSprintObservation {
+pub(crate) fn observation(
+    sprints: Vec<JiraSprint>,
+    active_issues: &[&str],
+) -> JiraSprintObservation {
     let active = sprints
         .iter()
         .find(|sprint| sprint.state == JiraSprintState::Active)
@@ -55,7 +58,7 @@ fn observation(sprints: Vec<JiraSprint>, active_issues: &[&str]) -> JiraSprintOb
 
 /// The Project Manager Project of the delivery check tests, with a Jira Task
 /// Source that selects board 7.
-fn synced_project() -> (CoreRuntime, std::path::PathBuf, String) {
+pub(crate) fn synced_project() -> (CoreRuntime, std::path::PathBuf, String) {
     let (mut runtime, root, project_id) =
         crate::runtime::delivery_check::tests::project_manager_runtime();
     let revision = runtime.state_revision();
@@ -103,7 +106,7 @@ fn sprint_of(runtime: &CoreRuntime, task_id: &str) -> Option<String> {
         .map(|sprint| sprint.name.clone())
 }
 
-fn task_for(runtime: &CoreRuntime, key: &str) -> Option<String> {
+pub(crate) fn task_for(runtime: &CoreRuntime, key: &str) -> Option<String> {
     runtime
         .store
         .issue_links()

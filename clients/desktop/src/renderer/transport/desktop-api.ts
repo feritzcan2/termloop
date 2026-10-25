@@ -42,6 +42,10 @@ import type {
   ProjectManagerCheckRequestResult,
   ProjectManagerEnvironmentSetParams,
   ProjectManagerEnvironmentsSetParams,
+  ProjectManagerJiraIssuePushParams,
+  ProjectManagerJiraIssueReadParams,
+  ProjectManagerJiraIssueResult,
+  ProjectManagerJiraSprintMoveParams,
   ProjectManagerProposalAcceptParams,
   ProjectManagerProbeCreateParams,
   ProjectManagerBoardResult,
@@ -355,6 +359,9 @@ export type DesktopApi = {
   projectManagerModeSet(params: ProjectManagerModeSetParams): Promise<ProjectManagerModeResult>;
   projectManagerEnvironmentSet(params: ProjectManagerEnvironmentSetParams): Promise<ProjectManagerBoardResult>;
   projectManagerEnvironmentsSet(params: ProjectManagerEnvironmentsSetParams): Promise<ProjectManagerBoardResult>;
+  projectManagerJiraIssueRead(params: ProjectManagerJiraIssueReadParams): Promise<ProjectManagerJiraIssueResult>;
+  projectManagerJiraIssuePush(params: ProjectManagerJiraIssuePushParams): Promise<ProjectManagerJiraIssueResult>;
+  projectManagerJiraSprintMove(params: ProjectManagerJiraSprintMoveParams): Promise<ProjectManagerJiraIssueResult>;
   projectManagerProposalAccept(params: ProjectManagerProposalAcceptParams): Promise<ProjectManagerTicketSaveResult>;
   projectManagerProposalDismiss(taskId: string): Promise<ProjectManagerBoardResult>;
   projectManagerCheckRequest(params: ProjectManagerCheckRequestParams): Promise<ProjectManagerCheckRequestResult>;

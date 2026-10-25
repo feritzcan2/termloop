@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ProjectManagerBoardResult, TaskDeliveryFactsDto } from "@termloop/contract/current";
+import type { JiraIssueTextDto, ProjectManagerBoardResult, ProjectManagerJiraIssueResult, TaskDeliveryFactsDto } from "@termloop/contract/current";
 
 import type { Task } from "../src/renderer/model.js";
 import {
@@ -88,6 +88,19 @@ function board(overrides: Partial<ProjectManagerBoardResult> = {}): ProjectManag
   };
 }
 
+function jiraResult(
+  outcome: ProjectManagerJiraIssueResult["outcome"],
+  issue: Partial<JiraIssueTextDto> | null = {},
+): ProjectManagerJiraIssueResult {
+  return {
+    taskId: "task-1",
+    outcome,
+    issue: issue ? { key: "PAY-42", summary: "Checkout fails in Jira", description: "h2. Goal\n* Retry *once*", updated: "u1", ...issue } : null,
+    failureReason: null,
+    board: board(),
+  };
+}
+
 function actions(overrides: Partial<ProjectManagerWorkspaceActions> = {}): ProjectManagerWorkspaceActions {
   return {
     loadBoard: async () => board(),
@@ -107,6 +120,9 @@ function actions(overrides: Partial<ProjectManagerWorkspaceActions> = {}): Proje
     refreshFacts: async () => board(),
     setEnvironment: async () => board(),
     setEnvironments: async () => board(),
+    readJiraIssue: vi.fn(async () => jiraResult("read")),
+    pushJiraIssue: vi.fn(async () => jiraResult("updated", { updated: "u2" })),
+    moveJiraSprint: vi.fn(async () => jiraResult("moved", null)),
     acceptProposal: vi.fn(async () => ({ taskId: "task-1", version: 2, board: board() })),
     dismissProposal: async () => board(),
     openTaskSources: vi.fn(),
@@ -185,6 +201,9 @@ describe("Project Manager layout helpers", () => {
     expect(PROFILED_DESKTOP_OPERATIONS.projectManagerEnvironmentSet).toBe("termloop:project-manager-environment-set");
     expect(PROFILED_DESKTOP_OPERATIONS.projectManagerProposalAccept).toBe("termloop:project-manager-proposal-accept");
     expect(PROFILED_DESKTOP_OPERATIONS.projectManagerProposalDismiss).toBe("termloop:project-manager-proposal-dismiss");
+    expect(PROFILED_DESKTOP_OPERATIONS.projectManagerJiraIssueRead).toBe("termloop:project-manager-jira-issue-read");
+    expect(PROFILED_DESKTOP_OPERATIONS.projectManagerJiraIssuePush).toBe("termloop:project-manager-jira-issue-push");
+    expect(PROFILED_DESKTOP_OPERATIONS.projectManagerJiraSprintMove).toBe("termloop:project-manager-jira-sprint-move");
     expect(Object.keys(PROFILED_DESKTOP_OPERATIONS)).not.toContain("taskInvestigationRequest");
   });
 });
@@ -203,6 +222,7 @@ function stageProps(overrides: Partial<StageProps> = {}): StageProps {
     restoreTicket: vi.fn(async () => undefined),
     setEnvironment: vi.fn(async () => undefined),
     setEnvironments: vi.fn(async () => undefined),
+    moveJiraSprint: vi.fn(async () => undefined),
     acceptProposal: vi.fn(async () => undefined),
     dismissProposal: vi.fn(async () => undefined),
     requestCheck: vi.fn(async () => undefined),
@@ -212,6 +232,11 @@ function stageProps(overrides: Partial<StageProps> = {}): StageProps {
     addTask: vi.fn(),
     ...overrides,
   };
+}
+
+function choose(element: HTMLSelectElement, value: string) {
+  Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(element, value);
+  element.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
 function type(element: HTMLInputElement | HTMLTextAreaElement, value: string) {
@@ -271,7 +296,7 @@ describe("Project Manager workspace", () => {
     expect(addTask).toHaveBeenCalledWith("s14");
   });
 
-  it("follows Jira's sprints without local sprint editing", async () => {
+  it("follows Jira's sprints and moves an issue only after confirmation", async () => {
     const jira = (sprintId: number) => ({ sprintId, boardId: 7, startEpochMs: null, endEpochMs: null });
     const synced = board({
       sprints: [
@@ -305,8 +330,61 @@ describe("Project Manager workspace", () => {
     const props = stageProps({ board: synced });
     await act(async () => root.render(<ProjectManagerStage {...props} />));
     const sprintSelect = host.querySelector<HTMLSelectElement>('select[aria-label="Sprint"]')!;
-    expect(sprintSelect.disabled).toBe(true);
-    expect(sprintSelect.title).toBe("Jira decides this Task's sprint");
+    expect(sprintSelect.disabled).toBe(false);
+    // Only Jira's own sprints can take a Jira issue.
+    expect([...sprintSelect.options].map((option) => option.value)).toEqual(["", "s14", "s15"]);
+    await act(async () => choose(sprintSelect, "s15"));
+    expect(props.setTracking).not.toHaveBeenCalled();
+    expect(host.querySelector('[aria-label="Move in Jira"]')?.textContent).toContain("Move PAY-42 to PAY Sprint 15 in Jira?");
+    await act(async () => button("Cancel")!.click());
+    expect(host.querySelector('[aria-label="Move in Jira"]')).toBeNull();
+    await act(async () => choose(sprintSelect, ""));
+    expect(host.querySelector('[aria-label="Move in Jira"]')?.textContent).toContain("to the backlog");
+    await act(async () => button("Move in Jira")!.click());
+    expect(props.moveJiraSprint).toHaveBeenCalledWith("task-1", null);
+    expect(host.querySelector('[aria-label="Move in Jira"]')).toBeNull();
+  });
+
+  it("compares the ticket with Jira and updates either side after confirmation", async () => {
+    const bound = actions();
+    const head = { taskId: "task-1", number: 3, author: "projectManager" as const, createdAtEpochMs: NOW, summary: null };
+    const props = stageProps({ actions: bound, board: board({ tickets: [head] }) });
+    await act(async () => root.render(<ProjectManagerStage {...props} />));
+    await act(async () => button("Sync with Jira")!.click());
+    const dialog = () => host.querySelector('[role="dialog"]')!;
+    expect(bound.readJiraIssue).toHaveBeenCalledWith("task-1");
+    expect(dialog().querySelector('[aria-label="In Jira"]')?.textContent).toContain("Checkout fails in Jira");
+    expect(dialog().querySelector('[aria-label="In Jira"]')?.textContent).toContain("## Goal");
+    expect(dialog().querySelector('[aria-label="In TermLoop"]')?.textContent).toContain("v3");
+
+    await act(async () => button("Update Jira…")!.click());
+    expect(dialog().textContent).toContain("for everyone who reads it");
+    expect(bound.pushJiraIssue).not.toHaveBeenCalled();
+    await act(async () => [...dialog().querySelectorAll("button")].find((candidate) => candidate.textContent === "Update Jira")!.click());
+    expect(bound.pushJiraIssue).toHaveBeenCalledWith("task-1", 3, "u1");
+    expect(dialog().textContent).toContain("PAY-42 now has v3.");
+
+    // Jira changed meanwhile: nothing is written and its newer text shows.
+    vi.mocked(bound.pushJiraIssue).mockResolvedValueOnce(jiraResult("jiraChanged", { summary: "Edited in Jira", updated: "u3" }));
+    await act(async () => button("Update Jira…")!.click());
+    await act(async () => [...dialog().querySelectorAll("button")].find((candidate) => candidate.textContent === "Update Jira")!.click());
+    expect(bound.pushJiraIssue).toHaveBeenLastCalledWith("task-1", 3, "u2");
+    expect(dialog().textContent).toContain("Jira changed since you looked");
+    expect(dialog().querySelector('[aria-label="In Jira"]')?.textContent).toContain("Edited in Jira");
+
+    await act(async () => button("Use Jira's version")!.click());
+    expect(props.saveTicket).toHaveBeenCalledWith({
+      taskId: "task-1", title: "Edited in Jira", brief: "## Goal\n\n- Retry **once**", summary: "Pulled from Jira", expectedVersion: 3,
+    });
+    expect(host.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("says why Jira could not be read", async () => {
+    const bound = actions({ readJiraIssue: vi.fn(async () => ({ ...jiraResult("failed", null), failureReason: "forbidden" as const })) });
+    await act(async () => root.render(<ProjectManagerStage {...stageProps({ actions: bound })} />));
+    await act(async () => button("Sync with Jira")!.click());
+    expect(host.querySelector('[role="dialog"] [role="alert"]')?.textContent).toContain("may not change this issue");
+    expect(button("Update Jira…")).toBeUndefined();
   });
 
   it("says when Jira sprints could not be read", async () => {
@@ -516,7 +594,7 @@ describe("Project Manager workspace", () => {
     const props = stageProps({ board: board({ facts: [] }) });
     await act(async () => root.render(<ProjectManagerStage {...props} />));
     expect(host.textContent).toContain("An environment whose name contains “prod” counts as production.");
-    expect(host.textContent).toContain("Jira is not changed");
+    expect(host.textContent).toContain("until you send one with Sync with Jira");
     expect(host.querySelector('[aria-label="Delivery facts"]')?.textContent).toContain("Not read yet");
     expect(host.querySelector(".pm-save-bar")).toBeNull();
     const title = host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!;

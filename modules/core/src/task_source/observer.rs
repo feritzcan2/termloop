@@ -1,6 +1,7 @@
 use termloop_providers::{
-    JiraBoardSource, JiraCloudClient, JiraCredential, JiraIssueSource, JiraSearchError,
-    JiraSearchResult, JiraSprint, JiraSprintListResult, JiraSprintSource, JiraSprintState,
+    JiraBoardSource, JiraCloudClient, JiraCredential, JiraIssueSource, JiraIssueText,
+    JiraIssueWriter, JiraSearchError, JiraSearchResult, JiraSprint, JiraSprintListResult,
+    JiraSprintSource, JiraSprintState, JiraWriteError,
 };
 
 use super::{TaskSourceFailure, TaskSourceRefreshOutcome, TaskSourceRefreshPlan};
@@ -87,13 +88,84 @@ pub trait TaskSourceSprintObserver: Send + Sync {
     ) -> Result<JiraSprintObservation, TaskSourceFailure>;
 }
 
+/// One change a Project Manager confirmed for a Jira issue, or the read
+/// they review before it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JiraIssueWrite {
+    Read,
+    /// Replaces the summary and description (wiki markup) unless Jira
+    /// changed the issue since `expected_updated`.
+    Update {
+        summary: String,
+        description: String,
+        expected_updated: String,
+    },
+    /// Moves the issue into a sprint, or into the backlog without one.
+    Move {
+        sprint_id: Option<u64>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JiraIssueWriteOutcome {
+    Read(JiraIssueText),
+    /// The update landed; the issue as Jira holds it afterwards, when the
+    /// read after it succeeded.
+    Updated(Option<JiraIssueText>),
+    /// Jira changed the issue since the Project Manager reviewed it, so
+    /// nothing was written; the issue as it is now.
+    JiraChanged(JiraIssueText),
+    Moved,
+    Failed(JiraWriteFailure),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JiraWriteFailure {
+    Source(TaskSourceFailure),
+    Forbidden,
+    NotFound,
+    Rejected,
+}
+
+impl From<JiraWriteError> for JiraWriteFailure {
+    fn from(error: JiraWriteError) -> Self {
+        match error {
+            JiraWriteError::InvalidRequest => Self::Source(TaskSourceFailure::ScopeInvalid),
+            JiraWriteError::Unauthorized => Self::Source(TaskSourceFailure::CredentialsInvalid),
+            JiraWriteError::Forbidden => Self::Forbidden,
+            JiraWriteError::NotFound => Self::NotFound,
+            JiraWriteError::Rejected => Self::Rejected,
+            JiraWriteError::RateLimited => Self::Source(TaskSourceFailure::RateLimited),
+            JiraWriteError::Unavailable => Self::Source(TaskSourceFailure::ProviderUnavailable),
+            JiraWriteError::MalformedResponse => Self::Source(TaskSourceFailure::MalformedResponse),
+        }
+    }
+}
+
+pub trait TaskSourceIssueWriter: Send + Sync {
+    fn write_issue(
+        &self,
+        site_base_url: &str,
+        email: &str,
+        api_token: &str,
+        issue_key: &str,
+        write: &JiraIssueWrite,
+    ) -> JiraIssueWriteOutcome;
+}
+
 pub trait TaskSourceJiraObserver:
-    TaskSourceRefreshObserver + TaskSourceBoardObserver + TaskSourceSprintObserver
+    TaskSourceRefreshObserver
+    + TaskSourceBoardObserver
+    + TaskSourceSprintObserver
+    + TaskSourceIssueWriter
 {
 }
 
 impl<T> TaskSourceJiraObserver for T where
-    T: TaskSourceRefreshObserver + TaskSourceBoardObserver + TaskSourceSprintObserver
+    T: TaskSourceRefreshObserver
+        + TaskSourceBoardObserver
+        + TaskSourceSprintObserver
+        + TaskSourceIssueWriter
 {
 }
 
@@ -149,6 +221,21 @@ impl TaskSourceSprintObserver for UnavailableTaskSourceRefreshObserver {
         _board_ids: &[u64],
     ) -> Result<JiraSprintObservation, TaskSourceFailure> {
         Err(TaskSourceFailure::ProviderUnavailable)
+    }
+}
+
+impl TaskSourceIssueWriter for UnavailableTaskSourceRefreshObserver {
+    fn write_issue(
+        &self,
+        _site_base_url: &str,
+        _email: &str,
+        _api_token: &str,
+        _issue_key: &str,
+        _write: &JiraIssueWrite,
+    ) -> JiraIssueWriteOutcome {
+        JiraIssueWriteOutcome::Failed(JiraWriteFailure::Source(
+            TaskSourceFailure::ProviderUnavailable,
+        ))
     }
 }
 
@@ -272,6 +359,48 @@ impl TaskSourceSprintObserver for JiraTaskSourceRefreshObserver {
             None => None,
         };
         Ok(JiraSprintObservation { boards, active })
+    }
+}
+
+impl TaskSourceIssueWriter for JiraTaskSourceRefreshObserver {
+    fn write_issue(
+        &self,
+        site_base_url: &str,
+        email: &str,
+        api_token: &str,
+        issue_key: &str,
+        write: &JiraIssueWrite,
+    ) -> JiraIssueWriteOutcome {
+        let credential = || JiraCredential { email, api_token };
+        let read = || {
+            self.client
+                .read_issue(site_base_url, credential(), issue_key)
+        };
+        let outcome = match write {
+            JiraIssueWrite::Read => read().map(JiraIssueWriteOutcome::Read),
+            JiraIssueWrite::Update {
+                summary,
+                description,
+                expected_updated,
+            } => read().and_then(|current| {
+                if &current.updated != expected_updated {
+                    return Ok(JiraIssueWriteOutcome::JiraChanged(current));
+                }
+                self.client.update_issue(
+                    site_base_url,
+                    credential(),
+                    issue_key,
+                    summary,
+                    description,
+                )?;
+                Ok(JiraIssueWriteOutcome::Updated(read().ok()))
+            }),
+            JiraIssueWrite::Move { sprint_id } => self
+                .client
+                .move_issue(site_base_url, credential(), issue_key, *sprint_id)
+                .map(|()| JiraIssueWriteOutcome::Moved),
+        };
+        outcome.unwrap_or_else(|error| JiraIssueWriteOutcome::Failed(error.into()))
     }
 }
 

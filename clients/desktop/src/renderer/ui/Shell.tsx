@@ -125,6 +125,7 @@ import {
   type ProjectManagerProjectActions,
   type ProjectManagerWorkspaceActions,
 } from "./ProjectManagerWorkspace.js";
+import { jiraFailureText } from "./ProjectManagerJiraSync.js";
 import { ProjectManagerTaskList } from "./ProjectManagerSidebar.js";
 import { ProjectManagerAddTaskDialog } from "./ProjectManagerAddTaskDialog.js";
 import type { FolderPickerActions } from "./project-dialogs/folder-picker.js";
@@ -2158,6 +2159,11 @@ export function Shell(props: ShellProps) {
               restoreTicket={restoreProjectManagerTicket}
               setEnvironment={(params) => projectManagerBoardCommand((actions) => actions.setEnvironment(params))}
               setEnvironments={(environments) => projectManagerBoardCommand((actions) => actions.setEnvironments(environments))}
+              moveJiraSprint={(taskId, sprintId) => projectManagerBoardCommand(async (actions) => {
+                const result = await actions.moveJiraSprint(taskId, sprintId);
+                if (result.outcome === "failed") throw new Error(jiraFailureText(result));
+                return result.board;
+              })}
               acceptProposal={(taskId, expectedVersion) => projectManagerBoardCommand(async (actions) => (await actions.acceptProposal(taskId, expectedVersion)).board)}
               dismissProposal={(taskId) => projectManagerBoardCommand((actions) => actions.dismissProposal(taskId))}
               requestCheck={requestProjectManagerCheck}

@@ -69,11 +69,12 @@ pub use session_launch::{
 pub use settings_improvement::{SettingsImproverEntry, settings_entry_kind};
 pub use skills::{SkillCatalogPlan, SkillDeploymentAgent, SkillDeploymentPlan};
 pub use task_source::{
-    JiraBoardSprints, JiraSprintObservation, JiraTaskSourceRefreshObserver, TaskSourceBoard,
-    TaskSourceBoardList, TaskSourceBoardObserver, TaskSourceBoardSelection,
-    TaskSourceCandidateSnapshot, TaskSourceCandidateView, TaskSourceConfiguration,
-    TaskSourceDelete, TaskSourceFailure, TaskSourceImport, TaskSourceImportPolicy,
-    TaskSourceJiraObserver, TaskSourceMutation, TaskSourceRefreshApply, TaskSourceRefreshObserver,
+    JiraBoardSprints, JiraIssueWrite, JiraIssueWriteOutcome, JiraSprintObservation,
+    JiraTaskSourceRefreshObserver, JiraWriteFailure, TaskSourceBoard, TaskSourceBoardList,
+    TaskSourceBoardObserver, TaskSourceBoardSelection, TaskSourceCandidateSnapshot,
+    TaskSourceCandidateView, TaskSourceConfiguration, TaskSourceDelete, TaskSourceFailure,
+    TaskSourceImport, TaskSourceImportPolicy, TaskSourceIssueWriter, TaskSourceJiraObserver,
+    TaskSourceMutation, TaskSourceRefreshApply, TaskSourceRefreshObserver,
     TaskSourceRefreshOutcome, TaskSourceRefreshPlan, TaskSourceRuntimeStatus,
     TaskSourceSprintObserver, TaskSourceStatus, TaskSourceStatusList, TaskSourceStatusSelection,
     TaskSourceView, UnavailableTaskSourceRefreshObserver, task_source_candidate_json,

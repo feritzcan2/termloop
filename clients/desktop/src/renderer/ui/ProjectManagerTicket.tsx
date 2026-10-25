@@ -3,6 +3,7 @@ import type {
   DeliveryCheckDto,
   DeliveryRiskDto,
   ProjectManagerEnvironmentSetParams,
+  ProjectManagerJiraIssueResult,
   ProjectManagerTaskTrackingSetParams,
   ProjectManagerTicketSaveParams,
   ProjectManagerTicketVersionsResult,
@@ -15,6 +16,7 @@ import type {
 
 import type { Task } from "../model.js";
 import { Icon } from "./Icon.js";
+import { ProjectManagerJiraSync } from "./ProjectManagerJiraSync.js";
 import { ProjectManagerMarkdownEditor } from "./ProjectManagerMarkdownEditor.js";
 import { RISK_LABELS } from "./ProjectManagerOverview.js";
 import { ProjectManagerDeliveryFacts, ProjectManagerTicketText } from "./ProjectManagerTicketFields.js";
@@ -34,6 +36,8 @@ import type { StageStep } from "./project-manager-stage.js";
 export type ProjectManagerTicketActions = {
   openExternal(url: string): void;
   loadTicketVersions(taskId: string): Promise<ProjectManagerTicketVersionsResult>;
+  readJiraIssue(taskId: string): Promise<ProjectManagerJiraIssueResult>;
+  pushJiraIssue(taskId: string, expectedTicketVersion: number, expectedJiraUpdated: string): Promise<ProjectManagerJiraIssueResult>;
 };
 
 type TrackingDraft = { developer: string; blockers: string; note: string };
@@ -67,6 +71,8 @@ export function ProjectManagerTicket(props: {
   saveTicket(params: ProjectManagerTicketSaveParams): Promise<string | undefined>;
   restoreTicket(taskId: string, number: number, expectedVersion: number | null): Promise<string | undefined>;
   setTracking(params: ProjectManagerTaskTrackingSetParams): Promise<string | undefined>;
+  /// Moves the Jira issue into a sprint mirrored from Jira, or the backlog.
+  moveJiraSprint(taskId: string, sprintId: string | null): Promise<string | undefined>;
   setEnvironment(params: ProjectManagerEnvironmentSetParams): Promise<string | undefined>;
   acceptProposal(taskId: string, expectedVersion: number | null): Promise<string | undefined>;
   dismissProposal(taskId: string): Promise<string | undefined>;
@@ -87,6 +93,9 @@ export function ProjectManagerTicket(props: {
   const [editorKey, setEditorKey] = useState(0);
   const [summary, setSummary] = useState("");
   const [busy, setBusy] = useState<"save" | "check" | "move" | "sprint" | "proposal" | "tracking">();
+  const [syncOpen, setSyncOpen] = useState(false);
+  /// A sprint chosen for a Jira-decided Task, waiting for confirmation.
+  const [jiraMove, setJiraMove] = useState<{ sprintId: string | null }>();
   const [message, setMessage] = useState<string>();
   const [conflict, setConflict] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -191,10 +200,13 @@ export function ProjectManagerTicket(props: {
   const passed = track.filter((step) => step.state === "passed").length;
   const done = track.length > 0 && passed === track.length;
   const sprintId = props.tracking?.sprintId ?? "";
-  const selectableSprints = props.sprints.filter((sprint) => sprint.state !== "closed" || sprint.id === sprintId);
   const open = task.status === "open";
-  /// When the sprints mirror Jira, Jira decides a Jira-linked Task's sprint.
+  /// When the sprints mirror Jira, Jira decides a Jira-linked Task's sprint,
+  /// and choosing one moves the issue in Jira after a confirmation.
   const sprintFromJira = props.sprintsFromJira && Boolean(task.jira_url);
+  const selectableSprints = props.sprints.filter((sprint) =>
+    sprint.id === sprintId || (sprint.state !== "closed" && (!sprintFromJira || sprint.jira !== null)));
+  const jiraMoveTarget = jiraMove ? props.sprints.find((sprint) => sprint.id === jiraMove.sprintId)?.name ?? "the backlog" : undefined;
 
   return <div className={`task-detail pm-ticket${historyOpen ? " with-history" : ""}`}>
     <header className="pm-doc-bar">
@@ -209,9 +221,13 @@ export function ProjectManagerTicket(props: {
           <select
             aria-label="Sprint"
             value={sprintId}
-            disabled={props.disabled || busy !== undefined || sprintFromJira}
-            title={sprintFromJira ? "Jira decides this Task's sprint" : undefined}
-            onChange={(event) => void run("sprint", () => props.setTracking(tracked({ sprintId: event.target.value || null })))}
+            disabled={props.disabled || busy !== undefined}
+            title={sprintFromJira ? "Jira keeps this Task's sprint; choosing one moves the issue in Jira" : undefined}
+            onChange={(event) => {
+              const next = event.target.value || null;
+              if (sprintFromJira) setJiraMove(next === (props.tracking?.sprintId ?? null) ? undefined : { sprintId: next });
+              else void run("sprint", () => props.setTracking(tracked({ sprintId: next })));
+            }}
           >
             <option value="">Backlog</option>
             {selectableSprints.map((sprint) => <option key={sprint.id} value={sprint.id}>
@@ -231,6 +247,13 @@ export function ProjectManagerTicket(props: {
         ><span className="pm-agent-dot working" aria-hidden="true" />Checking<Icon name="terminal" /></button> : null}
       </div>
       <div className="pm-doc-bar-actions">
+        {task.jira_url && jiraKey ? <button
+          type="button"
+          className="td-mini"
+          disabled={props.disabled}
+          title="Compare the ticket with the Jira issue, then update either one"
+          onClick={() => setSyncOpen(true)}
+        ><Icon name="upload" />Sync with Jira</button> : null}
         {open && !check ? <button
           type="button"
           className="td-mini"
@@ -277,6 +300,15 @@ export function ProjectManagerTicket(props: {
             {conflict ? <button type="button" className="td-mini danger" disabled={busy !== undefined} onClick={() => void save(true)}>Save mine anyway</button> : null}
           </div> : null}
           {message ? <div className="pm-banner danger" role="alert"><span>{message}</span></div> : null}
+          {jiraMove ? <div className="pm-banner warning" role="status" aria-label="Move in Jira">
+            <Icon name="alert" />
+            <span>Move {jiraKey} to {jiraMoveTarget} in Jira? Everyone working from the Jira board sees the move.</span>
+            <button type="button" className="td-mini danger" disabled={props.disabled || busy !== undefined}
+              onClick={() => void run("sprint", () => props.moveJiraSprint(task.id, jiraMove.sprintId)).then((failure) => { if (!failure) setJiraMove(undefined); })}>
+              {busy === "sprint" ? "Moving…" : "Move in Jira"}
+            </button>
+            <button type="button" className="td-mini" disabled={busy !== undefined} onClick={() => setJiraMove(undefined)}>Cancel</button>
+          </div> : null}
           {props.risks.length > 0 && open ? <ul className="pm-risks" aria-label="Risks">
             {props.risks.map((risk, index) => <li key={index} className={`pm-risk ${risk.kind}`}>
               <Icon name="alert" /><b>{RISK_LABELS[risk.kind]}</b><span>{risk.detail}</span>
@@ -357,7 +389,7 @@ export function ProjectManagerTicket(props: {
               onBaseline={setBriefBaseline}
               onChange={(markdown) => { setBriefTouched(true); update({ brief: markdown }); }}
             />
-            {task.jira_url ? <p className="td-note">Edits stay in TermLoop; Jira is not changed.</p> : null}
+            {task.jira_url ? <p className="td-note">Saved versions stay in TermLoop until you send one with Sync with Jira.</p> : null}
           </section>
 
           <ProjectManagerDeliveryFacts
@@ -378,6 +410,18 @@ export function ProjectManagerTicket(props: {
           </div>
         </article>
       </div>
+      {syncOpen && jiraKey ? <ProjectManagerJiraSync
+        taskId={task.id}
+        issueKey={jiraKey}
+        version={headNumber}
+        ticket={saved}
+        dirty={dirty}
+        disabled={props.disabled}
+        read={actions.readJiraIssue}
+        push={actions.pushJiraIssue}
+        pull={(ticket) => settled(() => props.saveTicket(ticketSaveParams(task.id, ticket, "Pulled from Jira", headNumber)))}
+        close={() => setSyncOpen(false)}
+      /> : null}
       {historyOpen ? <ProjectManagerTicketHistory
         taskId={task.id}
         headVersion={headNumber}

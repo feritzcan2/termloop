@@ -433,4 +433,4 @@ fn sprint_name(sprint: &JiraSprint) -> String {
 }
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;

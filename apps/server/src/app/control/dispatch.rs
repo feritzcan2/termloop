@@ -1249,6 +1249,16 @@ async fn dispatch_inner(
             "projectManager.jiraSearch" => {
                 super::task_source::project_manager_jira_search(request.params, state).await
             }
+            "projectManager.jiraIssueRead"
+            | "projectManager.jiraIssuePush"
+            | "projectManager.jiraSprintMove" => {
+                super::jira_write::project_manager_jira_issue(
+                    &request.method,
+                    request.params,
+                    state,
+                )
+                .await
+            }
             "projectManager.checkRequest" => {
                 super::super::delivery_checks::request_check(request.params, state).await
             }

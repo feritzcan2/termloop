@@ -225,7 +225,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:e948b1b49afaaf31a36a9f8a64095350ae883428d5c37f33a84d798c63b114db";
+    "sha256:45b2dcc37c84bdc101a137742a58061249705e86ff22bf595875619dc6d7d53f";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -280,6 +280,9 @@ pub const METHODS: &[&str] = &[
     "projectManager.modeSet",
     "projectManager.environmentSet",
     "projectManager.environmentsSet",
+    "projectManager.jiraIssueRead",
+    "projectManager.jiraIssuePush",
+    "projectManager.jiraSprintMove",
     "projectManager.proposalAccept",
     "projectManager.proposalDismiss",
     "projectManager.checkRequest",
@@ -1529,6 +1532,108 @@ pub struct DeliveryStageDto {
 pub struct ProjectEnvironmentDto {
     pub name: String,
     pub production: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectManagerJiraIssueReadParams {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    #[serde(rename = "taskId")]
+    pub task_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectManagerJiraIssuePushParams {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    #[serde(rename = "taskId")]
+    pub task_id: String,
+    #[serde(rename = "expectedTicketVersion")]
+    pub expected_ticket_version: u64,
+    #[serde(rename = "expectedJiraUpdated")]
+    pub expected_jira_updated: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectManagerJiraSprintMoveParams {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    #[serde(rename = "taskId")]
+    pub task_id: String,
+    #[serde(
+        rename = "sprintId",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub sprint_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum JiraIssueWriteOutcome {
+    #[serde(rename = "read")]
+    Read,
+    #[serde(rename = "updated")]
+    Updated,
+    #[serde(rename = "jiraChanged")]
+    JiraChanged,
+    #[serde(rename = "moved")]
+    Moved,
+    #[serde(rename = "failed")]
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum JiraWriteFailureReason {
+    #[serde(rename = "credentialsMissing")]
+    CredentialsMissing,
+    #[serde(rename = "credentialsInvalid")]
+    CredentialsInvalid,
+    #[serde(rename = "credentialsUnavailable")]
+    CredentialsUnavailable,
+    #[serde(rename = "scopeInvalid")]
+    ScopeInvalid,
+    #[serde(rename = "rateLimited")]
+    RateLimited,
+    #[serde(rename = "providerUnavailable")]
+    ProviderUnavailable,
+    #[serde(rename = "responseTooLarge")]
+    ResponseTooLarge,
+    #[serde(rename = "malformedResponse")]
+    MalformedResponse,
+    #[serde(rename = "forbidden")]
+    Forbidden,
+    #[serde(rename = "notFound")]
+    NotFound,
+    #[serde(rename = "rejected")]
+    Rejected,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct JiraIssueTextDto {
+    pub key: String,
+    pub summary: String,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub description: Option<String>,
+    pub updated: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectManagerJiraIssueResult {
+    #[serde(rename = "taskId")]
+    pub task_id: String,
+    pub outcome: JiraIssueWriteOutcome,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub issue: Option<JiraIssueTextDto>,
+    #[serde(
+        rename = "failureReason",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub failure_reason: Option<JiraWriteFailureReason>,
+    pub board: ProjectManagerBoardResult,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -10098,6 +10203,9 @@ pub type ProjectManagerModeGetResult = ProjectManagerModeResult;
 pub type ProjectManagerModeSetResult = ProjectManagerModeResult;
 pub type ProjectManagerEnvironmentSetResult = ProjectManagerBoardResult;
 pub type ProjectManagerEnvironmentsSetResult = ProjectManagerBoardResult;
+pub type ProjectManagerJiraIssueReadResult = ProjectManagerJiraIssueResult;
+pub type ProjectManagerJiraIssuePushResult = ProjectManagerJiraIssueResult;
+pub type ProjectManagerJiraSprintMoveResult = ProjectManagerJiraIssueResult;
 pub type ProjectManagerProposalAcceptResult = ProjectManagerTicketSaveResult;
 pub type ProjectManagerProposalDismissParams = TaskIdParams;
 pub type ProjectManagerProposalDismissResult = ProjectManagerBoardResult;
@@ -10902,6 +11010,9 @@ fn validate_method(value: &Value) -> bool {
             "projectManager.modeSet",
             "projectManager.environmentSet",
             "projectManager.environmentsSet",
+            "projectManager.jiraIssueRead",
+            "projectManager.jiraIssuePush",
+            "projectManager.jiraSprintMove",
             "projectManager.proposalAccept",
             "projectManager.proposalDismiss",
             "projectManager.checkRequest",
@@ -12920,6 +13031,202 @@ fn validate_project_environment_dto(value: &Value) -> bool {
             && object
                 .keys()
                 .all(|key| ["name", "production"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_project_manager_jira_issue_read_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("projectId")
+            .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
+            && object
+                .get("taskId")
+                .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
+            && object
+                .keys()
+                .all(|key| ["projectId", "taskId"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_project_manager_jira_issue_push_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("projectId")
+            .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
+            && object
+                .get("taskId")
+                .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
+            && object.get("expectedTicketVersion").is_some_and(|field| {
+                field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 1_u64))
+                })
+            })
+            && object.get("expectedJiraUpdated").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128)
+            })
+            && object.keys().all(|key| {
+                [
+                    "projectId",
+                    "taskId",
+                    "expectedTicketVersion",
+                    "expectedJiraUpdated",
+                ]
+                .contains(&key.as_str())
+            })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_project_manager_jira_sprint_move_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("projectId")
+            .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
+            && object
+                .get("taskId")
+                .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
+            && object.get("sprintId").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| text.chars().count() >= 1) || field.is_null())
+            })
+            && object
+                .keys()
+                .all(|key| ["projectId", "taskId", "sprintId"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_jira_issue_write_outcome(value: &Value) -> bool {
+    value
+        .as_str()
+        .is_some_and(|text| ["read", "updated", "jiraChanged", "moved", "failed"].contains(&text))
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_jira_write_failure_reason(value: &Value) -> bool {
+    value.as_str().is_some_and(|text| {
+        [
+            "credentialsMissing",
+            "credentialsInvalid",
+            "credentialsUnavailable",
+            "scopeInvalid",
+            "rateLimited",
+            "providerUnavailable",
+            "responseTooLarge",
+            "malformedResponse",
+            "forbidden",
+            "notFound",
+            "rejected",
+        ]
+        .contains(&text)
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_jira_issue_text_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("key").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128)
+        }) && object
+            .get("summary")
+            .is_some_and(|field| field.as_str().is_some_and(|text| true))
+            && object
+                .get("description")
+                .is_some_and(|field| (field.as_str().is_some_and(|text| true) || field.is_null()))
+            && object.get("updated").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128)
+            })
+            && object
+                .keys()
+                .all(|key| ["key", "summary", "description", "updated"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_project_manager_jira_issue_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("taskId")
+            .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
+            && object
+                .get("outcome")
+                .is_some_and(|field| validate_jira_issue_write_outcome(field))
+            && object
+                .get("issue")
+                .is_some_and(|field| (validate_jira_issue_text_dto(field) || field.is_null()))
+            && object
+                .get("failureReason")
+                .is_some_and(|field| (validate_jira_write_failure_reason(field) || field.is_null()))
+            && object
+                .get("board")
+                .is_some_and(|field| validate_project_manager_board_result(field))
+            && object.keys().all(|key| {
+                ["taskId", "outcome", "issue", "failureReason", "board"].contains(&key.as_str())
+            })
     })
 }
 
@@ -36918,6 +37225,18 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<ProjectManagerEnvironmentsSetParams>(params.clone()).is_ok()
                 && validate_project_manager_environments_set_params(params)
         }
+        "projectManager.jiraIssueRead" => {
+            serde_json::from_value::<ProjectManagerJiraIssueReadParams>(params.clone()).is_ok()
+                && validate_project_manager_jira_issue_read_params(params)
+        }
+        "projectManager.jiraIssuePush" => {
+            serde_json::from_value::<ProjectManagerJiraIssuePushParams>(params.clone()).is_ok()
+                && validate_project_manager_jira_issue_push_params(params)
+        }
+        "projectManager.jiraSprintMove" => {
+            serde_json::from_value::<ProjectManagerJiraSprintMoveParams>(params.clone()).is_ok()
+                && validate_project_manager_jira_sprint_move_params(params)
+        }
         "projectManager.proposalAccept" => {
             serde_json::from_value::<ProjectManagerProposalAcceptParams>(params.clone()).is_ok()
                 && validate_project_manager_proposal_accept_params(params)
@@ -37917,6 +38236,18 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         "projectManager.environmentsSet" => {
             serde_json::from_value::<ProjectManagerEnvironmentsSetResult>(result.clone()).is_ok()
                 && validate_project_manager_board_result(result)
+        }
+        "projectManager.jiraIssueRead" => {
+            serde_json::from_value::<ProjectManagerJiraIssueReadResult>(result.clone()).is_ok()
+                && validate_project_manager_jira_issue_result(result)
+        }
+        "projectManager.jiraIssuePush" => {
+            serde_json::from_value::<ProjectManagerJiraIssuePushResult>(result.clone()).is_ok()
+                && validate_project_manager_jira_issue_result(result)
+        }
+        "projectManager.jiraSprintMove" => {
+            serde_json::from_value::<ProjectManagerJiraSprintMoveResult>(result.clone()).is_ok()
+                && validate_project_manager_jira_issue_result(result)
         }
         "projectManager.proposalAccept" => {
             serde_json::from_value::<ProjectManagerProposalAcceptResult>(result.clone()).is_ok()

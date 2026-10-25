@@ -444,6 +444,30 @@
         "$ref": "#/$defs/projectManagerBoardResult"
       }
     },
+    "projectManager.jiraIssueRead": {
+      "params": {
+        "$ref": "#/$defs/projectManagerJiraIssueReadParams"
+      },
+      "result": {
+        "$ref": "#/$defs/projectManagerJiraIssueResult"
+      }
+    },
+    "projectManager.jiraIssuePush": {
+      "params": {
+        "$ref": "#/$defs/projectManagerJiraIssuePushParams"
+      },
+      "result": {
+        "$ref": "#/$defs/projectManagerJiraIssueResult"
+      }
+    },
+    "projectManager.jiraSprintMove": {
+      "params": {
+        "$ref": "#/$defs/projectManagerJiraSprintMoveParams"
+      },
+      "result": {
+        "$ref": "#/$defs/projectManagerJiraIssueResult"
+      }
+    },
     "projectManager.proposalAccept": {
       "params": {
         "$ref": "#/$defs/projectManagerProposalAcceptParams"
@@ -2575,6 +2599,9 @@
         "projectManager.modeSet",
         "projectManager.environmentSet",
         "projectManager.environmentsSet",
+        "projectManager.jiraIssueRead",
+        "projectManager.jiraIssuePush",
+        "projectManager.jiraSprintMove",
         "projectManager.proposalAccept",
         "projectManager.proposalDismiss",
         "projectManager.checkRequest",
@@ -3706,6 +3733,105 @@
         "production": {
           "type": "boolean"
         }
+      }
+    },
+    "projectManagerJiraIssueReadParams": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectManagerJiraIssueReadParams",
+      "description": "Reads a Jira-linked Task's issue as Jira holds it now, for the Project Manager to compare with the ticket.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectId", "taskId"],
+      "properties": {
+        "projectId": { "type": "string", "minLength": 1 },
+        "taskId": { "type": "string", "minLength": 1 }
+      }
+    },
+    "projectManagerJiraIssuePushParams": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectManagerJiraIssuePushParams",
+      "description": "The Project Manager confirms replacing the Jira issue's summary and description with the reviewed ticket version. Nothing is written when the ticket or Jira changed since the review.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectId", "taskId", "expectedTicketVersion", "expectedJiraUpdated"],
+      "properties": {
+        "projectId": { "type": "string", "minLength": 1 },
+        "taskId": { "type": "string", "minLength": 1 },
+        "expectedTicketVersion": { "type": "integer", "minimum": 1 },
+        "expectedJiraUpdated": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "projectManagerJiraSprintMoveParams": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectManagerJiraSprintMoveParams",
+      "description": "The Project Manager confirms moving a Jira-linked Task's issue into a sprint mirrored from Jira, or into the backlog with a null sprint.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectId", "taskId", "sprintId"],
+      "properties": {
+        "projectId": { "type": "string", "minLength": 1 },
+        "taskId": { "type": "string", "minLength": 1 },
+        "sprintId": {
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "jiraIssueWriteOutcome": {
+      "x-codegen": true,
+      "x-codegen-name": "JiraIssueWriteOutcome",
+      "type": "string",
+      "enum": ["read", "updated", "jiraChanged", "moved", "failed"]
+    },
+    "jiraWriteFailureReason": {
+      "x-codegen": true,
+      "x-codegen-name": "JiraWriteFailureReason",
+      "type": "string",
+      "enum": ["credentialsMissing", "credentialsInvalid", "credentialsUnavailable", "scopeInvalid", "rateLimited", "providerUnavailable", "responseTooLarge", "malformedResponse", "forbidden", "notFound", "rejected"]
+    },
+    "jiraIssueTextDto": {
+      "x-codegen": true,
+      "x-codegen-name": "JiraIssueTextDto",
+      "description": "A Jira issue's summary and wiki markup description as Jira holds them, with Jira's updated stamp.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "summary", "description", "updated"],
+      "properties": {
+        "key": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "summary": { "type": "string" },
+        "description": {
+          "anyOf": [
+            { "type": "string" },
+            { "type": "null" }
+          ]
+        },
+        "updated": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "projectManagerJiraIssueResult": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectManagerJiraIssueResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["taskId", "outcome", "issue", "failureReason", "board"],
+      "properties": {
+        "taskId": { "type": "string", "minLength": 1 },
+        "outcome": { "$ref": "#/$defs/jiraIssueWriteOutcome" },
+        "issue": {
+          "anyOf": [
+            { "$ref": "#/$defs/jiraIssueTextDto" },
+            { "type": "null" }
+          ]
+        },
+        "failureReason": {
+          "anyOf": [
+            { "$ref": "#/$defs/jiraWriteFailureReason" },
+            { "type": "null" }
+          ]
+        },
+        "board": { "$ref": "#/$defs/projectManagerBoardResult" }
       }
     },
     "projectManagerEnvironmentsSetParams": {
