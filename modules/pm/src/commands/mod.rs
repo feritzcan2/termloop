@@ -3,6 +3,7 @@
 //! touching a row.
 
 mod check_report;
+mod checks;
 mod environment;
 mod facts;
 mod jira_mirror;
@@ -19,6 +20,7 @@ pub use check_report::{
     AgentProbeReading, CHECK_PROBE_PROPOSALS_MAX, CheckReport, RecordedCheckReport,
     ReportedEnvironment,
 };
+pub use checks::NewCheck;
 pub use facts::{
     CheckNotesObservation, EnvironmentObservation, FactRead, FactsObservation, JiraObservation,
     PullRequestsObservation,

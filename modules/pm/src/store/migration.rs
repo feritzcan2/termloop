@@ -153,8 +153,28 @@ CREATE TABLE ticket_proposals (
 CREATE INDEX ticket_proposals_by_ticket ON ticket_proposals (ticket_id, created_at_epoch_ms);
 "#;
 
+/// Delivery checks the daemon runs: at most one running per ticket.
+const V5: &str = r#"
+CREATE TABLE delivery_checks (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    ticket_id TEXT NOT NULL REFERENCES tickets (id) ON DELETE CASCADE,
+    reason TEXT NOT NULL CHECK (reason IN ('checkReasons', 'probeChanged', 'requested')),
+    environments_json TEXT NOT NULL,
+    probe_id TEXT,
+    started_at_epoch_ms INTEGER NOT NULL,
+    finished_at_epoch_ms INTEGER,
+    outcome TEXT CHECK (outcome IN ('reported', 'failed', 'abandoned')),
+    CHECK ((finished_at_epoch_ms IS NULL) = (outcome IS NULL))
+) STRICT;
+CREATE UNIQUE INDEX delivery_checks_running ON delivery_checks (ticket_id)
+    WHERE finished_at_epoch_ms IS NULL;
+CREATE INDEX delivery_checks_by_project ON delivery_checks (project_id, started_at_epoch_ms);
+CREATE INDEX delivery_checks_by_ticket ON delivery_checks (ticket_id, started_at_epoch_ms);
+"#;
+
 /// Every migration in order; a version is never edited once released.
-const MIGRATIONS: &[(u32, &str)] = &[(1, V1), (2, V2), (3, V3), (4, V4)];
+const MIGRATIONS: &[(u32, &str)] = &[(1, V1), (2, V2), (3, V3), (4, V4), (5, V5)];
 
 pub const SCHEMA_VERSION: u32 = MIGRATIONS[MIGRATIONS.len() - 1].0;
 

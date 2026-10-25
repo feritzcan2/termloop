@@ -3,10 +3,13 @@
 //! suggests. Everything lands in the PM store only; nothing external is
 //! written.
 
+use super::checks::close_check;
 use super::facts::{current_facts, store_facts};
 use super::probe::{insert_probe_row, probe_value, require_probe};
 use super::{check_id, require_ticket};
+use crate::delivery::checks::{DeliveryCheck, DeliveryCheckOutcome};
 use crate::delivery::facts::{CheckNotes, TICKET_CHECK_NOTES_MAX_BYTES};
+use crate::store::running_check;
 use crate::validation::valid_non_blank_text;
 use crate::{
     EnvironmentDeployState, FactSource, NewProbe, PmError, PmStore, ProbeAuthor, ProbeMatcher,
@@ -52,6 +55,8 @@ pub struct CheckReport {
 pub struct RecordedCheckReport {
     pub facts: TicketDeliveryFacts,
     pub proposed_probe_ids: Vec<String>,
+    /// The ticket's running check, now closed as reported.
+    pub finished_check: Option<DeliveryCheck>,
 }
 
 fn check_report_shape(report: &CheckReport) -> Result<(), PmError> {
@@ -86,7 +91,8 @@ impl PmStore {
     /// the environment an agent-matcher probe's output shows (source
     /// `probe`), and proposed probes. A proposal the project already has,
     /// or one beyond the probe bound, is skipped rather than failing the
-    /// report. An invalid report records nothing.
+    /// report. The ticket's running check, if any, is closed as reported. An
+    /// invalid report records nothing.
     pub fn record_check_report(
         &mut self,
         project_id: &str,
@@ -147,9 +153,13 @@ impl PmStore {
                 }
                 proposed_probe_ids.push(probe.id);
             }
+            let finished_check = running_check(transaction, &ticket.id)?
+                .map(|check| close_check(transaction, &check, DeliveryCheckOutcome::Reported, now))
+                .transpose()?;
             Ok(RecordedCheckReport {
                 facts,
                 proposed_probe_ids,
+                finished_check,
             })
         })
     }

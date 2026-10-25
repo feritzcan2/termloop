@@ -24,11 +24,16 @@ pub use commands::{
     AgentProbeReading, CHECK_PROBE_PROPOSALS_MAX, CheckNotesObservation, CheckReport, ClosedSprint,
     EnvironmentObservation, FactRead, FactsObservation, JIRA_PULL_NEW_TICKETS_MAX, JiraChange,
     JiraIssueState, JiraObservation, JiraPullChanges, JiraPullOutcome, JiraSprintPull,
-    JiraSprintRead, JiraWriteDiff, JiraWriteOutcome, JiraWriteTarget, NewProbe, NewTicket,
-    PullRequestsObservation, RecordedCheckReport, RecordedProbeRun, ReportedEnvironment,
+    JiraSprintRead, JiraWriteDiff, JiraWriteOutcome, JiraWriteTarget, NewCheck, NewProbe,
+    NewTicket, PullRequestsObservation, RecordedCheckReport, RecordedProbeRun, ReportedEnvironment,
     TicketEdit, apply_jira_write, read_jira_issue_state, read_jira_sprints,
 };
 pub use delivery::check_reasons::{check_reasons, deploy_tracking_enabled};
+pub use delivery::checks::{
+    CHECK_DEADLINE_MS, CHECK_ENVIRONMENTS_MAX, CHECK_RETRY_AFTER_MS, DeliveryCheck,
+    DeliveryCheckOutcome, DeliveryCheckReason, DueCheck, PROJECT_RUNNING_CHECKS_MAX,
+    TICKET_FINISHED_CHECKS_MAX,
+};
 pub use delivery::facts::{
     CheckNotes, EnvironmentDeployState, EnvironmentFact, FACTS_STALE_AFTER_MS, FactReadFailure,
     FactSource, JiraFact, JiraStatusCategory, PullRequestFact, PullRequestFactChecks,

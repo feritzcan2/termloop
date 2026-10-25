@@ -56,6 +56,8 @@ pub struct BoardTicket {
     pub stage: DeliveryStage,
     pub risks: usize,
     pub check_reasons: Vec<String>,
+    /// A delivery check is running for the ticket.
+    pub checking: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -241,6 +243,7 @@ pub(super) fn board_read(
             stage: delivery.stage.clone(),
             risks: delivery.risks.len(),
             check_reasons: delivery.check_reasons.clone(),
+            checking: delivery.checking,
         })
         .collect();
     let sprints = board

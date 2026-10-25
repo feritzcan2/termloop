@@ -1,6 +1,7 @@
 //! The PM app's own SQLite file. It is separate from the developer daemon's
 //! store: nothing here reads or writes `termloop-store` state.
 
+mod check_rows;
 mod delivery_rows;
 mod migration;
 mod rows;
@@ -9,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, Transaction};
 
+pub(crate) use check_rows::*;
 pub(crate) use delivery_rows::*;
 pub use migration::SCHEMA_VERSION;
 pub(crate) use rows::*;

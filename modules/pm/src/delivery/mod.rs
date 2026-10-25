@@ -3,6 +3,7 @@
 //! check reasons, data tier). Only observations and probes are stored.
 
 pub(crate) mod check_reasons;
+pub(crate) mod checks;
 pub(crate) mod facts;
 pub(crate) mod probe;
 pub(crate) mod risks;
@@ -62,6 +63,8 @@ pub struct TicketDelivery {
     /// Only tickets of the active sprint ask for a delivery check.
     pub check_reasons: Vec<String>,
     pub facts: Option<FactsSummary>,
+    /// A delivery check is running for the ticket.
+    pub checking: bool,
 }
 
 /// One ticket's delivery, derived from current rows.
@@ -97,5 +100,6 @@ pub(crate) fn ticket_delivery(
         risks,
         check_reasons,
         facts: facts.map(|facts| FactsSummary::of(facts, now_epoch_ms)),
+        checking: false,
     }
 }

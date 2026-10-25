@@ -3,8 +3,8 @@
 
 use crate::delivery::{TicketDelivery, ticket_delivery};
 use crate::store::{
-    project_environments, project_facts, project_probes, project_sources, project_sprints,
-    project_tickets, sprint_by_id, ticket_by_id, ticket_facts, ticket_versions,
+    project_environments, project_facts, project_probes, project_running_checks, project_sources,
+    project_sprints, project_tickets, sprint_by_id, ticket_by_id, ticket_facts, ticket_versions,
 };
 use crate::validation::check_id as check;
 use crate::{
@@ -38,17 +38,20 @@ impl PmStore {
         let environments = project_environments(connection, project_id)?;
         let probes = project_probes(connection, project_id)?;
         let facts = project_facts(connection, project_id)?;
+        let running = project_running_checks(connection, project_id)?;
         let deliveries = tickets
             .iter()
             .map(|ticket| {
-                ticket_delivery(
+                let mut delivery = ticket_delivery(
                     ticket,
                     &sprints,
                     facts.get(&ticket.id),
                     &probes,
                     &environments,
                     now,
-                )
+                );
+                delivery.checking = running.iter().any(|check| check.ticket_id == ticket.id);
+                delivery
             })
             .collect();
         let tracking = Tracking::derive(
