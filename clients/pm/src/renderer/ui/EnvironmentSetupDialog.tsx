@@ -1,4 +1,5 @@
 import { useState, type KeyboardEvent } from "react";
+import { createPortal } from "react-dom";
 import type { PmEnvironmentProposal, PmProbe } from "@termloop/pm-contract/pm";
 import { relativeTime } from "./format.js";
 
@@ -9,7 +10,9 @@ function toggled(list: string[], item: string, on: boolean): string[] {
 /**
  * What the Deployment control setup found, reviewed in one place: each
  * environment in delivery order with the checks that read what it runs. The
- * PM ticks what to keep; nothing is listed or run before Turn on.
+ * PM ticks what to keep; nothing is listed or run before Turn on. It is
+ * opened from the sidebar but mounted on the body, so it covers the window
+ * like the app's other dialogs.
  */
 export function EnvironmentSetupDialog(props: {
   proposal: PmEnvironmentProposal;
@@ -38,7 +41,7 @@ export function EnvironmentSetupDialog(props: {
     event.stopPropagation();
     props.onClose();
   };
-  return (
+  return createPortal(
     <div className="modal-backdrop" onKeyDown={keys} onMouseDown={(event) => { if (event.target === event.currentTarget) props.onClose(); }}>
       <div className="modal env-setup" role="dialog" aria-modal="true" aria-label="Set up Deployment control">
         <div className="modal-head">
@@ -105,6 +108,7 @@ export function EnvironmentSetupDialog(props: {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

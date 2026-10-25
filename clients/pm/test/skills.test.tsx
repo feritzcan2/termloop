@@ -210,17 +210,18 @@ describe("SkillsPanel", () => {
     );
     const setup = container.querySelector(".skill-row.setup")!;
     expect(setup.textContent).toContain("Ready to review");
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
     act(() => button(container, "Review").click());
-    const dialog = container.querySelector('[aria-label="Set up Deployment control"]')!;
+    // Mounted on the body, so it covers the agent terminal like the other dialogs.
+    const dialog = document.body.querySelector(':scope > .modal-backdrop [aria-label="Set up Deployment control"]')!;
     expect(dialog.textContent).toContain("curl https://staging.example/version");
     const productionCheck = dialog.querySelector<HTMLInputElement>('input[aria-label="Check production"]')!;
     act(() => dialog.querySelector<HTMLInputElement>('input[aria-label="production"]')!.click());
     expect(productionCheck.disabled).toBe(true);
     expect(productionCheck.checked).toBe(false);
-    await act(async () => button(container, "Turn on Deployment control").click());
+    await act(async () => button(dialog as HTMLElement, "Turn on Deployment control").click());
     expect(onApplyEnvironments).toHaveBeenCalledWith(["staging"], ["probe-1"]);
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
     unmount();
   });
 
