@@ -2,7 +2,7 @@ use std::io::Read;
 use std::time::Duration;
 
 use reqwest::StatusCode;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 const JIRA_SEARCH_LIMIT: usize = 50;
 const JIRA_BOARD_PAGE_LIMIT: usize = 50;
@@ -13,6 +13,8 @@ const JIRA_STATUS_DISCOVERY_LIMIT: usize = 500;
 const JIRA_RESPONSE_MAX_BYTES: u64 = 8 * 1024 * 1024;
 const JIRA_BOARD_RESPONSE_MAX_BYTES: u64 = 1024 * 1024;
 const JIRA_TEXT_MAX_BYTES: usize = 8_000;
+const JIRA_SPRINT_PAGE_LIMIT: usize = 50;
+const JIRA_SPRINT_DISCOVERY_LIMIT: usize = 100;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NormalizedJiraIssueRef {
@@ -62,6 +64,9 @@ pub struct JiraIssueSnapshot {
     pub summary: String,
     pub description: Option<String>,
     pub status_name: String,
+    /// Jira's own grouping of the status: `new`, `indeterminate`, or `done`.
+    /// Absent when Jira did not send a known category.
+    pub status_category: Option<String>,
     pub assignee_display: Option<String>,
     pub updated_at: String,
 }
@@ -115,6 +120,39 @@ pub enum JiraSearchError {
     MalformedResponse,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum JiraSprintState {
+    Active,
+    Future,
+    Closed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JiraSprint {
+    pub id: u64,
+    /// The board the sprint was listed for. A sprint shared across boards is
+    /// reported once per listed board.
+    pub board_id: u64,
+    pub name: String,
+    pub state: JiraSprintState,
+    pub start_epoch_ms: Option<u64>,
+    pub end_epoch_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JiraSprintListResult {
+    /// The board supports sprints. `sprints` holds its active and future
+    /// sprints in Jira order and may be empty.
+    Sprints {
+        sprints: Vec<JiraSprint>,
+        truncated: bool,
+    },
+    /// The board has no sprint feature (Jira answers 400 for a kanban board).
+    /// This is not "no sprints".
+    SprintsUnsupported,
+}
+
 pub trait JiraIssueSource: Send + Sync {
     fn search(
         &self,
@@ -139,6 +177,25 @@ pub trait JiraBoardSource: Send + Sync {
     ) -> Result<JiraStatusListResult, JiraSearchError>;
 }
 
+pub trait JiraSprintSource: Send + Sync {
+    /// Active and future sprints of one board, paged, at most 100.
+    fn list_sprints(
+        &self,
+        site_base_url: &str,
+        credential: JiraCredential<'_>,
+        board_id: u64,
+    ) -> Result<JiraSprintListResult, JiraSearchError>;
+
+    /// Issues of one sprint as the same bounded snapshot an issue search
+    /// returns; `truncated` when the sprint holds more issues than returned.
+    fn sprint_issues(
+        &self,
+        site_base_url: &str,
+        credential: JiraCredential<'_>,
+        sprint_id: u64,
+    ) -> Result<JiraSearchResult, JiraSearchError>;
+}
+
 #[derive(Clone)]
 pub struct JiraCloudClient {
     client: reqwest::blocking::Client,
@@ -155,6 +212,10 @@ impl JiraCloudClient {
             .build()
             .map_err(|_| JiraSearchError::Unavailable)?;
         Ok(Self { client })
+    }
+
+    pub(crate) fn http(&self) -> &reqwest::blocking::Client {
+        &self.client
     }
 }
 
@@ -379,6 +440,194 @@ impl JiraBoardSource for JiraCloudClient {
     }
 }
 
+impl JiraSprintSource for JiraCloudClient {
+    fn list_sprints(
+        &self,
+        site_base_url: &str,
+        credential: JiraCredential<'_>,
+        board_id: u64,
+    ) -> Result<JiraSprintListResult, JiraSearchError> {
+        let site = normalize_jira_site_base_url(site_base_url)?;
+        if board_id == 0 {
+            return Err(JiraSearchError::ScopeInvalid);
+        }
+        collect_sprints(board_id, |start_at| {
+            let response = self
+                .client
+                .get(format!(
+                    "{site}/rest/agile/1.0/board/{board_id}/sprint?state=active,future&startAt={start_at}&maxResults={JIRA_SPRINT_PAGE_LIMIT}"
+                ))
+                .basic_auth(credential.email, Some(credential.api_token))
+                .header(reqwest::header::ACCEPT, "application/json")
+                .send()
+                .map_err(|_| JiraSearchError::Unavailable)?;
+            if sprints_unsupported_status(response.status()) {
+                return Ok(SprintPageResponse::Unsupported);
+            }
+            read_board_response(response).map(SprintPageResponse::Body)
+        })
+    }
+
+    fn sprint_issues(
+        &self,
+        site_base_url: &str,
+        credential: JiraCredential<'_>,
+        sprint_id: u64,
+    ) -> Result<JiraSearchResult, JiraSearchError> {
+        let site = normalize_jira_site_base_url(site_base_url)?;
+        if sprint_id == 0 {
+            return Err(JiraSearchError::ScopeInvalid);
+        }
+        let response = self
+            .client
+            .get(format!(
+                "{site}/rest/agile/1.0/sprint/{sprint_id}/issue?maxResults={JIRA_SEARCH_LIMIT}&fields=summary,description,status,assignee,updated"
+            ))
+            .basic_auth(credential.email, Some(credential.api_token))
+            .header(reqwest::header::ACCEPT, "application/json")
+            .send()
+            .map_err(|_| JiraSearchError::Unavailable)?;
+        let bytes = read_search_response(response)?;
+        decode_sprint_issue_bytes(&site, &bytes)
+    }
+}
+
+/// The sprint endpoint answers 400 for a board without the sprint feature
+/// (a kanban board). The request shape is fixed, so a 400 here means that
+/// board, not a malformed request.
+fn sprints_unsupported_status(status: StatusCode) -> bool {
+    status == StatusCode::BAD_REQUEST
+}
+
+enum SprintPageResponse {
+    Unsupported,
+    Body(Vec<u8>),
+}
+
+fn collect_sprints<F>(board_id: u64, mut fetch: F) -> Result<JiraSprintListResult, JiraSearchError>
+where
+    F: FnMut(usize) -> Result<SprintPageResponse, JiraSearchError>,
+{
+    let mut start_at = 0usize;
+    let mut sprints = Vec::new();
+    let mut sprint_ids = std::collections::HashSet::new();
+    let mut truncated = false;
+    loop {
+        let bytes = match fetch(start_at)? {
+            SprintPageResponse::Unsupported if start_at == 0 => {
+                return Ok(JiraSprintListResult::SprintsUnsupported);
+            }
+            // A board cannot lose its sprint feature between two pages.
+            SprintPageResponse::Unsupported => return Err(JiraSearchError::MalformedResponse),
+            SprintPageResponse::Body(bytes) => bytes,
+        };
+        let page = decode_sprint_page_bytes(board_id, &bytes)?;
+        truncated |= page.partial;
+        for sprint in page.sprints {
+            if !sprint_ids.insert(sprint.id) {
+                // The collection can move while Jira pages it.
+                truncated = true;
+                continue;
+            }
+            if sprints.len() == JIRA_SPRINT_DISCOVERY_LIMIT {
+                truncated = true;
+                break;
+            }
+            sprints.push(sprint);
+        }
+        let next_start = start_at.saturating_add(page.returned);
+        let complete = page.returned == 0
+            || page.is_last == Some(true)
+            || page.total.is_some_and(|total| next_start >= total);
+        if complete {
+            break;
+        }
+        if sprints.len() == JIRA_SPRINT_DISCOVERY_LIMIT || next_start <= start_at {
+            truncated = true;
+            break;
+        }
+        start_at = next_start;
+    }
+    Ok(JiraSprintListResult::Sprints { sprints, truncated })
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SprintValue {
+    id: u64,
+    name: String,
+    state: String,
+    #[serde(default)]
+    start_date: Option<String>,
+    #[serde(default)]
+    end_date: Option<String>,
+}
+
+#[derive(Debug)]
+struct SprintPage {
+    sprints: Vec<JiraSprint>,
+    returned: usize,
+    total: Option<usize>,
+    is_last: Option<bool>,
+    partial: bool,
+}
+
+fn decode_sprint_page_bytes(board_id: u64, bytes: &[u8]) -> Result<SprintPage, JiraSearchError> {
+    let parsed: BoardListResponse =
+        serde_json::from_slice(bytes).map_err(|_| JiraSearchError::MalformedResponse)?;
+    let returned = parsed.values.len();
+    let mut partial = returned > JIRA_SPRINT_PAGE_LIMIT;
+    let mut sprint_ids = std::collections::HashSet::new();
+    let mut sprints = Vec::with_capacity(returned.min(JIRA_SPRINT_PAGE_LIMIT));
+    for value in parsed.values.into_iter().take(JIRA_SPRINT_PAGE_LIMIT) {
+        let Some(sprint) = serde_json::from_value::<SprintValue>(value)
+            .ok()
+            .and_then(|sprint| validated_sprint(board_id, sprint))
+        else {
+            partial = true;
+            continue;
+        };
+        if !sprint_ids.insert(sprint.id) {
+            return Err(JiraSearchError::MalformedResponse);
+        }
+        sprints.push(sprint);
+    }
+    Ok(SprintPage {
+        sprints,
+        returned,
+        total: parsed.total,
+        is_last: parsed.is_last,
+        partial,
+    })
+}
+
+fn validated_sprint(board_id: u64, sprint: SprintValue) -> Option<JiraSprint> {
+    let name = sprint.name.trim();
+    if sprint.id == 0 || name.is_empty() || name.len() > 256 || name.chars().any(char::is_control) {
+        return None;
+    }
+    let state = match sprint.state.trim().to_ascii_lowercase().as_str() {
+        "active" => JiraSprintState::Active,
+        "future" => JiraSprintState::Future,
+        "closed" => JiraSprintState::Closed,
+        _ => return None,
+    };
+    let epoch_ms = |value: Option<String>| {
+        value
+            .as_deref()
+            .map(str::trim)
+            .and_then(crate::parse_rfc3339_epoch_ms)
+    };
+    Some(JiraSprint {
+        id: sprint.id,
+        board_id,
+        name: name.to_owned(),
+        state,
+        start_epoch_ms: epoch_ms(sprint.start_date),
+        end_epoch_ms: epoch_ms(sprint.end_date),
+    })
+}
+
 fn validate_numeric_ids(ids: &[String], maximum: usize) -> Result<(), JiraSearchError> {
     if ids.is_empty()
         || ids.len() > maximum
@@ -484,6 +733,11 @@ fn decode_search_response(
     site: &str,
     response: reqwest::blocking::Response,
 ) -> Result<JiraSearchResult, JiraSearchError> {
+    let bytes = read_search_response(response)?;
+    decode_search_bytes(site, &bytes)
+}
+
+fn read_search_response(response: reqwest::blocking::Response) -> Result<Vec<u8>, JiraSearchError> {
     let status = response.status();
     let retry_after_seconds = response
         .headers()
@@ -507,7 +761,7 @@ fn decode_search_response(
     if bytes.len() as u64 > JIRA_RESPONSE_MAX_BYTES {
         return Err(JiraSearchError::ResponseTooLarge);
     }
-    decode_search_bytes(site, &bytes)
+    Ok(bytes)
 }
 
 fn search_status_error(
@@ -804,6 +1058,10 @@ struct SearchResponse {
     next_page_token: Option<String>,
     #[serde(default)]
     is_last: Option<bool>,
+    /// Reported by the Agile issue endpoints; the search endpoint pages by
+    /// token instead.
+    #[serde(default)]
+    total: Option<usize>,
 }
 
 #[derive(Deserialize)]
@@ -818,15 +1076,23 @@ struct SearchFields {
     summary: String,
     #[serde(default)]
     description: Option<serde_json::Value>,
-    status: NamedField,
+    status: StatusField,
     #[serde(default)]
     assignee: Option<AssigneeField>,
     updated: String,
 }
 
 #[derive(Deserialize)]
-struct NamedField {
+#[serde(rename_all = "camelCase")]
+struct StatusField {
     name: String,
+    #[serde(default)]
+    status_category: Option<StatusCategoryField>,
+}
+
+#[derive(Deserialize)]
+struct StatusCategoryField {
+    key: String,
 }
 
 #[derive(Deserialize)]
@@ -838,6 +1104,26 @@ struct AssigneeField {
 fn decode_search_bytes(site: &str, bytes: &[u8]) -> Result<JiraSearchResult, JiraSearchError> {
     let parsed: SearchResponse =
         serde_json::from_slice(bytes).map_err(|_| JiraSearchError::MalformedResponse)?;
+    decode_search_page(site, parsed)
+}
+
+fn decode_sprint_issue_bytes(
+    site: &str,
+    bytes: &[u8],
+) -> Result<JiraSearchResult, JiraSearchError> {
+    let parsed: SearchResponse =
+        serde_json::from_slice(bytes).map_err(|_| JiraSearchError::MalformedResponse)?;
+    let returned = parsed.issues.len();
+    let total = parsed.total;
+    let mut result = decode_search_page(site, parsed)?;
+    result.truncated |= total.is_some_and(|total| total > returned);
+    Ok(result)
+}
+
+fn decode_search_page(
+    site: &str,
+    parsed: SearchResponse,
+) -> Result<JiraSearchResult, JiraSearchError> {
     let mut truncated = parsed.issues.len() > JIRA_SEARCH_LIMIT
         || parsed.next_page_token.is_some()
         || parsed.is_last == Some(false);
@@ -896,6 +1182,12 @@ fn decode_search_issue(site: &str, issue: SearchIssue) -> Option<JiraIssueSnapsh
             .and_then(jira_description_plain_text)
             .filter(|value| !value.is_empty()),
         status_name: truncate_utf8(issue.fields.status.name.trim(), 256),
+        status_category: issue
+            .fields
+            .status
+            .status_category
+            .map(|category| category.key)
+            .filter(|key| matches!(key.as_str(), "new" | "indeterminate" | "done")),
         assignee_display: issue
             .fields
             .assignee
@@ -1150,6 +1442,7 @@ mod tests {
             summary: key.into(),
             description: None,
             status_name: "Open".into(),
+            status_category: None,
             assignee_display: None,
             updated_at: "2026-08-26T10:00:00.000+0000".into(),
         };
@@ -1194,12 +1487,16 @@ mod tests {
             br#"{
               "issues":[{"id":"10042","key":"TERM-42","fields":{
                 "summary":"Ship Task Sources","description":{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Inbound Jira work"}]}]},
-                "status":{"name":"In Progress"},"assignee":{"displayName":"Ada"},"updated":"2026-08-25T12:00:00.000+0000"
+                "status":{"name":"In Progress","statusCategory":{"key":"indeterminate"}},"assignee":{"displayName":"Ada"},"updated":"2026-08-25T12:00:00.000+0000"
               }}],"isLast":false,"nextPageToken":"next"
             }"#,
         )
         .unwrap();
         assert!(result.truncated);
+        assert_eq!(
+            result.issues[0].status_category.as_deref(),
+            Some("indeterminate")
+        );
         assert_eq!(result.issues[0].external_id, "10042");
         assert_eq!(
             result.issues[0].description.as_deref(),
@@ -1338,6 +1635,221 @@ mod tests {
         let duplicate = br#"{"issues":[{"id":"10042","key":"TERM-42","fields":{"summary":"One","status":{"name":"Open"},"updated":"now"}},{"id":"10042","key":"TERM-43","fields":{"summary":"Two","status":{"name":"Open"},"updated":"now"}}]}"#;
         assert_eq!(
             decode_search_bytes("https://example.atlassian.net", duplicate),
+            Err(JiraSearchError::MalformedResponse)
+        );
+    }
+
+    const SPRINT_PAGE_ONE: &[u8] = br#"{
+      "maxResults":2,"startAt":0,"isLast":false,"values":[
+        {"id":37,"self":"https://example.atlassian.net/rest/agile/1.0/sprint/37","state":"active","name":"PAY Sprint 12","startDate":"2026-10-20T09:00:00.000Z","endDate":"2026-11-03T09:00:00.000Z","originBoardId":84,"goal":"Ship CORS"},
+        {"id":38,"state":"future","name":"PAY Sprint 13","originBoardId":84}
+      ]
+    }"#;
+    const SPRINT_PAGE_TWO: &[u8] = br#"{
+      "maxResults":2,"startAt":2,"isLast":true,"values":[
+        {"id":38,"state":"future","name":"PAY Sprint 13 (moved)"},
+        {"id":39,"state":"FUTURE","name":"  PAY Sprint 14  ","startDate":"not a date"}
+      ]
+    }"#;
+
+    #[test]
+    fn sprints_page_until_last_and_decode_states_and_dates() {
+        let mut requested = Vec::new();
+        let result = collect_sprints(84, |start_at| {
+            requested.push(start_at);
+            Ok(SprintPageResponse::Body(
+                if start_at == 0 {
+                    SPRINT_PAGE_ONE
+                } else {
+                    SPRINT_PAGE_TWO
+                }
+                .to_vec(),
+            ))
+        })
+        .unwrap();
+        assert_eq!(requested, vec![0, 2]);
+        let JiraSprintListResult::Sprints { sprints, truncated } = result else {
+            panic!("sprints expected");
+        };
+        // The second page repeated sprint 38 while the collection moved.
+        assert!(truncated);
+        assert_eq!(
+            sprints,
+            vec![
+                JiraSprint {
+                    id: 37,
+                    board_id: 84,
+                    name: "PAY Sprint 12".into(),
+                    state: JiraSprintState::Active,
+                    start_epoch_ms: Some(1_792_486_800_000),
+                    end_epoch_ms: Some(1_793_696_400_000),
+                },
+                JiraSprint {
+                    id: 38,
+                    board_id: 84,
+                    name: "PAY Sprint 13".into(),
+                    state: JiraSprintState::Future,
+                    start_epoch_ms: None,
+                    end_epoch_ms: None,
+                },
+                JiraSprint {
+                    id: 39,
+                    board_id: 84,
+                    name: "PAY Sprint 14".into(),
+                    state: JiraSprintState::Future,
+                    start_epoch_ms: None,
+                    end_epoch_ms: None,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn sprint_page_decoder_skips_invalid_rows_and_rejects_duplicate_ids() {
+        let page = decode_sprint_page_bytes(
+            7,
+            br#"{"isLast":true,"values":[
+              {"id":1,"state":"closed","name":"Done sprint"},
+              {"id":2,"state":"weird","name":"Unknown state"},
+              {"id":0,"state":"active","name":"Zero id"},
+              {"id":3,"state":"active","name":"   "}
+            ]}"#,
+        )
+        .unwrap();
+        assert!(page.partial);
+        assert_eq!(page.returned, 4);
+        assert_eq!(page.sprints.len(), 1);
+        assert_eq!(page.sprints[0].state, JiraSprintState::Closed);
+        assert_eq!(
+            decode_sprint_page_bytes(
+                7,
+                br#"{"values":[{"id":1,"state":"active","name":"A"},{"id":1,"state":"future","name":"B"}]}"#,
+            )
+            .unwrap_err(),
+            JiraSearchError::MalformedResponse
+        );
+        assert_eq!(
+            serde_json::to_value(JiraSprintState::Future).unwrap(),
+            serde_json::json!("future")
+        );
+    }
+
+    #[test]
+    fn sprint_listing_is_bounded_to_one_hundred() {
+        let page = |start_at: usize| {
+            let values = (start_at + 1..=start_at + JIRA_SPRINT_PAGE_LIMIT)
+                .map(
+                    |id| serde_json::json!({"id": id, "state": "future", "name": format!("S{id}")}),
+                )
+                .collect::<Vec<_>>();
+            serde_json::to_vec(&serde_json::json!({"isLast": false, "values": values})).unwrap()
+        };
+        let mut calls = 0;
+        let result = collect_sprints(84, |start_at| {
+            calls += 1;
+            Ok(SprintPageResponse::Body(page(start_at)))
+        })
+        .unwrap();
+        assert_eq!(calls, 2);
+        let JiraSprintListResult::Sprints { sprints, truncated } = result else {
+            panic!("sprints expected");
+        };
+        assert!(truncated);
+        assert_eq!(sprints.len(), JIRA_SPRINT_DISCOVERY_LIMIT);
+    }
+
+    #[test]
+    fn board_without_sprints_is_a_distinct_outcome_from_no_sprints() {
+        assert!(sprints_unsupported_status(StatusCode::BAD_REQUEST));
+        assert!(!sprints_unsupported_status(StatusCode::NOT_FOUND));
+        assert!(!sprints_unsupported_status(StatusCode::UNAUTHORIZED));
+        assert_eq!(
+            collect_sprints(17, |_| Ok(SprintPageResponse::Unsupported)).unwrap(),
+            JiraSprintListResult::SprintsUnsupported
+        );
+        assert_eq!(
+            collect_sprints(17, |_| Ok(SprintPageResponse::Body(
+                br#"{"maxResults":50,"startAt":0,"isLast":true,"values":[]}"#.to_vec()
+            )))
+            .unwrap(),
+            JiraSprintListResult::Sprints {
+                sprints: vec![],
+                truncated: false
+            }
+        );
+        assert_eq!(
+            collect_sprints(17, |start_at| Ok(if start_at == 0 {
+                SprintPageResponse::Body(SPRINT_PAGE_ONE.to_vec())
+            } else {
+                SprintPageResponse::Unsupported
+            })),
+            Err(JiraSearchError::MalformedResponse)
+        );
+        assert_eq!(
+            collect_sprints(17, |_| Err(JiraSearchError::Unauthorized)),
+            Err(JiraSearchError::Unauthorized)
+        );
+    }
+
+    #[test]
+    fn invalid_sprint_scope_is_rejected_before_any_request() {
+        let client = JiraCloudClient::new().unwrap();
+        let credential = JiraCredential {
+            email: "ada@example.com",
+            api_token: "token",
+        };
+        assert_eq!(
+            client.list_sprints("https://example.atlassian.net", credential, 0),
+            Err(JiraSearchError::ScopeInvalid)
+        );
+        assert_eq!(
+            client.sprint_issues("http://example.atlassian.net", credential, 37),
+            Err(JiraSearchError::InvalidSite)
+        );
+    }
+
+    #[test]
+    fn sprint_issues_decode_snapshots_and_truncate_on_total() {
+        let result = decode_sprint_issue_bytes(
+            "https://example.atlassian.net",
+            br#"{
+              "expand":"schema,names","startAt":0,"maxResults":50,"total":73,
+              "issues":[
+                {"id":"10042","key":"PAY-42","fields":{
+                  "summary":"Fix CORS","description":{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Allow the portal origin"}]}]},
+                  "status":{"name":"In Progress"},"assignee":{"displayName":"Ada"},"updated":"2026-10-21T10:00:00.000+0000"
+                }},
+                {"id":"10043","key":"PAY-43","fields":{
+                  "summary":"Rotate keys","status":{"name":"To Do"},"assignee":null,"updated":"2026-10-20T10:00:00.000+0000"
+                }}
+              ]
+            }"#,
+        )
+        .unwrap();
+        assert!(result.truncated);
+        assert_eq!(result.issues.len(), 2);
+        assert_eq!(result.issues[0].key, "PAY-42");
+        assert_eq!(
+            result.issues[0].url,
+            "https://example.atlassian.net/browse/PAY-42"
+        );
+        assert_eq!(
+            result.issues[0].description.as_deref(),
+            Some("Allow the portal origin")
+        );
+        assert_eq!(result.issues[0].assignee_display.as_deref(), Some("Ada"));
+        assert_eq!(result.issues[1].assignee_display, None);
+
+        let complete = decode_sprint_issue_bytes(
+            "https://example.atlassian.net",
+            br#"{"startAt":0,"maxResults":50,"total":1,"issues":[
+              {"id":"10043","key":"PAY-43","fields":{"summary":"Rotate keys","status":{"name":"To Do"},"updated":"now"}}
+            ]}"#,
+        )
+        .unwrap();
+        assert!(!complete.truncated);
+        assert_eq!(
+            decode_sprint_issue_bytes("https://example.atlassian.net", br#"{"issues":{}}"#),
             Err(JiraSearchError::MalformedResponse)
         );
     }

@@ -3,7 +3,9 @@
 mod azure_pr_checks;
 mod claude_usage;
 mod integration_status;
+mod issue_key_pull_requests;
 mod jira;
+mod jira_write;
 mod openai_voice;
 mod pull_request_changes;
 mod repository_pull_requests;
@@ -20,11 +22,21 @@ pub use integration_status::{
     probe_azure_devops_cli, probe_github_cli, valid_azure_devops_personal_access_token,
 };
 
+pub use issue_key_pull_requests::{
+    IssueKeyPullRequests, MAX_ISSUE_KEY_PULL_REQUESTS, names_issue_key, valid_issue_key,
+};
+
 pub use jira::{
     JiraBoard, JiraBoardListResult, JiraBoardSource, JiraCloudClient, JiraCredential,
     JiraIssueRefError, JiraIssueSnapshot, JiraIssueSource, JiraSearchError, JiraSearchRequest,
-    JiraSearchResult, JiraSearchScope, NormalizedJiraIssueRef, normalize_jira_issue_url,
+    JiraSearchResult, JiraSearchScope, JiraSprint, JiraSprintListResult, JiraSprintSource,
+    JiraSprintState, NormalizedJiraIssueRef, normalize_jira_issue_url,
     normalize_jira_site_base_url,
+};
+
+pub use jira_write::{
+    JIRA_DESCRIPTION_MAX_CHARS, JIRA_SUMMARY_MAX_CHARS, JiraIssueText, JiraIssueWriter,
+    JiraTransition, JiraWriteError, jira_issue_url_on_site, markdown_to_jira_wiki,
 };
 
 pub use repository_pull_requests::{

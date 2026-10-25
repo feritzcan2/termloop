@@ -396,6 +396,51 @@ impl GitRunner {
     }
 }
 
+impl GitRunner {
+    /// Whether commit `ancestor` is reachable from commit `descendant` in the
+    /// repository, both given as full or abbreviated hex object names.
+    /// `None` when either commit is not in the local repository, for example
+    /// before a fetch.
+    pub fn commit_contains(
+        &self,
+        repository_path: &Path,
+        descendant: &str,
+        ancestor: &str,
+    ) -> Result<Option<bool>, GitError> {
+        let object = |value: &str| {
+            if (7..=64).contains(&value.len()) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+            {
+                Ok(OsString::from(format!("{value}^{{commit}}")))
+            } else {
+                Err(GitError::ParseFailed {
+                    operation: GitOperation::CommitAncestry,
+                })
+            }
+        };
+        let outcome = self.execute(
+            GitOperation::CommitAncestry,
+            repository_path,
+            [
+                OsString::from("merge-base"),
+                OsString::from("--is-ancestor"),
+                object(ancestor)?,
+                object(descendant)?,
+            ],
+        )?;
+        match outcome.termination {
+            CommandTermination::Exited { code: 0 } => Ok(Some(true)),
+            CommandTermination::Exited { code: 1 } => Ok(Some(false)),
+            // Git answers 128 for an object it does not have.
+            CommandTermination::Exited { code: 128 } => Ok(None),
+            termination => Err(command_failure(
+                GitOperation::CommitAncestry,
+                termination,
+                &outcome.stderr,
+            )),
+        }
+    }
+}
+
 fn recorded_base_is_ancestor(
     repository_path: &Path,
     recorded_base_oid: &ObjectId,
