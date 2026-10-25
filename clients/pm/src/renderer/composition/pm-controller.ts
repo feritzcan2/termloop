@@ -9,6 +9,7 @@ import type {
   PmProbeMatcher,
   PmProposal,
   PmSettingsUpdateParams,
+  PmSkillSetup,
   PmTicket,
   PmTicketCreateParams,
   PmTicketStatus,
@@ -18,7 +19,7 @@ import type { PmApi, PmEvent, RendererMethod } from "../../pm-api.js";
 import type { PmState, PmStore, PmView } from "../state/presentation-store.js";
 import { touchesJira } from "../ui/proposal-change.js";
 import type { NoteDraft } from "../ui/NoteDialog.js";
-import type { DescriptionSaveOutcome, TicketCapture } from "../ui/types.js";
+import type { DescriptionSaveOutcome, SkillKind, TicketCapture } from "../ui/types.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -501,6 +502,18 @@ export class PmController {
     await this.call("pm_skill_set_enabled", { skillId, enabled });
   }
 
+  /**
+   * A skill row's Set up: Deployment control turns on once an environment
+   * is listed (Settings otherwise); other skills open their own creator.
+   */
+  async setUpSkill(kind: SkillKind): Promise<void> {
+    if (kind !== "deploymentControl") return this.launchSkillCreator({ setup: kind });
+    const builtin = this.state.skills?.skills.find((skill) => skill.builtin === "deploymentControl");
+    if (builtin) return this.setSkillEnabled(builtin.id, true);
+    this.setView("settings");
+    this.#set({ notice: { tone: "info", text: "List an environment, then set up Deployment control." } });
+  }
+
   /** Runs a skill now; a run with nothing new says so instead of starting an agent. */
   async runSkill(skillId: string): Promise<void> {
     const result = await this.call("pm_skill_run", { skillId });
@@ -515,11 +528,14 @@ export class PmController {
     await Promise.all([this.loadSkills(), this.refreshAgents()]);
   }
 
-  /** Starts the skill creator and shows it in the stage; with a skill, it proposes a revision of it. */
-  async launchSkillCreator(skillId?: string): Promise<void> {
+  /**
+   * Starts the skill creator and shows it in the stage: one that offers
+   * skills, one skill's own setup creator, or one that revises a skill.
+   */
+  async launchSkillCreator(target: { setup: PmSkillSetup } | { skillId: string } | {} = {}): Promise<void> {
     const projectId = this.state.projectId;
     if (!projectId) return;
-    const session = await this.call("pm_skill_creator_launch", skillId ? { projectId, skillId } : { projectId });
+    const session = await this.call("pm_skill_creator_launch", { projectId, ...target });
     if (!session) return;
     this.selectAgent(session.sessionId);
     await this.refreshAgents();

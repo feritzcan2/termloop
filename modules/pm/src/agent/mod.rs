@@ -12,7 +12,8 @@ pub use launch::{
     pm_launch_plan,
 };
 pub use profile::{
-    AssistantTask, PM_SYSTEM_PROMPT_MAX_BYTES, PmAgentProfile, SkillRunBrief, SlackChannelBrief,
+    AssistantTask, PM_SYSTEM_PROMPT_MAX_BYTES, PmAgentProfile, SkillRunBrief, SkillSetup,
+    SlackChannelBrief,
 };
 pub use tools::{
     AcceptanceCriteriaProposalParams, AgentProbeParams, BoardReadParams, BoardReadResult,

@@ -5772,8 +5772,19 @@
           "minLength": 1,
           "maxLength": 128,
           "pattern": "^[!-~]+$"
+        },
+        "setup": {
+          "$ref": "#/$defs/pmSkillSetup"
         }
       }
+    },
+    "pmSkillSetup": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "bugOwnerFinder",
+        "slackTracker"
+      ]
     },
     "pmSkillFeedbackReadResult": {
       "x-codegen": true,

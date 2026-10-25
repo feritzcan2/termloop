@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use termloop_pm::agent::{
     PM_OWNER_EVIDENCE_READ, PM_SKILL_DISCOVERY_READ, PM_SKILL_DRY_RUN_REQUEST,
     PM_SKILL_TOOL_VERIFY, PmAgentMode, PmAgentProfile, PmToolContext, PmToolError, SkillRunBrief,
-    SkillRunContext, SlackChannelBrief,
+    SkillRunContext, SkillSetup, SlackChannelBrief,
 };
 use termloop_pm::skill::{
     BuiltinSkill, SKILL_DRY_RUN_WINDOW_MS, SkillManifest, SkillPrefilter, SkillRun,
@@ -280,17 +280,36 @@ pub(crate) fn dry_run(state: &AppState, draft_id: &str) -> Result<SkillRun, Cont
     Ok(run)
 }
 
-/// Launches the skill creator for the project in the Assistant pane; with
-/// a skill, the creator proposes a revision of it.
+/// What the skill creator is launched for.
+pub(crate) enum CreatorLaunch<'a> {
+    /// Offers the skills that fit the project.
+    Offer,
+    /// Sets up one skill, from its row in the Skills panel.
+    Setup(SkillSetup),
+    /// Proposes a revision of an installed skill.
+    Revise(&'a str),
+}
+
+/// Launches the skill creator for the project in the Assistant pane.
 pub(crate) fn launch_creator(
     state: &AppState,
     project_id: &str,
-    skill_id: Option<&str>,
+    launch: CreatorLaunch<'_>,
 ) -> Result<agents::AgentRecord, ControlError> {
-    let Some(skill_id) = skill_id else {
-        return agents::launch(state, project_id, PmAgentMode::SkillCreator, None, None);
+    let profile = {
+        let store = state.store.lock();
+        match launch {
+            CreatorLaunch::Offer => {
+                PmAgentProfile::build(&store, project_id, PmAgentMode::SkillCreator, None)?
+            }
+            CreatorLaunch::Setup(setup) => {
+                PmAgentProfile::build_skill_setup(&store, project_id, setup)?
+            }
+            CreatorLaunch::Revise(skill_id) => {
+                PmAgentProfile::build_skill_reviser(&store, project_id, skill_id)?
+            }
+        }
     };
-    let profile = PmAgentProfile::build_skill_reviser(&state.store.lock(), project_id, skill_id)?;
     agents::launch_profile(state, project_id, &profile, None, None, None)
 }
 

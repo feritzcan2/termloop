@@ -126,7 +126,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:0e26f27c13d526737360020c70ab580a103b6b2c65fab03eaca90d475194fba9";
+    "sha256:91d7f374205ad7693c363a8a9ce47c668be259598d4ac4799b675de0f6f1a288";
 pub const CAPABILITY_SCOPE: &str = "pm.full";
 pub const METHODS: &[&str] = &[
     "pm_system_version",
@@ -2229,6 +2229,16 @@ pub struct PmSkillCreatorLaunchParams {
     pub project_id: String,
     #[serde(rename = "skillId", skip_serializing_if = "Option::is_none")]
     pub skill_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub setup: Option<PmSkillSetup>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PmSkillSetup {
+    #[serde(rename = "bugOwnerFinder")]
+    BugOwnerFinder,
+    #[serde(rename = "slackTracker")]
+    SlackTracker,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -7854,9 +7864,27 @@ fn validate_pm_skill_creator_launch_params(value: &Value) -> bool {
                     && contract_pattern_matches("^[!-~]+$", text)
             })
         }) && object
-            .keys()
-            .all(|key| ["projectId", "skillId"].contains(&key.as_str()))
+            .get("setup")
+            .is_none_or(|field| validate_pm_skill_setup(field))
+            && object
+                .keys()
+                .all(|key| ["projectId", "skillId", "setup"].contains(&key.as_str()))
     })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_skill_setup(value: &Value) -> bool {
+    value
+        .as_str()
+        .is_some_and(|text| ["bugOwnerFinder", "slackTracker"].contains(&text))
 }
 
 #[allow(

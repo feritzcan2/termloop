@@ -143,7 +143,10 @@ time.
 Skill shapes you know: Deployment control (built in: delivery checks and \
 probes), Slack tracker (reads chosen Slack channels and suggests ticket \
 updates from messages that name tickets), and Bug owner finder (suggests who \
-should own a new bug from code history, pull requests, and similar tickets).
+should own a new bug from code history, pull requests, and similar tickets).";
+
+/// How the creator sets up a Slack tracker.
+const SLACK_TRACKER_SETUP: &str = "\
 Slack: the PM holds no Slack connection; you and the skill's runs read Slack \
 only with your own Slack tools (a Slack MCP server or connector you have), \
 read-only. For a Slack tracker, list the channels you can see, read the last \
@@ -153,7 +156,10 @@ and the project manager ticks which to keep. Put the exact read-only Slack \
 tools a run needs in agentTools (channel history, thread replies, \
 permalinks), never one that sends, posts, edits, or reacts. It runs every 30 \
 minutes with the slackMentions prefilter. Without a Slack tool, say so and \
-give the steps to add one.
+give the steps to add one.";
+
+/// How the creator sets up a Bug owner finder.
+const BUG_OWNER_FINDER_SETUP: &str = "\
 Bug owner finder: it runs on the boardChanged or jiraPulled event (or by \
 hand) with the bugTickets prefilter, and its tools are pm_ticket_read and \
 pm_owner_evidence_read. For each kept ticket without an assignee, a run calls \
@@ -170,6 +176,53 @@ first. Then say in plain words what this project has and which tools are \
 ready, and offer 2 to 4 numbered skills that fit, each with what it would do \
 for the project manager and any tool it is missing. The project manager \
 answers with a number. Do not submit a draft before they answer.";
+
+/// The creator's first message when the project manager presses Set up on
+/// one skill.
+const SKILL_SETUP_KICKOFF: &str = "\
+Set up only the skill named below; do not offer other skills. Call \
+pm_skill_discovery_read first and check each tool it needs with \
+pm_skill_tool_verify. Then say in at most 6 lines what it will do for this \
+project and which tools are ready or missing, with the exact steps a person \
+takes to add a missing one. Submit the draft with pm_skill_draft_submit, \
+listing missing tools in neededTools, and call pm_skill_dry_run_request. The \
+project manager installs it from the draft card in the Skills panel.";
+
+/// A skill the project manager sets up from its row in the Skills panel,
+/// each with its own creator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkillSetup {
+    BugOwnerFinder,
+    SlackTracker,
+}
+
+impl SkillSetup {
+    fn name(self) -> &'static str {
+        match self {
+            Self::BugOwnerFinder => "Bug owner finder",
+            Self::SlackTracker => "Slack tracker",
+        }
+    }
+
+    fn copy(self) -> &'static str {
+        match self {
+            Self::BugOwnerFinder => BUG_OWNER_FINDER_SETUP,
+            Self::SlackTracker => SLACK_TRACKER_SETUP,
+        }
+    }
+}
+
+/// What the skill creator is started for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum CreatorFocus {
+    /// Offers the skills that fit the project.
+    Offer,
+    /// Sets up one skill.
+    Setup(SkillSetup),
+    /// Revises an installed skill: its manifest and verdicts, placed right
+    /// after the mode's copy so the prompt bound never cuts them.
+    Revise { section: String, kickoff: String },
+}
 
 /// The creator's first message when the project manager asks it to revise
 /// an installed skill.
@@ -535,18 +588,24 @@ impl PmAgentProfile {
         focus_ticket_id: Option<&str>,
         task: AssistantTask,
     ) -> Result<Self, PmError> {
-        Self::build_with(store, project_id, mode, focus_ticket_id, task, None)
+        Self::build_with(
+            store,
+            project_id,
+            mode,
+            focus_ticket_id,
+            task,
+            CreatorFocus::Offer,
+        )
     }
 
-    /// Builds a profile; `revise` is the skill-under-revision section,
-    /// placed right after the mode's copy so the prompt bound never cuts it.
+    /// Builds a profile; `creator` only matters to the skill creator.
     fn build_with(
         store: &PmStore,
         project_id: &str,
         mode: PmAgentMode,
         focus_ticket_id: Option<&str>,
         task: AssistantTask,
-        revise: Option<String>,
+        creator: CreatorFocus,
     ) -> Result<Self, PmError> {
         if task == AssistantTask::UpdateDescription
             && (mode != PmAgentMode::Assistant || focus_ticket_id.is_none())
@@ -579,19 +638,20 @@ impl PmAgentProfile {
                 "the project does not track deployments",
             ));
         }
+        let mode_copy = match (mode, &creator) {
+            (PmAgentMode::Assistant, _) => ASSISTANT.to_owned(),
+            (PmAgentMode::DeliveryCheck, _) => DELIVERY_CHECK.to_owned(),
+            (_, CreatorFocus::Setup(setup)) => format!("{SKILL_CREATOR}\n{}", setup.copy()),
+            _ => format!("{SKILL_CREATOR}\n{SLACK_TRACKER_SETUP}\n{BUG_OWNER_FINDER_SETUP}"),
+        };
         let mut sections = vec![
             ROLE.to_owned(),
-            match mode {
-                PmAgentMode::Assistant => ASSISTANT,
-                PmAgentMode::DeliveryCheck => DELIVERY_CHECK,
-                PmAgentMode::SkillRun | PmAgentMode::SkillCreator => SKILL_CREATOR,
-            }
-            .to_owned(),
+            mode_copy,
             tier_copy(board.tracking.tier).to_owned(),
             sprint_section(&board, store.now()),
         ];
-        if let Some(section) = revise {
-            sections.insert(2, section);
+        if let CreatorFocus::Revise { section, .. } = &creator {
+            sections.insert(2, section.clone());
         }
         if let Some(index) = focus {
             sections.push(focus_section(
@@ -621,7 +681,14 @@ impl PmAgentProfile {
                 "Run the delivery check for ticket {} and report with pm_check_report.",
                 focus_ticket.expect("a delivery check has its ticket").id
             ),
-            PmAgentMode::SkillCreator | PmAgentMode::SkillRun => SKILL_CREATOR_KICKOFF.to_owned(),
+            PmAgentMode::SkillCreator | PmAgentMode::SkillRun => match creator {
+                CreatorFocus::Offer => SKILL_CREATOR_KICKOFF.to_owned(),
+                CreatorFocus::Setup(setup) => format!(
+                    "{SKILL_SETUP_KICKOFF}\nThe skill to set up is the {}.",
+                    setup.name()
+                ),
+                CreatorFocus::Revise { kickoff, .. } => kickoff,
+            },
         });
         Ok(Self {
             mode,
@@ -647,19 +714,37 @@ impl PmAgentProfile {
             return Err(PmError::Constraint("a built-in skill is not revised"));
         }
         let feedback = store.skill_version_feedback(skill_id, skill.version)?;
-        let mut profile = Self::build_with(
+        Self::build_with(
             store,
             project_id,
             PmAgentMode::SkillCreator,
             None,
             AssistantTask::Brief,
-            Some(revise_section(&skill, &feedback)),
-        )?;
-        profile.first_message = Some(format!(
-            "{SKILL_REVISE_KICKOFF}\nThe skill to revise is {} ({}).",
-            skill.id, skill.manifest.name
-        ));
-        Ok(profile)
+            CreatorFocus::Revise {
+                section: revise_section(&skill, &feedback),
+                kickoff: format!(
+                    "{SKILL_REVISE_KICKOFF}\nThe skill to revise is {} ({}).",
+                    skill.id, skill.manifest.name
+                ),
+            },
+        )
+    }
+
+    /// The creator of one skill the project manager pressed Set up on: the
+    /// creator's steps and only that skill's setup.
+    pub fn build_skill_setup(
+        store: &PmStore,
+        project_id: &str,
+        setup: SkillSetup,
+    ) -> Result<Self, PmError> {
+        Self::build_with(
+            store,
+            project_id,
+            PmAgentMode::SkillCreator,
+            None,
+            AssistantTask::Brief,
+            CreatorFocus::Setup(setup),
+        )
     }
 
     /// The profile of one skill run: the skill's approved instructions

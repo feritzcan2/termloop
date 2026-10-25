@@ -4,6 +4,7 @@ import { Icon } from "./icons.js";
 import { relativeTime, timeUntil } from "./format.js";
 import { EvidenceList, LineDiff } from "./ProposalCard.js";
 import { proposalKindLabel } from "./proposal-change.js";
+import type { SkillKind } from "./types.js";
 
 export type SkillsPanelProps = {
   skills: PmSkillsReadResult | undefined;
@@ -16,6 +17,8 @@ export type SkillsPanelProps = {
   onCreate(): void;
   /** Starts the skill creator to propose a revision of an installed skill. */
   onRevise(skillId: string): void;
+  /** A listed skill's Set up: each skill has its own setup. */
+  onSetUp(kind: SkillKind): void;
   onDryRun(draftId: string): void;
   onDiscard(draftId: string): void;
   /** Resolves true once installed; `channels` are the ticked Slack channel ids. */
@@ -42,6 +45,28 @@ function triggerText(skill: PmSkillManifest): string {
   }
 }
 
+/** The skills always listed, greyed out until the PM sets them up. */
+const KNOWN_SKILLS: { kind: SkillKind; name: string; description: string; matches(skill: Pick<PmSkill, "builtin" | "manifest">): boolean }[] = [
+  {
+    kind: "deploymentControl",
+    name: "Deployment control",
+    description: "Finds out which environments run each ticket's change: it runs the approved probes and starts a delivery check when a ticket's deployment is unknown or changed.",
+    matches: (skill) => skill.builtin === "deploymentControl",
+  },
+  {
+    kind: "bugOwnerFinder",
+    name: "Bug owner finder",
+    description: "Suggests who should own a new bug from code history, pull requests, and similar tickets.",
+    matches: (skill) => skill.builtin === null && skill.manifest.prefilter === "bugTickets",
+  },
+  {
+    kind: "slackTracker",
+    name: "Slack tracker",
+    description: "Reads the Slack channels you pick and suggests ticket updates from messages that name tickets.",
+    matches: (skill) => skill.builtin === null && skill.manifest.prefilter === "slackMentions",
+  },
+];
+
 /**
  * The right sidebar's "Skills" view: each installed skill as a tick, its
  * last run, pending suggestions and runs today, and the drafts the skill
@@ -50,10 +75,15 @@ function triggerText(skill: PmSkillManifest): string {
 export function SkillsPanel(props: SkillsPanelProps) {
   const skills = props.skills?.skills ?? [];
   const drafts = props.skills?.drafts ?? [];
+  // The built-in Deployment control shows as a Set up row until it is on.
+  const shown = skills.filter((skill) => skill.builtin === null || skill.enabled);
+  const row = (skill: PmSkill) => (
+    <SkillRow key={skill.id} skill={skill} now={props.now} onSetEnabled={props.onSetEnabled} onRun={props.onRun} onRevise={props.onRevise} />
+  );
   return (
     <div className="skills-panel">
       <div className="right-sidebar-tools">
-        <span className="count-badge" title="Skills">{skills.length}</span>
+        <span className="count-badge" title="Skills on">{skills.filter((skill) => skill.enabled).length}</span>
         <span className="sp" />
         <button type="button" className="view-action" disabled={!props.canCreate} onClick={props.onCreate}>
           <Icon name="plus" />Create a skill
@@ -61,14 +91,15 @@ export function SkillsPanel(props: SkillsPanelProps) {
       </div>
       {props.skills === undefined ? (
         <p className="hint pad">Loading skills…</p>
-      ) : skills.length === 0 && drafts.length === 0 ? (
-        <div className="empty-state pad">
-          <p>No skills yet.</p>
-          <p className="hint">The skill creator looks at what this project has and offers skills that suggest ticket changes for you to review.</p>
-        </div>
       ) : (
         <ul className="skill-list" aria-label="Skills">
-          {skills.map((skill) => <SkillRow key={skill.id} skill={skill} now={props.now} onSetEnabled={props.onSetEnabled} onRun={props.onRun} onRevise={props.onRevise} />)}
+          {KNOWN_SKILLS.map((known) => {
+            const set = shown.filter((skill) => known.matches(skill));
+            if (set.length > 0) return set.map(row);
+            const drafting = drafts.some((draft) => draft.baseSkillId === null && known.matches({ builtin: null, manifest: draft.manifest }));
+            return <SetupRow key={known.kind} {...known} drafting={drafting} onSetUp={() => props.onSetUp(known.kind)} />;
+          })}
+          {shown.filter((skill) => !KNOWN_SKILLS.some((known) => known.matches(skill))).map(row)}
         </ul>
       )}
       {props.tier === "tickets" && <p className="hint pad">Skills that read GitHub pull requests appear once a repository is connected.</p>}
@@ -87,6 +118,24 @@ export function SkillsPanel(props: SkillsPanelProps) {
         />
       ))}
     </div>
+  );
+}
+
+/** A known skill that is not set up: greyed out, with its own Set up. */
+function SetupRow(props: { name: string; description: string; drafting: boolean; onSetUp(): void }) {
+  return (
+    <li className="skill-row off setup">
+      <label className="skill-tick">
+        <input type="checkbox" checked={false} disabled aria-label={`${props.name} enabled`} />
+        <span className="skill-name">{props.name}</span>
+      </label>
+      <p className="skill-description">{props.description}</p>
+      <div className="skill-meta">
+        <span>{props.drafting ? "A draft is waiting below." : "Not set up"}</span>
+        <span className="sp" />
+        <button type="button" className="btn sm pri" disabled={props.drafting} onClick={props.onSetUp}>Set up</button>
+      </div>
+    </li>
   );
 }
 

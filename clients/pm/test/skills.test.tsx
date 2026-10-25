@@ -5,7 +5,7 @@ import { PmController } from "../src/renderer/composition/pm-controller.js";
 import { createPmStore } from "../src/renderer/state/presentation-store.js";
 import { ProposalCard } from "../src/renderer/ui/ProposalCard.js";
 import { SkillsPanel, type SkillsPanelProps } from "../src/renderer/ui/SkillsPanel.js";
-import { fakeBridge, ok, proposal, skill, skillDraft, ticket } from "./fixtures.js";
+import { fakeBridge, manifest, ok, proposal, skill, skillDraft, ticket } from "./fixtures.js";
 import { render } from "./render.js";
 
 const BOARD = { projectId: "project-1", sprints: [], tickets: [], environments: [], probes: [], runningChecks: [], tracking: { jira: true, code: false, deploy: false, tier: "tickets" } };
@@ -21,6 +21,7 @@ function panel(overrides: Partial<SkillsPanelProps> = {}): SkillsPanelProps {
     onRun: () => undefined,
     onCreate: () => undefined,
     onRevise: () => undefined,
+    onSetUp: () => undefined,
     onDryRun: () => undefined,
     onDiscard: () => undefined,
     onInstall: async () => true,
@@ -146,8 +147,40 @@ describe("SkillsPanel", () => {
       if (method === "pm_skill_creator_launch") return ok({ sessionId: "session-1" });
       return ok({ projectId: "project-1", sessions: [] });
     });
-    await new PmController(bridge, createPmStore({ projectId: "project-1" })).launchSkillCreator("skill-1");
+    await new PmController(bridge, createPmStore({ projectId: "project-1" })).launchSkillCreator({ skillId: "skill-1" });
     expect(bridge.calls[0]).toEqual({ method: "pm_skill_creator_launch", params: { projectId: "project-1", skillId: "skill-1" } });
+  });
+
+  it("lists every known skill greyed out with its own Set up", () => {
+    const onSetUp = vi.fn();
+    const empty = render(<SkillsPanel {...panel({ onSetUp, skills: { projectId: "project-1", skills: [], drafts: [] } })} />);
+    const rows = [...empty.container.querySelectorAll(".skill-row.setup")];
+    expect(rows.map((row) => row.querySelector(".skill-name")?.textContent)).toEqual(["Deployment control", "Bug owner finder", "Slack tracker"]);
+    expect(rows.every((row) => row.querySelector<HTMLInputElement>("input")!.disabled)).toBe(true);
+    act(() => rows[2]!.querySelector("button")!.click());
+    expect(onSetUp).toHaveBeenCalledWith("slackTracker");
+    empty.unmount();
+    const set = render(
+      <SkillsPanel {...panel({ skills: { projectId: "project-1", skills: [skill(), skill({ id: "skill-2", builtin: "deploymentControl", enabled: false })], drafts: [skillDraft({ manifest: manifest({ prefilter: "slackMentions" }) })] } })} />,
+    );
+    const setup = [...set.container.querySelectorAll(".skill-row.setup")];
+    expect(setup.map((row) => row.querySelector(".skill-name")?.textContent)).toEqual(["Deployment control", "Slack tracker"]);
+    expect(setup[1]!.textContent).toContain("A draft is waiting below.");
+    expect(setup[1]!.querySelector("button")!.disabled).toBe(true);
+    set.unmount();
+  });
+
+  it("sets up each skill with its own creator, and Deployment control in place", async () => {
+    const bridge = fakeBridge((method) => {
+      if (method === "pm_skill_creator_launch") return ok({ sessionId: "session-1" });
+      return ok({ projectId: "project-1", sessions: [] });
+    });
+    const store = createPmStore({ projectId: "project-1" });
+    const controller = new PmController(bridge, store);
+    await controller.setUpSkill("bugOwnerFinder");
+    expect(bridge.calls[0]).toEqual({ method: "pm_skill_creator_launch", params: { projectId: "project-1", setup: "bugOwnerFinder" } });
+    await controller.setUpSkill("deploymentControl");
+    expect(store.getState().view).toBe("settings");
   });
 
   it("keeps Install off until the dry run completed", () => {

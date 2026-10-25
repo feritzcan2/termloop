@@ -61,8 +61,8 @@ const NEEDED_TOOL_NAME_MAX_CHARS: usize = 80;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum BuiltinSkill {
-    /// Wraps the delivery checks and probes; on by default when the
-    /// project lists environments.
+    /// Wraps the delivery checks and probes; listed off when the project
+    /// lists environments, until the PM sets it up.
     DeploymentControl,
 }
 

@@ -342,7 +342,8 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 onSetEnabled={(id, enabled) => void controller.setSkillEnabled(id, enabled)}
                 onRun={(id) => void controller.runSkill(id)}
                 onCreate={() => void controller.launchSkillCreator()}
-                onRevise={(id) => void controller.launchSkillCreator(id)}
+                onRevise={(skillId) => void controller.launchSkillCreator({ skillId })}
+                onSetUp={(kind) => void controller.setUpSkill(kind)}
                 onDryRun={(id) => void controller.dryRunDraft(id)}
                 onDiscard={(id) => void controller.discardDraft(id)}
                 onInstall={(id, tools, channels) => controller.installDraft(id, tools, channels.length > 0 ? channels : undefined)}

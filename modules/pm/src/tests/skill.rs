@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::{store, ticket};
 use crate::agent::{PM_BOARD_READ, PM_RISKS_READ, PM_TICKET_READ, PM_TICKET_SUGGEST};
-use crate::agent::{PmAgentMode, PmAgentProfile, PmToolContext, SkillRunContext};
+use crate::agent::{PmAgentMode, PmAgentProfile, PmToolContext, SkillRunContext, SkillSetup};
 use crate::skill::{
     BuiltinSkill, DryRunState, Evidence, FeedbackOutcome, NeededTool, NewSkillDraft,
     SKILL_RUN_DEADLINE_MS, SkillChannel, SkillDraftOrigin, SkillEvent, SkillManifest,
@@ -197,16 +197,19 @@ fn manifests_are_bounded_and_name_the_refused_field() {
 }
 
 #[test]
-fn deployment_control_turns_on_with_environments_and_stays_off_when_turned_off() {
+fn deployment_control_appears_off_with_environments_and_runs_once_set_up() {
     let mut store = store();
     assert!(!store.deployment_control_enabled("p1").unwrap());
     assert!(store.skills("p1").unwrap().is_empty());
     with_environments(&mut store);
-    assert!(store.deployment_control_enabled("p1").unwrap());
+    // Listed, but off until the PM sets it up.
+    assert!(!store.deployment_control_enabled("p1").unwrap());
     let skills = store.skills("p1").unwrap();
     assert_eq!(skills.len(), 1);
     assert_eq!(skills[0].builtin, Some(BuiltinSkill::DeploymentControl));
-    assert!(skills[0].enabled);
+    assert!(!skills[0].enabled);
+    store.set_skill_enabled(&skills[0].id, true).unwrap();
+    assert!(store.deployment_control_enabled("p1").unwrap());
     store.set_skill_enabled(&skills[0].id, false).unwrap();
     store.ensure_builtin_skills("p1").unwrap();
     assert!(!store.deployment_control_enabled("p1").unwrap());
@@ -445,6 +448,44 @@ fn a_revision_is_offered_when_most_recent_suggestions_are_rejected() {
         .unwrap();
     assert_eq!(revised.version, 2);
     assert_eq!(reason(&store), None);
+}
+
+#[test]
+fn each_skill_has_its_own_setup_creator() {
+    let store = store();
+    let general = PmAgentProfile::build(&store, "p1", PmAgentMode::SkillCreator, None).unwrap();
+    assert!(general.system_prompt.contains("Bug owner finder: it runs"));
+    assert!(
+        general
+            .system_prompt
+            .contains("Slack: the PM holds no Slack connection")
+    );
+
+    let bug = PmAgentProfile::build_skill_setup(&store, "p1", SkillSetup::BugOwnerFinder).unwrap();
+    assert_eq!(bug.mode, PmAgentMode::SkillCreator);
+    assert_eq!(bug.tools, general.tools);
+    assert!(bug.system_prompt.contains("Bug owner finder: it runs"));
+    assert!(
+        !bug.system_prompt
+            .contains("Slack: the PM holds no Slack connection")
+    );
+    let kickoff = bug.first_message.unwrap();
+    assert!(kickoff.starts_with("Set up only the skill named below"));
+    assert!(kickoff.ends_with("The skill to set up is the Bug owner finder."));
+
+    let slack = PmAgentProfile::build_skill_setup(&store, "p1", SkillSetup::SlackTracker).unwrap();
+    assert!(
+        slack
+            .system_prompt
+            .contains("Slack: the PM holds no Slack connection")
+    );
+    assert!(!slack.system_prompt.contains("Bug owner finder: it runs"));
+    assert!(
+        slack
+            .first_message
+            .unwrap()
+            .ends_with("The skill to set up is the Slack tracker.")
+    );
 }
 
 #[test]

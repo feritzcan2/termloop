@@ -273,8 +273,8 @@ fn outcome_words(outcome: SkillRunOutcome) -> &'static str {
 
 impl PmStore {
     /// Adds the built-in skills a project qualifies for: Deployment control
-    /// once deploy tracking is on, enabled. A skill the PM already has
-    /// keeps the PM's choice.
+    /// once deploy tracking is on, off until the PM sets it up. A skill the
+    /// PM already has keeps the PM's choice.
     pub fn ensure_builtin_skills(&mut self, project_id: &str) -> Result<(), PmError> {
         check_id(project_id, "projectId")?;
         if !self.deploy_tracking_enabled(project_id)? {
@@ -292,7 +292,7 @@ impl PmStore {
             }
             transaction.execute(
                 "INSERT INTO skills (id, project_id, builtin, enabled, version, \
-                     created_at_epoch_ms) VALUES (?1, ?2, ?3, 1, 1, ?4)",
+                     created_at_epoch_ms) VALUES (?1, ?2, ?3, 0, 1, ?4)",
                 params![id, project_id, builtin.as_str(), now],
             )?;
             insert_version(transaction, &id, 1, &builtin.manifest(), &[], None, now)

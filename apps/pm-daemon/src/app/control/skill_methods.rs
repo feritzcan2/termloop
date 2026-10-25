@@ -3,14 +3,16 @@
 //! feedback, and accepting or rejecting a suggestion.
 
 use serde_json::{Value, json};
+use termloop_pm::agent::SkillSetup;
 use termloop_pm::skill::SkillRunTrigger;
 use termloop_pm_contract::pm::{
     PmProjectRef, PmProposalAcceptParams, PmProposalRejectParams, PmSkillCreatorLaunchParams,
-    PmSkillDraftRef, PmSkillInstallParams, PmSkillRef, PmSkillSetEnabledParams,
+    PmSkillDraftRef, PmSkillInstallParams, PmSkillRef, PmSkillSetEnabledParams, PmSkillSetup,
 };
 
 use super::dispatch::{parse, require_project, require_ticket, to_value};
-use super::errors::{ControlError, not_found};
+use super::errors::{ControlError, invalid_parameter, not_found};
+use crate::app::skills::CreatorLaunch;
 use crate::app::{AppState, skills};
 
 pub(super) fn skills_read(state: &AppState, params: &Value) -> Result<Value, ControlError> {
@@ -59,7 +61,16 @@ pub(super) fn run(state: &AppState, params: &Value) -> Result<Value, ControlErro
 pub(super) fn creator_launch(state: &AppState, params: &Value) -> Result<Value, ControlError> {
     let params: PmSkillCreatorLaunchParams = parse(params)?;
     require_project(&state.store.lock(), &params.project_id)?;
-    Ok(skills::launch_creator(state, &params.project_id, params.skill_id.as_deref())?.value())
+    let launch = match (params.skill_id.as_deref(), params.setup) {
+        (None, None) => CreatorLaunch::Offer,
+        (Some(skill_id), None) => CreatorLaunch::Revise(skill_id),
+        (None, Some(setup)) => CreatorLaunch::Setup(match setup {
+            PmSkillSetup::BugOwnerFinder => SkillSetup::BugOwnerFinder,
+            PmSkillSetup::SlackTracker => SkillSetup::SlackTracker,
+        }),
+        (Some(_), Some(_)) => return Err(invalid_parameter("setup")),
+    };
+    Ok(skills::launch_creator(state, &params.project_id, launch)?.value())
 }
 
 pub(super) fn feedback_read(state: &AppState, params: &Value) -> Result<Value, ControlError> {
