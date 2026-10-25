@@ -13,6 +13,7 @@ mod error;
 mod project;
 mod proposal;
 mod settings;
+pub mod skill;
 mod sources;
 mod sprint;
 mod store;
@@ -28,8 +29,9 @@ pub use commands::{
     EnvironmentObservation, FactRead, FactsObservation, JIRA_PULL_NEW_TICKETS_MAX, JiraChange,
     JiraIssueState, JiraObservation, JiraPullChanges, JiraPullOutcome, JiraSprintPull,
     JiraSprintRead, JiraWriteDiff, JiraWriteOutcome, JiraWriteTarget, NewCheck, NewProbe,
-    NewTicket, PullRequestsObservation, RecordedCheckReport, RecordedProbeRun, ReportedEnvironment,
-    TicketEdit, apply_jira_write, read_jira_issue_state, read_jira_sprints,
+    NewTicket, ProposalOrigin, PullRequestsObservation, RecordedCheckReport, RecordedProbeRun,
+    ReportedEnvironment, SKILL_DISCOVERY_MAX_BYTES, SKILL_PAUSE_AFTER_FAILURES, TicketEdit,
+    apply_jira_write, read_jira_issue_state, read_jira_sprints,
 };
 pub use delivery::check_reasons::{check_reasons, deploy_tracking_enabled};
 pub use delivery::checks::{
@@ -63,7 +65,8 @@ pub use project::{
     valid_project_name,
 };
 pub use proposal::{
-    PROPOSAL_SUMMARY_MAX_CHARS, ProposalChange, TICKET_PROPOSALS_MAX, TicketProposal,
+    ASSIGNEE_SHORTLIST_MAX, AssigneeCandidate, JIRA_COMMENT_MAX_CHARS, PROPOSAL_SUMMARY_MAX_CHARS,
+    ProposalChange, TICKET_JIRA_COMMENTS_MAX, TICKET_PROPOSALS_MAX, TicketProposal,
     valid_proposal_summary,
 };
 pub use settings::{PM_AGENT_PROVIDERS, PmSettings, SettingsEdit, valid_setting_value};

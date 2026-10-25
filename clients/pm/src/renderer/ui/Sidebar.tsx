@@ -39,9 +39,11 @@ export function Sidebar(props: SidebarProps) {
     setFolded((current) => ({ ...current, sprints: next === "agents", agents: false }));
     if (next === "sprints" && props.view === "settings") props.onView("overview");
   };
+  const shownAgent = props.view === "agent" ? props.activeAgentSessionId : undefined;
   const sprintsRail = (
     <SprintSidebar
       {...props}
+      shownAgentSessionId={shownAgent}
       collapsed={folded.sprints ?? false}
       onToggle={() => toggle("sprints")}
       composer={composer}
@@ -57,7 +59,7 @@ export function Sidebar(props: SidebarProps) {
             <button
               key={agent.sessionId}
               type="button"
-              className={`row ${agent.sessionId === props.activeAgentSessionId ? "active" : ""}`}
+              className={`row ${agent.sessionId === shownAgent ? "active" : ""}`}
               onClick={() => props.onSelectAgent(agent.sessionId)}
             >
               <span className={`dot ${agentTone(agent.state, agent.assistant ? "assistant" : "deliveryCheck")}`} />

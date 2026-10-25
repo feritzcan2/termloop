@@ -88,6 +88,11 @@ pub(crate) async fn pull(state: &AppState, project_id: &str) -> Result<Value, Co
     if kind == "applied" {
         state.board_changed(project_id);
         state.fact_refresh.notify_one();
+        crate::app::skills::note_event(
+            state,
+            project_id,
+            termloop_pm::skill::SkillEvent::JiraPulled,
+        );
     }
     Ok(json!({ "projectId": project_id, "outcome": outcome }))
 }
@@ -191,4 +196,28 @@ pub(crate) async fn apply(
         state.board_changed(&ticket.project_id);
     }
     Ok(result)
+}
+
+/// Checks the project's Jira with one read of its board's sprints; nothing
+/// is applied. The detail never carries a Jira response.
+pub(crate) async fn verify(state: &AppState, project_id: &str) -> (bool, &'static str) {
+    let Ok(Some(pull)) = state.store.lock().plan_jira_sprint_pull(project_id) else {
+        return (false, "Jira is not set up in Settings");
+    };
+    let Ok(token) = credentials::resolve(&*state.credentials, &pull.credential_handle) else {
+        return (false, "the Jira API token is missing from the keychain");
+    };
+    let read = blocking(move || {
+        let client = JiraCloudClient::new()?;
+        let credential = JiraCredential {
+            email: &pull.account_email,
+            api_token: token.expose(),
+        };
+        read_jira_sprints(&client, &pull, credential).map(|_| ())
+    })
+    .await;
+    match read {
+        Ok(Ok(())) => (true, "the board's sprints were read"),
+        _ => (false, "the board's sprints could not be read"),
+    }
 }

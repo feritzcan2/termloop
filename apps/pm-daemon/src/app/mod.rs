@@ -25,6 +25,8 @@ mod jira;
 mod jira_browse;
 mod mcp;
 mod scheduler;
+mod skill_discovery;
+mod skills;
 mod terminal;
 
 #[cfg(test)]
@@ -162,12 +164,20 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let state_directory = termloop_platform::state_directory()?;
     let store_path = PmStore::default_path()?;
     let mut pm_store = PmStore::open(&store_path)?;
-    // No agent of an earlier run is alive, so none of its checks can report.
+    // No agent of an earlier run is alive, so none of its checks or skill
+    // runs can report.
     let abandoned = pm_store.abandon_stale_checks(u64::MAX)?;
     if !abandoned.is_empty() {
         tracing::info!(
             count = abandoned.len(),
             "abandoned delivery checks of the previous run"
+        );
+    }
+    let abandoned_runs = pm_store.abandon_stale_skill_runs(u64::MAX)?;
+    if !abandoned_runs.is_empty() {
+        tracing::info!(
+            count = abandoned_runs.len(),
+            "abandoned skill runs of the previous run"
         );
     }
     let listener = TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0)).await?;

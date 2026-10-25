@@ -1,44 +1,94 @@
 import { useState } from "react";
-import type { PmProposal } from "@termloop/pm-contract/pm";
-import { relativeTime } from "./format.js";
+import type { PmEvidence, PmProposal, PmProposalChange, PmTicket } from "@termloop/pm-contract/pm";
+import { STATUS_LABEL, relativeTime } from "./format.js";
+import { proposalKindLabel, textChange, touchesJira } from "./proposal-change.js";
 
 export type ProposalCardProps = {
   proposal: PmProposal;
-  /** The ticket's current description, or its criteria joined by newline. */
-  current: string;
+  ticket: PmTicket;
   /** The description version the agent drafted against. */
   headVersion: number;
   now: number;
-  onAccept(): void;
+  /** A sprint's name for a sprint move; the backlog for `null`. */
+  sprintName(sprintId: string | null): string;
+  /** `assignee` is the shortlisted person the PM picked. */
+  onAccept(assignee?: string): void;
   onReject(): void;
+  onOpenLink(url: string): void;
 };
 
-/** An assistant draft. Nothing changes until the PM applies it. */
+/** An agent or skill draft. Nothing changes until the PM applies it. */
 export function ProposalCard(props: ProposalCardProps) {
   const [showDiff, setShowDiff] = useState(true);
-  const change = props.proposal.change;
-  const proposed = change.kind === "description" ? change.description : change.criteria.join("\n");
-  const outdated = change.kind === "description" && props.proposal.baseVersion !== props.headVersion;
+  const { proposal, ticket } = props;
+  const change = proposal.change;
+  const text = textChange(change, ticket);
+  const outdated = change.kind === "description" && proposal.baseVersion !== props.headVersion;
+  const shortlist = change.kind === "assignee" ? change.shortlist : [];
   return (
     <section className="draft-card" aria-label="Agent proposal">
       <div className="draft-head">
-        <span className="sec-label">Assistant draft</span>
-        <span className="meta">{change.kind === "description" ? "description" : "acceptance criteria"} · {relativeTime(props.proposal.createdAtEpochMs, props.now)}</span>
+        <span className="sec-label">{proposal.skillId ? "Skill suggestion" : "Assistant draft"}</span>
+        <span className="meta">{proposalKindLabel(change)} · {relativeTime(proposal.createdAtEpochMs, props.now)}</span>
         <span className="sp" />
-        <button type="button" className="btn sm ghost" onClick={() => setShowDiff(!showDiff)}>{showDiff ? "Hide changes" : "Show changes"}</button>
+        {text && <button type="button" className="btn sm ghost" onClick={() => setShowDiff(!showDiff)}>{showDiff ? "Hide changes" : "Show changes"}</button>}
         <button type="button" className="btn sm" onClick={props.onReject}>Dismiss</button>
-        <button type="button" className="btn sm pri" onClick={props.onAccept}>{change.kind === "description" ? `Apply as v${props.headVersion + 1}` : "Apply"}</button>
+        <button type="button" className="btn sm pri" onClick={() => props.onAccept()}>{change.kind === "description" ? `Apply as v${props.headVersion + 1}` : "Apply"}</button>
       </div>
-      {props.proposal.summary && <p className="draft-summary">{props.proposal.summary}</p>}
-      {outdated && <p className="hint">Drafted against version {props.proposal.baseVersion}; the description has changed since.</p>}
-      {showDiff && (
+      {proposal.summary && <p className="draft-summary">{proposal.summary}</p>}
+      {outdated && <p className="hint">Drafted against version {proposal.baseVersion}; the description has changed since.</p>}
+      {text && showDiff && (
         <div className="draft-diff">
-          {lineDiff(props.current, proposed).map((line, index) => (
+          {lineDiff(text.current, text.proposed).map((line, index) => (
             <div key={index} className={`diff-line ${line.kind}`}>{line.text || "\u00a0"}</div>
           ))}
         </div>
       )}
+      {!text && <p className="draft-change">{changeLine(change, ticket, props.sprintName)}</p>}
+      {shortlist.length > 0 && (
+        <ol className="shortlist" aria-label="Shortlist">
+          {shortlist.map((candidate) => (
+            <li key={candidate.name}>
+              <b>{candidate.name}</b> <span className="hint">{candidate.reason}</span>
+              <EvidenceList evidence={candidate.evidence} onOpenLink={props.onOpenLink} />
+              <button type="button" className="btn sm" onClick={() => props.onAccept(candidate.name)}>Assign {candidate.name}</button>
+            </li>
+          ))}
+        </ol>
+      )}
+      <EvidenceList evidence={proposal.evidence} onOpenLink={props.onOpenLink} />
+      {touchesJira(change) && ticket.jiraUrl && <p className="hint">Applying changes the ticket here; Jira changes only from “Write to Jira…”.</p>}
     </section>
+  );
+}
+
+function changeLine(change: PmProposalChange, ticket: PmTicket, sprintName: (sprintId: string | null) => string): string {
+  switch (change.kind) {
+    case "status":
+      return `Status: ${STATUS_LABEL[ticket.status]} → ${STATUS_LABEL[change.status]}`;
+    case "assignee":
+      return `Assignee: ${ticket.assignee ?? "nobody"} → ${change.assignee}`;
+    case "sprint":
+      return `Sprint: ${sprintName(ticket.sprintId)} → ${sprintName(change.sprintId)}`;
+    case "jiraComment":
+      return change.body;
+    default:
+      return "";
+  }
+}
+
+/** Where a suggestion came from: a label, a link opened outside the app, and a short quote. */
+export function EvidenceList({ evidence, onOpenLink }: { evidence: PmEvidence[]; onOpenLink(url: string): void }) {
+  if (evidence.length === 0) return null;
+  return (
+    <ul className="evidence" aria-label="Evidence">
+      {evidence.map((item, index) => (
+        <li key={index}>
+          {item.url ? <button type="button" className="link" onClick={() => onOpenLink(item.url!)}>{item.label}</button> : <span>{item.label}</span>}
+          {item.quote && <q>{item.quote}</q>}
+        </li>
+      ))}
+    </ul>
   );
 }
 

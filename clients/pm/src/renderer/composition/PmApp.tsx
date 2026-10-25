@@ -2,7 +2,7 @@
 // controller. The only renderer layer that sees both the bridge-backed
 // controller and the terminal adapter.
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import type { PmBoardTicket } from "@termloop/pm-contract/pm";
+import type { PmAgentSession, PmBoardTicket, PmSkill } from "@termloop/pm-contract/pm";
 import type { PmApi } from "../../pm-api.js";
 import { usePmState, type PmState } from "../state/presentation-store.js";
 import {
@@ -34,6 +34,7 @@ import type { WidthBounds } from "../ui/ResizeHandle.js";
 import { RightActivityBar } from "../ui/RightActivityBar.js";
 import { RightSidebar } from "../ui/RightSidebar.js";
 import { SettingsPage } from "../ui/SettingsPage.js";
+import { SkillsPanel } from "../ui/SkillsPanel.js";
 import { Sidebar } from "../ui/Sidebar.js";
 import { SprintOverview } from "../ui/SprintOverview.js";
 import { SprintsPanel } from "../ui/SprintsPanel.js";
@@ -82,15 +83,18 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
   const agents: AgentTab[] = state.agents.map((session) => ({
     sessionId: session.sessionId,
     state: session.state,
-    assistant: session.mode === "assistant",
+    assistant: session.mode === "assistant" || session.mode === "skillCreator",
     provider: session.provider,
-    label: session.mode === "assistant" ? "Assistant" : `Check ${checkLabel(allTickets, session.focusTicketId)}`,
+    label: agentLabel(session, allTickets, state.skills?.skills ?? EMPTY),
     detail: session.mode === "assistant"
       ? (session.focusTicketId ? checkLabel(allTickets, session.focusTicketId) : sprint?.name.toLowerCase() ?? "project")
-      : "delivery check",
+      : session.mode === "deliveryCheck" ? "delivery check" : "skill",
+    focusTicketId: session.focusTicketId,
   }));
+  const activeAgent = agents.find((agent) => agent.sessionId === state.activeAgentSessionId);
+  const ticketsOnly = useMemo(() => allTickets.map((candidate) => candidate.ticket), [allTickets]);
   const ticketId = entry?.ticket.id;
-  const view = state.view === "ticket" && !entry ? "overview" : state.view;
+  const view = (state.view === "ticket" && !entry) || (state.view === "agent" && !activeAgent) ? "overview" : state.view;
   const shownSprintId = leftSprint(sprints, state.selectedSprintId)?.id;
   const lane = useMemo(() => (shownSprintId ? sprintTickets(allTickets, shownSprintId) : EMPTY), [allTickets, shownSprintId]);
   const [right, updateRight] = useRightSidebar();
@@ -98,7 +102,6 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
   const viewport = useViewportWidth();
   const fitted = fitSidebarWidths(leftWidth, right.open ? right.width : undefined, viewport);
   useNudgeNativeSurfaces(fitted.left);
-  const showAssistant = () => updateRight((current) => ({ ...current, open: true, view: "assistant" }));
   const [capturing, setCapturing] = useState(false);
   useCaptureShortcut(controller, Boolean(project) && !state.jiraDialog, () => setCapturing(true));
   const [created, setCreated] = useState<{ id: string; label: string }>();
@@ -110,7 +113,6 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
   const capture = async (draft: TicketCapture) => {
     const ticket = await controller.captureTicket(draft);
     if (!ticket) return false;
-    if (draft.askAssistant) showAssistant();
     setCreated({ id: ticket.id, label: ticketLabel(ticket) });
     return true;
   };
@@ -120,10 +122,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
     () => [...new Set(allTickets.flatMap((candidate) => candidate.ticket.assignee ?? []))].sort(),
     [allTickets],
   );
-  const launchAgent = (focusTicketId: string | undefined) => {
-    showAssistant();
-    void controller.launchAgent(focusTicketId);
-  };
+  const launchAgent = (focusTicketId: string | undefined) => void controller.launchAgent(focusTicketId);
   const stageTabs: StageTab[] = [
     { view: "overview", label: sprint ? `${sprint.name} overview` : "Overview" },
     ...(entry ? [{
@@ -131,6 +130,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
       label: `${ticketLabel(entry.ticket)} · ${entry.ticket.title}`,
       draft: entry.pendingProposalCount > 0 || (state.proposals[entry.ticket.id]?.length ?? 0) > 0,
     }] : []),
+    ...(activeAgent ? [{ view: "agent" as const, label: `${activeAgent.label} · ${activeAgent.detail}` }] : []),
     ...(jiraConnection === "connected" || view === "jira" ? [{ view: "jira" as const, label: "Jira issues" }] : []),
     { view: "settings", label: "Settings" },
   ];
@@ -168,7 +168,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
           onView={(next) => controller.setView(next)}
           onPull={() => void controller.pullJira()}
           onStartAssistant={() => launchAgent(view === "ticket" ? ticketId : undefined)}
-          onSelectAgent={(id) => { controller.selectAgent(id); showAssistant(); }}
+          onSelectAgent={(id) => controller.selectAgent(id)}
           onSelectSprint={(id) => controller.selectSprint(id)}
           onSelectTicket={(id) => void controller.selectTicket(id)}
           onCreateSprint={(name, goal) => void controller.createSprint(name, goal)}
@@ -212,6 +212,16 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 onRejectProbe={(id) => void controller.rejectProbe(id)}
                 onDeleteProbe={(id) => void controller.deleteProbe(id)}
               />
+            ) : view === "agent" ? (
+              <AgentPanel
+                tabs={agents}
+                activeSessionId={state.activeAgentSessionId}
+                canStart={Boolean(project)}
+                focusLabel={entry ? ticketLabel(entry.ticket) : undefined}
+                mountTerminal={mountTerminal}
+                onStop={(id) => void controller.stopAgent(id)}
+                onStart={() => launchAgent(ticketId)}
+              />
             ) : view === "jira" ? (
               <JiraStage
                 key={project.id}
@@ -242,11 +252,11 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 onRemoveCriterion={(id) => void controller.removeCriterion(ticketId, id)}
                 onAddBlocker={(text) => void controller.addBlocker(ticketId, text)}
                 onRemoveBlocker={(id) => void controller.removeBlocker(ticketId, id)}
-                onAcceptProposal={(id) => void controller.acceptProposal(ticketId, id)}
+                onAcceptProposal={(id, assignee) => void controller.acceptProposal(ticketId, id, assignee)}
                 onRejectProposal={(id) => void controller.rejectProposal(ticketId, id)}
                 onOpenLink={(url) => void controller.bridge.openExternal(url)}
                 onWriteToJira={() => void controller.openJiraDialog(ticketId)}
-                onStartCheck={() => { showAssistant(); void controller.startCheck(ticketId); }}
+                onStartCheck={() => void controller.startCheck(ticketId)}
                 onAskAgent={() => launchAgent(ticketId)}
               />
             ) : (
@@ -285,14 +295,19 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 onCreateSprint={(name, goal) => void controller.createSprint(name, goal)}
               />
             ) : (
-              <AgentPanel
-                tabs={agents}
-                activeSessionId={state.activeAgentSessionId}
-                canStart={Boolean(project)}
-                focusLabel={view === "ticket" && entry ? ticketLabel(entry.ticket) : undefined}
-                mountTerminal={mountTerminal}
-                onStop={(id) => void controller.stopAgent(id)}
-                onStart={() => launchAgent(view === "ticket" ? ticketId : undefined)}
+              <SkillsPanel
+                skills={state.skills}
+                tier={tier}
+                tickets={ticketsOnly}
+                now={now}
+                canCreate={Boolean(project)}
+                onSetEnabled={(id, enabled) => void controller.setSkillEnabled(id, enabled)}
+                onRun={(id) => void controller.runSkill(id)}
+                onCreate={() => void controller.launchSkillCreator()}
+                onDryRun={(id) => void controller.dryRunDraft(id)}
+                onDiscard={(id) => void controller.discardDraft(id)}
+                onInstall={(id, tools) => controller.installDraft(id, tools)}
+                onOpenLink={(url) => void controller.bridge.openExternal(url)}
               />
             )}
           </RightSidebar>
@@ -353,7 +368,7 @@ function useViewportWidth(): number {
 
 /**
  * A native Ghostty view follows its host element through a ResizeObserver,
- * which misses a pure move. Widening the left sidebar moves the right panel's
+ * which misses a pure move. Widening the left sidebar can move a stage
  * terminal without resizing it, so announce a window resize to resync frames.
  */
 function useNudgeNativeSurfaces(leftWidth: number): void {
@@ -421,6 +436,15 @@ function jiraStatus(state: PmState): string {
   const pull = state.lastPull;
   if (!pull) return "Jira connected";
   return pull.outcome.kind === "applied" ? "Jira pulled" : "Jira pull needs attention";
+}
+
+function agentLabel(session: PmAgentSession, tickets: PmBoardTicket[], skills: PmSkill[]): string {
+  switch (session.mode) {
+    case "assistant": return "Assistant";
+    case "deliveryCheck": return `Check ${checkLabel(tickets, session.focusTicketId)}`;
+    case "skillCreator": return "Skill creator";
+    case "skillRun": return skills.find((skill) => skill.id === session.skillId)?.manifest.name ?? "Skill run";
+  }
 }
 
 function checkLabel(tickets: PmBoardTicket[], ticketId: string | null): string {

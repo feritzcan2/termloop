@@ -29,16 +29,19 @@ describe("right sidebar preference", () => {
   it("closes the open view and opens any other one", () => {
     const sprints = { ...DEFAULT_RIGHT_SIDEBAR, open: true, view: "sprints" as const };
     expect(toggleRightSidebar(sprints, "sprints")).toMatchObject({ open: false, view: "sprints" });
-    expect(toggleRightSidebar(sprints, "assistant")).toMatchObject({ open: true, view: "assistant" });
+    expect(toggleRightSidebar(sprints, "skills")).toMatchObject({ open: true, view: "skills" });
     expect(toggleRightSidebar({ ...sprints, open: false }, "sprints")).toMatchObject({ open: true, view: "sprints" });
-    expect(toggleRightSidebar(sprints, "assistant").width).toBe(sprints.width);
+    expect(toggleRightSidebar(sprints, "skills").width).toBe(sprints.width);
   });
 
   it("round-trips through storage, clamps the width, and falls back on bad or blocked storage", () => {
     const store = new Map<string, string>();
     const storage = { getItem: (key: string) => store.get(key) ?? null, setItem: (key: string, value: string) => void store.set(key, value) };
-    writeRightSidebarPreference({ open: false, view: "assistant", width: 999 }, storage);
-    expect(readRightSidebarPreference(storage)).toEqual({ open: false, view: "assistant", width: 640 });
+    writeRightSidebarPreference({ open: false, view: "skills", width: 999 }, storage);
+    expect(readRightSidebarPreference(storage)).toEqual({ open: false, view: "skills", width: 640 });
+    // The assistant moved into the stage; a remembered assistant panel opens Sprints.
+    store.set([...store.keys()][0]!, JSON.stringify({ open: true, view: "assistant", width: 320 }));
+    expect(readRightSidebarPreference(storage)).toEqual({ open: true, view: "sprints", width: 320 });
     store.set([...store.keys()][0]!, JSON.stringify({ open: "yes", view: "files", width: 10 }));
     expect(readRightSidebarPreference(storage)).toEqual({ open: DEFAULT_RIGHT_SIDEBAR.open, view: "sprints", width: 280 });
     store.set([...store.keys()][0]!, "{not json");
@@ -55,9 +58,9 @@ describe("right activity bar", () => {
     const view = render(<RightActivityBar open view="sprints" onSelect={onSelect} />);
     cleanup = view.unmount;
     const buttons = [...view.container.querySelectorAll<HTMLButtonElement>(".activity-bar button")];
-    expect(buttons.map((button) => [button.textContent, button.getAttribute("aria-pressed")])).toEqual([["Sprints", "true"], ["Assistant", "false"]]);
+    expect(buttons.map((button) => [button.textContent, button.getAttribute("aria-pressed")])).toEqual([["Sprints", "true"], ["Skills", "false"]]);
     act(() => buttons[1]!.click());
-    expect(onSelect).toHaveBeenLastCalledWith("assistant");
+    expect(onSelect).toHaveBeenLastCalledWith("skills");
   });
 });
 
@@ -88,6 +91,38 @@ describe("left sprint rail", () => {
     expect(head.querySelector(".meta")!.textContent).toBe("1/2");
     expect(view.container.querySelector(".pm-other-sprints")!.textContent).toBe("Other sprints2");
     expect(view.container.textContent).not.toContain("Sprint 13");
+  });
+});
+
+describe("agents under tickets", () => {
+  it("nests each agent under its focus ticket and reports a pick", () => {
+    const onSelectAgent = vi.fn();
+    const agent = (sessionId: string, focusTicketId: string | null) =>
+      ({ sessionId, label: "Assistant", state: "running" as const, assistant: true, provider: "claude" as const, detail: "", focusTicketId });
+    const view = render(
+      <SprintSidebar
+        sprints={[active]}
+        tickets={[boardTicket({ id: "a", sprintId: "active", title: "Alpha" }), boardTicket({ id: "b", sprintId: "active", title: "Beta" })]}
+        tier="tickets"
+        selectedSprintId="active"
+        selectedTicketId={undefined}
+        agents={[agent("s1", "a"), agent("s2", "a"), agent("s3", null)]}
+        shownAgentSessionId="s2"
+        onSelectAgent={onSelectAgent}
+        onSelectSprint={noop}
+        onSelectTicket={noop}
+        onCreateSprint={noop}
+        onCreateTicket={noop}
+        onMoveTicket={noop}
+      />,
+    );
+    cleanup = view.unmount;
+    const nested = [...view.container.querySelectorAll<HTMLElement>(".pm-ticket-agents")];
+    expect(nested.map((list) => list.getAttribute("aria-label"))).toEqual(["Agents on Alpha"]);
+    const rows = [...nested[0]!.querySelectorAll<HTMLButtonElement>(".pm-agent-row")];
+    expect(rows.map((row) => row.getAttribute("aria-current"))).toEqual([null, "true"]);
+    act(() => rows[0]!.click());
+    expect(onSelectAgent).toHaveBeenLastCalledWith("s1");
   });
 });
 

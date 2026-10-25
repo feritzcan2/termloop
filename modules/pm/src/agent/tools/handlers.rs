@@ -4,14 +4,19 @@
 
 use super::{PmToolContext, PmToolError, denied};
 use crate::agent::{
-    PM_CHECK_REPORT, PM_RISKS_READ, PM_TICKET_PROPOSE_ACCEPTANCE_CRITERIA,
-    PM_TICKET_PROPOSE_DESCRIPTION, PM_TICKET_READ, PmAgentMode,
+    PM_CHECK_REPORT, PM_RISKS_READ, PM_SKILL_DRAFT_SUBMIT, PM_SKILL_RUN_FINISH,
+    PM_TICKET_PROPOSE_ACCEPTANCE_CRITERIA, PM_TICKET_PROPOSE_DESCRIPTION, PM_TICKET_READ,
+    PM_TICKET_SUGGEST, PmAgentMode,
+};
+use crate::skill::{
+    Evidence, NeededTool, NewSkillDraft, SkillDraftOrigin, SkillManifest, SkillPrefilter,
+    SkillRunOutcome, SkillSample, SkillSource, SkillTrigger,
 };
 use crate::{
     AgentProbeReading, Board, CheckReport, DataTier, DeliveryRisk, DeliveryStage,
     EnvironmentDeployState, NewProbe, PmError, PmStore, ProbeMatcher, ProposalChange,
-    ReportedEnvironment, SprintState, Ticket, TicketDelivery, TicketDeliveryFacts, TicketPriority,
-    TicketProposal, TicketStatus,
+    ProposalOrigin, ReportedEnvironment, SprintState, Ticket, TicketDelivery, TicketDeliveryFacts,
+    TicketPriority, TicketProposal, TicketStatus,
 };
 
 /// Which tickets a board read lists.
@@ -93,6 +98,9 @@ pub struct DescriptionProposalParams {
     /// The complete new description in Markdown.
     pub description: String,
     pub summary: String,
+    /// What a skill's suggestion rests on; ignored for the assistant.
+    #[serde(default)]
+    pub evidence: Vec<Evidence>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -101,15 +109,74 @@ pub struct AcceptanceCriteriaProposalParams {
     pub ticket_id: String,
     pub criteria: Vec<String>,
     pub summary: String,
+    #[serde(default)]
+    pub evidence: Vec<Evidence>,
+}
+
+/// Any ticket change a skill suggests, with the evidence it rests on.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct SuggestParams {
+    pub ticket_id: String,
+    pub change: ProposalChange,
+    pub summary: String,
+    #[serde(default)]
+    pub evidence: Vec<Evidence>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct SkillRunFinishParams {
+    /// One line: what the run looked at and suggested.
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillRunFinishResult {
+    pub accepted: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct SkillDraftSubmitParams {
+    pub name: String,
+    pub description: String,
+    pub trigger: SkillTrigger,
+    pub sources: Vec<SkillSource>,
+    pub prefilter: SkillPrefilter,
+    pub tools: Vec<String>,
+    pub instructions: String,
+    #[serde(default)]
+    pub channels: Vec<String>,
+    pub what_it_will_do: String,
+    #[serde(default)]
+    pub needed_tools: Vec<NeededTool>,
+    #[serde(default)]
+    pub changelog: Option<String>,
+    /// The installed skill this draft revises.
+    #[serde(default)]
+    pub base_skill_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillDraftSubmitResult {
+    pub draft_id: String,
+    /// Tools the PM approves one by one at install.
+    pub first_use_tools: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProposalResult {
-    pub proposal_id: String,
+    /// `None` in a dry run, which keeps a sample instead.
+    pub proposal_id: Option<String>,
     pub ticket_id: String,
     /// Always false: the PM decides whether a proposal is applied.
     pub applied: bool,
+    /// The suggestion was kept as a dry-run sample, not a proposal.
+    pub sample: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -291,9 +358,66 @@ pub(super) fn ticket_read(
 
 fn proposal_result(proposal: TicketProposal) -> ProposalResult {
     ProposalResult {
-        proposal_id: proposal.id,
+        proposal_id: Some(proposal.id),
         ticket_id: proposal.ticket_id,
         applied: false,
+        sample: false,
+    }
+}
+
+/// Records a suggestion the way the caller's mode wants it: a dry run
+/// keeps a sample, a skill run a proposal naming the skill and evidence,
+/// the assistant a plain proposal.
+fn record_suggestion(
+    store: &mut PmStore,
+    context: &PmToolContext,
+    ticket: &Ticket,
+    change: ProposalChange,
+    summary: String,
+    evidence: Vec<Evidence>,
+) -> Result<ProposalResult, PmToolError> {
+    let run = context
+        .skill
+        .as_ref()
+        .filter(|_| context.mode == PmAgentMode::SkillRun);
+    match run {
+        Some(run) if run.draft_id.is_some() => {
+            store.record_dry_run_sample(
+                &run.run_id,
+                SkillSample {
+                    ticket_id: ticket.id.clone(),
+                    change,
+                    summary,
+                    evidence,
+                },
+            )?;
+            Ok(ProposalResult {
+                proposal_id: None,
+                ticket_id: ticket.id.clone(),
+                applied: false,
+                sample: true,
+            })
+        }
+        Some(run) => {
+            let (skill_id, skill_version) = run
+                .skill
+                .clone()
+                .ok_or(PmToolError::Store(PmError::NotFound))?;
+            let origin = ProposalOrigin {
+                skill_id,
+                skill_version,
+                evidence,
+            };
+            Ok(proposal_result(store.propose_ticket_change_from(
+                &ticket.id,
+                change,
+                &summary,
+                Some(origin),
+            )?))
+        }
+        None => Ok(proposal_result(
+            store.propose_ticket_change(&ticket.id, change, &summary)?,
+        )),
     }
 }
 
@@ -308,14 +432,16 @@ pub(super) fn propose_description(
         PM_TICKET_PROPOSE_DESCRIPTION,
         &params.ticket_id,
     )?;
-    let proposal = store.propose_ticket_change(
-        &ticket.id,
+    record_suggestion(
+        store,
+        context,
+        &ticket,
         ProposalChange::Description {
             description: params.description,
         },
-        &params.summary,
-    )?;
-    Ok(proposal_result(proposal))
+        params.summary,
+        params.evidence,
+    )
 }
 
 pub(super) fn propose_acceptance_criteria(
@@ -329,14 +455,92 @@ pub(super) fn propose_acceptance_criteria(
         PM_TICKET_PROPOSE_ACCEPTANCE_CRITERIA,
         &params.ticket_id,
     )?;
-    let proposal = store.propose_ticket_change(
-        &ticket.id,
+    record_suggestion(
+        store,
+        context,
+        &ticket,
         ProposalChange::AcceptanceCriteria {
             criteria: params.criteria,
         },
-        &params.summary,
+        params.summary,
+        params.evidence,
+    )
+}
+
+pub(super) fn suggest(
+    store: &mut PmStore,
+    context: &PmToolContext,
+    params: SuggestParams,
+) -> Result<ProposalResult, PmToolError> {
+    let ticket = scoped_ticket(store, context, PM_TICKET_SUGGEST, &params.ticket_id)?;
+    record_suggestion(
+        store,
+        context,
+        &ticket,
+        params.change,
+        params.summary,
+        params.evidence,
+    )
+}
+
+pub(super) fn skill_run_finish(
+    store: &mut PmStore,
+    context: &PmToolContext,
+    params: SkillRunFinishParams,
+) -> Result<SkillRunFinishResult, PmToolError> {
+    let Some(run) = &context.skill else {
+        return Err(denied(PM_SKILL_RUN_FINISH, "not a skill run"));
+    };
+    store.finish_skill_run(
+        &run.run_id,
+        SkillRunOutcome::Reported,
+        Some(&params.summary),
     )?;
-    Ok(proposal_result(proposal))
+    Ok(SkillRunFinishResult { accepted: true })
+}
+
+pub(super) fn draft_submit(
+    store: &mut PmStore,
+    context: &PmToolContext,
+    params: SkillDraftSubmitParams,
+) -> Result<SkillDraftSubmitResult, PmToolError> {
+    if let Some(base) = &params.base_skill_id {
+        match store.skill(base)? {
+            Some(skill) if skill.project_id == context.project_id => {}
+            _ => {
+                return Err(denied(
+                    PM_SKILL_DRAFT_SUBMIT,
+                    "no such skill in this project",
+                ));
+            }
+        }
+    }
+    let draft = store.submit_skill_draft(NewSkillDraft {
+        project_id: context.project_id.clone(),
+        origin: if params.base_skill_id.is_some() {
+            SkillDraftOrigin::Revision
+        } else {
+            SkillDraftOrigin::Creator
+        },
+        base_skill_id: params.base_skill_id,
+        manifest: SkillManifest {
+            name: params.name,
+            description: params.description,
+            trigger: params.trigger,
+            sources: params.sources,
+            prefilter: params.prefilter,
+            approved_tools: params.tools,
+            instructions: params.instructions,
+            channels: params.channels,
+        },
+        what_it_will_do: params.what_it_will_do,
+        needed_tools: params.needed_tools,
+        changelog: params.changelog,
+    })?;
+    Ok(SkillDraftSubmitResult {
+        draft_id: draft.id,
+        first_use_tools: draft.first_use_tools,
+    })
 }
 
 pub(super) fn risks_read(
@@ -348,7 +552,7 @@ pub(super) fn risks_read(
     let only = match (&params.ticket_id, context.mode) {
         (Some(ticket_id), _) => Some(ticket_id.clone()),
         (None, PmAgentMode::DeliveryCheck) => context.ticket_id.clone(),
-        (None, PmAgentMode::Assistant) => None,
+        (None, _) => None,
     };
     if let Some(ticket_id) = &only {
         scoped_ticket(store, context, PM_RISKS_READ, ticket_id)?;

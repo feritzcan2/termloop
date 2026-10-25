@@ -124,6 +124,15 @@ pub trait JiraIssueWriter: Send + Sync {
         issue_key: &str,
         transition_id: &str,
     ) -> Result<(), JiraWriteError>;
+
+    /// Adds one comment (wiki markup) to the issue.
+    fn add_comment(
+        &self,
+        site_base_url: &str,
+        credential: JiraCredential<'_>,
+        issue_key: &str,
+        body: &str,
+    ) -> Result<(), JiraWriteError>;
 }
 
 impl JiraIssueWriter for JiraCloudClient {
@@ -235,6 +244,28 @@ impl JiraIssueWriter for JiraCloudClient {
             .basic_auth(credential.email, Some(credential.api_token))
             .header(reqwest::header::ACCEPT, "application/json")
             .json(&serde_json::json!({ "transition": { "id": transition_id } }))
+            .send()
+            .map_err(|_| JiraWriteError::Unavailable)?;
+        read_response(response).map(|_| ())
+    }
+
+    fn add_comment(
+        &self,
+        site_base_url: &str,
+        credential: JiraCredential<'_>,
+        issue_key: &str,
+        body: &str,
+    ) -> Result<(), JiraWriteError> {
+        let site = issue_site(site_base_url, issue_key)?;
+        if body.trim().is_empty() || body.chars().count() > JIRA_DESCRIPTION_MAX_CHARS {
+            return Err(JiraWriteError::InvalidRequest);
+        }
+        let response = self
+            .http()
+            .post(format!("{site}/rest/api/2/issue/{issue_key}/comment"))
+            .basic_auth(credential.email, Some(credential.api_token))
+            .header(reqwest::header::ACCEPT, "application/json")
+            .json(&serde_json::json!({ "body": body }))
             .send()
             .map_err(|_| JiraWriteError::Unavailable)?;
         read_response(response).map(|_| ())

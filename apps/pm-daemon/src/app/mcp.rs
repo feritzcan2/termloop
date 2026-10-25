@@ -9,20 +9,22 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde_json::{Value, json};
 use termloop_pm::agent::{
-    PM_BOARD_READ, PM_CHECK_REPORT, PM_RISKS_READ, PM_TICKET_READ, PmToolError, call_pm_tool,
-    pm_tool_definitions,
+    PM_BOARD_READ, PM_CHECK_REPORT, PM_HOST_TOOLS, PM_RISKS_READ, PM_SKILL_DISCOVERY_READ,
+    PM_SKILL_DRAFT_SUBMIT, PM_SKILL_RUN_FINISH, PM_SKILL_TOOL_VERIFY, PM_TICKET_READ,
+    PM_TICKET_SUGGEST, PmToolError, call_pm_tool, pm_tool_access, pm_tool_definitions,
 };
+use termloop_pm::skill::SkillEvent;
 use termloop_pm_contract::pm::EventName;
 
-use crate::app::AppState;
+use crate::app::{AppState, skills};
 
 pub(crate) const MAX_MCP_BODY_BYTES: usize = 256 * 1024;
 const MCP_PROTOCOLS: &[&str] = &["2025-06-18", "2025-11-25"];
 const MCP_PROTOCOL_HEADER: &str = "mcp-protocol-version";
 const SERVER_NAME: &str = "termloop-pm";
-const INSTRUCTIONS: &str = "TermLoop PM tools. They read the PM board and record proposals or \
-    a delivery check report for the project this session was launched for; none writes Jira \
-    or any external system.";
+const INSTRUCTIONS: &str = "TermLoop PM tools. They read the PM board and record proposals, \
+    a delivery check report, or skill drafts and run reports for the project this session was \
+    launched for; none writes Jira or any external system.";
 
 pub(super) async fn mcp_get(headers: HeaderMap) -> Response {
     if !origin_allowed(&headers) {
@@ -59,7 +61,7 @@ pub(super) async fn mcp_post(
         return rpc(json_rpc_error(Value::Null, -32700, "parse error"));
     };
     let protocol_header = supported_protocol_header(&headers);
-    match handle_message(&state, bearer, &message, protocol_header) {
+    match handle_message(&state, bearer, &message, protocol_header).await {
         Err(status) => status.into_response(),
         Ok(None) => StatusCode::ACCEPTED.into_response(),
         Ok(Some(reply)) => rpc(reply),
@@ -72,7 +74,7 @@ fn rpc(reply: Value) -> Response {
 
 /// Handles one JSON-RPC message from the agent holding `bearer`. A
 /// notification gets no reply.
-pub(crate) fn handle_message(
+pub(crate) async fn handle_message(
     state: &AppState,
     bearer: &str,
     message: &Value,
@@ -110,7 +112,7 @@ pub(crate) fn handle_message(
         }
         "ping" => json_rpc_result(id, json!({})),
         "tools/list" => {
-            let tools: Vec<Value> = pm_tool_definitions(context.mode)
+            let tools: Vec<Value> = pm_tool_definitions(&context)
                 .into_iter()
                 .map(|tool| {
                     json!({
@@ -130,9 +132,36 @@ pub(crate) fn handle_message(
                 .get("arguments")
                 .cloned()
                 .unwrap_or_else(|| json!({}));
-            let outcome = call_pm_tool(&mut state.store.lock(), &context, name, arguments);
-            if outcome.is_ok() && !matches!(name, PM_BOARD_READ | PM_TICKET_READ | PM_RISKS_READ) {
+            let outcome = match pm_tool_access(&context, name) {
+                Ok(tool) if PM_HOST_TOOLS.contains(&tool) => {
+                    skills::host_tool(state, &context, tool, arguments).await
+                }
+                _ => call_pm_tool(&mut state.store.lock(), &context, name, arguments),
+            };
+            let read_only = matches!(
+                name,
+                PM_BOARD_READ
+                    | PM_TICKET_READ
+                    | PM_RISKS_READ
+                    | PM_SKILL_DISCOVERY_READ
+                    | PM_SKILL_TOOL_VERIFY
+            );
+            if outcome.is_ok() && !read_only {
                 state.board_changed(&context.project_id);
+            }
+            if outcome.is_ok()
+                && matches!(
+                    name,
+                    PM_TICKET_SUGGEST | PM_SKILL_DRAFT_SUBMIT | PM_SKILL_RUN_FINISH
+                )
+            {
+                skills::publish(state, &context.project_id);
+            }
+            if outcome.is_ok()
+                && name == PM_SKILL_RUN_FINISH
+                && let Some(run) = &context.skill
+            {
+                skills::stop_after_finish(state, &run.run_id);
             }
             if outcome.is_ok()
                 && name == PM_CHECK_REPORT
@@ -146,6 +175,7 @@ pub(crate) fn handle_message(
                         "checkId": check_id,
                     }),
                 );
+                skills::note_event(state, &context.project_id, SkillEvent::DeployChanged);
             }
             match outcome {
                 Ok(value) => tool_success(id, value),

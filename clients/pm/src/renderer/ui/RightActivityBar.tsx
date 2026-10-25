@@ -3,7 +3,7 @@ import type { RightSidebarView } from "./types.js";
 
 const ITEMS: readonly { view: RightSidebarView; label: string; short: string; icon: IconName }[] = [
   { view: "sprints", label: "Sprints", short: "Sprints", icon: "flag" },
-  { view: "assistant", label: "Assistant", short: "Assistant", icon: "agent" },
+  { view: "skills", label: "Skills", short: "Skills", icon: "skill" },
 ];
 
 export function rightSidebarLabel(view: RightSidebarView): string {

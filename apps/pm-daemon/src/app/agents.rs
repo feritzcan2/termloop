@@ -7,7 +7,8 @@ use std::sync::{Arc, Mutex as StdMutex, MutexGuard, PoisonError};
 
 use serde_json::{Value, json};
 use termloop_pm::agent::{
-    PmAgentMode, PmAgentProfile, PmLaunchRequest, PmToolContext, claude_mcp_config, pm_launch_plan,
+    PmAgentMode, PmAgentProfile, PmLaunchRequest, PmToolContext, SkillRunContext,
+    claude_mcp_config, pm_launch_plan,
 };
 use termloop_pm::{DeliveryCheck, DeliveryCheckOutcome};
 use termloop_pm_contract::pm::EventName;
@@ -21,6 +22,9 @@ const AGENT_FILES_DIRECTORY: &str = "agents";
 const WORKSPACES_DIRECTORY: &str = "workspaces";
 /// Exited sessions kept per project for `pm_agent_list`.
 const EXITED_SESSIONS_KEPT: usize = 16;
+/// A skill run is unattended and calls only its approved PM tools; any
+/// other tool would wait for a person, so nothing else is pre-approved.
+const SKILL_RUN_PERMISSION: &str = "default";
 
 #[derive(Clone)]
 pub(crate) struct AgentRecord {
@@ -30,6 +34,8 @@ pub(crate) struct AgentRecord {
     pub(crate) provider: String,
     pub(crate) focus_ticket_id: Option<String>,
     pub(crate) check_id: Option<String>,
+    /// The skill run a skill-run agent works for.
+    pub(crate) skill: Option<SkillRunContext>,
     pub(crate) started_at_epoch_ms: u64,
     pub(crate) exited_at_epoch_ms: Option<u64>,
     /// The bearer the agent's MCP client sends; never logged or returned.
@@ -54,6 +60,7 @@ impl AgentRecord {
             provider,
             focus_ticket_id,
             check_id,
+            skill: None,
             started_at_epoch_ms: termloop_platform::current_epoch_ms(),
             exited_at_epoch_ms: None,
             mcp_token,
@@ -73,6 +80,7 @@ impl AgentRecord {
             "provider": self.provider,
             "focusTicketId": self.focus_ticket_id,
             "checkId": self.check_id,
+            "skillId": self.skill.as_ref().and_then(|run| run.skill.as_ref()).map(|(id, _)| id),
             "state": if self.running() { "running" } else { "exited" },
             "startedAtEpochMs": self.started_at_epoch_ms,
             "exitedAtEpochMs": self.exited_at_epoch_ms,
@@ -122,9 +130,24 @@ impl AgentRegistry {
                     project_id: record.project_id.clone(),
                     mode: record.mode,
                     ticket_id: record.focus_ticket_id.clone(),
+                    skill: record.skill.clone(),
                 };
                 (context, record.check_id.clone())
             })
+    }
+
+    /// The running agent session of a skill run, when it has one.
+    pub(crate) fn skill_run_session(&self, run_id: &str) -> Option<String> {
+        self.lock()
+            .values()
+            .find(|record| {
+                record.running()
+                    && record
+                        .skill
+                        .as_ref()
+                        .is_some_and(|run| run.run_id == run_id)
+            })
+            .map(|record| record.session_id.clone())
     }
 
     /// A project's sessions, newest first.
@@ -192,15 +215,36 @@ pub(crate) fn launch(
     focus_ticket_id: Option<&str>,
     check_id: Option<&str>,
 ) -> Result<AgentRecord, ControlError> {
-    let (settings, profile, folder) = {
+    let profile = {
+        let store = state.store.lock();
+        store.project(project_id)?.ok_or_else(not_found)?;
+        PmAgentProfile::build(&store, project_id, mode, focus_ticket_id)?
+    };
+    launch_profile(state, project_id, &profile, focus_ticket_id, check_id, None)
+}
+
+/// Launches an agent with a built profile; a skill-run agent is bound to
+/// its run and the tools that run may call.
+pub(crate) fn launch_profile(
+    state: &AppState,
+    project_id: &str,
+    profile: &PmAgentProfile,
+    focus_ticket_id: Option<&str>,
+    check_id: Option<&str>,
+    skill: Option<SkillRunContext>,
+) -> Result<AgentRecord, ControlError> {
+    let mode = profile.mode;
+    let (settings, folder) = {
         let store = state.store.lock();
         let project = store.project(project_id)?.ok_or_else(not_found)?;
-        let profile = PmAgentProfile::build(&store, project_id, mode, focus_ticket_id)?;
-        (store.settings()?, profile, project.folder)
+        (store.settings()?, project.folder)
     };
     let permission = match mode {
-        PmAgentMode::Assistant => settings.assistant_permission.as_str(),
+        PmAgentMode::Assistant | PmAgentMode::SkillCreator => {
+            settings.assistant_permission.as_str()
+        }
         PmAgentMode::DeliveryCheck => settings.check_permission.as_str(),
+        PmAgentMode::SkillRun => SKILL_RUN_PERMISSION,
     };
     let cwd = match folder {
         Some(folder) => PathBuf::from(folder),
@@ -226,7 +270,7 @@ pub(crate) fn launch(
     let mut request = PmLaunchRequest::new(
         &settings.agent_provider,
         &cwd,
-        &profile,
+        profile,
         &state.mcp_endpoint,
         &mcp_token,
         config_text,
@@ -248,6 +292,7 @@ pub(crate) fn launch(
         mcp_token,
     );
     record.mcp_config = Some(config_path.clone());
+    record.skill = skill;
     // Registered before the spawn, so the agent's first MCP call is known.
     state.agents.insert(record.clone());
     if let Err(error) = termloop_agent_runtime::spawn_agent_terminal(
@@ -297,8 +342,8 @@ pub(crate) fn stop(state: &AppState, session_id: &str) -> Result<bool, ControlEr
     Ok(true)
 }
 
-/// Closes an exited agent's session. A delivery check that ends without
-/// its report is recorded as failed.
+/// Closes an exited agent's session. A delivery check or skill run that
+/// ends without its report is recorded as failed.
 pub(crate) fn on_agent_exit(state: &AppState, session_id: &str) {
     let Some(record) = state.agents.mark_exited(session_id) else {
         return;
@@ -315,6 +360,9 @@ pub(crate) fn on_agent_exit(state: &AppState, session_id: &str) {
         if let Ok(check) = finished {
             publish_check(state, &check);
         }
+    }
+    if let Some(run) = &record.skill {
+        super::skills::on_run_exit(state, &record.project_id, &run.run_id);
     }
     state.publish(
         EventName::PmAgentChanged,

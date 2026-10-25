@@ -401,6 +401,17 @@ impl JiraIssueWriter for FakeJira {
         self.call(site, format!("transition {key} {transition_id}"));
         self.write_result()
     }
+
+    fn add_comment(
+        &self,
+        site: &str,
+        _: JiraCredential<'_>,
+        key: &str,
+        body: &str,
+    ) -> Result<(), JiraWriteError> {
+        self.call(site, format!("comment {key} {body}"));
+        self.write_result()
+    }
 }
 
 /// A store whose linked PAY-1 ticket a pull put in mirrored sprint 11.
@@ -560,4 +571,45 @@ fn the_credential_goes_only_to_the_issues_own_site() {
         store.jira_write_target(&on_site.id),
         Err(PmError::Constraint(_))
     ));
+}
+
+#[test]
+fn an_accepted_jira_comment_waits_for_the_reviewed_write() {
+    let jira = FakeJira::new();
+    let (mut store, ticket_id) = pulled_store(&jira);
+    let local = ticket(&mut store, "p1", "Local", None);
+    let comment = crate::ProposalChange::JiraComment {
+        body: "Deployed to staging.".into(),
+    };
+    assert!(matches!(
+        store.propose_ticket_change(&local.id, comment.clone(), "Tell Jira"),
+        Err(PmError::Constraint(_))
+    ));
+    let proposal = store
+        .propose_ticket_change(&ticket_id, comment, "Tell Jira")
+        .unwrap();
+    store.accept_ticket_proposal(&proposal.id).unwrap();
+    jira.calls.lock().unwrap().clear();
+
+    let target = store.jira_write_target(&ticket_id).unwrap();
+    let state = read_jira_issue_state(&jira, &target, CREDENTIAL).unwrap();
+    let diff = store.jira_write_diff(&ticket_id, &state).unwrap();
+    let JiraChange::Comment { body, .. } = diff.changes.last().unwrap() else {
+        panic!("comment in the diff");
+    };
+    assert_eq!(body, "Deployed to staging.");
+    jira.calls.lock().unwrap().clear();
+    apply_jira_write(&mut store, &jira, CREDENTIAL, &ticket_id, &diff.token).unwrap();
+    assert!(
+        jira.calls()
+            .contains(&"comment PAY-1 Deployed to staging.".to_owned())
+    );
+    let state = read_jira_issue_state(&jira, &target, CREDENTIAL).unwrap();
+    let diff = store.jira_write_diff(&ticket_id, &state).unwrap();
+    assert!(
+        !diff
+            .changes
+            .iter()
+            .any(|change| matches!(change, JiraChange::Comment { .. }))
+    );
 }

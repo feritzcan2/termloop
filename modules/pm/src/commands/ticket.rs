@@ -124,7 +124,7 @@ fn ensure_jira_url_free(
 }
 
 /// A sprint a ticket of `project_id` may join.
-fn check_target_sprint(
+pub(super) fn check_target_sprint(
     connection: &Connection,
     project_id: &str,
     sprint_id: Option<&str>,
@@ -180,6 +180,89 @@ pub(super) fn record_version(
     )?;
     touch_ticket(connection, ticket_id, now)?;
     Ok(number)
+}
+
+/// Sets one ticket column inside a command's transaction. `column` is one
+/// of a fixed set of names, never caller text.
+pub(super) fn set_ticket_column(
+    connection: &Connection,
+    ticket_id: &str,
+    column: &'static str,
+    value: Option<&str>,
+    activity: Option<TicketActivityKind>,
+    now: u64,
+) -> Result<Ticket, PmError> {
+    require_ticket(connection, ticket_id)?;
+    let changed = connection.execute(
+        &format!(
+            "UPDATE tickets SET {column} = ?2, updated_at_epoch_ms = ?3 \
+             WHERE id = ?1 AND {column} IS NOT ?2"
+        ),
+        params![ticket_id, value, now],
+    )?;
+    if let Some(kind) = activity.filter(|_| changed > 0) {
+        record_activity(connection, ticket_id, kind, value, now)?;
+    }
+    require_ticket(connection, ticket_id)
+}
+
+/// Moves a ticket inside a command's transaction; see
+/// [`PmStore::move_ticket_to_sprint`].
+pub(super) fn move_ticket(
+    connection: &Connection,
+    ticket_id: &str,
+    sprint_id: Option<&str>,
+    now: u64,
+) -> Result<Ticket, PmError> {
+    let ticket = require_ticket(connection, ticket_id)?;
+    if ticket.sprint_id.as_deref() == sprint_id {
+        return Ok(ticket);
+    }
+    check_target_sprint(connection, &ticket.project_id, sprint_id)?;
+    let leaves_closed_sprint = match ticket.sprint_id.as_deref() {
+        Some(source) => require_sprint(connection, source)?.state == SprintState::Closed,
+        None => false,
+    };
+    let rank = next_rank(connection, &ticket.project_id, sprint_id)?;
+    connection.execute(
+        "UPDATE tickets SET sprint_id = ?2, rank = ?3, \
+             carry_over_count = carry_over_count + ?4, updated_at_epoch_ms = ?5 \
+         WHERE id = ?1",
+        params![ticket_id, sprint_id, rank, leaves_closed_sprint, now],
+    )?;
+    record_activity(
+        connection,
+        ticket_id,
+        TicketActivityKind::Moved,
+        sprint_id,
+        now,
+    )?;
+    require_ticket(connection, ticket_id)
+}
+
+/// Appends one blocker inside a command's transaction; the caller checks
+/// the bound.
+pub(super) fn add_blocker(
+    connection: &Connection,
+    ticket_id: &str,
+    blocker: &Blocker,
+    now: u64,
+) -> Result<(), PmError> {
+    connection.execute(
+        "INSERT INTO ticket_blockers (id, ticket_id, position, text) \
+         VALUES (?1, ?2, \
+             (SELECT COALESCE(MAX(position) + 1, 0) FROM ticket_blockers \
+              WHERE ticket_id = ?2), ?3)",
+        params![blocker.id, ticket_id, blocker.text],
+    )?;
+    record_activity(
+        connection,
+        ticket_id,
+        TicketActivityKind::BlockerAdded,
+        Some(&blocker.text),
+        now,
+    )?;
+    touch_ticket(connection, ticket_id, now)
 }
 
 impl PmStore {
@@ -336,18 +419,7 @@ impl PmStore {
     ) -> Result<Ticket, PmError> {
         let now = self.now();
         self.write(|transaction| {
-            require_ticket(transaction, ticket_id)?;
-            let changed = transaction.execute(
-                &format!(
-                    "UPDATE tickets SET {column} = ?2, updated_at_epoch_ms = ?3 \
-                     WHERE id = ?1 AND {column} IS NOT ?2"
-                ),
-                params![ticket_id, value, now],
-            )?;
-            if let Some(kind) = activity.filter(|_| changed > 0) {
-                record_activity(transaction, ticket_id, kind, value, now)?;
-            }
-            require_ticket(transaction, ticket_id)
+            set_ticket_column(transaction, ticket_id, column, value, activity, now)
         })
     }
 
@@ -359,32 +431,7 @@ impl PmStore {
         sprint_id: Option<&str>,
     ) -> Result<Ticket, PmError> {
         let now = self.now();
-        self.write(|transaction| {
-            let ticket = require_ticket(transaction, ticket_id)?;
-            if ticket.sprint_id.as_deref() == sprint_id {
-                return Ok(ticket);
-            }
-            check_target_sprint(transaction, &ticket.project_id, sprint_id)?;
-            let leaves_closed_sprint = match ticket.sprint_id.as_deref() {
-                Some(source) => require_sprint(transaction, source)?.state == SprintState::Closed,
-                None => false,
-            };
-            let rank = next_rank(transaction, &ticket.project_id, sprint_id)?;
-            transaction.execute(
-                "UPDATE tickets SET sprint_id = ?2, rank = ?3, \
-                     carry_over_count = carry_over_count + ?4, updated_at_epoch_ms = ?5 \
-                 WHERE id = ?1",
-                params![ticket_id, sprint_id, rank, leaves_closed_sprint, now],
-            )?;
-            record_activity(
-                transaction,
-                ticket_id,
-                TicketActivityKind::Moved,
-                sprint_id,
-                now,
-            )?;
-            require_ticket(transaction, ticket_id)
-        })
+        self.write(|transaction| move_ticket(transaction, ticket_id, sprint_id, now))
     }
 
     /// Reorders one lane (an open sprint, or the backlog with `None`).
@@ -437,21 +484,7 @@ impl PmStore {
             if ticket.blockers.len() >= TICKET_BLOCKERS_MAX {
                 return Err(PmError::Constraint("too many blockers"));
             }
-            transaction.execute(
-                "INSERT INTO ticket_blockers (id, ticket_id, position, text) \
-                 VALUES (?1, ?2, \
-                     (SELECT COALESCE(MAX(position) + 1, 0) FROM ticket_blockers \
-                      WHERE ticket_id = ?2), ?3)",
-                params![blocker.id, ticket_id, blocker.text],
-            )?;
-            record_activity(
-                transaction,
-                ticket_id,
-                TicketActivityKind::BlockerAdded,
-                Some(&blocker.text),
-                now,
-            )?;
-            touch_ticket(transaction, ticket_id, now)
+            add_blocker(transaction, ticket_id, &blocker, now)
         })?;
         Ok(blocker)
     }

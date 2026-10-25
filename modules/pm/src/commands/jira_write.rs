@@ -39,7 +39,11 @@ pub struct JiraIssueState {
 
 /// One field Jira would change.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-#[serde(rename_all = "camelCase", tag = "field")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "field"
+)]
 pub enum JiraChange {
     Summary {
         jira: String,
@@ -60,6 +64,11 @@ pub enum JiraChange {
     Sprint {
         jira_sprint_id: Option<u64>,
         ticket_sprint_id: Option<u64>,
+    },
+    /// An accepted comment suggestion, as Jira wiki markup.
+    Comment {
+        comment_id: String,
+        body: String,
     },
 }
 
@@ -115,6 +124,22 @@ fn status_category(status: TicketStatus) -> &'static str {
         TicketStatus::InProgress | TicketStatus::InReview => "indeterminate",
         TicketStatus::Done => "done",
     }
+}
+
+/// A ticket's accepted Jira comments waiting for a confirmed write, oldest
+/// first.
+fn queued_comments(
+    connection: &rusqlite::Connection,
+    ticket_id: &str,
+) -> Result<Vec<(String, String)>, PmError> {
+    let mut statement = connection.prepare(
+        "SELECT id, body FROM ticket_jira_comments WHERE ticket_id = ?1 \
+         ORDER BY queued_at_epoch_ms, id",
+    )?;
+    let comments = statement
+        .query_map([ticket_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    Ok(comments)
 }
 
 fn token(diff: &JiraWriteDiff) -> Result<String, PmError> {
@@ -216,6 +241,12 @@ impl PmStore {
         if let Some(change) = self.sprint_change(&ticket)? {
             changes.push(change);
         }
+        for (comment_id, body) in queued_comments(self.connection(), &ticket.id)? {
+            changes.push(JiraChange::Comment {
+                comment_id,
+                body: markdown_to_jira_wiki(&body),
+            });
+        }
         let mut diff = JiraWriteDiff {
             ticket_id: ticket.id,
             issue_key: target.issue_key,
@@ -256,6 +287,18 @@ impl PmStore {
                 ticket_sprint_id: wanted,
             }),
         )
+    }
+
+    /// Drops a queued Jira comment once Jira has it.
+    fn drop_queued_comment(&mut self, comment_id: &str) -> Result<(), PmError> {
+        check_id(comment_id, "commentId")?;
+        self.write(|transaction| {
+            transaction.execute(
+                "DELETE FROM ticket_jira_comments WHERE id = ?1",
+                [comment_id],
+            )?;
+            Ok(())
+        })
     }
 
     /// Records the Jira sprint an issue was moved to.
@@ -335,6 +378,13 @@ pub fn apply_jira_write(
                     // shows the move again next time.
                     let _ = store.record_jira_sprint(ticket_id, *ticket_sprint_id);
                 }),
+            JiraChange::Comment { comment_id, body } => {
+                writer.add_comment(site, credential, key, body).map(|()| {
+                    // Posted; a failure to drop it would show it again, so
+                    // it is dropped before anything else is written.
+                    let _ = store.drop_queued_comment(comment_id);
+                })
+            }
             JiraChange::Summary { .. } | JiraChange::Description { .. } => continue,
         };
         if let Err(error) = result {

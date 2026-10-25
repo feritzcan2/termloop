@@ -14,7 +14,10 @@ use termloop_launch::{
 };
 
 use super::PmAgentMode;
-use super::profile::{ASSISTANT_TEMPLATE, DELIVERY_CHECK_TEMPLATE, PmAgentProfile};
+use super::profile::{
+    ASSISTANT_TEMPLATE, DELIVERY_CHECK_TEMPLATE, PmAgentProfile, SKILL_CREATOR_TEMPLATE,
+    SKILL_RUN_TEMPLATE,
+};
 
 /// The MCP server name the PM tools are registered under.
 pub const PM_MCP_SERVER_NAME: &str = "termloop_pm";
@@ -80,7 +83,7 @@ pub enum PmLaunchError {
     InvalidEndpoint,
     #[error("the PM MCP token is missing or malformed")]
     InvalidToken,
-    #[error("a delivery check starts a fresh conversation with its first message")]
+    #[error("a delivery check or skill run starts a fresh conversation with its first message")]
     InvalidDeliveryCheck,
     #[error(transparent)]
     Launch(#[from] InvocationError),
@@ -154,6 +157,8 @@ fn template(mode: PmAgentMode) -> &'static PromptTemplate {
     match mode {
         PmAgentMode::Assistant => &ASSISTANT_TEMPLATE,
         PmAgentMode::DeliveryCheck => &DELIVERY_CHECK_TEMPLATE,
+        PmAgentMode::SkillRun => &SKILL_RUN_TEMPLATE,
+        PmAgentMode::SkillCreator => &SKILL_CREATOR_TEMPLATE,
     }
 }
 
@@ -181,7 +186,11 @@ pub fn pm_launch_plan(request: PmLaunchRequest<'_>) -> Result<PmLaunchPlan, PmLa
         request.conversation,
         AgentConversationLaunch::Fresh { resume_ref: None }
     );
-    if profile.mode == PmAgentMode::DeliveryCheck && (!fresh || profile.first_message.is_none()) {
+    if matches!(
+        profile.mode,
+        PmAgentMode::DeliveryCheck | PmAgentMode::SkillRun
+    ) && (!fresh || profile.first_message.is_none())
+    {
         return Err(PmLaunchError::InvalidDeliveryCheck);
     }
     let template = template(profile.mode);
@@ -201,12 +210,14 @@ pub fn pm_launch_plan(request: PmLaunchRequest<'_>) -> Result<PmLaunchPlan, PmLa
     launch.provider_instructions_source = Some(template);
     launch.provider_instructions = Some(&profile.system_prompt);
     launch.executable_directory = request.executable_directory;
-    launch.approved_tools = profile.tools;
+    launch.approved_tools = &profile.tools;
     let mut resolved = resolve(launch)?;
     if let Some(message) = first_message(profile, fresh) {
         let purpose = match profile.mode {
             PmAgentMode::Assistant => "PM assistant kickoff",
             PmAgentMode::DeliveryCheck => "PM delivery check",
+            PmAgentMode::SkillRun => "PM skill run",
+            PmAgentMode::SkillCreator => "PM skill creator kickoff",
         };
         resolved.positional_message(message, template.id, purpose)?;
     }

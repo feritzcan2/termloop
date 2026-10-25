@@ -2,6 +2,7 @@ mod checks;
 mod delivery;
 mod jira;
 mod project;
+mod skill;
 mod sprint;
 mod store;
 mod ticket;

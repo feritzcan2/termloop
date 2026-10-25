@@ -1,6 +1,6 @@
 //! Daemon-level tests: control authentication and dispatch, absent-vs-null
-//! updates, event fan-out, credential handles, MCP tool denial, and the
-//! one-check-per-ticket rule.
+//! updates, event fan-out, credential handles, MCP tool denial, the
+//! one-check-per-ticket rule, and skills.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -262,7 +262,7 @@ fn register_agent(state: &AppState, project_id: &str, mode: PmAgentMode, bearer:
     ));
 }
 
-fn mcp_call(state: &AppState, bearer: &str, name: &str) -> Value {
+async fn mcp_call(state: &AppState, bearer: &str, name: &str) -> Value {
     let message = json!({
         "jsonrpc": "2.0",
         "id": 1,
@@ -270,6 +270,7 @@ fn mcp_call(state: &AppState, bearer: &str, name: &str) -> Value {
         "params": { "name": name, "arguments": {} },
     });
     mcp::handle_message(state, bearer, &message, true)
+        .await
         .expect("the bearer is known")
         .expect("a request gets a reply")
 }
@@ -282,7 +283,7 @@ async fn mcp_denies_a_tool_outside_the_agents_mode() {
     let bearer = "a".repeat(64);
     register_agent(state, &project_id, PmAgentMode::Assistant, &bearer);
 
-    let denied = mcp_call(state, &bearer, termloop_pm::agent::PM_CHECK_REPORT);
+    let denied = mcp_call(state, &bearer, termloop_pm::agent::PM_CHECK_REPORT).await;
     assert_eq!(denied["result"]["isError"], true);
     assert_eq!(denied["result"]["structuredContent"]["code"], "denied");
 
@@ -292,6 +293,7 @@ async fn mcp_denies_a_tool_outside_the_agents_mode() {
         &json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" }),
         true,
     )
+    .await
     .unwrap()
     .unwrap();
     let names: Vec<&str> = listed["result"]["tools"]
@@ -302,11 +304,15 @@ async fn mcp_denies_a_tool_outside_the_agents_mode() {
         .collect();
     assert!(!names.contains(&termloop_pm::agent::PM_CHECK_REPORT));
 
-    let read = mcp_call(state, &bearer, termloop_pm::agent::PM_BOARD_READ);
+    let read = mcp_call(state, &bearer, termloop_pm::agent::PM_BOARD_READ).await;
     assert_eq!(read["result"]["isError"], false);
 
     // Another bearer is not an agent at all.
-    assert!(mcp::handle_message(state, &"b".repeat(64), &json!({}), true).is_err());
+    assert!(
+        mcp::handle_message(state, &"b".repeat(64), &json!({}), true)
+            .await
+            .is_err()
+    );
 }
 
 fn launched(_: &AppState, _: &DeliveryCheck) -> Result<String, ControlError> {
@@ -641,4 +647,200 @@ async fn searched_issues_name_the_ticket_that_links_them() {
         result["issues"][0]["assignee"],
         json!({ "displayName": "Ada", "avatarUrl": "https://avatars.example/ada.png?s=48" })
     );
+}
+
+#[tokio::test]
+async fn deployment_control_gates_automatic_checks_and_can_be_turned_off() {
+    let fixture = fixture();
+    let state = &fixture.state;
+    let project_id = project(state).await;
+    let read = call(state, "pm_skills_read", json!({ "projectId": project_id }))
+        .await
+        .unwrap();
+    assert_eq!(read["skills"].as_array().unwrap().len(), 0);
+
+    call(
+        state,
+        "pm_environments_set",
+        json!({ "projectId": project_id, "environments": [{ "name": "prod", "production": true }] }),
+    )
+    .await
+    .unwrap();
+    let read = call(state, "pm_skills_read", json!({ "projectId": project_id }))
+        .await
+        .unwrap();
+    let skill = &read["skills"][0];
+    assert_eq!(skill["builtin"], "deploymentControl");
+    let skill_id = skill["id"].as_str().unwrap().to_owned();
+    let enabled = state
+        .store
+        .lock()
+        .deployment_control_enabled(&project_id)
+        .unwrap();
+    assert_eq!(skill["enabled"], enabled);
+
+    let turned_off = call(
+        state,
+        "pm_skill_set_enabled",
+        json!({ "skillId": skill_id, "enabled": false }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(turned_off["enabled"], false);
+    assert!(
+        !state
+            .store
+            .lock()
+            .deployment_control_enabled(&project_id)
+            .unwrap()
+    );
+    // Turned off, the tick starts no check, and new environments do not
+    // turn it back on.
+    let ticket_id = ticket(state, &project_id, json!({})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    scheduler::check_tick(state, launched).await;
+    assert!(
+        state
+            .store
+            .lock()
+            .delivery_checks(&project_id)
+            .unwrap()
+            .iter()
+            .all(|check| check.ticket_id != ticket_id || !check.is_running())
+    );
+    let read = call(state, "pm_skills_read", json!({ "projectId": project_id }))
+        .await
+        .unwrap();
+    assert_eq!(read["skills"][0]["enabled"], false);
+}
+
+#[tokio::test]
+async fn the_skill_creator_verifies_only_through_the_daemon() {
+    let fixture = fixture();
+    let state = &fixture.state;
+    let project_id = project(state).await;
+    let bearer = "c".repeat(64);
+    register_agent(state, &project_id, PmAgentMode::SkillCreator, &bearer);
+
+    let listed = mcp::handle_message(
+        state,
+        &bearer,
+        &json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" }),
+        true,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let names: Vec<&str> = listed["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|tool| tool["name"].as_str().unwrap())
+        .collect();
+    assert!(names.contains(&termloop_pm::agent::PM_SKILL_TOOL_VERIFY));
+    assert!(!names.contains(&termloop_pm::agent::PM_CHECK_REPORT));
+
+    let verify = |arguments: Value| {
+        json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": { "name": termloop_pm::agent::PM_SKILL_TOOL_VERIFY, "arguments": arguments },
+        })
+    };
+    let refused = mcp::handle_message(
+        state,
+        &bearer,
+        &verify(json!({ "kind": "cli", "name": "rm" })),
+        true,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(refused["result"]["isError"], true);
+    assert_eq!(refused["result"]["structuredContent"]["code"], "denied");
+
+    let board = mcp::handle_message(
+        state,
+        &bearer,
+        &verify(json!({ "kind": "source", "name": "deployments" })),
+        true,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(board["result"]["structuredContent"]["works"], false);
+
+    // An assistant cannot reach a host tool at all.
+    let assistant = "d".repeat(64);
+    state.agents.insert(AgentRecord::new(
+        "session-2".to_owned(),
+        project_id.clone(),
+        PmAgentMode::Assistant,
+        "claude".to_owned(),
+        None,
+        None,
+        assistant.clone(),
+    ));
+    let denied = mcp::handle_message(
+        state,
+        &assistant,
+        &verify(json!({ "kind": "source", "name": "board" })),
+        true,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(denied["result"]["structuredContent"]["code"], "denied");
+}
+
+#[tokio::test]
+async fn a_skill_with_nothing_new_records_a_skipped_run_without_an_agent() {
+    let fixture = fixture();
+    let state = &fixture.state;
+    let project_id = project(state).await;
+    let manifest = termloop_pm::skill::SkillManifest {
+        name: "Bug watch".to_owned(),
+        description: "Watches bugs.".to_owned(),
+        trigger: termloop_pm::skill::SkillTrigger::Manual,
+        sources: vec![termloop_pm::skill::SkillSource::Board],
+        prefilter: termloop_pm::skill::SkillPrefilter::BugTickets,
+        approved_tools: vec![termloop_pm::agent::PM_BOARD_READ.to_owned()],
+        instructions: "Suggest an owner.".to_owned(),
+        channels: Vec::new(),
+    };
+    let skill_id = {
+        let mut store = state.store.lock();
+        let draft = store
+            .submit_skill_draft(termloop_pm::skill::NewSkillDraft {
+                project_id: project_id.clone(),
+                origin: termloop_pm::skill::SkillDraftOrigin::Creator,
+                base_skill_id: None,
+                manifest,
+                what_it_will_do: "Suggests owners for bugs.".to_owned(),
+                needed_tools: Vec::new(),
+                changelog: None,
+            })
+            .unwrap();
+        let run = store.start_dry_run(&draft.id, 0).unwrap();
+        store
+            .finish_skill_run(&run.id, termloop_pm::skill::SkillRunOutcome::Reported, None)
+            .unwrap();
+        store
+            .install_skill_draft(&draft.id, &draft.first_use_tools, None)
+            .unwrap()
+            .id
+    };
+    // A ticket that is not a bug: the prefilter keeps nothing.
+    ticket(state, &project_id, json!({ "title": "Polish the footer" })).await;
+    let ran = call(state, "pm_skill_run", json!({ "skillId": skill_id }))
+        .await
+        .unwrap();
+    assert_eq!(ran["run"]["outcome"], "skipped");
+    assert!(state.agents.project_sessions(&project_id).is_empty());
+    // Runs per day count launched agents; a skipped run cost nothing.
+    assert_eq!(ran["skill"]["runsToday"], 0);
+    assert_eq!(ran["skill"]["lastOutcome"], "skipped");
 }

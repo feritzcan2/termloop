@@ -71,6 +71,26 @@ describe("PmController", () => {
     ]);
   });
 
+  it("shows a launched or picked agent in the stage and leaves it when the agent exits", async () => {
+    const session = { sessionId: "agent-1", projectId: "project-1", mode: "assistant", provider: "claude", focusTicketId: "ticket-1", checkId: null, skillId: null, state: "running", startedAtEpochMs: 0, exitedAtEpochMs: null };
+    let sessions = [session];
+    const bridge = fakeBridge((method) => {
+      if (method === "pm_agent_launch") return ok(session);
+      if (method === "pm_agent_list") return ok({ sessions });
+      return ok({});
+    });
+    const store = createPmStore({ projectId: "project-1", view: "ticket", selectedTicketId: "ticket-1" });
+    const controller = new PmController(bridge, store);
+    await controller.launchAgent("ticket-1");
+    expect(store.getState()).toMatchObject({ view: "agent", activeAgentSessionId: "agent-1" });
+    controller.setView("ticket");
+    controller.selectAgent("agent-1");
+    expect(store.getState().view).toBe("agent");
+    sessions = [];
+    await controller.refreshAgents();
+    expect(store.getState()).toMatchObject({ view: "ticket", activeAgentSessionId: undefined });
+  });
+
   it("loads the agent catalog with the settings", async () => {
     const catalog = { providers: [{ id: "claude", label: "Claude", models: ["default"], permissions: { assistant: ["default"], check: ["bypassPermissions"] } }] };
     const bridge = fakeBridge((method) => method === "pm_agent_catalog_read" ? ok(catalog) : ok({}));

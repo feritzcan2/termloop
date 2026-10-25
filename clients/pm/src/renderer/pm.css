@@ -211,6 +211,11 @@ code { font: 11px var(--font-mono); background: var(--bg-raised); padding: 1px 5
 .pm-ticket-item { position: relative; touch-action: none; }
 .pm-ticket-item.dragging { z-index: 2; opacity: .85; }
 .pm-ticket-item.dragging .row { background: var(--bg-selected); box-shadow: 0 4px 14px rgba(0, 0, 0, .45); }
+.pm-ticket-head { position: relative; }
+/* agents focused on a ticket, nested under its row as in the TermLoop sidebar */
+.pm-ticket-agents { display: grid; gap: 1px; margin: 1px 0 2px 18px; padding: 0 0 0 6px; border-left: 1px solid var(--rule); list-style: none; }
+.group .row.pm-agent-row { min-height: 30px; grid-template-columns: 14px minmax(0, 1fr) 4px; gap: 6px; padding: 2px 6px; }
+.pm-agent-row .row-title { font-size: 12px; font-weight: 500; }
 .pm-move-menu { position: absolute; top: 50%; right: 3px; transform: translateY(-50%); }
 .pm-move-menu > .icb { opacity: 0; width: 18px; height: 18px; }
 .pm-ticket-item:hover .pm-move-menu > .icb,

@@ -11,6 +11,7 @@ mod jira_write;
 mod probe;
 mod project;
 mod proposal;
+mod skill;
 mod sources;
 mod sprint;
 mod ticket;
@@ -35,6 +36,8 @@ pub use jira_write::{
     read_jira_issue_state,
 };
 pub use probe::{NewProbe, RecordedProbeRun};
+pub use proposal::ProposalOrigin;
+pub use skill::{SKILL_DISCOVERY_MAX_BYTES, SKILL_PAUSE_AFTER_FAILURES};
 pub use sprint::ClosedSprint;
 pub use ticket::{NewTicket, TicketEdit};
 

@@ -27,7 +27,7 @@ export type TicketEditorProps = {
   onRemoveCriterion(criterionId: string): void;
   onAddBlocker(text: string): void;
   onRemoveBlocker(blockerId: string): void;
-  onAcceptProposal(proposalId: string): void;
+  onAcceptProposal(proposalId: string, assignee?: string): void;
   onRejectProposal(proposalId: string): void;
   onOpenLink(url: string): void;
   onWriteToJira(): void;
@@ -176,11 +176,13 @@ export function TicketEditor(props: TicketEditorProps) {
           <ProposalCard
             key={proposal.id}
             proposal={proposal}
-            current={proposal.change.kind === "description" ? ticket.description : ticket.acceptanceCriteria.map((item) => item.text).join("\n")}
+            ticket={ticket}
             headVersion={headVersion}
             now={props.now}
-            onAccept={() => props.onAcceptProposal(proposal.id)}
+            sprintName={(sprintId) => props.sprints.find((sprint) => sprint.id === sprintId)?.name ?? "Backlog"}
+            onAccept={(assignee) => props.onAcceptProposal(proposal.id, assignee)}
             onReject={() => props.onRejectProposal(proposal.id)}
+            onOpenLink={props.onOpenLink}
           />
         ))}
 

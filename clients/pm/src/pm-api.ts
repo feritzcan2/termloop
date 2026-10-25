@@ -54,6 +54,14 @@ export const RENDERER_METHODS = [
   "pm_agent_catalog_read",
   "pm_settings_read",
   "pm_settings_update",
+  "pm_skills_read",
+  "pm_skill_set_enabled",
+  "pm_skill_install",
+  "pm_skill_run",
+  "pm_skill_creator_launch",
+  "pm_skill_feedback_read",
+  "pm_skill_draft_dry_run",
+  "pm_skill_draft_discard",
 ] as const satisfies readonly Method[];
 
 export type RendererMethod = typeof RENDERER_METHODS[number];

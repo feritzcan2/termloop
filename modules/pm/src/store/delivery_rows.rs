@@ -8,17 +8,20 @@ use rusqlite::{Connection, OptionalExtension, Row, params, types::Type};
 use super::rows::parsed;
 use crate::{
     DeliveryProbe, GitHubSource, JiraSource, PmError, ProbeAuthor, ProbeMatcher, ProbeStatus,
-    ProjectSources, ProposalChange, TicketDeliveryFacts, TicketProposal,
+    ProjectSources, TicketDeliveryFacts, TicketProposal,
 };
 
-fn json_column<T: serde::de::DeserializeOwned>(row: &Row<'_>, index: usize) -> rusqlite::Result<T> {
+pub(crate) fn json_column<T: serde::de::DeserializeOwned>(
+    row: &Row<'_>,
+    index: usize,
+) -> rusqlite::Result<T> {
     let text: String = row.get(index)?;
     serde_json::from_str(&text).map_err(|error| {
         rusqlite::Error::FromSqlConversionFailure(index, Type::Text, Box::new(error))
     })
 }
 
-fn invalid_row(index: usize) -> rusqlite::Error {
+pub(crate) fn invalid_row(index: usize) -> rusqlite::Error {
     rusqlite::Error::FromSqlConversionFailure(index, Type::Text, "invalid stored value".into())
 }
 
@@ -162,27 +165,20 @@ pub(crate) fn project_sources(
     }
 }
 
-const PROPOSAL_COLUMNS: &str =
-    "id, ticket_id, kind, description, criteria_json, summary, base_version, created_at_epoch_ms";
+const PROPOSAL_COLUMNS: &str = "id, ticket_id, change_json, summary, base_version, skill_id, \
+     skill_version, evidence_json, created_at_epoch_ms";
 
 fn proposal_row(row: &Row<'_>) -> rusqlite::Result<TicketProposal> {
-    let kind: String = row.get(2)?;
-    let change = match kind.as_str() {
-        "description" => ProposalChange::Description {
-            description: row.get(3)?,
-        },
-        "acceptanceCriteria" => ProposalChange::AcceptanceCriteria {
-            criteria: json_column(row, 4)?,
-        },
-        _ => return Err(invalid_row(2)),
-    };
     let proposal = TicketProposal {
         id: row.get(0)?,
         ticket_id: row.get(1)?,
-        change,
-        summary: row.get(5)?,
-        base_version: row.get(6)?,
-        created_at_epoch_ms: row.get(7)?,
+        change: json_column(row, 2)?,
+        summary: row.get(3)?,
+        base_version: row.get(4)?,
+        skill_id: row.get(5)?,
+        skill_version: row.get(6)?,
+        evidence: json_column(row, 7)?,
+        created_at_epoch_ms: row.get(8)?,
     };
     if proposal.is_valid() {
         Ok(proposal)
@@ -217,4 +213,16 @@ pub(crate) fn ticket_proposals(
         .query_map([ticket_id], proposal_row)?
         .collect::<Result<_, _>>()?;
     Ok(proposals)
+}
+
+/// The pending proposals a skill made, oldest first.
+pub(crate) fn skill_proposal_count(
+    connection: &Connection,
+    skill_id: &str,
+) -> Result<u32, PmError> {
+    Ok(connection.query_row(
+        "SELECT COUNT(*) FROM ticket_proposals WHERE skill_id = ?1",
+        [skill_id],
+        |row| row.get(0),
+    )?)
 }

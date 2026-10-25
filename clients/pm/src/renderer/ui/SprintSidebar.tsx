@@ -5,9 +5,10 @@ import type { PmBoardTicket, PmDataTier, PmEnvironment, PmSprint } from "@termlo
 import { EnvironmentBadges } from "./delivery-facts.js";
 import { Icon } from "./icons.js";
 import {
-  RISK_LABEL, STAGE_LABEL, STATUS_DOT, STATUS_LABEL, daysLeft, jiraKey, leftSprint, riskTone, sprintDay, sprintTickets, statusSections, tierAtLeast,
+  RISK_LABEL, STAGE_LABEL, STATUS_DOT, STATUS_LABEL, agentTone, daysLeft, jiraKey, leftSprint, riskTone, sprintDay, sprintTickets, statusSections, tierAtLeast,
 } from "./format.js";
 import { ticketScope, type ScopeGrowth, type ScopeVersion } from "./scope.js";
+import type { AgentTab } from "./types.js";
 
 /** Which inline form the sprint rail shows. */
 export type SprintComposer = "sprint" | "ticket" | undefined;
@@ -38,6 +39,11 @@ export type SprintSidebarProps = {
   onMoveTicket(ticketId: string, sprintId: string | null, index?: number): void;
   /** Opens the right Sprints panel. */
   onShowSprints?(): void;
+  /** Running agents; each one focused on a shown ticket nests under its row. */
+  agents?: readonly AgentTab[];
+  /** The agent the stage shows, highlighted under its ticket. */
+  shownAgentSessionId?: string | undefined;
+  onSelectAgent?(sessionId: string): void;
 };
 
 /**
@@ -85,6 +91,9 @@ export function SprintSidebar(props: SprintSidebarProps) {
               now={props.now ?? Date.now()}
               selectedTicketId={props.selectedTicketId}
               composing={composer === "ticket"}
+              agents={props.agents ?? NO_AGENTS}
+              shownAgentSessionId={props.shownAgentSessionId}
+              onSelectAgent={props.onSelectAgent}
               onSelectSprint={() => props.onSelectSprint(shown.id)}
               onSelectTicket={props.onSelectTicket}
               onCreateTicket={createTicket}
@@ -105,6 +114,7 @@ export function SprintSidebar(props: SprintSidebarProps) {
 }
 
 const NO_ENVIRONMENTS: readonly PmEnvironment[] = [];
+const NO_AGENTS: readonly AgentTab[] = [];
 
 /** The group head's progress: "day X/N", else days left, else the sprint state. */
 function sprintProgress(sprint: PmSprint, now: number): string {
@@ -158,6 +168,9 @@ function FocusedSprint(props: {
   now: number;
   selectedTicketId: string | undefined;
   composing: boolean;
+  agents: readonly AgentTab[];
+  shownAgentSessionId: string | undefined;
+  onSelectAgent: ((sessionId: string) => void) | undefined;
   onSelectSprint(): void;
   onSelectTicket(ticketId: string): void;
   onCreateTicket(title: string): void;
@@ -210,6 +223,9 @@ function FocusedSprint(props: {
                   scope={ticketScope(entry.ticket, props.all, props.versions?.[entry.ticket.id])}
                   now={props.now}
                   selected={entry.ticket.id === props.selectedTicketId}
+                  agents={props.agents.filter((agent) => agent.focusTicketId === entry.ticket.id)}
+                  shownAgentSessionId={props.shownAgentSessionId}
+                  onSelectAgent={props.onSelectAgent}
                   onSelect={() => props.onSelectTicket(entry.ticket.id)}
                   moves={{
                     up: step(entry, section.tickets[index - 1]),
@@ -267,6 +283,9 @@ function TicketRow(props: {
   scope: ScopeGrowth | undefined;
   now: number;
   selected: boolean;
+  agents: readonly AgentTab[];
+  shownAgentSessionId: string | undefined;
+  onSelectAgent: ((sessionId: string) => void) | undefined;
   onSelect(): void;
   moves: TicketMoves;
 }) {
@@ -278,38 +297,61 @@ function TicketRow(props: {
   const risks = delivery.risks.filter((risk) => risk.kind !== "unassigned" && risk.kind !== "carriedOver");
   return (
     <li ref={sortable.setNodeRef} style={style} className={`pm-ticket-item ${sortable.isDragging ? "dragging" : ""}`}>
-      <button
-        type="button"
-        className={`row ${props.selected ? "active" : ""}`}
-        aria-current={props.selected ? "true" : undefined}
-        onClick={props.onSelect}
-        {...sortable.listeners}
-      >
-        <span className={`dot ${STATUS_DOT[ticket.status]}`} aria-hidden="true" />
-        <span className="copy">
-          <span className="row-title">{key && <span className="key">{key}</span>}{ticket.title}</span>
-          <span className="row-sub">
-            {ticket.assignee ? <span className="who">{ticket.assignee}</span> : <span className="warn">unassigned</span>}
-            <span>{STATUS_LABEL[ticket.status].toLowerCase()}</span>
-            {props.showStage && (
-              <span className="stage" data-testid="stage-pill">
-                {STAGE_LABEL[delivery.stage.kind].toLowerCase()}{delivery.stage.environment ? ` · ${delivery.stage.environment}` : ""}
-              </span>
-            )}
-            <EnvironmentBadges environments={props.environments} facts={delivery.facts} now={props.now} />
-            {pullRequests > 0 && <span className="pr-chip" title="Linked pull requests">PR·{pullRequests}</span>}
-            {props.scope && <span className="warn" title={props.scope.explanation} data-testid="scope-tag">scope</span>}
-            {ticket.carryOverCount > 0 && <span className="warn" title="Carried over">carried over ×{ticket.carryOverCount}</span>}
-            {risks.map((risk, index) => (
-              <span key={index} className={riskTone(risk.kind)} title={risk.detail}>{RISK_LABEL[risk.kind].toLowerCase()}</span>
-            ))}
-            {pendingProposalCount > 0 && <span className="draft">draft</span>}
-            {delivery.checking && <span className="warn">checking…</span>}
+      <div className="pm-ticket-head">
+        <button
+          type="button"
+          className={`row ${props.selected ? "active" : ""}`}
+          aria-current={props.selected ? "true" : undefined}
+          onClick={props.onSelect}
+          {...sortable.listeners}
+        >
+          <span className={`dot ${STATUS_DOT[ticket.status]}`} aria-hidden="true" />
+          <span className="copy">
+            <span className="row-title">{key && <span className="key">{key}</span>}{ticket.title}</span>
+            <span className="row-sub">
+              {ticket.assignee ? <span className="who">{ticket.assignee}</span> : <span className="warn">unassigned</span>}
+              <span>{STATUS_LABEL[ticket.status].toLowerCase()}</span>
+              {props.showStage && (
+                <span className="stage" data-testid="stage-pill">
+                  {STAGE_LABEL[delivery.stage.kind].toLowerCase()}{delivery.stage.environment ? ` · ${delivery.stage.environment}` : ""}
+                </span>
+              )}
+              <EnvironmentBadges environments={props.environments} facts={delivery.facts} now={props.now} />
+              {pullRequests > 0 && <span className="pr-chip" title="Linked pull requests">PR·{pullRequests}</span>}
+              {props.scope && <span className="warn" title={props.scope.explanation} data-testid="scope-tag">scope</span>}
+              {ticket.carryOverCount > 0 && <span className="warn" title="Carried over">carried over ×{ticket.carryOverCount}</span>}
+              {risks.map((risk, index) => (
+                <span key={index} className={riskTone(risk.kind)} title={risk.detail}>{RISK_LABEL[risk.kind].toLowerCase()}</span>
+              ))}
+              {pendingProposalCount > 0 && <span className="draft">draft</span>}
+              {delivery.checking && <span className="warn">checking…</span>}
+            </span>
           </span>
-        </span>
-        <span />
-      </button>
-      <MoveMenu moves={props.moves} title={ticket.title} />
+          <span />
+        </button>
+        <MoveMenu moves={props.moves} title={ticket.title} />
+      </div>
+      {props.agents.length > 0 && (
+        <ul className="pm-ticket-agents" aria-label={`Agents on ${ticket.title}`}>
+          {props.agents.map((agent) => (
+            <li key={agent.sessionId}>
+              <button
+                type="button"
+                className={`row pm-agent-row ${agent.sessionId === props.shownAgentSessionId ? "active" : ""}`}
+                aria-current={agent.sessionId === props.shownAgentSessionId ? "true" : undefined}
+                onClick={() => props.onSelectAgent?.(agent.sessionId)}
+              >
+                <span className={`dot ${agentTone(agent.state, agent.assistant ? "assistant" : "deliveryCheck")}`} />
+                <span className="copy">
+                  <span className="row-title">{agent.label}</span>
+                  <span className="row-sub"><span className={agent.provider}>{agent.provider === "claude" ? "Claude" : "Codex"}</span><span>{agent.state}</span></span>
+                </span>
+                <span />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </li>
   );
 }

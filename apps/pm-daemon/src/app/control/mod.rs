@@ -22,8 +22,9 @@ use errors::error;
 mod dispatch;
 pub(crate) mod errors;
 mod operations;
+mod skill_methods;
 
-pub(crate) use dispatch::dispatch;
+pub(crate) use dispatch::{dispatch, to_value};
 
 const MAX_CONTROL_MESSAGE: usize = 8 * 1024 * 1024;
 const MAX_IN_FLIGHT: usize = 64;
@@ -166,6 +167,7 @@ fn event_name(event: &EventName) -> &'static str {
         EventName::PmAgentChanged => "pmAgentChanged",
         EventName::PmCheckChanged => "pmCheckChanged",
         EventName::PmJiraPulled => "pmJiraPulled",
+        EventName::PmSkillsChanged => "pmSkillsChanged",
     }
 }
 
@@ -289,6 +291,8 @@ fn cancellable(method: &str) -> bool {
             | "pm_agent_list"
             | "pm_agent_catalog_read"
             | "pm_settings_read"
+            | "pm_skills_read"
+            | "pm_skill_feedback_read"
     )
 }
 

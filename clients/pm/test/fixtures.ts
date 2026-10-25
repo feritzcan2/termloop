@@ -1,4 +1,4 @@
-import type { PmBoardTicket, PmJiraDiff, PmSprint, PmTicket } from "@termloop/pm-contract/pm";
+import type { PmBoardTicket, PmJiraDiff, PmProposal, PmSkill, PmSkillDraft, PmSkillManifest, PmSprint, PmTicket } from "@termloop/pm-contract/pm";
 import type { PmApi, PmCallOutcome, RendererMethod } from "../src/pm-api.js";
 
 export function sprint(overrides: Partial<PmSprint> = {}): PmSprint {
@@ -69,3 +69,34 @@ export function fakeBridge(respond: Responder): PmApi & { calls: { method: Rende
 }
 
 export const ok = (result: unknown) => ({ ok: true, result }) as PmCallOutcome<RendererMethod>;
+
+export function manifest(overrides: Partial<PmSkillManifest> = {}): PmSkillManifest {
+  return {
+    name: "Bug owner finder", description: "Suggests who should own a new bug.", trigger: { kind: "manual" },
+    sources: ["board"], prefilter: "bugTickets", approvedTools: ["pm_board_read"], instructions: "Suggest an owner.", channels: [],
+    ...overrides,
+  };
+}
+
+export function skill(overrides: Partial<PmSkill> = {}): PmSkill {
+  return {
+    id: "skill-1", projectId: "project-1", builtin: null, enabled: true, version: 1, manifest: manifest(),
+    lastRunAtEpochMs: null, lastOutcome: null, running: false, pendingSuggestionCount: 0, runsToday: 0,
+    consecutiveFailures: 0, pausedReason: null, createdAtEpochMs: 0, ...overrides,
+  };
+}
+
+export function skillDraft(overrides: Partial<PmSkillDraft> = {}): PmSkillDraft {
+  return {
+    id: "draft-1", projectId: "project-1", origin: "creator", baseSkillId: null, manifest: manifest(),
+    whatItWillDo: "Suggests an owner for each new bug.", neededTools: [], firstUseTools: ["pm_board_read"], changelog: null,
+    dryRunState: "completed", dryRunAtEpochMs: 0, samples: [], createdAtEpochMs: 0, ...overrides,
+  };
+}
+
+export function proposal(overrides: Partial<PmProposal> = {}): PmProposal {
+  return {
+    id: "proposal-1", ticketId: "ticket-1", change: { kind: "description", description: "New text" }, summary: "Clearer",
+    baseVersion: 2, skillId: null, skillVersion: null, evidence: [], createdAtEpochMs: 0, ...overrides,
+  };
+}

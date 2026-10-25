@@ -1,5 +1,6 @@
 //! The PM daemon's schedules: each check tick abandons overdue delivery
-//! checks, runs due probes, and starts the checks that are due; the fact
+//! checks, runs due probes, starts the checks that are due, and runs due
+//! skills; the fact
 //! refresh reads Jira and GitHub for the active sprint's tickets every ten
 //! minutes and after each Jira pull.
 
@@ -8,6 +9,7 @@ use std::time::Duration;
 
 use sha2::{Digest, Sha256};
 use termloop_platform::{CommandRequest, CommandTermination};
+use termloop_pm::skill::SkillEvent;
 use termloop_pm::{
     CommitAncestryFact, DeliveryCheck, DeliveryProbe, FactRead, FactsObservation, NewCheck,
     PmError, ProbeMatcher, ProbeOutcome, ProbeStatus, PullRequestFact, PullRequestsObservation,
@@ -18,7 +20,7 @@ use termloop_providers::{
 };
 
 use crate::app::control::errors::ControlError;
-use crate::app::{AppState, agents, credentials, jira};
+use crate::app::{AppState, agents, credentials, jira, skills};
 
 const CHECK_TICK: Duration = Duration::from_secs(60);
 const FACT_REFRESH_INTERVAL: Duration = Duration::from_secs(10 * 60);
@@ -116,8 +118,8 @@ pub(crate) async fn run_check_scheduler(state: AppState) {
 }
 
 /// One check tick: abandon overdue checks (stopping their agents), run due
-/// probes, then start each due check. The store refuses a second running
-/// check for a ticket, so a tick starts at most one per ticket.
+/// probes, start each due check of a project whose Deployment control is
+/// on, then run the skills that are due.
 pub(crate) async fn check_tick(state: &AppState, launch: CheckLaunch) {
     let abandoned = state
         .store
@@ -132,18 +134,37 @@ pub(crate) async fn check_tick(state: &AppState, launch: CheckLaunch) {
     run_due_probes(state).await;
     let projects = state.store.lock().projects().unwrap_or_default();
     for project in projects {
-        let due = state
+        let enabled = state
             .store
             .lock()
-            .checks_due(&project.id)
-            .unwrap_or_default();
-        for check in due {
-            let ticket_id = check.ticket_id.clone();
-            if let Err(reason) = start_check(state, &project.id, check.into(), launch) {
+            .deployment_control_enabled(&project.id)
+            .unwrap_or(false);
+        if enabled {
+            start_due_checks(state, &project.id, launch);
+        }
+    }
+    skills::skill_tick(state);
+}
+
+/// Starts each check of the project that is due and returns how many
+/// started. The store refuses a second running check for a ticket.
+pub(crate) fn start_due_checks(state: &AppState, project_id: &str, launch: CheckLaunch) -> u32 {
+    let due = state
+        .store
+        .lock()
+        .checks_due(project_id)
+        .unwrap_or_default();
+    let mut started = 0;
+    for check in due {
+        let ticket_id = check.ticket_id.clone();
+        match start_check(state, project_id, check.into(), launch) {
+            Ok(_) => started += 1,
+            Err(reason) => {
                 tracing::debug!(%ticket_id, reason = reason.as_str(), "a due check did not start");
             }
         }
     }
+    started
 }
 
 fn probe_due(probe: &DeliveryProbe, now: u64) -> bool {
@@ -208,7 +229,10 @@ async fn run_due_probes(state: &AppState) {
                 .lock()
                 .record_probe_run(&probe.id, &probe.argv, &outcome, &ancestry);
         match recorded {
-            Ok(_) => state.board_changed(&probe.project_id),
+            Ok(_) => {
+                state.board_changed(&probe.project_id);
+                skills::note_event(state, &probe.project_id, SkillEvent::DeployChanged);
+            }
             Err(error) => tracing::debug!(%error, "a probe run was not recorded"),
         }
     }

@@ -3,7 +3,11 @@ use std::collections::BTreeSet;
 use serde_json::{Value, json};
 
 use super::*;
-use crate::agent::PM_TOOLS;
+use crate::ProposalChange;
+use crate::agent::{
+    PM_SKILL_DISCOVERY_READ, PM_SKILL_DRY_RUN_REQUEST, PM_SKILL_TOOL_VERIFY, PM_TOOLS,
+};
+use crate::skill::{Evidence, NeededTool, SkillPrefilter, SkillSource, SkillTrigger};
 use crate::{
     DeliveryStageKind, EnvironmentDeployState, FactRead, FactSource, FactsObservation, NewProbe,
     NewTicket, ProbeMatcher, ProbeOutcome, ProbeStatus, ProjectEnvironment, PullRequestFact,
@@ -25,18 +29,13 @@ fn ticket(store: &mut PmStore, project_id: &str, title: &str, sprint_id: Option<
 }
 
 fn assistant(project_id: &str) -> PmToolContext {
-    PmToolContext {
-        project_id: project_id.into(),
-        mode: PmAgentMode::Assistant,
-        ticket_id: None,
-    }
+    PmToolContext::new(project_id, PmAgentMode::Assistant)
 }
 
 fn delivery_check(project_id: &str, ticket_id: &str) -> PmToolContext {
     PmToolContext {
-        project_id: project_id.into(),
-        mode: PmAgentMode::DeliveryCheck,
         ticket_id: Some(ticket_id.into()),
+        ..PmToolContext::new(project_id, PmAgentMode::DeliveryCheck)
     }
 }
 
@@ -61,7 +60,17 @@ fn assert_schema_matches(schema: &Value, sample: &Value, path: &str) {
         assert!(properties.get(required).is_some(), "{path}: {required}");
     }
     for (name, value) in sample.as_object().unwrap() {
-        let property = &properties[name];
+        let mut property = &properties[name];
+        if let Some(variants) = property["oneOf"].as_array() {
+            property = variants
+                .iter()
+                .find(|variant| variant["properties"]["kind"]["const"] == value["kind"])
+                .unwrap_or_else(|| panic!("{path}.{name}: no variant for {value}"));
+        }
+        if let Some(constant) = property.get("const") {
+            assert_eq!(constant, value, "{path}.{name}");
+            continue;
+        }
         match value {
             Value::Object(_) => assert_schema_matches(property, value, &format!("{path}.{name}")),
             Value::Array(items) => {
@@ -70,7 +79,13 @@ fn assert_schema_matches(schema: &Value, sample: &Value, path: &str) {
                     assert_schema_matches(&property["items"], first, &format!("{path}.{name}[]"));
                 }
             }
-            Value::String(_) => assert_eq!(property["type"], "string", "{path}.{name}"),
+            Value::String(_) => assert!(
+                property["type"] == "string"
+                    || property["type"]
+                        .as_array()
+                        .is_some_and(|types| types.contains(&json!("string"))),
+                "{path}.{name}"
+            ),
             _ => {}
         }
         if let Some(allowed) = property["enum"].as_array() {
@@ -106,6 +121,7 @@ fn samples() -> Vec<(&'static str, Value)> {
                 ticket_id: "t1".into(),
                 description: "## Goal".into(),
                 summary: "Clarify".into(),
+                evidence: vec![evidence()],
             }),
         ),
         (
@@ -114,6 +130,7 @@ fn samples() -> Vec<(&'static str, Value)> {
                 ticket_id: "t1".into(),
                 criteria: vec!["Logs in".into()],
                 summary: "Add criteria".into(),
+                evidence: vec![evidence()],
             }),
         ),
         (
@@ -146,15 +163,73 @@ fn samples() -> Vec<(&'static str, Value)> {
                 }],
             }),
         ),
+        (
+            PM_TICKET_SUGGEST,
+            sample(SuggestParams {
+                ticket_id: "t1".into(),
+                change: ProposalChange::Assignee {
+                    assignee: "ada".into(),
+                    shortlist: vec![crate::AssigneeCandidate {
+                        name: "ada".into(),
+                        reason: "Wrote the checkout module".into(),
+                        evidence: vec![evidence()],
+                    }],
+                },
+                summary: "Ada owns checkout".into(),
+                evidence: vec![evidence()],
+            }),
+        ),
+        (
+            PM_SKILL_RUN_FINISH,
+            sample(SkillRunFinishParams {
+                summary: "Read 3 tickets".into(),
+            }),
+        ),
+        (PM_SKILL_DISCOVERY_READ, json!({ "refresh": true })),
+        (PM_SKILL_TOOL_VERIFY, json!({ "kind": "cli", "name": "gh" })),
+        (
+            PM_SKILL_DRAFT_SUBMIT,
+            sample(SkillDraftSubmitParams {
+                name: "Slack tracker".into(),
+                description: "Follows Slack".into(),
+                trigger: SkillTrigger::Schedule { every_minutes: 30 },
+                sources: vec![SkillSource::Slack],
+                prefilter: SkillPrefilter::SlackMentions,
+                tools: vec![PM_TICKET_READ.into()],
+                instructions: "Suggest updates".into(),
+                channels: vec!["C123".into()],
+                what_it_will_do: "Reads channels".into(),
+                needed_tools: vec![NeededTool {
+                    name: "Slack token".into(),
+                    available: false,
+                    steps: Some("Create a Slack app".into()),
+                }],
+                changelog: Some("first".into()),
+                base_skill_id: Some("s1".into()),
+            }),
+        ),
+        (PM_SKILL_DRY_RUN_REQUEST, json!({ "draftId": "d1" })),
     ]
+}
+
+fn evidence() -> Evidence {
+    Evidence {
+        label: "Slack #shop".into(),
+        url: Some("https://acme.slack.com/archives/C1/p1".into()),
+        quote: Some("checkout is done".into()),
+    }
 }
 
 #[test]
 fn every_tool_schema_matches_its_parameter_struct() {
     let samples = samples();
     assert_eq!(samples.len(), PM_TOOLS.len());
-    for mode in [PmAgentMode::Assistant, PmAgentMode::DeliveryCheck] {
-        let definitions = pm_tool_definitions(mode);
+    for mode in [
+        PmAgentMode::Assistant,
+        PmAgentMode::DeliveryCheck,
+        PmAgentMode::SkillCreator,
+    ] {
+        let definitions = pm_tool_definitions(&PmToolContext::new("p1", mode));
         assert_eq!(
             definitions.iter().map(|tool| tool.name).collect::<Vec<_>>(),
             mode.tools()

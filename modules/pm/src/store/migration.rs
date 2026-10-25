@@ -204,6 +204,144 @@ CREATE INDEX ticket_activity_by_ticket ON ticket_activity (ticket_id, id);
 CREATE INDEX ticket_activity_by_time ON ticket_activity (recorded_at_epoch_ms);
 "#;
 
+/// Skills: installed manifests and their immutable versions, drafts from
+/// the skill creator, runs, the PM's feedback per suggestion, and the
+/// creator's discovery cache. Proposals widen to every suggestion kind and
+/// name the skill and evidence they come from; an accepted Jira comment
+/// waits for the PM's confirmed Jira write.
+const V8: &str = r#"
+CREATE TABLE ticket_proposals_next (
+    id TEXT PRIMARY KEY,
+    ticket_id TEXT NOT NULL REFERENCES tickets (id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('description', 'acceptanceCriteria', 'blockers',
+        'status', 'assignee', 'sprint', 'jiraComment')),
+    change_json TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    base_version INTEGER NOT NULL CHECK (base_version >= 0),
+    skill_id TEXT,
+    skill_version INTEGER CHECK (skill_version > 0),
+    evidence_json TEXT NOT NULL,
+    evidence_key TEXT,
+    created_at_epoch_ms INTEGER NOT NULL,
+    CHECK ((skill_id IS NULL) = (skill_version IS NULL))
+) STRICT;
+INSERT INTO ticket_proposals_next (id, ticket_id, kind, change_json, summary, base_version,
+        evidence_json, created_at_epoch_ms)
+    SELECT id, ticket_id, kind,
+        CASE kind
+            WHEN 'description' THEN json_object('kind', 'description', 'description', description)
+            ELSE json_object('kind', 'acceptanceCriteria', 'criteria', json(criteria_json))
+        END,
+        summary, base_version, '[]', created_at_epoch_ms
+    FROM ticket_proposals;
+DROP TABLE ticket_proposals;
+ALTER TABLE ticket_proposals_next RENAME TO ticket_proposals;
+CREATE INDEX ticket_proposals_by_ticket ON ticket_proposals (ticket_id, created_at_epoch_ms);
+CREATE INDEX ticket_proposals_by_skill ON ticket_proposals (skill_id)
+    WHERE skill_id IS NOT NULL;
+
+CREATE TABLE ticket_jira_comments (
+    id TEXT PRIMARY KEY,
+    ticket_id TEXT NOT NULL REFERENCES tickets (id) ON DELETE CASCADE,
+    body TEXT NOT NULL,
+    queued_at_epoch_ms INTEGER NOT NULL
+) STRICT;
+CREATE INDEX ticket_jira_comments_by_ticket ON ticket_jira_comments (ticket_id, queued_at_epoch_ms);
+
+CREATE TABLE skills (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    builtin TEXT CHECK (builtin IN ('deploymentControl')),
+    enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+    version INTEGER NOT NULL CHECK (version > 0),
+    consecutive_failures INTEGER NOT NULL DEFAULT 0 CHECK (consecutive_failures >= 0),
+    paused_reason TEXT,
+    event_pending_at_epoch_ms INTEGER,
+    next_attempt_at_epoch_ms INTEGER,
+    created_at_epoch_ms INTEGER NOT NULL
+) STRICT;
+CREATE UNIQUE INDEX skills_one_builtin ON skills (project_id, builtin)
+    WHERE builtin IS NOT NULL;
+CREATE INDEX skills_by_project ON skills (project_id, created_at_epoch_ms);
+
+CREATE TABLE skill_versions (
+    skill_id TEXT NOT NULL REFERENCES skills (id) ON DELETE CASCADE,
+    version INTEGER NOT NULL CHECK (version > 0),
+    manifest_json TEXT NOT NULL,
+    approvals_json TEXT NOT NULL,
+    changelog TEXT,
+    recorded_at_epoch_ms INTEGER NOT NULL,
+    PRIMARY KEY (skill_id, version)
+) STRICT;
+CREATE TRIGGER skill_versions_are_immutable BEFORE UPDATE ON skill_versions
+BEGIN
+    SELECT RAISE(ABORT, 'skill versions are immutable');
+END;
+
+CREATE TABLE skill_drafts (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    origin TEXT NOT NULL CHECK (origin IN ('creator', 'import', 'revision')),
+    base_skill_id TEXT REFERENCES skills (id) ON DELETE CASCADE,
+    manifest_json TEXT NOT NULL,
+    what_it_will_do TEXT NOT NULL,
+    needed_tools_json TEXT NOT NULL,
+    changelog TEXT,
+    dry_run_state TEXT NOT NULL
+        CHECK (dry_run_state IN ('none', 'running', 'completed', 'failed')),
+    dry_run_at_epoch_ms INTEGER,
+    samples_json TEXT NOT NULL,
+    created_at_epoch_ms INTEGER NOT NULL
+) STRICT;
+CREATE INDEX skill_drafts_by_project ON skill_drafts (project_id, created_at_epoch_ms);
+
+CREATE TABLE skill_runs (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    skill_id TEXT REFERENCES skills (id) ON DELETE CASCADE,
+    draft_id TEXT REFERENCES skill_drafts (id) ON DELETE CASCADE,
+    version INTEGER CHECK (version > 0),
+    trigger TEXT NOT NULL CHECK (trigger IN ('manual', 'schedule', 'event', 'dryRun')),
+    items INTEGER NOT NULL CHECK (items >= 0),
+    started_at_epoch_ms INTEGER NOT NULL,
+    finished_at_epoch_ms INTEGER,
+    outcome TEXT CHECK (outcome IN ('reported', 'failed', 'abandoned', 'skipped')),
+    summary TEXT,
+    CHECK ((skill_id IS NULL) != (draft_id IS NULL)),
+    CHECK ((trigger = 'dryRun') = (draft_id IS NOT NULL)),
+    CHECK ((finished_at_epoch_ms IS NULL) = (outcome IS NULL))
+) STRICT;
+CREATE UNIQUE INDEX skill_runs_running_skill ON skill_runs (skill_id)
+    WHERE finished_at_epoch_ms IS NULL AND skill_id IS NOT NULL;
+CREATE UNIQUE INDEX skill_runs_running_draft ON skill_runs (draft_id)
+    WHERE finished_at_epoch_ms IS NULL AND draft_id IS NOT NULL;
+CREATE INDEX skill_runs_by_skill ON skill_runs (skill_id, started_at_epoch_ms);
+CREATE INDEX skill_runs_by_project ON skill_runs (project_id, started_at_epoch_ms);
+
+CREATE TABLE skill_feedback (
+    id INTEGER PRIMARY KEY,
+    skill_id TEXT NOT NULL REFERENCES skills (id) ON DELETE CASCADE,
+    version INTEGER NOT NULL CHECK (version > 0),
+    ticket_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK (outcome IN ('accepted', 'rejected')),
+    evidence_key TEXT,
+    sources_json TEXT NOT NULL,
+    reason TEXT,
+    recorded_at_epoch_ms INTEGER NOT NULL
+) STRICT;
+CREATE INDEX skill_feedback_by_skill ON skill_feedback (skill_id, id);
+CREATE INDEX skill_feedback_rejected_evidence ON skill_feedback (skill_id, evidence_key)
+    WHERE outcome = 'rejected' AND evidence_key IS NOT NULL;
+
+CREATE TABLE skill_discovery_cache (
+    project_id TEXT PRIMARY KEY,
+    discovery_json TEXT NOT NULL,
+    sources_key TEXT NOT NULL,
+    refreshed_at_epoch_ms INTEGER NOT NULL
+) STRICT;
+"#;
+
 /// Every migration in order; a version is never edited once released.
 const MIGRATIONS: &[(u32, &str)] = &[
     (1, V1),
@@ -213,6 +351,7 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (5, V5),
     (6, V6),
     (7, V7),
+    (8, V8),
 ];
 
 pub const SCHEMA_VERSION: u32 = MIGRATIONS[MIGRATIONS.len() - 1].0;
@@ -242,6 +381,24 @@ pub(super) fn migrate(connection: &mut Connection, now_epoch_ms: u64) -> Result<
         )?;
     }
     transaction.commit()?;
+    Ok(())
+}
+
+/// Applies the migrations up to `version` only: a database as an older
+/// build left it.
+#[cfg(test)]
+pub(super) fn migrate_to(connection: &Connection, version: u32) -> Result<(), PmError> {
+    connection.execute_batch(
+        "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, \
+             applied_at_epoch_ms INTEGER NOT NULL) STRICT;",
+    )?;
+    for (number, sql) in MIGRATIONS.iter().filter(|(number, _)| *number <= version) {
+        connection.execute_batch(sql)?;
+        connection.execute(
+            "INSERT INTO schema_migrations (version, applied_at_epoch_ms) VALUES (?1, 0)",
+            [number],
+        )?;
+    }
     Ok(())
 }
 

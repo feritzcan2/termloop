@@ -14,7 +14,7 @@ export type AgentPanelProps = {
   onStart(): void;
 };
 
-/** The right-hand terminal pane: one agent at a time, picked in the sidebar. Agent output is a draft. */
+/** The stage's terminal pane: one agent at full size, picked under its ticket in the sidebar. Agent output is a draft. */
 export function AgentPanel(props: AgentPanelProps) {
   const active = props.tabs.find((tab) => tab.sessionId === props.activeSessionId);
   return (

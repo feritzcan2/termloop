@@ -5,6 +5,7 @@ mod check_rows;
 mod delivery_rows;
 mod migration;
 mod rows;
+mod skill_rows;
 
 use std::path::{Path, PathBuf};
 
@@ -14,6 +15,7 @@ pub(crate) use check_rows::*;
 pub(crate) use delivery_rows::*;
 pub use migration::SCHEMA_VERSION;
 pub(crate) use rows::*;
+pub(crate) use skill_rows::*;
 
 use crate::PmError;
 
@@ -105,6 +107,19 @@ impl PmStore {
     #[cfg(test)]
     pub(crate) fn set_clock(&mut self, clock: fn() -> u64) {
         self.clock = clock;
+    }
+
+    /// An in-memory database an older build migrated to `version`, with
+    /// `setup` run on it before this build migrates it.
+    #[cfg(test)]
+    pub(crate) fn open_from_version(
+        version: u32,
+        setup: impl FnOnce(&Connection),
+    ) -> Result<Self, PmError> {
+        let connection = Connection::open_in_memory()?;
+        migration::migrate_to(&connection, version)?;
+        setup(&connection);
+        Self::from_connection(connection)
     }
 
     #[cfg(test)]

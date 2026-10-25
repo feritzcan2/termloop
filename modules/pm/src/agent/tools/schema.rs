@@ -4,14 +4,26 @@
 
 use serde_json::{Value, json};
 
+use super::PmToolContext;
 use crate::agent::{
-    PM_BOARD_READ, PM_CHECK_REPORT, PM_RISKS_READ, PM_TICKET_PROPOSE_ACCEPTANCE_CRITERIA,
-    PM_TICKET_PROPOSE_DESCRIPTION, PM_TICKET_READ, PmAgentMode,
+    PM_BOARD_READ, PM_CHECK_REPORT, PM_RISKS_READ, PM_SKILL_DISCOVERY_READ, PM_SKILL_DRAFT_SUBMIT,
+    PM_SKILL_DRY_RUN_REQUEST, PM_SKILL_RUN_FINISH, PM_SKILL_TOOL_VERIFY,
+    PM_TICKET_PROPOSE_ACCEPTANCE_CRITERIA, PM_TICKET_PROPOSE_DESCRIPTION, PM_TICKET_READ,
+    PM_TICKET_SUGGEST, SKILL_READ_TOOLS,
+};
+use crate::proposal::{ASSIGNEE_SHORTLIST_MAX, JIRA_COMMENT_MAX_CHARS};
+use crate::skill::{
+    EVIDENCE_LABEL_MAX_CHARS, EVIDENCE_MAX, EVIDENCE_QUOTE_MAX_CHARS, SKILL_CHANGELOG_MAX_CHARS,
+    SKILL_CHANNELS_MAX, SKILL_DESCRIPTION_MAX_CHARS, SKILL_INSTRUCTIONS_MAX_CHARS,
+    SKILL_NAME_MAX_CHARS, SKILL_NEEDED_TOOLS_MAX, SKILL_RUN_SUMMARY_MAX_CHARS,
+    SKILL_SCHEDULE_MAX_MINUTES, SKILL_SCHEDULE_MIN_MINUTES, SKILL_STEPS_MAX_CHARS, SKILL_TOOLS_MAX,
+    SKILL_WHAT_IT_DOES_MAX_CHARS,
 };
 use crate::{
     CHECK_PROBE_PROPOSALS_MAX, ENVIRONMENT_NAME_MAX_CHARS, PROPOSAL_SUMMARY_MAX_CHARS,
-    TICKET_CHECK_NOTES_MAX_BYTES, TICKET_CRITERIA_MAX, TICKET_DESCRIPTION_MAX_CHARS,
-    TICKET_ENVIRONMENT_FACTS_MAX, TICKET_ITEM_MAX_CHARS,
+    TICKET_ASSIGNEE_MAX_CHARS, TICKET_BLOCKERS_MAX, TICKET_CHECK_NOTES_MAX_BYTES,
+    TICKET_CRITERIA_MAX, TICKET_DESCRIPTION_MAX_CHARS, TICKET_ENVIRONMENT_FACTS_MAX,
+    TICKET_ITEM_MAX_CHARS,
 };
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -50,6 +62,93 @@ fn deploy_state() -> Value {
     json!({ "type": "string", "enum": DEPLOY_STATES })
 }
 
+fn evidence() -> Value {
+    json!({
+        "type": "array",
+        "maxItems": EVIDENCE_MAX,
+        "description": "The links the suggestion rests on, e.g. a Slack permalink with a quote of at most 280 characters, a pull request, or a commit.",
+        "items": object(
+            json!({
+                "label": { "type": "string", "minLength": 1, "maxLength": EVIDENCE_LABEL_MAX_CHARS },
+                "url": { "type": "string", "pattern": "^https://", "maxLength": 2048 },
+                "quote": { "type": "string", "minLength": 1, "maxLength": EVIDENCE_QUOTE_MAX_CHARS }
+            }),
+            &["label"],
+        )
+    })
+}
+
+fn items(max: usize) -> Value {
+    json!({
+        "type": "array",
+        "minItems": 1,
+        "maxItems": max,
+        "uniqueItems": true,
+        "items": { "type": "string", "minLength": 1, "maxLength": TICKET_ITEM_MAX_CHARS }
+    })
+}
+
+fn person() -> Value {
+    json!({ "type": "string", "minLength": 1, "maxLength": TICKET_ASSIGNEE_MAX_CHARS })
+}
+
+/// The suggested change, one kind at a time.
+fn change() -> Value {
+    let kind = |name: &str| json!({ "const": name });
+    json!({
+        "oneOf": [
+            object(json!({ "kind": kind("blockers"), "blockers": items(TICKET_BLOCKERS_MAX) }), &["kind", "blockers"]),
+            object(json!({
+                "kind": kind("status"),
+                "status": { "type": "string", "enum": ["todo", "inProgress", "inReview", "done"] }
+            }), &["kind", "status"]),
+            object(json!({
+                "kind": kind("assignee"),
+                "assignee": person(),
+                "shortlist": {
+                    "type": "array",
+                    "maxItems": ASSIGNEE_SHORTLIST_MAX,
+                    "description": "Up to 3 people, best first; the first is the assignee.",
+                    "items": object(json!({
+                        "name": person(),
+                        "reason": { "type": "string", "minLength": 1, "maxLength": EVIDENCE_LABEL_MAX_CHARS },
+                        "evidence": evidence()
+                    }), &["name", "reason"])
+                }
+            }), &["kind", "assignee", "shortlist"]),
+            object(json!({
+                "kind": kind("sprint"),
+                "sprintId": { "type": ["string", "null"], "minLength": 1, "description": "An open sprint id from pm_board_read, or null for the backlog." }
+            }), &["kind", "sprintId"]),
+            object(json!({
+                "kind": kind("jiraComment"),
+                "body": { "type": "string", "minLength": 1, "maxLength": JIRA_COMMENT_MAX_CHARS }
+            }), &["kind", "body"]),
+            object(json!({
+                "kind": kind("description"),
+                "description": { "type": "string", "minLength": 1, "maxLength": TICKET_DESCRIPTION_MAX_CHARS }
+            }), &["kind", "description"]),
+            object(json!({ "kind": kind("acceptanceCriteria"), "criteria": items(TICKET_CRITERIA_MAX) }), &["kind", "criteria"])
+        ]
+    })
+}
+
+fn skill_trigger() -> Value {
+    json!({
+        "oneOf": [
+            object(json!({ "kind": { "const": "manual" } }), &["kind"]),
+            object(json!({
+                "kind": { "const": "schedule" },
+                "everyMinutes": { "type": "integer", "minimum": SKILL_SCHEDULE_MIN_MINUTES, "maximum": SKILL_SCHEDULE_MAX_MINUTES }
+            }), &["kind", "everyMinutes"]),
+            object(json!({
+                "kind": { "const": "event" },
+                "event": { "type": "string", "enum": ["jiraPulled", "deployChanged", "boardChanged"] }
+            }), &["kind", "event"])
+        ]
+    })
+}
+
 fn definition(name: &'static str) -> PmToolDefinition {
     let (description, input_schema) = match name {
         PM_BOARD_READ => (
@@ -83,7 +182,8 @@ fn definition(name: &'static str) -> PmToolDefinition {
                         "maxLength": TICKET_DESCRIPTION_MAX_CHARS,
                         "description": "The full Markdown description, written for the developers doing the work."
                     },
-                    "summary": summary()
+                    "summary": summary(),
+                    "evidence": evidence()
                 }),
                 &["ticketId", "description", "summary"],
             ),
@@ -101,7 +201,8 @@ fn definition(name: &'static str) -> PmToolDefinition {
                         "uniqueItems": true,
                         "items": { "type": "string", "minLength": 1, "maxLength": TICKET_ITEM_MAX_CHARS }
                     },
-                    "summary": summary()
+                    "summary": summary(),
+                    "evidence": evidence()
                 }),
                 &["ticketId", "criteria", "summary"],
             ),
@@ -165,6 +266,126 @@ fn definition(name: &'static str) -> PmToolDefinition {
                 &["ticketId", "environments", "notesMarkdown"],
             ),
         ),
+        PM_TICKET_SUGGEST => (
+            "Suggest one ticket change: blockers to add, a status, an assignee with a ranked \
+             shortlist, a sprint move, a Jira comment draft, a description, or acceptance \
+             criteria. The PM accepts or rejects it; nothing changes until then, and nothing is \
+             written to Jira.",
+            object(
+                json!({
+                    "ticketId": ticket_id(),
+                    "change": change(),
+                    "summary": summary(),
+                    "evidence": evidence()
+                }),
+                &["ticketId", "change", "summary"],
+            ),
+        ),
+        PM_SKILL_RUN_FINISH => (
+            "Close this skill run once, after your last suggestion. Stop afterwards.",
+            object(
+                json!({
+                    "summary": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": SKILL_RUN_SUMMARY_MAX_CHARS,
+                        "description": "One line: what you looked at and what you suggested."
+                    }
+                }),
+                &["summary"],
+            ),
+        ),
+        PM_SKILL_DISCOVERY_READ => (
+            "Read what this PM project can use: its own sources (Jira, GitHub, environments, \
+             probes, Slack) with their tiers, allowlisted command-line tools on the PATH and \
+             whether each is logged in, and the MCP servers configured for Claude and Codex \
+             (name and transport only). Cached; set refresh to read again. Read-only.",
+            object(
+                json!({ "refresh": { "type": "boolean", "description": "Read again instead of the cache." } }),
+                &[],
+            ),
+        ),
+        PM_SKILL_TOOL_VERIFY => (
+            "Check one discovered tool with a harmless read-only call before you claim it \
+             works. Read-only.",
+            object(
+                json!({
+                    "kind": { "type": "string", "enum": ["source", "cli", "mcp"] },
+                    "name": { "type": "string", "minLength": 1, "maxLength": 64, "description": "A source (board, jira, deployments, slack, git, github), an allowlisted CLI, or a configured MCP server name." }
+                }),
+                &["kind", "name"],
+            ),
+        ),
+        PM_SKILL_DRAFT_SUBMIT => (
+            "Submit a skill draft for the PM to review: a plain-language name, description, and \
+             what it will do; when it runs; what it reads; the exact read tools a run may call; \
+             the run instructions; and the tools it needs, with exact human steps for any that \
+             are missing. Nothing is installed; the PM installs it after a dry run.",
+            object(
+                json!({
+                    "name": { "type": "string", "minLength": 1, "maxLength": SKILL_NAME_MAX_CHARS },
+                    "description": { "type": "string", "minLength": 1, "maxLength": SKILL_DESCRIPTION_MAX_CHARS },
+                    "trigger": skill_trigger(),
+                    "sources": {
+                        "type": "array",
+                        "minItems": 1,
+                        "uniqueItems": true,
+                        "items": { "type": "string", "enum": ["board", "jira", "deployments", "slack", "git", "github"] }
+                    },
+                    "prefilter": {
+                        "type": "string",
+                        "enum": ["boardChanges", "slackMentions", "bugTickets"],
+                        "description": "The deterministic check that decides whether a run has anything new: changed tickets, Slack messages naming tickets, or new bug-like tickets."
+                    },
+                    "tools": {
+                        "type": "array",
+                        "maxItems": SKILL_TOOLS_MAX,
+                        "uniqueItems": true,
+                        "items": { "type": "string", "enum": SKILL_READ_TOOLS },
+                        "description": "The read tools a run may call. Proposal tools are always added."
+                    },
+                    "instructions": { "type": "string", "minLength": 1, "maxLength": SKILL_INSTRUCTIONS_MAX_CHARS },
+                    "channels": {
+                        "type": "array",
+                        "maxItems": SKILL_CHANNELS_MAX,
+                        "uniqueItems": true,
+                        "items": { "type": "string", "pattern": "^[A-Za-z0-9]{1,32}$" },
+                        "description": "Slack channel ids to read, for a Slack source only."
+                    },
+                    "whatItWillDo": { "type": "string", "minLength": 1, "maxLength": SKILL_WHAT_IT_DOES_MAX_CHARS },
+                    "neededTools": {
+                        "type": "array",
+                        "maxItems": SKILL_NEEDED_TOOLS_MAX,
+                        "items": object(json!({
+                            "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+                            "available": { "type": "boolean" },
+                            "steps": { "type": "string", "minLength": 1, "maxLength": SKILL_STEPS_MAX_CHARS, "description": "Exact human steps to add a missing tool." }
+                        }), &["name", "available"])
+                    },
+                    "changelog": { "type": "string", "minLength": 1, "maxLength": SKILL_CHANGELOG_MAX_CHARS },
+                    "baseSkillId": { "type": "string", "minLength": 1, "description": "The installed skill this draft revises." }
+                }),
+                &[
+                    "name",
+                    "description",
+                    "trigger",
+                    "sources",
+                    "prefilter",
+                    "tools",
+                    "instructions",
+                    "whatItWillDo",
+                ],
+            ),
+        ),
+        PM_SKILL_DRY_RUN_REQUEST => (
+            "Run a submitted draft once against the last 3 days of data. Its suggestions are \
+             kept as samples on the draft for the PM, never as proposals. Returns at once; the \
+             PM watches the draft card.",
+            object(
+                json!({ "draftId": { "type": "string", "minLength": 1 } }),
+                &["draftId"],
+            ),
+        ),
         _ => unreachable!("every PM tool has a definition"),
     };
     PmToolDefinition {
@@ -174,7 +395,7 @@ fn definition(name: &'static str) -> PmToolDefinition {
     }
 }
 
-/// The tools a mode lists over MCP, in a stable order.
-pub fn pm_tool_definitions(mode: PmAgentMode) -> Vec<PmToolDefinition> {
-    mode.tools().iter().copied().map(definition).collect()
+/// The tools a caller lists over MCP, in a stable order.
+pub fn pm_tool_definitions(context: &PmToolContext) -> Vec<PmToolDefinition> {
+    context.tools().into_iter().map(definition).collect()
 }

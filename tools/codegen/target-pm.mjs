@@ -12,7 +12,7 @@ export const pmTarget = {
   render: renderPm,
 };
 
-const LONG_RUNNING_METHODS = ["pm_jira_pull", "pm_jira_diff_read", "pm_jira_apply", "pm_jira_projects_read", "pm_jira_statuses_read", "pm_jira_favourite_filters_read", "pm_jira_search", "pm_agent_launch", "pm_check_start"];
+const LONG_RUNNING_METHODS = ["pm_jira_pull", "pm_jira_diff_read", "pm_jira_apply", "pm_jira_projects_read", "pm_jira_statuses_read", "pm_jira_favourite_filters_read", "pm_jira_search", "pm_agent_launch", "pm_check_start", "pm_skill_run", "pm_skill_creator_launch", "pm_skill_draft_dry_run"];
 
 function renderPm(model) {
   const rust = rustEmitter(model);

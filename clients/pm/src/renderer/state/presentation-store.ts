@@ -12,6 +12,7 @@ import type {
   PmProject,
   PmProposal,
   PmSettings,
+  PmSkillsReadResult,
   PmSources,
   PmTicketVersion,
 } from "@termloop/pm-contract/pm";
@@ -38,6 +39,8 @@ export type PmState = {
   settings: PmSettings | undefined;
   catalog: PmAgentCatalog | undefined;
   sources: PmSources | undefined;
+  /** The project's skills and drafts waiting for review. */
+  skills: PmSkillsReadResult | undefined;
   lastPull: PmJiraPullResult | undefined;
   pulling: boolean;
   jiraDialog: JiraDialogState | undefined;
@@ -60,6 +63,7 @@ export const initialPmState: PmState = {
   settings: undefined,
   catalog: undefined,
   sources: undefined,
+  skills: undefined,
   lastPull: undefined,
   pulling: false,
   jiraDialog: undefined,

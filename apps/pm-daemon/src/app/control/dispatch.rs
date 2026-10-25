@@ -1,17 +1,18 @@
 //! Method dispatch for the planning surface: projects, sprints, tickets,
-//! proposals, environments, sources, and probes. Each mutation publishes
-//! `pmBoardChanged` for its project.
+//! proposals, environments, sources, probes, and skills. Each mutation
+//! publishes `pmBoardChanged` for its project.
 
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
+use termloop_pm::skill::SkillEvent;
 use termloop_pm::{
     DeliveryCheck, NewProbe, NewTicket, PmStore, ProjectEnvironment, ProjectSources, Ticket,
     TicketAuthor, TicketEdit,
 };
 use termloop_pm_contract::pm::{
     CONTRACT_IDENTITY, ErrorCode, PmDigestReadParams, PmEnvironmentsSetParams, PmProbeCreateParams,
-    PmProbeRef, PmProjectCreateParams, PmProjectRef, PmProposalRef, PmSources, PmSprintCloseParams,
+    PmProbeRef, PmProjectCreateParams, PmProjectRef, PmSources, PmSprintCloseParams,
     PmSprintCreateParams, PmSprintRef, PmSprintUpdateParams, PmTicketBlockerAddParams,
     PmTicketBlockerRemoveParams, PmTicketCreateParams, PmTicketCriterionAddParams,
     PmTicketCriterionRemoveParams, PmTicketCriterionSetDoneParams, PmTicketDescriptionSaveParams,
@@ -19,8 +20,8 @@ use termloop_pm_contract::pm::{
 };
 
 use super::errors::{ControlError, error, internal, not_found};
-use super::operations;
-use crate::app::{AppState, jira_browse};
+use super::{operations, skill_methods};
+use crate::app::{AppState, jira_browse, skills};
 
 const PRODUCT: &str = "termloop-pm";
 const TERMINAL_DATA_PLANE: &str = "binary-websocket";
@@ -56,9 +57,41 @@ pub(crate) async fn dispatch(
         "pm_agent_catalog_read" => operations::agent_catalog_read(),
         "pm_settings_read" => operations::settings_read(state),
         "pm_settings_update" => operations::settings_update(state, params),
-        _ => planning(state, method, params),
+        "pm_skills_read" => skill_methods::skills_read(state, params),
+        "pm_skill_set_enabled" => skill_methods::set_enabled(state, params),
+        "pm_skill_install" => skill_methods::install(state, params),
+        "pm_skill_run" => skill_methods::run(state, params),
+        "pm_skill_creator_launch" => skill_methods::creator_launch(state, params),
+        "pm_skill_feedback_read" => skill_methods::feedback_read(state, params),
+        "pm_skill_draft_dry_run" => skill_methods::draft_dry_run(state, params),
+        "pm_skill_draft_discard" => skill_methods::draft_discard(state, params),
+        "pm_ticket_proposal_accept" => skill_methods::proposal_accept(state, params),
+        "pm_ticket_proposal_reject" => skill_methods::proposal_reject(state, params),
+        _ => {
+            let result = planning(state, method, params)?;
+            if BOARD_EDITS.contains(&method)
+                && let Some(project_id) = result.get("projectId").and_then(Value::as_str)
+            {
+                skills::note_event(state, project_id, SkillEvent::BoardChanged);
+            }
+            Ok(result)
+        }
     }
 }
+
+/// The PM's own board edits, which wake skills waiting for board changes.
+/// Agent writes do not, so a skill never wakes itself.
+const BOARD_EDITS: &[&str] = &[
+    "pm_ticket_create",
+    "pm_ticket_update",
+    "pm_ticket_move",
+    "pm_ticket_description_save",
+    "pm_ticket_blocker_add",
+    "pm_ticket_blocker_remove",
+    "pm_ticket_criterion_add",
+    "pm_ticket_criterion_set_done",
+    "pm_ticket_criterion_remove",
+];
 
 fn planning(state: &AppState, method: &str, params: &Value) -> Result<Value, ControlError> {
     let mut store = state.store.lock();
@@ -151,19 +184,6 @@ fn planning(state: &AppState, method: &str, params: &Value) -> Result<Value, Con
                 "ticketId": params.ticket_id,
                 "proposals": to_value(&store.ticket_proposals(&params.ticket_id)?)?,
             }))
-        }
-        "pm_ticket_proposal_accept" => {
-            let params: PmProposalRef = parse(params)?;
-            let ticket = store.accept_ticket_proposal(&params.proposal_id)?;
-            published_ticket(state, &ticket)
-        }
-        "pm_ticket_proposal_reject" => {
-            let params: PmProposalRef = parse(params)?;
-            let proposal = store.proposal(&params.proposal_id)?.ok_or_else(not_found)?;
-            let project_id = require_ticket(store, &proposal.ticket_id)?.project_id;
-            store.reject_ticket_proposal(&params.proposal_id)?;
-            state.board_changed(&project_id);
-            Ok(json!({ "rejected": true }))
         }
         "pm_environments_set" => {
             let params: PmEnvironmentsSetParams = parse(params)?;

@@ -2,11 +2,14 @@
 // bridge, a transport, or the terminal adapter.
 import type { PmAgentProvider, PmAgentState, PmJiraApplyResult, PmJiraDiff, PmTicketPriority } from "@termloop/pm-contract/pm";
 
-/** The stage's content; `jira` is the Jira issue browser the activity bar toggles. */
-export type PmView = "overview" | "ticket" | "settings" | "jira";
+/**
+ * The stage's content; `jira` is the Jira issue browser the activity bar
+ * toggles, `agent` the selected agent's terminal at full stage size.
+ */
+export type PmView = "overview" | "ticket" | "settings" | "jira" | "agent";
 
 /** What the right activity bar opens in the right sidebar. */
-export type RightSidebarView = "sprints" | "assistant";
+export type RightSidebarView = "sprints" | "skills";
 
 export type JiraDialogView = {
   ticketId: string;
@@ -30,6 +33,8 @@ export type AgentTab = {
   provider: PmAgentProvider;
   /** What the session is about, e.g. its focus ticket. */
   detail: string;
+  /** The ticket the session works on; the sidebar nests the agent under it. */
+  focusTicketId: string | null;
 };
 
 /** How a description save ended: saved as `headVersion`, refused because a newer version exists, or failed with a notice. */

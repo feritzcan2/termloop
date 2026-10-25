@@ -14,6 +14,7 @@ import type {
 } from "@termloop/pm-contract/pm";
 import type { PmApi, PmEvent, RendererMethod } from "../../pm-api.js";
 import type { PmState, PmStore, PmView } from "../state/presentation-store.js";
+import { touchesJira } from "../ui/proposal-change.js";
 import type { DescriptionSaveOutcome, TicketCapture } from "../ui/types.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -87,6 +88,7 @@ export class PmController {
     }
     if (!projectId || payload.projectId !== projectId) return;
     if (event.event === "pmAgentChanged") void this.refreshAgents();
+    else if (event.event === "pmSkillsChanged") void this.loadSkills();
     else void this.refreshBoard();
     if (event.event === "pmBoardChanged" && this.state.selectedTicketId) void this.loadProposals(this.state.selectedTicketId);
   }
@@ -121,13 +123,14 @@ export class PmController {
       agents: [],
       activeAgentSessionId: undefined,
       sources: undefined,
-      view: this.state.view === "ticket" ? "overview" : this.state.view,
+      skills: undefined,
+      view: this.state.view === "ticket" || this.state.view === "agent" ? "overview" : this.state.view,
     });
     await this.refreshProject();
   }
 
   async refreshProject(): Promise<void> {
-    await Promise.all([this.refreshBoard(), this.refreshAgents(), this.loadSources()]);
+    await Promise.all([this.refreshBoard(), this.refreshAgents(), this.loadSources(), this.loadSkills()]);
   }
 
   /**
@@ -235,7 +238,7 @@ export class PmController {
   async captureTicket(capture: TicketCapture): Promise<PmTicket | undefined> {
     const assignee = capture.assignee.trim();
     const ticket = await this.createTicket(capture.title, capture.sprintId, { priority: capture.priority, ...(assignee ? { assignee } : {}) }, false);
-    if (ticket && capture.askAssistant) await this.launchAgent(ticket.id);
+    if (ticket && capture.askAssistant) await this.launchAgent(ticket.id, false);
     return ticket;
   }
 
@@ -299,14 +302,21 @@ export class PmController {
     if (result) this.#set({ proposals: { ...this.state.proposals, [ticketId]: result.proposals } });
   }
 
-  async acceptProposal(ticketId: string, proposalId: string): Promise<void> {
-    const ticket = await this.call("pm_ticket_proposal_accept", { proposalId });
+  /**
+   * Applies a draft to the PM ticket. A change Jira should also see opens
+   * the "Write to Jira" diff, where the PM confirms the external write.
+   */
+  async acceptProposal(ticketId: string, proposalId: string, assignee?: string): Promise<void> {
+    const proposal = this.state.proposals[ticketId]?.find((candidate) => candidate.id === proposalId);
+    const ticket = await this.call("pm_ticket_proposal_accept", { proposalId, ...(assignee ? { assignee } : {}) });
     await this.loadProposals(ticketId);
-    if (ticket) await this.refreshBoard();
+    if (!ticket) return;
+    await this.refreshBoard();
+    if (proposal && touchesJira(proposal.change) && ticket.jiraUrl) await this.openJiraDialog(ticketId);
   }
 
-  async rejectProposal(ticketId: string, proposalId: string): Promise<void> {
-    await this.call("pm_ticket_proposal_reject", { proposalId });
+  async rejectProposal(ticketId: string, proposalId: string, reason?: string): Promise<void> {
+    await this.call("pm_ticket_proposal_reject", { proposalId, ...(reason ? { reason } : {}) });
     await this.loadProposals(ticketId);
     await this.refreshBoard();
   }
@@ -383,15 +393,18 @@ export class PmController {
     const active = live.some((session) => session.sessionId === this.state.activeAgentSessionId)
       ? this.state.activeAgentSessionId
       : live[0]?.sessionId;
-    this.#set({ agents: live, activeAgentSessionId: active });
+    // With no agent left to show, the stage returns to the ticket or overview.
+    const view = this.state.view === "agent" && !active ? (this.state.selectedTicketId ? "ticket" : "overview") : this.state.view;
+    this.#set({ agents: live, activeAgentSessionId: active, view });
   }
 
-  async launchAgent(focusTicketId: string | undefined): Promise<void> {
+  /** Starts an assistant and shows it in the stage unless `open` is false. */
+  async launchAgent(focusTicketId: string | undefined, open = true): Promise<void> {
     const projectId = this.state.projectId;
     if (!projectId) return;
     const session = await this.call("pm_agent_launch", { projectId, ...(focusTicketId ? { focusTicketId } : {}) });
     if (!session) return;
-    this.#set({ activeAgentSessionId: session.sessionId });
+    this.#set(open ? { activeAgentSessionId: session.sessionId, view: "agent" } : { activeAgentSessionId: session.sessionId });
     await this.refreshAgents();
   }
 
@@ -400,8 +413,63 @@ export class PmController {
     await this.refreshAgents();
   }
 
+  /** Shows an agent's terminal in place of the stage's current content. */
   selectAgent(sessionId: string): void {
-    this.#set({ activeAgentSessionId: sessionId });
+    this.#set({ activeAgentSessionId: sessionId, view: "agent" });
+  }
+
+  // Skills -----------------------------------------------------------------
+  // Skill changes reach `skills` through the daemon's pmSkillsChanged event.
+
+  async loadSkills(): Promise<void> {
+    const projectId = this.state.projectId;
+    if (!projectId) return;
+    const skills = await this.call("pm_skills_read", { projectId });
+    if (skills && this.state.projectId === projectId) this.#set({ skills });
+  }
+
+  async setSkillEnabled(skillId: string, enabled: boolean): Promise<void> {
+    await this.call("pm_skill_set_enabled", { skillId, enabled });
+  }
+
+  /** Runs a skill now; a run with nothing new says so instead of starting an agent. */
+  async runSkill(skillId: string): Promise<void> {
+    const result = await this.call("pm_skill_run", { skillId });
+    if (!result) return;
+    const name = result.skill.manifest.name;
+    const text = result.run === null
+      ? `${name}: ${result.checksStarted} check(s) started.`
+      : result.run.outcome === "skipped"
+        ? `${name}: nothing new since the last run.`
+        : `${name} is running.`;
+    this.#set({ notice: { tone: "info", text } });
+    await Promise.all([this.loadSkills(), this.refreshAgents()]);
+  }
+
+  /** Starts the skill creator and shows it in the stage. */
+  async launchSkillCreator(): Promise<void> {
+    const projectId = this.state.projectId;
+    if (!projectId) return;
+    const session = await this.call("pm_skill_creator_launch", { projectId });
+    if (!session) return;
+    this.selectAgent(session.sessionId);
+    await this.refreshAgents();
+  }
+
+  async dryRunDraft(draftId: string): Promise<void> {
+    if (await this.call("pm_skill_draft_dry_run", { draftId })) await this.refreshAgents();
+  }
+
+  async discardDraft(draftId: string): Promise<void> {
+    await this.call("pm_skill_draft_discard", { draftId });
+  }
+
+  /** Installs a dry-run draft with the first-use tools the PM ticked; the daemon refuses any left unticked. */
+  async installDraft(draftId: string, approvedTools: string[], channels?: string[]): Promise<boolean> {
+    const skill = await this.call("pm_skill_install", { draftId, approvedTools, ...(channels ? { channels } : {}) });
+    if (!skill) return false;
+    this.#set({ notice: { tone: "info", text: `${skill.manifest.name} installed.` } });
+    return true;
   }
 
   // Settings ---------------------------------------------------------------
