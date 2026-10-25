@@ -58,10 +58,10 @@ function registerIpc(): void {
     if (!trusted(event) || !isOpenableUrl(url)) return;
     await shell.openExternal(url);
   });
-  ipcMain.handle(IPC.terminalAttach, (event, sessionId: unknown) => {
+  ipcMain.handle(IPC.terminalAttach, (event, sessionId: unknown, rows: unknown, cols: unknown) => {
     if (!trusted(event) || !isSessionId(sessionId)) throw new Error("invalid terminal attach");
     if (!terminals) throw new Error("The PM daemon is not connected.");
-    terminals.attach(sessionId);
+    terminals.attach(sessionId, typeof rows === "number" ? rows : undefined, typeof cols === "number" ? cols : undefined);
   });
   ipcMain.on(IPC.terminalDetach, (event, sessionId: unknown) => {
     if (trusted(event) && isSessionId(sessionId)) terminals?.detach(sessionId);

@@ -73,7 +73,7 @@ export type PmConnectionState =
 
 /** A terminal frame relayed from the terminal plane; bytes stay binary. */
 export type PmTerminalMessage =
-  | { sessionId: string; type: "attached" }
+  | { sessionId: string; type: "attached"; ack: Uint8Array }
   | { sessionId: string; type: "output"; data: Uint8Array; replay: boolean }
   | { sessionId: string; type: "gap" }
   | { sessionId: string; type: "eof" }
@@ -87,7 +87,8 @@ export type PmApi = {
   onEvent(listener: (event: PmEvent) => void): () => void;
   openExternal(url: string): Promise<void>;
   terminal: {
-    attach(sessionId: string): Promise<void>;
+    /** Attaches with the surface's measured grid; it reaches the PTY before replay. */
+    attach(sessionId: string, rows: number, cols: number): Promise<void>;
     detach(sessionId: string): void;
     input(sessionId: string, data: Uint8Array): void;
     resize(sessionId: string, rows: number, cols: number): void;

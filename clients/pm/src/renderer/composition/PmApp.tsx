@@ -6,6 +6,7 @@ import type { PmBoardTicket } from "@termloop/pm-contract/pm";
 import type { PmApi } from "../../pm-api.js";
 import { usePmState, type PmState } from "../state/presentation-store.js";
 import { mountAgentTerminal } from "../terminal/agent-terminal.js";
+import { xtermSurface } from "../terminal/xterm-surface.js";
 import { AgentPanel, type AgentTab } from "../ui/AgentPanel.js";
 import { Header } from "../ui/Header.js";
 import { JiraSyncDialog } from "../ui/JiraSyncDialog.js";
@@ -28,7 +29,7 @@ export function PmApp({ controller, terminal }: { controller: PmController; term
     return () => controller.dispose();
   }, [controller]);
   const mountTerminal = useCallback<MountTerminal>(
-    (host, sessionId) => (terminal ? mountAgentTerminal(terminal, host, sessionId) : () => undefined),
+    (host, sessionId) => (terminal ? mountAgentTerminal(terminal, host, sessionId, xtermSurface) : () => undefined),
     [terminal],
   );
 

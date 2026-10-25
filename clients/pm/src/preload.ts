@@ -22,9 +22,9 @@ const api: PmApi = {
   onEvent: (listener) => subscribe<PmEvent>(IPC.event, listener),
   openExternal: async (url) => { await ipcRenderer.invoke(IPC.openExternal, url); },
   terminal: {
-    attach: async (sessionId) => {
+    attach: async (sessionId, rows, cols) => {
       if (!isSessionId(sessionId)) throw new Error("invalid session id");
-      await ipcRenderer.invoke(IPC.terminalAttach, sessionId);
+      await ipcRenderer.invoke(IPC.terminalAttach, sessionId, rows, cols);
     },
     detach: (sessionId) => ipcRenderer.send(IPC.terminalDetach, sessionId),
     input: (sessionId, data) => ipcRenderer.send(IPC.terminalInput, sessionId, data),

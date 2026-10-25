@@ -62,13 +62,18 @@ export class TerminalBridge {
       new WebSocket(url, { maxPayload: MAX_MESSAGE_BYTES }) as unknown as TerminalSocket,
   ) {}
 
-  attach(sessionId: string): void {
+  /**
+   * Attaches with the grid the renderer measured. That grid reaches the PTY
+   * before the Attach frame, so the replay and the program's first frame
+   * after it are laid out for the width the surface really has.
+   */
+  attach(sessionId: string, rows?: number, cols?: number): void {
     if (this.#stopped) return;
     if (this.#attachments.has(sessionId)) this.detach(sessionId);
     const attachment: Attachment = {
       sessionId,
       sequence: 1n,
-      dimensions: undefined,
+      dimensions: rows !== undefined && cols !== undefined && validDimension(rows) && validDimension(cols) ? { rows, cols } : undefined,
       inFlight: 0,
       queue: [],
       queuedBytes: 0,
@@ -206,10 +211,12 @@ export class TerminalBridge {
     attachment.queuedBytes = 0;
     attachment.inFlight = 0;
     attachment.gapPending = false;
-    this.#sendFrame(attachment, KIND_ATTACH, replayRequestPayload());
+    // Resize first: the daemon applies it to the PTY at once, so a TUI never
+    // paints for the placeholder 80x24 grid after this attach.
     if (attachment.dimensions) {
       this.#sendFrame(attachment, KIND_RESIZE, encodeResize(attachment.dimensions.rows, attachment.dimensions.cols));
     }
+    this.#sendFrame(attachment, KIND_ATTACH, replayRequestPayload());
   }
 
   #sendFrame(attachment: Attachment, kind: number, payload?: Uint8Array): void {
@@ -228,7 +235,9 @@ export class TerminalBridge {
     const sessionId = attachment.sessionId;
     switch (frame.kind) {
       case KIND_ACK:
-        this.send({ sessionId, type: "attached" });
+        // The Ack payload announces the replay that follows (frames, bytes,
+        // mouse modes), so the renderer can stage it atomically.
+        this.send({ sessionId, type: "attached", ack: frame.payload });
         return;
       case KIND_OUTPUT:
       case KIND_REPLAY_OUTPUT:
