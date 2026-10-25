@@ -37,6 +37,24 @@ describe("SettingsPage", () => {
     unmount();
   });
 
+  it("picks a code folder through the native picker and can remove it", async () => {
+    const onSetFolder = vi.fn();
+    const onPickFolder = vi.fn(async () => "/work/shop");
+    const empty = render(<SettingsPage {...props({ projectFolder: null, onPickFolder, onSetFolder })} />);
+    const choose = [...empty.container.querySelectorAll("button")].find((button) => button.textContent === "Choose folder…")!;
+    await act(async () => { choose.click(); });
+    expect(onSetFolder).toHaveBeenCalledWith("/work/shop");
+    empty.unmount();
+
+    const set = render(<SettingsPage {...props({ projectFolder: "/work/shop", onPickFolder, onSetFolder })} />);
+    expect(set.container.textContent).toContain("/work/shop");
+    expect(set.container.textContent).toContain("READ ONLY");
+    const remove = [...set.container.querySelectorAll("button")].find((button) => button.textContent === "Remove folder")!;
+    act(() => { remove.click(); });
+    expect(onSetFolder).toHaveBeenLastCalledWith(null);
+    set.unmount();
+  });
+
   it("explains deploy tracking instead of offering a switch", () => {
     const { container, unmount } = render(<SettingsPage {...props()} />);
     expect(container.textContent).toContain("Deploy tracking is on whenever this project has an environment or an approved probe");

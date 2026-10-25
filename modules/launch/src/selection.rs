@@ -52,6 +52,35 @@ fn reasoning_args(agent_id: &str, reasoning: &str) -> Result<Vec<String>, Invoca
     }
 }
 
+/// Claude's file-editing tools, denied in a read-only workspace.
+const READ_ONLY_DISALLOWED_CLAUDE_TOOLS: [&str; 2] = ["--disallowedTools", "Edit,Write,NotebookEdit"];
+
+/// The permission arguments, held to the read-only sandbox for Codex in a
+/// read-only workspace. A selection that never asks keeps never asking, so an
+/// unattended agent cannot stall on an approval. Claude keeps its selection
+/// and loses its editing tools instead.
+fn workspace_permission_args(
+    agent_id: &str,
+    permission: &str,
+    read_only_workspace: bool,
+) -> Result<Vec<String>, InvocationError> {
+    let selected = permission_args(agent_id, permission)?;
+    if !read_only_workspace {
+        return Ok(selected);
+    }
+    match (agent_id, permission) {
+        ("claude", _) => Ok(selected),
+        ("codex", "acceptEdits" | "bypassPermissions") => Ok(vec![
+            "--sandbox".into(),
+            "read-only".into(),
+            "--ask-for-approval".into(),
+            "never".into(),
+        ]),
+        ("codex", _) => permission_args(agent_id, "plan"),
+        _ => Err(InvocationError::UnsupportedAgent(agent_id.to_owned())),
+    }
+}
+
 fn permission_args(agent_id: &str, permission: &str) -> Result<Vec<String>, InvocationError> {
     let args = match (agent_id, permission) {
         ("claude", "default") => vec!["--permission-mode".into(), "default".into()],

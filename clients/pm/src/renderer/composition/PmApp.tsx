@@ -208,6 +208,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
             ) : view === "settings" ? (
               <SettingsPage
                 projectName={project.name}
+                projectFolder={project.folder}
                 settings={state.settings}
                 catalog={state.catalog}
                 sources={state.sources}
@@ -217,6 +218,8 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 now={now}
                 onSaveSources={(jira, github) => controller.saveSources(jira, github)}
                 onClearToken={() => void controller.clearJiraToken()}
+                onPickFolder={() => controller.bridge.pickFolder()}
+                onSetFolder={(folder) => void controller.setProjectFolder(folder)}
                 onSaveSettings={(edit) => void controller.saveSettings(edit)}
                 onSetEnvironments={(environments) => void controller.setEnvironments(environments)}
                 onCreateProbe={(environment, argv, matcher) => void controller.createProbe(environment, argv, matcher)}

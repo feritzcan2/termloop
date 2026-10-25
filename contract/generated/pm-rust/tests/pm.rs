@@ -19,7 +19,7 @@ fn ticket() -> serde_json::Value {
 fn surface_is_one_full_scope_over_every_method() {
     assert_eq!(CAPABILITY_SCOPE, "pm.full");
     assert!(CONTRACT_IDENTITY.starts_with("sha256:") && CONTRACT_IDENTITY.len() == 71);
-    assert_eq!(METHODS.len(), 59);
+    assert_eq!(METHODS.len(), 60);
     assert!(METHODS.iter().all(|method| method.starts_with("pm_")));
     assert_eq!(
         EVENTS,

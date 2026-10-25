@@ -46,6 +46,9 @@ pub struct PmLaunchRequest<'a> {
     pub observation: Option<AgentObservationLaunch<'a>>,
     /// Test seam: where the agent CLI is looked up instead of the PATH.
     pub executable_directory: Option<&'a std::path::Path>,
+    /// `cwd` is the project's code folder: the agent reads it but never
+    /// edits it.
+    pub read_only_workspace: bool,
 }
 
 impl<'a> PmLaunchRequest<'a> {
@@ -71,6 +74,7 @@ impl<'a> PmLaunchRequest<'a> {
             conversation: AgentConversationLaunch::Fresh { resume_ref: None },
             observation: None,
             executable_directory: None,
+            read_only_workspace: false,
         }
     }
 }
@@ -211,6 +215,7 @@ pub fn pm_launch_plan(request: PmLaunchRequest<'_>) -> Result<PmLaunchPlan, PmLa
     launch.provider_instructions = Some(&profile.system_prompt);
     launch.executable_directory = request.executable_directory;
     launch.approved_tools = &profile.tools;
+    launch.read_only_workspace = request.read_only_workspace;
     let mut resolved = resolve(launch)?;
     if let Some(message) = first_message(profile, fresh) {
         let purpose = match profile.mode {

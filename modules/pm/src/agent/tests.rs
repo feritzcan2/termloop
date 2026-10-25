@@ -186,6 +186,43 @@ fn offers(kickoff: &str) -> Vec<&str> {
 }
 
 #[test]
+fn a_code_folder_launch_reads_the_code_but_never_edits_it() {
+    let (mut store, ticket_id) = project_store();
+    with_environments(&mut store);
+    let directory = cli_directory();
+    for agent in ["claude", "codex"] {
+        let profile =
+            PmAgentProfile::build(&store, "p1", PmAgentMode::DeliveryCheck, Some(&ticket_id))
+                .unwrap();
+        let mut request =
+            PmLaunchRequest::new(agent, "/work/shop", &profile, ENDPOINT, TOKEN, CONFIG_PATH);
+        request.executable_directory = Some(&directory);
+        request.permission = "bypassPermissions";
+        request.read_only_workspace = true;
+        let args = pm_launch_plan(request).unwrap().payload.args().to_vec();
+        match agent {
+            "claude" => assert!(
+                args.windows(2)
+                    .any(|pair| pair == ["--disallowedTools", "Edit,Write,NotebookEdit"]),
+                "{args:?}"
+            ),
+            _ => {
+                assert!(
+                    args.windows(2)
+                        .any(|pair| pair == ["--sandbox", "read-only"])
+                );
+                assert!(
+                    !args
+                        .iter()
+                        .any(|arg| arg == "--dangerously-bypass-approvals-and-sandbox")
+                );
+            }
+        }
+    }
+    std::fs::remove_dir_all(directory).ok();
+}
+
+#[test]
 fn the_assistant_kickoff_fits_the_focus_and_the_tier() {
     let (mut store, ticket_id) = project_store();
     let kickoff = |store: &PmStore, focus: Option<&str>| {

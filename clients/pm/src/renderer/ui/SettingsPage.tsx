@@ -16,6 +16,7 @@ export type JiraSourceDraft = { siteUrl: string; boardId: number | null; account
 
 export type SettingsPageProps = {
   projectName: string | undefined;
+  projectFolder?: string | null;
   settings: PmSettings | undefined;
   catalog: PmAgentCatalog | undefined;
   sources: PmSources | undefined;
@@ -25,6 +26,8 @@ export type SettingsPageProps = {
   now: number;
   onSaveSources(jira: JiraSourceDraft | null, github: { owner: string; name: string } | null): Promise<boolean>;
   onClearToken(): void;
+  onPickFolder?(): Promise<string | null>;
+  onSetFolder?(folder: string | null): void;
   onSaveSettings(edit: PmSettingsUpdateParams): void;
   onSetEnvironments(environments: PmEnvironment[]): void;
   onCreateProbe(environment: string, argv: string[], matcher: PmProbeMatcher): void;
@@ -46,6 +49,7 @@ export function SettingsPage(props: SettingsPageProps) {
     <section className="pane settings-pane" aria-label="Settings">
       <div className="pane-head"><b>Settings</b><span className="meta">{props.projectName}</span><span className="sp" /></div>
       <div className="body">
+        <CodeFolderCard {...props} />
         <SourcesCards {...props} />
         <DeployCard {...props} />
         <AgentCard settings={props.settings} catalog={props.catalog} onSave={props.onSaveSettings} />
@@ -72,6 +76,27 @@ function SettingsSection(props: { title: string; state?: { tone: "ok" | "warn" |
 
 function Field(props: { label: string; children: ReactNode }) {
   return <label className="field"><span>{props.label}</span>{props.children}</label>;
+}
+
+function CodeFolderCard(props: SettingsPageProps) {
+  const folder = props.projectFolder ?? null;
+  const choose = async () => {
+    const picked = await props.onPickFolder?.();
+    if (picked && picked !== folder) props.onSetFolder?.(picked);
+  };
+  return (
+    <SettingsSection
+      title="Code folder"
+      state={folder ? { tone: "ok", text: "READ ONLY" } : { tone: "off", text: "NOT SET" }}
+      description="The local checkout of this project's code. The assistant, delivery checks and skills start in it, so they can read the code and its Git history when they plan and check work. They are kept from editing files there."
+    >
+      {folder ? <p className="hint"><code>{folder}</code></p> : <p className="hint">Without a folder, agents start in an empty workspace of their own.</p>}
+      <div className="actions">
+        <button type="button" className="btn pri" disabled={!props.onPickFolder} onClick={() => void choose()}>{folder ? "Change folder…" : "Choose folder…"}</button>
+        {folder && <button type="button" className="btn ghost" onClick={() => props.onSetFolder?.(null)}>Remove folder</button>}
+      </div>
+    </SettingsSection>
+  );
 }
 
 function SourcesCards(props: SettingsPageProps) {

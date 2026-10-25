@@ -11,6 +11,7 @@ export const RENDERER_METHODS = [
   "pm_system_version",
   "pm_project_list",
   "pm_project_create",
+  "pm_project_update",
   "pm_board_read",
   "pm_digest_read",
   "pm_sprint_create",
@@ -154,6 +155,8 @@ export type PmApi = {
   onConnectionState(listener: (state: PmConnectionState) => void): () => void;
   onEvent(listener: (event: PmEvent) => void): () => void;
   openExternal(url: string): Promise<void>;
+  /** The native folder picker; the chosen absolute path, or null when cancelled. */
+  pickFolder(): Promise<string | null>;
   onNativeShortcut(listener: (shortcut: PmNativeShortcut) => void): () => void;
   terminal: {
     /** Attaches with the surface's measured grid; it reaches the PTY before replay. */
@@ -173,6 +176,7 @@ export const IPC = {
   connectionStateChanged: "pm:connection-state-changed",
   event: "pm:event",
   openExternal: "pm:open-external",
+  pickFolder: "pm:pick-folder",
   terminalAttach: "pm:terminal-attach",
   terminalDetach: "pm:terminal-detach",
   terminalInput: "pm:terminal-input",

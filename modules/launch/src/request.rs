@@ -21,6 +21,10 @@ pub struct LaunchRequest<'a> {
     /// Explicit policy for the provider workspace-write sandbox; None inherits its configuration.
     pub workspace_network: Option<bool>,
     pub approved_tools: &'a [&'a str],
+    /// The working directory is someone's code the agent may read but never
+    /// change: Claude loses its file-editing tools and Codex runs in the
+    /// read-only sandbox, whatever the permission selection.
+    pub read_only_workspace: bool,
 }
 
 impl<'a> LaunchRequest<'a> {
@@ -45,6 +49,7 @@ impl<'a> LaunchRequest<'a> {
             execution: None,
             workspace_network: None,
             approved_tools: &[],
+            read_only_workspace: false,
         }
     }
 }

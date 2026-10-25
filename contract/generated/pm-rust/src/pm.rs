@@ -114,7 +114,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:4e65a71d41582fbe5ecc71c5506e76d501b7316b240c155a6c3348bf02d9f842";
+    "sha256:29d90448bab4a94533fcedb59c5f6d511a8ec6104977e7cc4654ea05abdb609b";
 pub const CAPABILITY_SCOPE: &str = "pm.full";
 pub const METHODS: &[&str] = &[
     "pm_system_version",
@@ -122,6 +122,7 @@ pub const METHODS: &[&str] = &[
     "pm_cancel",
     "pm_project_list",
     "pm_project_create",
+    "pm_project_update",
     "pm_board_read",
     "pm_digest_read",
     "pm_sprint_create",
@@ -1074,6 +1075,15 @@ pub struct PmProjectListResult {
 pub struct PmProjectCreateParams {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub folder: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmProjectUpdateParams {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
     pub folder: Option<String>,
 }
 
@@ -2222,6 +2232,7 @@ pub struct PmSkillsChangedPayload {
 pub type PmSystemVersionParams = EmptyParams;
 pub type PmProjectListParams = EmptyParams;
 pub type PmProjectCreateResult = PmProject;
+pub type PmProjectUpdateResult = PmProject;
 pub type PmBoardReadParams = PmProjectRef;
 pub type PmBoardReadResult = PmBoard;
 pub type PmSprintCreateResult = PmSprint;
@@ -2429,6 +2440,7 @@ fn validate_method(value: &Value) -> bool {
             "pm_cancel",
             "pm_project_list",
             "pm_project_create",
+            "pm_project_update",
             "pm_board_read",
             "pm_digest_read",
             "pm_sprint_create",
@@ -4544,6 +4556,34 @@ fn validate_pm_project_create_params(value: &Value) -> bool {
         }) && object
             .keys()
             .all(|key| ["name", "folder"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_project_update_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("projectId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("folder").is_some_and(|field| {
+            (field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 4096)
+                || field.is_null())
+        }) && object
+            .keys()
+            .all(|key| ["projectId", "folder"].contains(&key.as_str()))
     })
 }
 
@@ -7842,6 +7882,10 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<PmProjectCreateParams>(params.clone()).is_ok()
                 && validate_pm_project_create_params(params)
         }
+        "pm_project_update" => {
+            serde_json::from_value::<PmProjectUpdateParams>(params.clone()).is_ok()
+                && validate_pm_project_update_params(params)
+        }
         "pm_board_read" => {
             serde_json::from_value::<PmBoardReadParams>(params.clone()).is_ok()
                 && validate_pm_project_ref(params)
@@ -8087,6 +8131,10 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         }
         "pm_project_create" => {
             serde_json::from_value::<PmProjectCreateResult>(result.clone()).is_ok()
+                && validate_pm_project(result)
+        }
+        "pm_project_update" => {
+            serde_json::from_value::<PmProjectUpdateResult>(result.clone()).is_ok()
                 && validate_pm_project(result)
         }
         "pm_board_read" => {

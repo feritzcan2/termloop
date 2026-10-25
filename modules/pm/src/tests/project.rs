@@ -35,6 +35,28 @@ fn a_project_needs_a_trimmed_name_and_an_absolute_folder() {
 }
 
 #[test]
+fn a_project_folder_is_set_validated_and_cleared() {
+    let mut store = store();
+    let project = store.create_project("Payments", None).unwrap();
+    let set = store
+        .set_project_folder(&project.id, Some("/work/payments"))
+        .unwrap();
+    assert_eq!(set.folder.as_deref(), Some("/work/payments"));
+    assert_eq!(store.project(&project.id).unwrap(), Some(set));
+    assert!(matches!(
+        store.set_project_folder(&project.id, Some("relative/path")),
+        Err(PmError::Invalid("folder"))
+    ));
+    assert!(matches!(
+        store.set_project_folder("missing", Some("/work/other")),
+        Err(PmError::NotFound)
+    ));
+    let cleared = store.set_project_folder(&project.id, None).unwrap();
+    assert_eq!(cleared.folder, None);
+    assert_eq!(cleared.name, "Payments");
+}
+
+#[test]
 fn settings_default_until_updated_and_keep_absent_fields() {
     let mut store = store();
     assert_eq!(store.settings().unwrap(), PmSettings::default());

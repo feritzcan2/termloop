@@ -268,6 +268,8 @@ pub(crate) fn launch_profile(
         PmAgentMode::DeliveryCheck => settings.check_permission.as_str(),
         PmAgentMode::SkillRun => SKILL_RUN_PERMISSION,
     };
+    // A project's own folder is its team's code: agents read it, never edit it.
+    let read_only_workspace = folder.is_some();
     let cwd = match folder {
         Some(folder) => PathBuf::from(folder),
         None => {
@@ -299,6 +301,7 @@ pub(crate) fn launch_profile(
     );
     request.model = &settings.agent_model;
     request.permission = permission;
+    request.read_only_workspace = read_only_workspace;
     let plan = pm_launch_plan(request).map_err(|error| {
         tracing::warn!(%error, "the PM agent launch could not be resolved");
         let _ = termloop_platform::remove_file_if_present(&config_path);

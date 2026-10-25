@@ -53,6 +53,7 @@ const api: PmApi = {
   onConnectionState: (listener) => subscribe<PmConnectionState>(IPC.connectionStateChanged, listener),
   onEvent: (listener) => subscribe<PmEvent>(IPC.event, listener),
   openExternal: async (url) => { await ipcRenderer.invoke(IPC.openExternal, url); },
+  pickFolder: () => ipcRenderer.invoke(IPC.pickFolder),
   onNativeShortcut: (listener) => subscribe<{ shortcut: unknown }>(IPC.nativeShortcut, (message) => {
     const shortcut = parseNativeShortcut(message?.shortcut);
     if (shortcut) listener(shortcut);

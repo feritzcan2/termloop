@@ -19,6 +19,7 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
         execution,
         workspace_network,
         approved_tools,
+        read_only_workspace,
     } = request;
     if let Some(instructions) = provider_instructions
         && (instructions.trim().is_empty() || instructions.len() > 64 * 1024)
@@ -112,6 +113,7 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
         || model != "default"
         || permission != "default"
         || reasoning != "default"
+        || read_only_workspace
     {
         arguments.extend(
             model_args(agent_id, model)?
@@ -125,7 +127,8 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
         );
         // Remote resume and fork reject TUI permission overrides. Reapply the saved
         // selection through the App Server preparation carried by this payload.
-        let permission_arguments = permission_args(agent_id, permission)?;
+        let permission_arguments =
+            workspace_permission_args(agent_id, permission, read_only_workspace)?;
         if !inherits_codex_permissions {
             arguments.extend(
                 permission_arguments
@@ -221,6 +224,13 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
     }
     if let Some(policy) = execution {
         apply_execution_policy(agent_id, &mut arguments, policy)?;
+    }
+    if read_only_workspace && agent_id == "claude" {
+        arguments.extend(
+            READ_ONLY_DISALLOWED_CLAUDE_TOOLS
+                .into_iter()
+                .map(|argument| ResolvedArgument::exact(argument, "read-only workspace")),
+        );
     }
     if let Some(mcp) = mcp.as_ref() {
         apply_tool_approvals(agent_id, &mut arguments, mcp.server_name, approved_tools)?;
@@ -458,6 +468,7 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
                 _ => unreachable!("remote resume or fork was checked"),
             };
             let mode = match permission {
+                _ if read_only_workspace => termloop_agents::CodexPermissionMode::Plan,
                 "default" => termloop_agents::CodexPermissionMode::Default,
                 "acceptEdits" => termloop_agents::CodexPermissionMode::AcceptEdits,
                 "plan" => termloop_agents::CodexPermissionMode::Plan,

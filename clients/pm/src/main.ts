@@ -1,7 +1,7 @@
 // Electron main for TermLoop PM: starts the PM daemon, owns the control
 // client and the terminal bridge, and serves the allowlisted `window.pm`
 // bridge to one sandboxed window.
-import { app, BrowserWindow, ipcMain, shell, type IpcMainEvent, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainEvent, type IpcMainInvokeEvent } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { GhosttySurfaceManager } from "@termloop/ghostty-host";
@@ -61,6 +61,11 @@ function registerIpc(): void {
   ipcMain.handle(IPC.openExternal, async (event, url: unknown) => {
     if (!trusted(event) || !isOpenableUrl(url)) return;
     await shell.openExternal(url);
+  });
+  ipcMain.handle(IPC.pickFolder, async (event) => {
+    if (!trusted(event) || !mainWindow) return null;
+    const picked = await dialog.showOpenDialog(mainWindow, { properties: ["openDirectory"] });
+    return picked.canceled ? null : picked.filePaths[0] ?? null;
   });
   ipcMain.handle(IPC.terminalAttach, (event, sessionId: unknown, rows: unknown, cols: unknown) => {
     if (!trusted(event) || !isSessionId(sessionId)) throw new Error("invalid terminal attach");

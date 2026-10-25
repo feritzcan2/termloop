@@ -114,6 +114,15 @@ export class PmController {
     await this.selectProject(project.id);
   }
 
+  /** Sets or clears the code folder the project's agents start in. */
+  async setProjectFolder(folder: string | null): Promise<void> {
+    const projectId = this.state.projectId;
+    if (!projectId) return;
+    const project = await this.call("pm_project_update", { projectId, folder });
+    if (!project) return;
+    this.#set({ projects: this.state.projects.map((candidate) => candidate.id === project.id ? project : candidate) });
+  }
+
   async selectProject(projectId: string): Promise<void> {
     this.#set({
       projectId,

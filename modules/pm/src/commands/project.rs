@@ -53,6 +53,29 @@ impl PmStore {
         Ok(project)
     }
 
+    /// Sets or clears the code folder the project's agents run in.
+    pub fn set_project_folder(
+        &mut self,
+        project_id: &str,
+        folder: Option<&str>,
+    ) -> Result<Project, PmError> {
+        check_id(project_id, "projectId")?;
+        if folder.is_some_and(|folder| !valid_project_folder(folder)) {
+            return Err(PmError::Invalid("folder"));
+        }
+        self.write(|transaction| {
+            let changed = transaction.execute(
+                "UPDATE projects SET folder = ?2 WHERE id = ?1",
+                params![project_id, folder],
+            )?;
+            if changed == 0 {
+                return Err(PmError::NotFound);
+            }
+            Ok(())
+        })?;
+        self.project(project_id)?.ok_or(PmError::NotFound)
+    }
+
     /// Every registered project, oldest first.
     pub fn projects(&self) -> Result<Vec<Project>, PmError> {
         let mut statement = self.connection().prepare(

@@ -366,6 +366,56 @@ fn codex_accept_edits_uses_the_self_contained_approval_flag() {
 }
 
 #[test]
+fn a_read_only_workspace_denies_edits_whatever_the_permission() {
+    let template = PromptTemplate {
+        id: "read-only-test",
+        version: 1,
+        authored_body: "Read",
+    };
+    for permission in ["default", "acceptEdits", "plan", "bypassPermissions"] {
+        let mut request = LaunchRequest::interactive("claude", "/tmp/example", &template);
+        request.permission = permission;
+        request.read_only_workspace = true;
+        let payload = resolve(request).unwrap().into_payload();
+        assert!(
+            payload
+                .args()
+                .windows(2)
+                .any(|args| args == READ_ONLY_DISALLOWED_CLAUDE_TOOLS)
+        );
+
+        let mut request = LaunchRequest::interactive("codex", "/tmp/example", &template);
+        request.permission = permission;
+        request.read_only_workspace = true;
+        let payload = resolve(request).unwrap().into_payload();
+        let args = payload.args();
+        assert!(
+            args.windows(2)
+                .any(|args| args == ["--sandbox", "read-only"])
+        );
+        let approval = if matches!(permission, "acceptEdits" | "bypassPermissions") {
+            "never"
+        } else {
+            "on-request"
+        };
+        assert!(
+            args.windows(2)
+                .any(|args| args == ["--ask-for-approval", approval])
+        );
+        assert!(!args.iter().any(|arg| {
+            arg == "--approve-for-me" || arg == "--dangerously-bypass-approvals-and-sandbox"
+        }));
+    }
+
+    let request = LaunchRequest::interactive("claude", "/tmp/example", &template);
+    let payload = resolve(request).unwrap().into_payload();
+    assert!(!payload.args().iter().any(|arg| arg == "--disallowedTools"));
+    let mut request = LaunchRequest::interactive("gemini", "/tmp/example", &template);
+    request.read_only_workspace = true;
+    assert!(resolve(request).is_err());
+}
+
+#[test]
 fn agent_cargo_target_sharding_is_stable_and_bounded() {
     assert_eq!(agent_cargo_target_shard(None), 0);
     assert_eq!(agent_cargo_target_shard(Some("session-1")), 1);

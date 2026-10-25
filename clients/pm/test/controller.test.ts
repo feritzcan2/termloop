@@ -16,6 +16,23 @@ describe("PmController", () => {
     expect(bridge.calls.map((call) => call.method)).not.toContain("pm_jira_apply");
   });
 
+  it("sets and clears the project's code folder and keeps the returned project", async () => {
+    const bridge = fakeBridge((method, params) => {
+      if (method === "pm_project_update") {
+        const { folder } = params as { folder: string | null };
+        return ok({ id: "project-1", name: "Shop", folder, createdAtEpochMs: 1 });
+      }
+      return ok({});
+    });
+    const store = createPmStore({ projectId: "project-1", projects: [{ id: "project-1", name: "Shop", folder: null, createdAtEpochMs: 1 }] });
+    const controller = new PmController(bridge, store);
+    await controller.setProjectFolder("/work/shop");
+    expect(bridge.calls[0]).toEqual({ method: "pm_project_update", params: { projectId: "project-1", folder: "/work/shop" } });
+    expect(store.getState().projects[0]?.folder).toBe("/work/shop");
+    await controller.setProjectFolder(null);
+    expect(store.getState().projects[0]?.folder).toBeNull();
+  });
+
   it("shows Jira's fresh diff when apply finds the shown diff stale", async () => {
     const fresh = jiraDiff({ token: "diff-token-2", changes: [{ field: "summary", jira: "Renamed in Jira", ticket: "Checkout button" }] });
     const bridge = fakeBridge((method) => {

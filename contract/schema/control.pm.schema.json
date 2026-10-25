@@ -11,6 +11,7 @@
       "pm_cancel",
       "pm_project_list",
       "pm_project_create",
+      "pm_project_update",
       "pm_board_read",
       "pm_digest_read",
       "pm_sprint_create",
@@ -130,6 +131,14 @@
     "pm_project_create": {
       "params": {
         "$ref": "#/$defs/pmProjectCreateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmProject"
+      }
+    },
+    "pm_project_update": {
+      "params": {
+        "$ref": "#/$defs/pmProjectUpdateParams"
       },
       "result": {
         "$ref": "#/$defs/pmProject"
@@ -696,6 +705,7 @@
         "pm_cancel",
         "pm_project_list",
         "pm_project_create",
+        "pm_project_update",
         "pm_board_read",
         "pm_digest_read",
         "pm_sprint_create",
@@ -2776,6 +2786,31 @@
         },
         "folder": {
           "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      }
+    },
+    "pmProjectUpdateParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "folder"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "folder": {
+          "type": [
+            "string",
+            "null"
+          ],
           "minLength": 1,
           "maxLength": 4096
         }

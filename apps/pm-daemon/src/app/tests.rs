@@ -145,6 +145,51 @@ fn an_unknown_method_and_bad_params_are_typed_errors() {
 }
 
 #[tokio::test]
+async fn a_project_code_folder_must_exist_and_can_be_cleared() {
+    let fixture = fixture();
+    let state = &fixture.state;
+    let project_id = project(state).await;
+    let folder = fixture.directory.join("code");
+    std::fs::create_dir_all(&folder).unwrap();
+    let folder = folder.to_str().unwrap();
+    let set = call(
+        state,
+        "pm_project_update",
+        json!({ "projectId": project_id, "folder": folder }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(set["folder"], folder);
+    let missing = fixture.directory.join("missing");
+    assert_eq!(
+        call(
+            state,
+            "pm_project_update",
+            json!({ "projectId": project_id, "folder": missing.to_str().unwrap() }),
+        )
+        .await,
+        Err(ErrorCode::InvalidParams)
+    );
+    assert_eq!(
+        call(
+            state,
+            "pm_project_update",
+            json!({ "projectId": "missing", "folder": null }),
+        )
+        .await,
+        Err(ErrorCode::NotFound)
+    );
+    let cleared = call(
+        state,
+        "pm_project_update",
+        json!({ "projectId": project_id, "folder": null }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(cleared["folder"], Value::Null);
+}
+
+#[tokio::test]
 async fn an_absent_field_keeps_its_value_and_null_clears_it() {
     let fixture = fixture();
     let state = &fixture.state;
