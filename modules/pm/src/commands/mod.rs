@@ -9,6 +9,7 @@ mod facts;
 mod jira_mirror;
 mod jira_write;
 mod probe;
+mod project;
 mod proposal;
 mod sources;
 mod sprint;

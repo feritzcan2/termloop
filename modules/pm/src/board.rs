@@ -3,13 +3,14 @@
 
 use crate::delivery::{TicketDelivery, ticket_delivery};
 use crate::store::{
-    project_environments, project_facts, project_probes, project_running_checks, project_sources,
-    project_sprints, project_tickets, sprint_by_id, ticket_by_id, ticket_facts, ticket_versions,
+    probe_by_id, project_environments, project_facts, project_probes, project_running_checks,
+    project_sources, project_sprints, project_tickets, proposal_by_id, sprint_by_id, ticket_by_id,
+    ticket_facts, ticket_versions,
 };
 use crate::validation::check_id as check;
 use crate::{
     DeliveryProbe, PmError, PmStore, ProjectEnvironment, ProjectSources, Sprint, Ticket,
-    TicketDeliveryFacts, TicketVersion, Tracking,
+    TicketDeliveryFacts, TicketProposal, TicketVersion, Tracking,
 };
 
 /// One project's planning state: its sprints in creation order, its tickets
@@ -111,6 +112,16 @@ impl PmStore {
     pub fn ticket(&self, ticket_id: &str) -> Result<Option<Ticket>, PmError> {
         check(ticket_id, "ticketId")?;
         ticket_by_id(self.connection(), ticket_id)
+    }
+
+    pub fn probe(&self, probe_id: &str) -> Result<Option<DeliveryProbe>, PmError> {
+        check(probe_id, "probeId")?;
+        probe_by_id(self.connection(), probe_id)
+    }
+
+    pub fn proposal(&self, proposal_id: &str) -> Result<Option<TicketProposal>, PmError> {
+        check(proposal_id, "proposalId")?;
+        proposal_by_id(self.connection(), proposal_id)
     }
 
     /// Every kept description version of a ticket, newest first.

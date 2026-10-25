@@ -7,9 +7,12 @@ pub mod agent;
 mod board;
 mod commands;
 mod delivery;
+mod digest;
 mod environment;
 mod error;
+mod project;
 mod proposal;
+mod settings;
 mod sources;
 mod sprint;
 mod store;
@@ -49,15 +52,21 @@ pub use delivery::risks::{DeliveryRisk, DeliveryRiskKind, RiskInputs, delivery_r
 pub use delivery::stage::{DeliveryStage, DeliveryStageKind, delivery_stage};
 pub use delivery::tracking::{DataTier, Tracking};
 pub use delivery::{FactsSummary, TicketDelivery};
+pub use digest::{DIGEST_ENTRIES_MAX, Digest, DigestEntry, DigestKind, DigestSource, digest};
 pub use environment::{
     ENVIRONMENT_NAME_MAX_CHARS, PROJECT_ENVIRONMENTS_MAX, ProjectEnvironment,
     environment_is_production, valid_environment_name, valid_project_environments,
 };
 pub use error::PmError;
+pub use project::{
+    PROJECT_FOLDER_MAX_CHARS, PROJECT_NAME_MAX_CHARS, PROJECTS_MAX, Project, valid_project_folder,
+    valid_project_name,
+};
 pub use proposal::{
     PROPOSAL_SUMMARY_MAX_CHARS, ProposalChange, TICKET_PROPOSALS_MAX, TicketProposal,
     valid_proposal_summary,
 };
+pub use settings::{PM_AGENT_PROVIDERS, PmSettings, SettingsEdit, valid_setting_value};
 pub use sources::{GitHubSource, JiraSource, ProjectSources};
 pub use sprint::{
     PROJECT_OPEN_SPRINTS_MAX, SPRINT_GOAL_MAX_CHARS, SPRINT_NAME_MAX_CHARS, Sprint, SprintState,

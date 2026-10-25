@@ -1,6 +1,7 @@
 mod checks;
 mod delivery;
 mod jira;
+mod project;
 mod sprint;
 mod store;
 mod ticket;

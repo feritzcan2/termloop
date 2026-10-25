@@ -173,8 +173,24 @@ CREATE INDEX delivery_checks_by_project ON delivery_checks (project_id, started_
 CREATE INDEX delivery_checks_by_ticket ON delivery_checks (ticket_id, started_at_epoch_ms);
 "#;
 
+/// The projects registry and the app's one settings row.
+const V6: &str = r#"
+CREATE TABLE projects (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    folder TEXT,
+    created_at_epoch_ms INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE pm_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    settings_json TEXT NOT NULL,
+    updated_at_epoch_ms INTEGER NOT NULL
+) STRICT;
+"#;
+
 /// Every migration in order; a version is never edited once released.
-const MIGRATIONS: &[(u32, &str)] = &[(1, V1), (2, V2), (3, V3), (4, V4), (5, V5)];
+const MIGRATIONS: &[(u32, &str)] = &[(1, V1), (2, V2), (3, V3), (4, V4), (5, V5), (6, V6)];
 
 pub const SCHEMA_VERSION: u32 = MIGRATIONS[MIGRATIONS.len() - 1].0;
 
