@@ -1,12 +1,13 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { loadContractModel } from "./model.mjs";
 import { controlTarget } from "./target-control.mjs";
+import { pmTarget } from "./target-pm.mjs";
 
 // Each contract target is one schema (plus companion schemas) and the Rust and
 // TypeScript sources generated from it. `--check` reports drift in every target.
-const targets = [controlTarget];
+const targets = [controlTarget, pmTarget];
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const outputs = [];
@@ -31,6 +32,7 @@ for (const [relative, content] of outputs) {
     // the file's mtime, and these outputs sit at the base of the crate graph, so
     // an unconditional write makes Cargo rebuild the entire workspace after
     // every codegen run.
+    await mkdir(path.dirname(output), { recursive: true });
     await writeFile(output, content);
   }
 }

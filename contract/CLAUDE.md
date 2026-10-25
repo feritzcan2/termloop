@@ -2,7 +2,9 @@
 
 ## Ownership
 
-- Own the single current control schema, role-profiled MCP-only schemas, binary
+- Own the single current control schema, the separate local PM daemon control
+  schema (`control.pm`, generated as `termloop-pm-contract` and
+  `@termloop/pm-contract`), role-profiled MCP-only schemas, binary
   data-plane framing, capability and error vocabulary, code generators,
   generated client types, the Ask-To source Session projection,
   and contract tests.

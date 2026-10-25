@@ -1,0 +1,3740 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://termloop.dev/schema/control.pm.schema.json",
+  "title": "TermLoop PM control protocol",
+  "$comment": "Local single-user PM daemon control plane. Terminal bytes of PM agent sessions never travel here: the daemon serves them on its binary data plane with modules/terminal-wire framing exactly as the developer daemon does, keyed by the sessionId these methods return. Secrets only enter through pm_credential_store and are never returned; sources carry credential handle names only. PM agent MCP tools are defined by modules/pm, not by this schema.",
+  "type": "object",
+  "x-capability-scopes": {
+    "pm.full": [
+      "pm_system_version",
+      "pm_subscribe",
+      "pm_cancel",
+      "pm_project_list",
+      "pm_project_create",
+      "pm_board_read",
+      "pm_digest_read",
+      "pm_sprint_create",
+      "pm_sprint_update",
+      "pm_sprint_activate",
+      "pm_sprint_close",
+      "pm_ticket_create",
+      "pm_ticket_update",
+      "pm_ticket_move",
+      "pm_ticket_description_save",
+      "pm_ticket_versions_read",
+      "pm_ticket_blocker_add",
+      "pm_ticket_blocker_remove",
+      "pm_ticket_criterion_add",
+      "pm_ticket_criterion_set_done",
+      "pm_ticket_criterion_remove",
+      "pm_ticket_proposals_read",
+      "pm_ticket_proposal_accept",
+      "pm_ticket_proposal_reject",
+      "pm_environments_set",
+      "pm_sources_read",
+      "pm_sources_set",
+      "pm_credential_store",
+      "pm_credential_clear",
+      "pm_probe_create",
+      "pm_probe_approve",
+      "pm_probe_reject",
+      "pm_probe_delete",
+      "pm_check_start",
+      "pm_checks_read",
+      "pm_jira_pull",
+      "pm_jira_diff_read",
+      "pm_jira_apply",
+      "pm_agent_launch",
+      "pm_agent_list",
+      "pm_agent_stop",
+      "pm_settings_read",
+      "pm_settings_update"
+    ]
+  },
+  "x-events": {
+    "pmBoardChanged": {
+      "payload": {
+        "$ref": "#/$defs/pmBoardChangedPayload"
+      }
+    },
+    "pmAgentChanged": {
+      "payload": {
+        "$ref": "#/$defs/pmAgentChangedPayload"
+      }
+    },
+    "pmCheckChanged": {
+      "payload": {
+        "$ref": "#/$defs/pmCheckChangedPayload"
+      }
+    },
+    "pmJiraPulled": {
+      "payload": {
+        "$ref": "#/$defs/pmJiraPulledPayload"
+      }
+    }
+  },
+  "x-methods": {
+    "pm_system_version": {
+      "params": {
+        "$ref": "#/$defs/emptyParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmSystemVersionResult"
+      }
+    },
+    "pm_subscribe": {
+      "params": {
+        "$ref": "#/$defs/pmSubscribeParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmSubscribeResult"
+      }
+    },
+    "pm_cancel": {
+      "params": {
+        "$ref": "#/$defs/pmCancelParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmCancelResult"
+      }
+    },
+    "pm_project_list": {
+      "params": {
+        "$ref": "#/$defs/emptyParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmProjectListResult"
+      }
+    },
+    "pm_project_create": {
+      "params": {
+        "$ref": "#/$defs/pmProjectCreateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmProject"
+      }
+    },
+    "pm_board_read": {
+      "params": {
+        "$ref": "#/$defs/pmProjectRef"
+      },
+      "result": {
+        "$ref": "#/$defs/pmBoard"
+      }
+    },
+    "pm_digest_read": {
+      "params": {
+        "$ref": "#/$defs/pmDigestReadParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmDigestReadResult"
+      }
+    },
+    "pm_sprint_create": {
+      "params": {
+        "$ref": "#/$defs/pmSprintCreateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmSprint"
+      }
+    },
+    "pm_sprint_update": {
+      "params": {
+        "$ref": "#/$defs/pmSprintUpdateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmSprint"
+      }
+    },
+    "pm_sprint_activate": {
+      "params": {
+        "$ref": "#/$defs/pmSprintRef"
+      },
+      "result": {
+        "$ref": "#/$defs/pmSprint"
+      }
+    },
+    "pm_sprint_close": {
+      "params": {
+        "$ref": "#/$defs/pmSprintCloseParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmSprintCloseResult"
+      }
+    },
+    "pm_ticket_create": {
+      "params": {
+        "$ref": "#/$defs/pmTicketCreateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmTicket"
+      }
+    },
+    "pm_ticket_update": {
+      "params": {
+        "$ref": "#/$defs/pmTicketUpdateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmTicket"
+      }
+    },
+    "pm_ticket_move": {
+      "params": {
+        "$ref": "#/$defs/pmTicketMoveParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmTicket"
+      }
+    },
+    "pm_ticket_description_save": {
+      "params": {
+        "$ref": "#/$defs/pmTicketDescriptionSaveParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmTicket"
+      }
+    },
+    "pm_ticket_versions_read": {
+      "params": {
+        "$ref": "#/$defs/pmTicketRef"
+      },
+      "result": {
+        "$ref": "#/$defs/pmTicketVersionsReadResult"
+      }
+    },
+    "pm_ticket_blocker_add": {
+      "params": {
+        "$ref": "#/$defs/pmTicketBlockerAddParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmTicket"
+      }
+    },
+    "pm_ticket_blocker_remove": {
+      "params": {
+        "$ref": "#/$defs/pmTicketBlockerRemoveParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmTicket"
+      }
+    },
+    "pm_ticket_criterion_add": {
+      "params": {
+        "$ref": "#/$defs/pmTicketCriterionAddParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmTicket"
+      }
+    },
+    "pm_ticket_criterion_set_done": {
+      "params": {
+        "$ref": "#/$defs/pmTicketCriterionSetDoneParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmTicket"
+      }
+    },
+    "pm_ticket_criterion_remove": {
+      "params": {
+        "$ref": "#/$defs/pmTicketCriterionRemoveParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmTicket"
+      }
+    },
+    "pm_ticket_proposals_read": {
+      "params": {
+        "$ref": "#/$defs/pmTicketRef"
+      },
+      "result": {
+        "$ref": "#/$defs/pmTicketProposalsReadResult"
+      }
+    },
+    "pm_ticket_proposal_accept": {
+      "params": {
+        "$ref": "#/$defs/pmProposalRef"
+      },
+      "result": {
+        "$ref": "#/$defs/pmTicket"
+      }
+    },
+    "pm_ticket_proposal_reject": {
+      "params": {
+        "$ref": "#/$defs/pmProposalRef"
+      },
+      "result": {
+        "$ref": "#/$defs/pmRejectedResult"
+      }
+    },
+    "pm_environments_set": {
+      "params": {
+        "$ref": "#/$defs/pmEnvironmentsSetParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmEnvironmentsSetResult"
+      }
+    },
+    "pm_sources_read": {
+      "params": {
+        "$ref": "#/$defs/pmProjectRef"
+      },
+      "result": {
+        "$ref": "#/$defs/pmSources"
+      }
+    },
+    "pm_sources_set": {
+      "params": {
+        "$ref": "#/$defs/pmSources"
+      },
+      "result": {
+        "$ref": "#/$defs/pmSources"
+      }
+    },
+    "pm_credential_store": {
+      "params": {
+        "$ref": "#/$defs/pmCredentialStoreParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmCredentialStoreResult"
+      }
+    },
+    "pm_credential_clear": {
+      "params": {
+        "$ref": "#/$defs/pmCredentialClearParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmCredentialClearResult"
+      }
+    },
+    "pm_probe_create": {
+      "params": {
+        "$ref": "#/$defs/pmProbeCreateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmProbe"
+      }
+    },
+    "pm_probe_approve": {
+      "params": {
+        "$ref": "#/$defs/pmProbeRef"
+      },
+      "result": {
+        "$ref": "#/$defs/pmProbe"
+      }
+    },
+    "pm_probe_reject": {
+      "params": {
+        "$ref": "#/$defs/pmProbeRef"
+      },
+      "result": {
+        "$ref": "#/$defs/pmRejectedResult"
+      }
+    },
+    "pm_probe_delete": {
+      "params": {
+        "$ref": "#/$defs/pmProbeRef"
+      },
+      "result": {
+        "$ref": "#/$defs/pmDeletedResult"
+      }
+    },
+    "pm_check_start": {
+      "params": {
+        "$ref": "#/$defs/pmCheckStartParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmCheckStartResult"
+      }
+    },
+    "pm_checks_read": {
+      "params": {
+        "$ref": "#/$defs/pmChecksReadParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmChecksReadResult"
+      }
+    },
+    "pm_jira_pull": {
+      "params": {
+        "$ref": "#/$defs/pmProjectRef"
+      },
+      "result": {
+        "$ref": "#/$defs/pmJiraPullResult"
+      }
+    },
+    "pm_jira_diff_read": {
+      "params": {
+        "$ref": "#/$defs/pmTicketRef"
+      },
+      "result": {
+        "$ref": "#/$defs/pmJiraDiff"
+      }
+    },
+    "pm_jira_apply": {
+      "params": {
+        "$ref": "#/$defs/pmJiraApplyParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmJiraApplyResult"
+      }
+    },
+    "pm_agent_launch": {
+      "params": {
+        "$ref": "#/$defs/pmAgentLaunchParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmAgentSession"
+      }
+    },
+    "pm_agent_list": {
+      "params": {
+        "$ref": "#/$defs/pmProjectRef"
+      },
+      "result": {
+        "$ref": "#/$defs/pmAgentListResult"
+      }
+    },
+    "pm_agent_stop": {
+      "params": {
+        "$ref": "#/$defs/pmAgentStopParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmAgentStopResult"
+      }
+    },
+    "pm_settings_read": {
+      "params": {
+        "$ref": "#/$defs/emptyParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmSettings"
+      }
+    },
+    "pm_settings_update": {
+      "params": {
+        "$ref": "#/$defs/pmSettingsUpdateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmSettings"
+      }
+    }
+  },
+  "$defs": {
+    "errorCode": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "unauthenticated",
+        "capabilityDenied",
+        "unsupportedVersion",
+        "methodNotFound",
+        "invalidMessage",
+        "requestTooLarge",
+        "serviceBusy",
+        "notFound",
+        "invalidParams",
+        "conflict",
+        "constraint",
+        "operationFailed",
+        "internal"
+      ],
+      "x-codegen-name": "ErrorCode"
+    },
+    "pmJiraFailure": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "notConfigured",
+        "credentialMissing",
+        "invalidSite",
+        "invalidRequest",
+        "unauthorized",
+        "forbidden",
+        "notFound",
+        "rejected",
+        "rateLimited",
+        "unavailable",
+        "responseTooLarge",
+        "malformedResponse"
+      ]
+    },
+    "protocolErrorDetails": {
+      "x-codegen": true,
+      "x-codegen-name": "ProtocolErrorDetails",
+      "x-codegen-tagged-union": "kind",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "parameter"
+          ],
+          "properties": {
+            "kind": {
+              "const": "invalidParameter"
+            },
+            "parameter": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "reason"
+          ],
+          "properties": {
+            "kind": {
+              "const": "constraint"
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "reason"
+          ],
+          "properties": {
+            "kind": {
+              "const": "jiraFailed"
+            },
+            "reason": {
+              "$ref": "#/$defs/pmJiraFailure"
+            }
+          }
+        }
+      ]
+    },
+    "protocolError": {
+      "x-codegen": true,
+      "x-codegen-name": "ProtocolError",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/errorCode"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "$ref": "#/$defs/protocolErrorDetails"
+        }
+      }
+    },
+    "method": {
+      "x-codegen-name": "Method",
+      "type": "string",
+      "enum": [
+        "pm_system_version",
+        "pm_subscribe",
+        "pm_cancel",
+        "pm_project_list",
+        "pm_project_create",
+        "pm_board_read",
+        "pm_digest_read",
+        "pm_sprint_create",
+        "pm_sprint_update",
+        "pm_sprint_activate",
+        "pm_sprint_close",
+        "pm_ticket_create",
+        "pm_ticket_update",
+        "pm_ticket_move",
+        "pm_ticket_description_save",
+        "pm_ticket_versions_read",
+        "pm_ticket_blocker_add",
+        "pm_ticket_blocker_remove",
+        "pm_ticket_criterion_add",
+        "pm_ticket_criterion_set_done",
+        "pm_ticket_criterion_remove",
+        "pm_ticket_proposals_read",
+        "pm_ticket_proposal_accept",
+        "pm_ticket_proposal_reject",
+        "pm_environments_set",
+        "pm_sources_read",
+        "pm_sources_set",
+        "pm_credential_store",
+        "pm_credential_clear",
+        "pm_probe_create",
+        "pm_probe_approve",
+        "pm_probe_reject",
+        "pm_probe_delete",
+        "pm_check_start",
+        "pm_checks_read",
+        "pm_jira_pull",
+        "pm_jira_diff_read",
+        "pm_jira_apply",
+        "pm_agent_launch",
+        "pm_agent_list",
+        "pm_agent_stop",
+        "pm_settings_read",
+        "pm_settings_update"
+      ]
+    },
+    "eventName": {
+      "x-codegen": true,
+      "x-codegen-name": "EventName",
+      "type": "string",
+      "enum": [
+        "pmBoardChanged",
+        "pmAgentChanged",
+        "pmCheckChanged",
+        "pmJiraPulled"
+      ]
+    },
+    "request": {
+      "x-codegen": true,
+      "x-codegen-name": "ControlRequest",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "protocolVersion",
+        "token",
+        "method",
+        "params"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "protocolVersion": {
+          "type": "string",
+          "minLength": 71,
+          "maxLength": 71,
+          "x-contract-identity": true
+        },
+        "token": {
+          "type": "string",
+          "minLength": 32,
+          "maxLength": 256
+        },
+        "method": {
+          "$ref": "#/$defs/method",
+          "x-rust-type": "String"
+        },
+        "params": {
+          "type": "object",
+          "x-rust-type": "serde_json::Value",
+          "x-typescript-type": "object"
+        }
+      }
+    },
+    "response": {
+      "x-codegen": true,
+      "x-codegen-name": "ControlResponse",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "ok"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "result": {
+          "x-rust-type": "serde_json::Value",
+          "x-typescript-type": "unknown"
+        },
+        "error": {
+          "$ref": "#/$defs/protocolError"
+        }
+      }
+    },
+    "event": {
+      "x-codegen": true,
+      "x-codegen-name": "ControlEvent",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocolVersion",
+        "event",
+        "payload"
+      ],
+      "properties": {
+        "protocolVersion": {
+          "type": "string",
+          "minLength": 71,
+          "maxLength": 71,
+          "x-contract-identity": true
+        },
+        "event": {
+          "$ref": "#/$defs/eventName"
+        },
+        "payload": {
+          "type": "object",
+          "x-rust-type": "serde_json::Value",
+          "x-typescript-type": "object"
+        }
+      }
+    },
+    "emptyParams": {
+      "x-codegen": true,
+      "x-codegen-name": "EmptyParams",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "pmSprintState": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "backlog",
+        "planned",
+        "active",
+        "closed"
+      ]
+    },
+    "pmTicketStatus": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "todo",
+        "inProgress",
+        "inReview",
+        "done"
+      ]
+    },
+    "pmTicketPriority": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "lowest",
+        "low",
+        "medium",
+        "high",
+        "highest"
+      ]
+    },
+    "pmTicketAuthor": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "pm",
+        "agent",
+        "jira"
+      ]
+    },
+    "pmProject": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "folder",
+        "createdAtEpochMs"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "folder": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "createdAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "pmSprint": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "projectId",
+        "name",
+        "goal",
+        "state",
+        "createdAtEpochMs",
+        "activatedAtEpochMs",
+        "closedAtEpochMs",
+        "endsAtEpochMs",
+        "jiraSprintId",
+        "jiraBoardId",
+        "jiraPulledAtEpochMs"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "goal": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "state": {
+          "$ref": "#/$defs/pmSprintState"
+        },
+        "createdAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "activatedAtEpochMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "closedAtEpochMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "endsAtEpochMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "jiraSprintId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "jiraBoardId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "jiraPulledAtEpochMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "pmBlocker": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "text"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      }
+    },
+    "pmAcceptanceCriterion": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "text",
+        "done"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "done": {
+          "type": "boolean"
+        }
+      }
+    },
+    "pmTicketVersionsSummary": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "count",
+        "headNumber",
+        "headAuthor",
+        "headRecordedAtEpochMs"
+      ],
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "headNumber": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "headAuthor": {
+          "$ref": "#/$defs/pmTicketAuthor"
+        },
+        "headRecordedAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "pmTicket": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "projectId",
+        "title",
+        "description",
+        "status",
+        "priority",
+        "assignee",
+        "sprintId",
+        "rank",
+        "jiraUrl",
+        "jiraSprintId",
+        "jiraPulledAtEpochMs",
+        "carryOverCount",
+        "blockers",
+        "acceptanceCriteria",
+        "versions",
+        "createdAtEpochMs",
+        "updatedAtEpochMs"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 20000
+        },
+        "status": {
+          "$ref": "#/$defs/pmTicketStatus"
+        },
+        "priority": {
+          "$ref": "#/$defs/pmTicketPriority"
+        },
+        "assignee": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "sprintId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "rank": {
+          "type": "integer",
+          "x-rust-type": "i64"
+        },
+        "jiraUrl": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2048,
+          "pattern": "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$"
+        },
+        "jiraSprintId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "jiraPulledAtEpochMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "carryOverCount": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u32"
+        },
+        "blockers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmBlocker"
+          },
+          "maxItems": 32
+        },
+        "acceptanceCriteria": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmAcceptanceCriterion"
+          },
+          "maxItems": 64
+        },
+        "versions": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/pmTicketVersionsSummary"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "updatedAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "pmTicketVersion": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ticketId",
+        "number",
+        "description",
+        "author",
+        "recordedAtEpochMs"
+      ],
+      "properties": {
+        "ticketId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "x-rust-type": "u64"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 20000
+        },
+        "author": {
+          "$ref": "#/$defs/pmTicketAuthor"
+        },
+        "recordedAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "pmEnvironment": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "production"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "production": {
+          "type": "boolean"
+        }
+      }
+    },
+    "pmFactSource": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "jira",
+        "gitHost",
+        "probe",
+        "check",
+        "projectManager"
+      ]
+    },
+    "pmDeliveryStageKind": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "toDo",
+        "inProgress",
+        "inReview",
+        "merged",
+        "deployed",
+        "live",
+        "done"
+      ]
+    },
+    "pmDeliveryStage": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "environment",
+        "sinceEpochMs"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/pmDeliveryStageKind"
+        },
+        "environment": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "sinceEpochMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "pmDeliveryRiskKind": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "blocked",
+        "readFailed",
+        "checksFailing",
+        "reviewWaiting",
+        "stuckInStatus",
+        "mergedNotDeployed",
+        "notInProduction",
+        "jiraBehind",
+        "jiraAhead",
+        "notStartedNearSprintEnd",
+        "carriedOver",
+        "unassigned",
+        "noAcceptanceCriteria"
+      ]
+    },
+    "pmDeliveryRisk": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "detail",
+        "sinceEpochMs"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/pmDeliveryRiskKind"
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "sinceEpochMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "pmFactsSummary": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recordedAtEpochMs",
+        "stale",
+        "jiraStatus",
+        "jiraAssignee",
+        "pullRequests",
+        "deployedEnvironments",
+        "failedReads"
+      ],
+      "properties": {
+        "recordedAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "jiraStatus": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "jiraAssignee": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "pullRequests": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "deployedEnvironments": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "maxItems": 12
+        },
+        "failedReads": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmFactSource"
+          },
+          "maxItems": 5
+        }
+      }
+    },
+    "pmTicketDelivery": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ticketId",
+        "stage",
+        "risks",
+        "checkReasons",
+        "facts",
+        "checking"
+      ],
+      "properties": {
+        "ticketId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "stage": {
+          "$ref": "#/$defs/pmDeliveryStage"
+        },
+        "risks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmDeliveryRisk"
+          },
+          "maxItems": 16
+        },
+        "checkReasons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "maxItems": 12
+        },
+        "facts": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/pmFactsSummary"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "checking": {
+          "type": "boolean"
+        }
+      }
+    },
+    "pmBoardTicket": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ticket",
+        "delivery",
+        "pendingProposalCount"
+      ],
+      "properties": {
+        "ticket": {
+          "$ref": "#/$defs/pmTicket"
+        },
+        "delivery": {
+          "$ref": "#/$defs/pmTicketDelivery"
+        },
+        "pendingProposalCount": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "pmDataTier": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "tickets",
+        "code",
+        "deploy"
+      ]
+    },
+    "pmTracking": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "jira",
+        "code",
+        "deploy",
+        "tier"
+      ],
+      "properties": {
+        "jira": {
+          "type": "boolean"
+        },
+        "code": {
+          "type": "boolean"
+        },
+        "deploy": {
+          "type": "boolean"
+        },
+        "tier": {
+          "$ref": "#/$defs/pmDataTier"
+        }
+      }
+    },
+    "pmProbeMatcher": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "commitAncestry",
+        "agent"
+      ]
+    },
+    "pmProbeRun": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "atEpochMs",
+        "outputHash",
+        "changedAtEpochMs",
+        "deployedCommit",
+        "failure"
+      ],
+      "properties": {
+        "atEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "outputHash": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "changedAtEpochMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "deployedCommit": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{7,64}$"
+        },
+        "failure": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    },
+    "pmProbeStatus": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "proposed",
+        "approved"
+      ]
+    },
+    "pmProbeAuthor": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "projectManager",
+        "agent"
+      ]
+    },
+    "pmProbe": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "projectId",
+        "environment",
+        "argv",
+        "matcher",
+        "status",
+        "author",
+        "reason",
+        "createdAtEpochMs",
+        "lastRun"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "environment": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "argv": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "x-utf8-max-bytes": 1024
+          },
+          "minItems": 1,
+          "maxItems": 32
+        },
+        "matcher": {
+          "$ref": "#/$defs/pmProbeMatcher"
+        },
+        "status": {
+          "$ref": "#/$defs/pmProbeStatus"
+        },
+        "author": {
+          "$ref": "#/$defs/pmProbeAuthor"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 400
+        },
+        "createdAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "lastRun": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/pmProbeRun"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "pmCheckReason": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "checkReasons",
+        "probeChanged",
+        "requested"
+      ]
+    },
+    "pmCheckOutcome": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "reported",
+        "failed",
+        "abandoned"
+      ]
+    },
+    "pmCheck": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "projectId",
+        "ticketId",
+        "reason",
+        "environments",
+        "probeId",
+        "sessionId",
+        "startedAtEpochMs",
+        "finishedAtEpochMs",
+        "outcome"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "ticketId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "reason": {
+          "$ref": "#/$defs/pmCheckReason"
+        },
+        "environments": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "maxItems": 12
+        },
+        "probeId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "sessionId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "startedAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "finishedAtEpochMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/pmCheckOutcome"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "pmBoard": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "sprints",
+        "tickets",
+        "environments",
+        "probes",
+        "runningChecks",
+        "tracking"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "sprints": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmSprint"
+          },
+          "maxItems": 1024
+        },
+        "tickets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmBoardTicket"
+          },
+          "maxItems": 10000
+        },
+        "environments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmEnvironment"
+          },
+          "maxItems": 12
+        },
+        "probes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmProbe"
+          },
+          "maxItems": 16
+        },
+        "runningChecks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmCheck"
+          },
+          "maxItems": 8
+        },
+        "tracking": {
+          "$ref": "#/$defs/pmTracking"
+        }
+      }
+    },
+    "pmProposalChange": {
+      "x-codegen": true,
+      "x-codegen-tagged-union": "kind",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "description"
+          ],
+          "properties": {
+            "kind": {
+              "const": "description"
+            },
+            "description": {
+              "type": "string",
+              "maxLength": 20000
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "criteria"
+          ],
+          "properties": {
+            "kind": {
+              "const": "acceptanceCriteria"
+            },
+            "criteria": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "minItems": 1,
+              "maxItems": 64,
+              "uniqueItems": true
+            }
+          }
+        }
+      ]
+    },
+    "pmProposal": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "ticketId",
+        "change",
+        "summary",
+        "baseVersion",
+        "createdAtEpochMs"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "ticketId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "change": {
+          "$ref": "#/$defs/pmProposalChange"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "baseVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "createdAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "pmJiraSource": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "siteUrl",
+        "boardId",
+        "accountEmail",
+        "credentialHandle"
+      ],
+      "properties": {
+        "siteUrl": {
+          "type": "string",
+          "maxLength": 2048,
+          "pattern": "^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net$"
+        },
+        "boardId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "x-rust-type": "u64"
+        },
+        "accountEmail": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 254,
+          "pattern": "^[^\\s@]+@[^\\s@]+$"
+        },
+        "credentialHandle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        }
+      }
+    },
+    "pmGitHubSource": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "owner",
+        "name"
+      ],
+      "properties": {
+        "owner": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "^[A-Za-z0-9_-][A-Za-z0-9_.-]*$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "^[A-Za-z0-9_-][A-Za-z0-9_.-]*$"
+        }
+      }
+    },
+    "pmSources": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "jira",
+        "github"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "jira": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/pmJiraSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "github": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/pmGitHubSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "pmJiraChange": {
+      "x-codegen": true,
+      "x-codegen-tagged-union": "field",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "jira",
+            "ticket"
+          ],
+          "properties": {
+            "field": {
+              "const": "summary"
+            },
+            "jira": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "ticket": {
+              "type": "string",
+              "maxLength": 1000
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "jira",
+            "ticket"
+          ],
+          "properties": {
+            "field": {
+              "const": "description"
+            },
+            "jira": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 100000
+            },
+            "ticket": {
+              "type": "string",
+              "maxLength": 100000
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "jira",
+            "toStatus",
+            "transitionId",
+            "transitionName"
+          ],
+          "properties": {
+            "field": {
+              "const": "status"
+            },
+            "jira": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 200
+            },
+            "toStatus": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "transitionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "transitionName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "jiraSprintId",
+            "ticketSprintId"
+          ],
+          "properties": {
+            "field": {
+              "const": "sprint"
+            },
+            "jiraSprintId": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "x-rust-type": "u64"
+            },
+            "ticketSprintId": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "x-rust-type": "u64"
+            }
+          }
+        }
+      ]
+    },
+    "pmJiraDiff": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ticketId",
+        "issueKey",
+        "jiraUpdated",
+        "ticketVersion",
+        "changes",
+        "statusUnreachable",
+        "token"
+      ],
+      "properties": {
+        "ticketId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "issueKey": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$"
+        },
+        "jiraUpdated": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "ticketVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmJiraChange"
+          },
+          "maxItems": 4
+        },
+        "statusUnreachable": {
+          "type": "boolean"
+        },
+        "token": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "pmAgentMode": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "assistant",
+        "deliveryCheck"
+      ]
+    },
+    "pmAgentProvider": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "claude",
+        "codex"
+      ]
+    },
+    "pmAgentState": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "starting",
+        "running",
+        "exited"
+      ]
+    },
+    "pmAgentSession": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sessionId",
+        "projectId",
+        "mode",
+        "provider",
+        "focusTicketId",
+        "checkId",
+        "state",
+        "startedAtEpochMs",
+        "exitedAtEpochMs"
+      ],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "mode": {
+          "$ref": "#/$defs/pmAgentMode"
+        },
+        "provider": {
+          "$ref": "#/$defs/pmAgentProvider"
+        },
+        "focusTicketId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "checkId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "state": {
+          "$ref": "#/$defs/pmAgentState"
+        },
+        "startedAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "exitedAtEpochMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "pmSettings": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agentProvider",
+        "agentAccountId",
+        "agentModel",
+        "assistantPermission",
+        "checkPermission"
+      ],
+      "properties": {
+        "agentProvider": {
+          "$ref": "#/$defs/pmAgentProvider"
+        },
+        "agentAccountId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "agentModel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9._-]+$"
+        },
+        "assistantPermission": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9._-]+$"
+        },
+        "checkPermission": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9._-]+$"
+        }
+      }
+    },
+    "pmProjectRef": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        }
+      }
+    },
+    "pmTicketRef": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ticketId"
+      ],
+      "properties": {
+        "ticketId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        }
+      }
+    },
+    "pmSprintRef": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sprintId"
+      ],
+      "properties": {
+        "sprintId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        }
+      }
+    },
+    "pmProbeRef": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "probeId"
+      ],
+      "properties": {
+        "probeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        }
+      }
+    },
+    "pmProposalRef": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "proposalId"
+      ],
+      "properties": {
+        "proposalId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        }
+      }
+    },
+    "pmSystemVersionResult": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "product",
+        "version",
+        "protocolVersion",
+        "terminalDataPlane"
+      ],
+      "properties": {
+        "product": {
+          "const": "termloop-pm"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "protocolVersion": {
+          "type": "string",
+          "minLength": 71,
+          "maxLength": 71,
+          "x-contract-identity": true
+        },
+        "terminalDataPlane": {
+          "const": "binary-websocket"
+        }
+      }
+    },
+    "pmSubscribeParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "events"
+      ],
+      "properties": {
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/eventName"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    },
+    "pmSubscribeResult": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "events"
+      ],
+      "properties": {
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/eventName"
+          }
+        }
+      }
+    },
+    "pmCancelParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "pmCancelResult": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cancelled"
+      ],
+      "properties": {
+        "cancelled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "pmProjectListResult": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projects"
+      ],
+      "properties": {
+        "projects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmProject"
+          },
+          "maxItems": 256
+        }
+      }
+    },
+    "pmProjectCreateParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "folder": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      }
+    },
+    "pmDigestKind": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "ticketCreated",
+        "ticketUpdated",
+        "descriptionVersioned",
+        "proposalCreated",
+        "checkFinished",
+        "sprintActivated",
+        "sprintClosed",
+        "jiraPulled"
+      ]
+    },
+    "pmDigestReadParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "sinceEpochMs"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "sinceEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "pmDigestEntry": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "atEpochMs",
+        "ticketId",
+        "sprintId",
+        "summary"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/pmDigestKind"
+        },
+        "atEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "ticketId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "sprintId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        }
+      }
+    },
+    "pmDigestReadResult": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "sinceEpochMs",
+        "untilEpochMs",
+        "entries",
+        "truncated"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "sinceEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "untilEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "entries": {
+          "type": "array",
+          "maxItems": 500,
+          "items": {
+            "$ref": "#/$defs/pmDigestEntry"
+          }
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      }
+    },
+    "pmSprintCreateParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "name"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "goal": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "backlog",
+            "planned"
+          ]
+        },
+        "endsAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "pmSprintUpdateParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sprintId"
+      ],
+      "properties": {
+        "sprintId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "goal": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "endsAtEpochMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "pmSprintCloseParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sprintId"
+      ],
+      "properties": {
+        "sprintId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "carryOverTo": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        }
+      }
+    },
+    "pmSprintCloseResult": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sprint",
+        "carriedOverTicketIds"
+      ],
+      "properties": {
+        "sprint": {
+          "$ref": "#/$defs/pmSprint"
+        },
+        "carriedOverTicketIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[!-~]+$"
+          },
+          "minItems": 0,
+          "maxItems": 10000,
+          "uniqueItems": true
+        }
+      }
+    },
+    "pmTicketCreateParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "title"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 20000
+        },
+        "status": {
+          "$ref": "#/$defs/pmTicketStatus"
+        },
+        "priority": {
+          "$ref": "#/$defs/pmTicketPriority"
+        },
+        "assignee": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "sprintId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "jiraUrl": {
+          "type": "string",
+          "maxLength": 2048,
+          "pattern": "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$"
+        }
+      }
+    },
+    "pmTicketUpdateParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ticketId"
+      ],
+      "properties": {
+        "ticketId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "status": {
+          "$ref": "#/$defs/pmTicketStatus"
+        },
+        "priority": {
+          "$ref": "#/$defs/pmTicketPriority"
+        },
+        "assignee": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "jiraUrl": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2048,
+          "pattern": "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$"
+        }
+      }
+    },
+    "pmTicketMoveParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ticketId",
+        "sprintId"
+      ],
+      "properties": {
+        "ticketId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "sprintId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000,
+          "x-rust-type": "u32"
+        }
+      }
+    },
+    "pmTicketDescriptionSaveParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ticketId",
+        "description",
+        "baseVersion"
+      ],
+      "properties": {
+        "ticketId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 20000
+        },
+        "baseVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "pmTicketVersionsReadResult": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ticketId",
+        "versions"
+      ],
+      "properties": {
+        "ticketId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "versions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmTicketVersion"
+          },
+          "maxItems": 100
+        }
+      }
+    },
+    "pmTicketBlockerAddParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ticketId",
+        "text"
+      ],
+      "properties": {
+        "ticketId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      }
+    },
+    "pmTicketBlockerRemoveParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ticketId",
+        "blockerId"
+      ],
+      "properties": {
+        "ticketId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "blockerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        }
+      }
+    },
+    "pmTicketCriterionAddParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ticketId",
+        "text"
+      ],
+      "properties": {
+        "ticketId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      }
+    },
+    "pmTicketCriterionSetDoneParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ticketId",
+        "criterionId",
+        "done"
+      ],
+      "properties": {
+        "ticketId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "criterionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "done": {
+          "type": "boolean"
+        }
+      }
+    },
+    "pmTicketCriterionRemoveParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ticketId",
+        "criterionId"
+      ],
+      "properties": {
+        "ticketId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "criterionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        }
+      }
+    },
+    "pmTicketProposalsReadResult": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ticketId",
+        "proposals"
+      ],
+      "properties": {
+        "ticketId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "proposals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmProposal"
+          },
+          "maxItems": 8
+        }
+      }
+    },
+    "pmRejectedResult": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rejected"
+      ],
+      "properties": {
+        "rejected": {
+          "const": true
+        }
+      }
+    },
+    "pmEnvironmentsSetParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "environments"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "environments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmEnvironment"
+          },
+          "maxItems": 12
+        }
+      }
+    },
+    "pmEnvironmentsSetResult": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "environments"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "environments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmEnvironment"
+          },
+          "maxItems": 12
+        }
+      }
+    },
+    "pmCredentialKind": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "jiraApiToken"
+      ]
+    },
+    "pmCredentialStoreParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "secret"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/pmCredentialKind"
+        },
+        "secret": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      }
+    },
+    "pmCredentialStoreResult": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "credentialHandle"
+      ],
+      "properties": {
+        "credentialHandle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        }
+      }
+    },
+    "pmCredentialClearParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "credentialHandle"
+      ],
+      "properties": {
+        "credentialHandle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        }
+      }
+    },
+    "pmCredentialClearResult": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cleared"
+      ],
+      "properties": {
+        "cleared": {
+          "type": "boolean"
+        }
+      }
+    },
+    "pmProbeCreateParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "environment",
+        "argv",
+        "matcher"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "environment": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "argv": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "x-utf8-max-bytes": 1024
+          },
+          "minItems": 1,
+          "maxItems": 32
+        },
+        "matcher": {
+          "$ref": "#/$defs/pmProbeMatcher"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 400
+        }
+      }
+    },
+    "pmDeletedResult": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deleted"
+      ],
+      "properties": {
+        "deleted": {
+          "const": true
+        }
+      }
+    },
+    "pmCheckStartParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "ticketIds"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "ticketIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[!-~]+$"
+          },
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true
+        }
+      }
+    },
+    "pmCheckRefusalReason": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "notFound",
+        "deployTrackingOff",
+        "alreadyRunning",
+        "projectLimitReached",
+        "agentUnavailable"
+      ]
+    },
+    "pmCheckRefusal": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ticketId",
+        "reason"
+      ],
+      "properties": {
+        "ticketId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "reason": {
+          "$ref": "#/$defs/pmCheckRefusalReason"
+        }
+      }
+    },
+    "pmCheckStartResult": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "checks",
+        "refused"
+      ],
+      "properties": {
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmCheck"
+          },
+          "maxItems": 8
+        },
+        "refused": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/pmCheckRefusal"
+          }
+        }
+      }
+    },
+    "pmChecksReadParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "ticketId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        }
+      }
+    },
+    "pmChecksReadResult": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "checks"
+      ],
+      "properties": {
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmCheck"
+          },
+          "maxItems": 1000
+        }
+      }
+    },
+    "pmJiraPullOutcome": {
+      "x-codegen": true,
+      "x-codegen-tagged-union": "kind",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "sprintsCreated",
+            "sprintsClosed",
+            "ticketsCreated",
+            "ticketsMoved",
+            "skipped"
+          ],
+          "properties": {
+            "kind": {
+              "const": "applied"
+            },
+            "sprintsCreated": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[!-~]+$"
+              },
+              "minItems": 0,
+              "maxItems": 1024,
+              "uniqueItems": true
+            },
+            "sprintsClosed": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[!-~]+$"
+              },
+              "minItems": 0,
+              "maxItems": 1024,
+              "uniqueItems": true
+            },
+            "ticketsCreated": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[!-~]+$"
+              },
+              "minItems": 0,
+              "maxItems": 100,
+              "uniqueItems": true
+            },
+            "ticketsMoved": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[!-~]+$"
+              },
+              "minItems": 0,
+              "maxItems": 10000,
+              "uniqueItems": true
+            },
+            "skipped": {
+              "type": "integer",
+              "minimum": 0,
+              "x-rust-type": "u64"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "stale"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "sprintsUnsupported"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "reason"
+          ],
+          "properties": {
+            "kind": {
+              "const": "failed"
+            },
+            "reason": {
+              "$ref": "#/$defs/pmJiraFailure"
+            }
+          }
+        }
+      ]
+    },
+    "pmJiraPullResult": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "outcome"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "outcome": {
+          "$ref": "#/$defs/pmJiraPullOutcome"
+        }
+      }
+    },
+    "pmJiraApplyParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ticketId",
+        "token"
+      ],
+      "properties": {
+        "ticketId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "token": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "pmJiraApplyResult": {
+      "x-codegen": true,
+      "x-codegen-tagged-union": "kind",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "changes"
+          ],
+          "properties": {
+            "kind": {
+              "const": "applied"
+            },
+            "changes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/pmJiraChange"
+              },
+              "maxItems": 4
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "diff"
+          ],
+          "properties": {
+            "kind": {
+              "const": "stale"
+            },
+            "diff": {
+              "$ref": "#/$defs/pmJiraDiff"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "applied",
+            "reason"
+          ],
+          "properties": {
+            "kind": {
+              "const": "failed"
+            },
+            "applied": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/pmJiraChange"
+              },
+              "maxItems": 4
+            },
+            "reason": {
+              "$ref": "#/$defs/pmJiraFailure"
+            }
+          }
+        }
+      ]
+    },
+    "pmAgentLaunchParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "focusTicketId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        }
+      }
+    },
+    "pmAgentListResult": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sessions"
+      ],
+      "properties": {
+        "sessions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmAgentSession"
+          },
+          "maxItems": 64
+        }
+      }
+    },
+    "pmAgentStopParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sessionId"
+      ],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        }
+      }
+    },
+    "pmAgentStopResult": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stopped"
+      ],
+      "properties": {
+        "stopped": {
+          "type": "boolean"
+        }
+      }
+    },
+    "pmSettingsUpdateParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "agentProvider": {
+          "$ref": "#/$defs/pmAgentProvider"
+        },
+        "agentAccountId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "agentModel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9._-]+$"
+        },
+        "assistantPermission": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9._-]+$"
+        },
+        "checkPermission": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9._-]+$"
+        }
+      }
+    },
+    "pmBoardChangedPayload": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        }
+      }
+    },
+    "pmAgentChangedPayload": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "sessionId"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        }
+      }
+    },
+    "pmCheckChangedPayload": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "ticketId",
+        "checkId"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "ticketId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "checkId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        }
+      }
+    },
+    "pmJiraPulledPayload": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "outcome"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "applied",
+            "stale",
+            "sprintsUnsupported",
+            "failed"
+          ]
+        }
+      }
+    }
+  }
+}

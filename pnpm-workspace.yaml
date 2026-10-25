@@ -1,6 +1,7 @@
 packages:
   - "apps/mobile-push-relay"
   - "contract/generated/typescript"
+  - "contract/generated/pm-typescript"
   - "clients/*"
   - "spikes/r0-terminal/desktop"
   - "spikes/ghostty-macos"

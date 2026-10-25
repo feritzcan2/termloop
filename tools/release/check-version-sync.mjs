@@ -38,6 +38,7 @@ const checks = [
   ["clients/desktop/package.json", await readJsonVersion("clients/desktop/package.json")],
   ["clients/cli/package.json", await readJsonVersion("clients/cli/package.json")],
   ["contract/generated/typescript/package.json", await readJsonVersion("contract/generated/typescript/package.json")],
+  ["contract/generated/pm-typescript/package.json", await readJsonVersion("contract/generated/pm-typescript/package.json")],
 ];
 
 const errors = checks.filter(([, version]) => version !== canonical);

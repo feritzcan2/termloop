@@ -1,5 +1,6 @@
 export const allowedRust = new Map(Object.entries({
   "termloop-contract": [],
+  "termloop-pm-contract": [],
   "termloop-domain": [],
   "termloop-platform": [],
   "termloop-gitio": ["termloop-platform"],
