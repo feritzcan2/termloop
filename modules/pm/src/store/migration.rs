@@ -135,8 +135,26 @@ ALTER TABLE tickets ADD COLUMN jira_sprint_id INTEGER CHECK (jira_sprint_id > 0)
 ALTER TABLE tickets ADD COLUMN jira_pulled_at_epoch_ms INTEGER;
 "#;
 
+/// Agent proposals: a ticket change an agent suggested, waiting for the PM
+/// to accept (it then becomes an agent-authored version) or reject.
+const V4: &str = r#"
+CREATE TABLE ticket_proposals (
+    id TEXT PRIMARY KEY,
+    ticket_id TEXT NOT NULL REFERENCES tickets (id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('description', 'acceptanceCriteria')),
+    description TEXT,
+    criteria_json TEXT,
+    summary TEXT NOT NULL,
+    base_version INTEGER NOT NULL CHECK (base_version >= 0),
+    created_at_epoch_ms INTEGER NOT NULL,
+    CHECK ((kind = 'description') = (description IS NOT NULL)),
+    CHECK ((kind = 'acceptanceCriteria') = (criteria_json IS NOT NULL))
+) STRICT;
+CREATE INDEX ticket_proposals_by_ticket ON ticket_proposals (ticket_id, created_at_epoch_ms);
+"#;
+
 /// Every migration in order; a version is never edited once released.
-const MIGRATIONS: &[(u32, &str)] = &[(1, V1), (2, V2), (3, V3)];
+const MIGRATIONS: &[(u32, &str)] = &[(1, V1), (2, V2), (3, V3), (4, V4)];
 
 pub const SCHEMA_VERSION: u32 = MIGRATIONS[MIGRATIONS.len() - 1].0;
 

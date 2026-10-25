@@ -2,17 +2,23 @@
 //! [`PmStore::write`](crate::PmStore) and validates every parameter before
 //! touching a row.
 
+mod check_report;
 mod environment;
 mod facts;
 mod jira_mirror;
 mod jira_write;
 mod probe;
+mod proposal;
 mod sources;
 mod sprint;
 mod ticket;
 
 use rusqlite::{Connection, OptionalExtension, params};
 
+pub use check_report::{
+    AgentProbeReading, CHECK_PROBE_PROPOSALS_MAX, CheckReport, RecordedCheckReport,
+    ReportedEnvironment,
+};
 pub use facts::{
     CheckNotesObservation, EnvironmentObservation, FactRead, FactsObservation, JiraObservation,
     PullRequestsObservation,

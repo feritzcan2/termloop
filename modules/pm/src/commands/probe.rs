@@ -37,9 +37,82 @@ pub struct RecordedProbeRun {
     pub ticket_ids: Vec<String>,
 }
 
-fn require_probe(connection: &Connection, probe_id: &str) -> Result<DeliveryProbe, PmError> {
+pub(super) fn require_probe(
+    connection: &Connection,
+    probe_id: &str,
+) -> Result<DeliveryProbe, PmError> {
     check_id(probe_id, "probeId")?;
     probe_by_id(connection, probe_id)?.ok_or(PmError::NotFound)
+}
+
+/// A validated probe as written (approved) or proposed by an agent.
+pub(super) fn probe_value(
+    new: NewProbe,
+    author: ProbeAuthor,
+    id: String,
+    now: u64,
+) -> Result<DeliveryProbe, PmError> {
+    check_id(&new.project_id, "projectId")?;
+    if !valid_probe_environment(&new.environment) {
+        return Err(PmError::Invalid("environment"));
+    }
+    if !valid_probe_argv(&new.argv) {
+        return Err(PmError::Invalid("argv"));
+    }
+    if new
+        .reason
+        .as_deref()
+        .is_some_and(|reason| !valid_probe_reason(reason))
+    {
+        return Err(PmError::Invalid("reason"));
+    }
+    Ok(DeliveryProbe {
+        id,
+        project_id: new.project_id,
+        environment: new.environment,
+        argv: new.argv,
+        matcher: new.matcher,
+        status: match author {
+            ProbeAuthor::ProjectManager => ProbeStatus::Approved,
+            ProbeAuthor::Agent => ProbeStatus::Proposed,
+        },
+        author,
+        reason: new.reason,
+        created_at_epoch_ms: now,
+        last_run: None,
+    })
+}
+
+/// Inserts a probe unless the project already has the same one or is at
+/// its probe bound.
+pub(super) fn insert_probe_row(
+    connection: &Connection,
+    probe: &DeliveryProbe,
+) -> Result<(), PmError> {
+    let existing = project_probes(connection, &probe.project_id)?;
+    if existing.iter().any(|other| other.same_as(probe)) {
+        return Err(PmError::Constraint("the same probe already exists"));
+    }
+    if existing.len() >= PROJECT_PROBES_MAX {
+        return Err(PmError::Constraint("too many probes"));
+    }
+    connection.execute(
+        "INSERT INTO delivery_probes (id, project_id, environment, argv_json, matcher, \
+             status, author, reason, created_at_epoch_ms) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            probe.id,
+            probe.project_id,
+            probe.environment,
+            to_json(&probe.argv)?,
+            probe.matcher.as_str(),
+            probe.status.as_str(),
+            probe.author.as_str(),
+            probe.reason,
+            probe.created_at_epoch_ms
+        ],
+    )?;
+    Ok(())
 }
 
 impl PmStore {
@@ -58,61 +131,8 @@ impl PmStore {
         new: NewProbe,
         author: ProbeAuthor,
     ) -> Result<DeliveryProbe, PmError> {
-        check_id(&new.project_id, "projectId")?;
-        if !valid_probe_environment(&new.environment) {
-            return Err(PmError::Invalid("environment"));
-        }
-        if !valid_probe_argv(&new.argv) {
-            return Err(PmError::Invalid("argv"));
-        }
-        if new
-            .reason
-            .as_deref()
-            .is_some_and(|reason| !valid_probe_reason(reason))
-        {
-            return Err(PmError::Invalid("reason"));
-        }
-        let probe = DeliveryProbe {
-            id: self.new_id(),
-            project_id: new.project_id,
-            environment: new.environment,
-            argv: new.argv,
-            matcher: new.matcher,
-            status: match author {
-                ProbeAuthor::ProjectManager => ProbeStatus::Approved,
-                ProbeAuthor::Agent => ProbeStatus::Proposed,
-            },
-            author,
-            reason: new.reason,
-            created_at_epoch_ms: self.now(),
-            last_run: None,
-        };
-        self.write(|transaction| {
-            let existing = project_probes(transaction, &probe.project_id)?;
-            if existing.iter().any(|other| other.same_as(&probe)) {
-                return Err(PmError::Constraint("the same probe already exists"));
-            }
-            if existing.len() >= PROJECT_PROBES_MAX {
-                return Err(PmError::Constraint("too many probes"));
-            }
-            transaction.execute(
-                "INSERT INTO delivery_probes (id, project_id, environment, argv_json, matcher, \
-                     status, author, reason, created_at_epoch_ms) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-                params![
-                    probe.id,
-                    probe.project_id,
-                    probe.environment,
-                    to_json(&probe.argv)?,
-                    probe.matcher.as_str(),
-                    probe.status.as_str(),
-                    probe.author.as_str(),
-                    probe.reason,
-                    probe.created_at_epoch_ms
-                ],
-            )?;
-            Ok(())
-        })?;
+        let probe = probe_value(new, author, self.new_id(), self.now())?;
+        self.write(|transaction| insert_probe_row(transaction, &probe))?;
         Ok(probe)
     }
 

@@ -3,11 +3,13 @@
 //! sources, delivery facts and probes, and what is derived from them.
 //! It never reads or writes the developer daemon's `termloop-store` state.
 
+pub mod agent;
 mod board;
 mod commands;
 mod delivery;
 mod environment;
 mod error;
+mod proposal;
 mod sources;
 mod sprint;
 mod store;
@@ -19,11 +21,12 @@ mod tests;
 
 pub use board::Board;
 pub use commands::{
-    CheckNotesObservation, ClosedSprint, EnvironmentObservation, FactRead, FactsObservation,
-    JIRA_PULL_NEW_TICKETS_MAX, JiraChange, JiraIssueState, JiraObservation, JiraPullChanges,
-    JiraPullOutcome, JiraSprintPull, JiraSprintRead, JiraWriteDiff, JiraWriteOutcome,
-    JiraWriteTarget, NewProbe, NewTicket, PullRequestsObservation, RecordedProbeRun, TicketEdit,
-    apply_jira_write, read_jira_issue_state, read_jira_sprints,
+    AgentProbeReading, CHECK_PROBE_PROPOSALS_MAX, CheckNotesObservation, CheckReport, ClosedSprint,
+    EnvironmentObservation, FactRead, FactsObservation, JIRA_PULL_NEW_TICKETS_MAX, JiraChange,
+    JiraIssueState, JiraObservation, JiraPullChanges, JiraPullOutcome, JiraSprintPull,
+    JiraSprintRead, JiraWriteDiff, JiraWriteOutcome, JiraWriteTarget, NewProbe, NewTicket,
+    PullRequestsObservation, RecordedCheckReport, RecordedProbeRun, ReportedEnvironment,
+    TicketEdit, apply_jira_write, read_jira_issue_state, read_jira_sprints,
 };
 pub use delivery::check_reasons::{check_reasons, deploy_tracking_enabled};
 pub use delivery::facts::{
@@ -46,6 +49,10 @@ pub use environment::{
     environment_is_production, valid_environment_name, valid_project_environments,
 };
 pub use error::PmError;
+pub use proposal::{
+    PROPOSAL_SUMMARY_MAX_CHARS, ProposalChange, TICKET_PROPOSALS_MAX, TicketProposal,
+    valid_proposal_summary,
+};
 pub use sources::{GitHubSource, JiraSource, ProjectSources};
 pub use sprint::{
     PROJECT_OPEN_SPRINTS_MAX, SPRINT_GOAL_MAX_CHARS, SPRINT_NAME_MAX_CHARS, Sprint, SprintState,

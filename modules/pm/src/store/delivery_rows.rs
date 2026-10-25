@@ -8,7 +8,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params, types::Type};
 use super::rows::parsed;
 use crate::{
     DeliveryProbe, GitHubSource, JiraSource, PmError, ProbeAuthor, ProbeMatcher, ProbeStatus,
-    ProjectSources, TicketDeliveryFacts,
+    ProjectSources, ProposalChange, TicketDeliveryFacts, TicketProposal,
 };
 
 fn json_column<T: serde::de::DeserializeOwned>(row: &Row<'_>, index: usize) -> rusqlite::Result<T> {
@@ -160,4 +160,61 @@ pub(crate) fn project_sources(
     } else {
         Err(PmError::Storage("invalid stored project sources".into()))
     }
+}
+
+const PROPOSAL_COLUMNS: &str =
+    "id, ticket_id, kind, description, criteria_json, summary, base_version, created_at_epoch_ms";
+
+fn proposal_row(row: &Row<'_>) -> rusqlite::Result<TicketProposal> {
+    let kind: String = row.get(2)?;
+    let change = match kind.as_str() {
+        "description" => ProposalChange::Description {
+            description: row.get(3)?,
+        },
+        "acceptanceCriteria" => ProposalChange::AcceptanceCriteria {
+            criteria: json_column(row, 4)?,
+        },
+        _ => return Err(invalid_row(2)),
+    };
+    let proposal = TicketProposal {
+        id: row.get(0)?,
+        ticket_id: row.get(1)?,
+        change,
+        summary: row.get(5)?,
+        base_version: row.get(6)?,
+        created_at_epoch_ms: row.get(7)?,
+    };
+    if proposal.is_valid() {
+        Ok(proposal)
+    } else {
+        Err(invalid_row(0))
+    }
+}
+
+pub(crate) fn proposal_by_id(
+    connection: &Connection,
+    proposal_id: &str,
+) -> Result<Option<TicketProposal>, PmError> {
+    Ok(connection
+        .query_row(
+            &format!("SELECT {PROPOSAL_COLUMNS} FROM ticket_proposals WHERE id = ?1"),
+            [proposal_id],
+            proposal_row,
+        )
+        .optional()?)
+}
+
+/// A ticket's pending proposals, oldest first.
+pub(crate) fn ticket_proposals(
+    connection: &Connection,
+    ticket_id: &str,
+) -> Result<Vec<TicketProposal>, PmError> {
+    let mut statement = connection.prepare(&format!(
+        "SELECT {PROPOSAL_COLUMNS} FROM ticket_proposals WHERE ticket_id = ?1 \
+         ORDER BY created_at_epoch_ms, id"
+    ))?;
+    let proposals = statement
+        .query_map([ticket_id], proposal_row)?
+        .collect::<Result<_, _>>()?;
+    Ok(proposals)
 }
