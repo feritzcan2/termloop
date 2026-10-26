@@ -344,6 +344,8 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
             ) : (
               <SkillsPanel
                 skills={state.skills}
+                tools={state.tools}
+                onReadTools={(refresh) => controller.loadTools(refresh)}
                 tier={tier}
                 tickets={ticketsOnly}
                 now={now}

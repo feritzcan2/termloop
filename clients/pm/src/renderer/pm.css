@@ -354,6 +354,23 @@ h3.s .r { margin-left: auto; color: var(--dimmer); font: 400 10px/1 var(--font-m
 .env-probe label { display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; }
 .env-probe .env-detail { margin-left: 21px; }
 .env-none { margin: 6px 0 0 21px; color: var(--dimmer); font-size: 11px; }
+.tools-checklist { margin: 10px 0 0; border-top: 1px solid var(--border); }
+.tools-checklist > summary { display: flex; align-items: center; gap: 6px; padding: 9px 13px; cursor: pointer; list-style: none; }
+.tools-checklist > summary::-webkit-details-marker { display: none; }
+.tools-checklist > summary .meta { margin-left: auto; }
+.tool-group { padding: 4px 13px 6px; }
+.tool-group > .sec-label { display: block; margin: 4px 0; }
+.tool-group > .hint { margin: 0 0 4px; font-size: 11px; }
+.tool-group ul { margin: 0; padding: 0; list-style: none; }
+.tool-row { display: grid; grid-template-columns: 16px minmax(70px, auto) 1fr; gap: 2px 8px; align-items: baseline; padding: 4px 0; font-size: 12px; }
+.tool-mark { font: 700 11px/1 var(--font-mono); text-align: center; }
+.tool-row.ready .tool-mark { color: var(--success); }
+.tool-row.needsSetup .tool-mark { color: var(--warning); }
+.tool-row.missing .tool-mark, .tool-row.missing .tool-name { color: var(--dimmer); }
+.tool-row.unknown .tool-mark { color: var(--accent); }
+.tool-name { font-weight: 600; }
+.tool-detail { color: var(--text-secondary); font-size: 11px; line-height: 1.45; }
+.tools-foot { display: flex; align-items: center; gap: 8px; padding: 4px 13px 0; }
 .skills-panel .draft-card { max-width: none; margin: 10px 10px 0; padding: 12px 14px; }
 .skill-draft h3.skill-name { margin-top: 8px; font-size: 14px; }
 .skill-draft .draft-summary { color: var(--text-secondary); }

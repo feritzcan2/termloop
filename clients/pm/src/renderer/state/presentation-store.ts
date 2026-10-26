@@ -13,6 +13,7 @@ import type {
   PmProposal,
   PmSettings,
   PmSkillsReadResult,
+  PmToolsReadResult,
   PmSources,
   PmTicketNote,
   PmTicketVersion,
@@ -46,6 +47,8 @@ export type PmState = {
   sources: PmSources | undefined;
   /** The project's skills and drafts waiting for review. */
   skills: PmSkillsReadResult | undefined;
+  /** The project's tools checklist, read when the PM opens it. */
+  tools: PmToolsReadResult | undefined;
   /** The project's pending skill suggestions, by ticket then age. */
   suggestions: PmProposal[] | undefined;
   lastPull: PmJiraPullResult | undefined;
@@ -73,6 +76,7 @@ export const initialPmState: PmState = {
   catalog: undefined,
   sources: undefined,
   skills: undefined,
+  tools: undefined,
   suggestions: undefined,
   lastPull: undefined,
   pulling: false,

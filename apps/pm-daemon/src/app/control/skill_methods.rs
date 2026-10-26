@@ -185,3 +185,14 @@ pub(super) fn proposal_reject(state: &AppState, params: &Value) -> Result<Value,
     }
     Ok(json!({ "rejected": true }))
 }
+
+/// The tools checklist: the cached discovery unless `refresh` asks to
+/// read the machine again.
+pub(super) async fn tools_read(state: &AppState, params: &Value) -> Result<Value, ControlError> {
+    let params: termloop_pm_contract::pm::PmToolsReadParams = parse(params)?;
+    require_project(&state.store.lock(), &params.project_id)?;
+    let tools =
+        crate::app::tool_list::read(state, &params.project_id, params.refresh.unwrap_or(false))
+            .await?;
+    to_value(&tools)
+}

@@ -2,7 +2,8 @@
 //! daemon reads it and redacts before anything reaches the agent or the
 //! cache: PM sources as names, hosts, and booleans; allowlisted CLIs as
 //! installed, version number, and logged in (exit status only, output
-//! discarded); configured MCP servers as name and transport only. Commands,
+//! discarded); configured MCP servers as name and transport only; the
+//! claude.ai connectors Claude Code has connected as names only. Commands,
 //! arguments, URLs, environment, headers, tokens, and account names never
 //! leave this module.
 
@@ -47,6 +48,7 @@ const CONFIG_MAX_BYTES: usize = 1024 * 1024;
 const MCP_SERVERS_MAX: usize = 32;
 const MCP_NAME_MAX_BYTES: usize = 64;
 const VERSION_MAX_BYTES: usize = 32;
+const CONNECTOR_PREFIX: &str = "claude.ai ";
 
 /// The project's own sources and tier: no credential, only whether one is
 /// stored.
@@ -141,12 +143,16 @@ fn read_bounded(path: &Path) -> Option<String> {
     String::from_utf8(bytes).ok()
 }
 
-fn valid_server_name(name: &str) -> bool {
+/// A server or connector name safe to report; connector names may hold
+/// spaces.
+fn valid_name(name: &str, spaces: bool) -> bool {
     !name.is_empty()
         && name.len() <= MCP_NAME_MAX_BYTES
-        && name
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
+        && name.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric()
+                || matches!(byte, b'_' | b'-' | b'.')
+                || (spaces && byte == b' ')
+        })
 }
 
 /// The transport of one JSON server entry, from its shape only.
@@ -162,7 +168,7 @@ fn json_transport(entry: &Value) -> &'static str {
 
 fn push_server(servers: &mut Vec<Value>, name: &str, transport: &str, origin: &str) {
     if servers.len() < MCP_SERVERS_MAX
-        && valid_server_name(name)
+        && valid_name(name, false)
         && !servers
             .iter()
             .any(|server| server["name"] == name && server["origin"] == origin)
@@ -179,15 +185,24 @@ fn json_servers(servers: &mut Vec<Value>, map: Option<&Value>, origin: &str) {
     }
 }
 
+/// `~/.claude.json`, read once per discovery for its servers and
+/// connectors.
+pub(crate) fn claude_config(home: Option<&Path>) -> Option<Value> {
+    home.and_then(|home| read_bounded(&home.join(".claude.json")))
+        .and_then(|text| serde_json::from_str(&text).ok())
+}
+
 /// The MCP servers Claude and Codex would load for the project: names and
 /// transports from `~/.claude.json` (user and this project's entries), the
 /// project's `.mcp.json`, and `~/.codex/config.toml`.
-pub(crate) fn mcp_servers(home: Option<&Path>, folder: Option<&Path>) -> Vec<Value> {
+pub(crate) fn mcp_servers(
+    home: Option<&Path>,
+    claude: Option<&Value>,
+    folder: Option<&Path>,
+) -> Vec<Value> {
     let mut servers = Vec::new();
     if let Some(home) = home {
-        if let Some(claude) = read_bounded(&home.join(".claude.json"))
-            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
-        {
+        if let Some(claude) = claude {
             json_servers(&mut servers, claude.get("mcpServers"), "claude");
             if let Some(folder) = folder.and_then(Path::to_str) {
                 json_servers(
@@ -243,6 +258,29 @@ pub(crate) fn codex_servers(toml: &str) -> Vec<(String, &'static str)> {
     servers
 }
 
+/// The claude.ai connectors Claude Code has connected for this user, from
+/// `~/.claude.json`: names only. Connected once is not proof they work
+/// now; only an agent run can tell.
+pub(crate) fn account_connectors(claude: Option<&Value>) -> Vec<String> {
+    let mut connectors: Vec<String> = Vec::new();
+    for name in claude
+        .and_then(|claude| claude.get("claudeAiMcpEverConnected"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .filter_map(|name| name.strip_prefix(CONNECTOR_PREFIX))
+    {
+        if valid_name(name, true)
+            && connectors.len() < MCP_SERVERS_MAX
+            && !connectors.iter().any(|known| known == name)
+        {
+            connectors.push(name.to_owned());
+        }
+    }
+    connectors
+}
+
 fn home_and_folder(state: &AppState, project_id: &str) -> (Option<PathBuf>, Option<PathBuf>) {
     let folder = state
         .store
@@ -285,7 +323,12 @@ pub(crate) async fn discovery(
                 .filter_map(|check| check.join().ok().flatten())
                 .collect()
         });
-        (clis, mcp_servers(home.as_deref(), folder.as_deref()))
+        let claude = claude_config(home.as_deref());
+        (
+            clis,
+            mcp_servers(home.as_deref(), claude.as_ref(), folder.as_deref()),
+            account_connectors(claude.as_ref()),
+        )
     })
     .await
     .map_err(|_| PmError::Storage("discovery did not finish".to_owned()))?;
@@ -294,10 +337,12 @@ pub(crate) async fn discovery(
         "pmReadTools": SKILL_READ_TOOLS,
         "clis": local.0,
         "mcpServers": local.1,
+        "accountConnectors": local.2,
         "readAtEpochMs": now,
         "note": "Skill runs read only through the PM's own tools; a CLI or MCP server listed \
                  here is a hint for what the project manager could connect, never something a \
-                 skill calls.",
+                 skill calls. accountConnectors were connected to the user's Claude account at \
+                 some point; whether they work now only your own tool list shows.",
     });
     state
         .store
@@ -309,7 +354,8 @@ pub(crate) async fn discovery(
 /// The MCP server names discovery reports for the project.
 pub(crate) fn configured_server(state: &AppState, project_id: &str, name: &str) -> bool {
     let (home, folder) = home_and_folder(state, project_id);
-    mcp_servers(home.as_deref(), folder.as_deref())
+    let claude = claude_config(home.as_deref());
+    mcp_servers(home.as_deref(), claude.as_ref(), folder.as_deref())
         .iter()
         .any(|server| server["name"] == name)
 }
@@ -368,7 +414,8 @@ mod tests {
         )
         .unwrap();
 
-        let servers = mcp_servers(Some(&home), Some(&folder));
+        let claude = claude_config(Some(&home));
+        let servers = mcp_servers(Some(&home), claude.as_ref(), Some(&folder));
         let _ = std::fs::remove_dir_all(&root);
         let text = serde_json::to_string(&servers).unwrap();
         for secret in SECRETS {
@@ -398,6 +445,32 @@ mod tests {
         for server in &servers {
             assert_eq!(server.as_object().unwrap().len(), 3);
         }
+    }
+
+    #[test]
+    fn account_connectors_are_claude_ai_names_only() {
+        let home = std::env::temp_dir().join(format!("pm-connectors-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::write(
+            home.join(".claude.json"),
+            json!({
+                "claudeAiMcpEverConnected": [
+                    "claude.ai Slack",
+                    "claude.ai Atlassian Rovo",
+                    "claude.ai Slack",
+                    "plugin:cloudflare:cloudflare",
+                    "claude.ai bad;name",
+                    "claude.ai ",
+                ],
+                "oauthAccount": { "emailAddress": "me@example.com" },
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let connectors = account_connectors(claude_config(Some(&home)).as_ref());
+        let _ = std::fs::remove_dir_all(&home);
+        assert_eq!(connectors, ["Slack", "Atlassian Rovo"]);
+        assert!(account_connectors(None).is_empty());
     }
 
     #[test]

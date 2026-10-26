@@ -59,6 +59,7 @@ pub(crate) async fn dispatch(
         "pm_settings_read" => operations::settings_read(state),
         "pm_settings_update" => operations::settings_update(state, params),
         "pm_skills_read" => skill_methods::skills_read(state, params),
+        "pm_tools_read" => skill_methods::tools_read(state, params).await,
         "pm_skill_suggestions_read" => skill_methods::suggestions_read(state, params),
         "pm_skill_set_enabled" => skill_methods::set_enabled(state, params),
         "pm_skill_update" => skill_methods::update(state, params),

@@ -59,6 +59,7 @@
       "pm_settings_read",
       "pm_settings_update",
       "pm_skills_read",
+      "pm_tools_read",
       "pm_skill_suggestions_read",
       "pm_skill_set_enabled",
       "pm_skill_update",
@@ -524,6 +525,14 @@
         "$ref": "#/$defs/pmSkillsReadResult"
       }
     },
+    "pm_tools_read": {
+      "params": {
+        "$ref": "#/$defs/pmToolsReadParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmToolsReadResult"
+      }
+    },
     "pm_skill_suggestions_read": {
       "params": {
         "$ref": "#/$defs/pmProjectRef"
@@ -789,6 +798,7 @@
         "pm_settings_read",
         "pm_settings_update",
         "pm_skills_read",
+        "pm_tools_read",
         "pm_skill_suggestions_read",
         "pm_skill_set_enabled",
         "pm_skill_update",
@@ -6095,6 +6105,104 @@
           "minLength": 1,
           "maxLength": 128,
           "pattern": "^[!-~]+$"
+        }
+      }
+    },
+    "pmToolsReadParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "refresh": {
+          "type": "boolean"
+        }
+      }
+    },
+    "pmToolKind": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "source",
+        "cli",
+        "mcp",
+        "connector"
+      ]
+    },
+    "pmToolState": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "ready",
+        "needsSetup",
+        "missing",
+        "unknown"
+      ]
+    },
+    "pmTool": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "name",
+        "state",
+        "detail"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/pmToolKind"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "state": {
+          "$ref": "#/$defs/pmToolState"
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      }
+    },
+    "pmToolsReadResult": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "tools",
+        "readAtEpochMs"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmTool"
+          },
+          "maxItems": 64
+        },
+        "readAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
         }
       }
     }

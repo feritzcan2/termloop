@@ -293,6 +293,7 @@ fn cancellable(method: &str) -> bool {
             | "pm_agent_catalog_read"
             | "pm_settings_read"
             | "pm_skills_read"
+            | "pm_tools_read"
             | "pm_skill_suggestions_read"
             | "pm_skill_feedback_read"
     )

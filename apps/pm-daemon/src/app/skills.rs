@@ -19,11 +19,11 @@ use termloop_pm::skill::{
     SkillRunTrigger, SkillSource,
 };
 use termloop_pm::{PmError, PmStore, SprintState, Ticket, slack_ts_at};
-use termloop_pm_contract::pm::EventName;
+use termloop_pm_contract::pm::{EventName, PmToolState};
 
 use crate::app::control::errors::{ControlError, not_found};
 use crate::app::control::to_value;
-use crate::app::{AppState, agents, owners, scheduler, skill_discovery};
+use crate::app::{AppState, agents, owners, scheduler, skill_discovery, tool_list};
 
 /// A skill's first run reads this far back.
 const FIRST_RUN_WINDOW_MS: u64 = 24 * 60 * 60 * 1000;
@@ -472,6 +472,11 @@ fn verified(kind: &str, name: &str, works: bool, detail: &str) -> Value {
     json!({ "kind": kind, "name": name, "works": works, "detail": detail })
 }
 
+/// A checklist verdict as a check result: it works only when ready.
+fn verdict(kind: &str, name: &str, (state, detail): tool_list::Verdict) -> Value {
+    verified(kind, name, state == PmToolState::Ready, &detail)
+}
+
 /// Checks one discovered tool with a harmless read-only call. A CLI off
 /// the allowlist is refused without running anything.
 pub(crate) async fn verify(
@@ -489,19 +494,7 @@ pub(crate) async fn verify(
                 .ok_or_else(|| {
                     denied(PM_SKILL_TOOL_VERIFY, "the CLI is not on the PM's allowlist")
                 })?;
-            let works = status["installed"] == true && status["loggedIn"] == true;
-            Ok(verified(
-                kind,
-                name,
-                works,
-                if works {
-                    "installed and logged in"
-                } else if status["installed"] == true {
-                    "installed but not logged in"
-                } else {
-                    "not installed"
-                },
-            ))
+            Ok(verdict(kind, name, tool_list::cli(&status)))
         }
         "mcp" => {
             if !skill_discovery::configured_server(state, project_id, name) {
@@ -531,11 +524,13 @@ async fn verify_source(
         SkillSource::Board => (true, "the PM board is always readable"),
         SkillSource::Deployments => {
             let board = state.store.lock().board(project_id).map_err(host_error)?;
-            if board.environments.is_empty() {
-                (false, "no environments are listed in Settings")
-            } else {
-                (true, "environments are listed")
-            }
+            let approved = board
+                .probes
+                .iter()
+                .filter(|probe| probe.status == termloop_pm::ProbeStatus::Approved)
+                .count();
+            let environments = tool_list::environments(board.environments.len(), approved as u64);
+            return Ok(verdict("source", name, environments));
         }
         SkillSource::Jira => crate::app::jira::verify(state, project_id).await,
         SkillSource::Git => {
@@ -545,10 +540,11 @@ async fn verify_source(
                 .project(project_id)
                 .map_err(host_error)?
                 .and_then(|project| project.folder);
-            match folder {
-                Some(_) => (true, "the project has a checkout folder"),
-                None => (false, "no checkout folder is set for the project"),
-            }
+            return Ok(verdict(
+                "source",
+                name,
+                tool_list::code_folder(folder.is_some()),
+            ));
         }
         SkillSource::GitHub => {
             let configured = state
@@ -563,14 +559,11 @@ async fn verify_source(
                 .ok()
                 .flatten()
                 .is_some_and(|status| status["loggedIn"] == true);
-            match (configured, logged_in) {
-                (false, _) => (false, "no GitHub repository is set in Settings"),
-                (true, false) => (false, "the GitHub CLI is not logged in"),
-                (true, true) => (
-                    true,
-                    "the repository is set and the GitHub CLI is logged in",
-                ),
-            }
+            return Ok(verdict(
+                "source",
+                name,
+                tool_list::github(configured, logged_in),
+            ));
         }
         SkillSource::Slack => (
             false,

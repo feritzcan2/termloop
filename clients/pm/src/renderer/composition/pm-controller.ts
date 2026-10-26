@@ -142,6 +142,7 @@ export class PmController {
       openSkillId: undefined,
       sources: undefined,
       skills: undefined,
+      tools: undefined,
       suggestions: undefined,
       view: this.state.view === "ticket" || this.state.view === "agent" || this.state.view === "skill" ? "overview" : this.state.view,
     });
@@ -512,6 +513,14 @@ export class PmController {
     if (!projectId) return;
     const skills = await this.call("pm_skills_read", { projectId });
     if (skills && this.state.projectId === projectId) this.#set({ skills });
+  }
+
+  /** Reads the tools checklist; `refresh` checks the machine again instead of the cached read. */
+  async loadTools(refresh: boolean): Promise<void> {
+    const projectId = this.state.projectId;
+    if (!projectId) return;
+    const tools = await this.call("pm_tools_read", { projectId, refresh });
+    if (tools && this.state.projectId === projectId) this.#set({ tools });
   }
 
   async setSkillEnabled(skillId: string, enabled: boolean): Promise<void> {

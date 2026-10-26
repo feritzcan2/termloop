@@ -29,6 +29,7 @@ mod scheduler;
 mod skill_discovery;
 mod skills;
 mod terminal;
+mod tool_list;
 
 #[cfg(test)]
 mod tests;

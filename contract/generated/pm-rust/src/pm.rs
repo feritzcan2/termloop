@@ -126,7 +126,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:e8f23d4b0f680f29983403d5affa372a8326296b0d4163af583a0d6d2946eaeb";
+    "sha256:562245c4cb0bf9c4c11778c4abfb9e051155be63eae9777fea292e8ac1d4865b";
 pub const CAPABILITY_SCOPE: &str = "pm.full";
 pub const METHODS: &[&str] = &[
     "pm_system_version",
@@ -182,6 +182,7 @@ pub const METHODS: &[&str] = &[
     "pm_settings_read",
     "pm_settings_update",
     "pm_skills_read",
+    "pm_tools_read",
     "pm_skill_suggestions_read",
     "pm_skill_set_enabled",
     "pm_skill_update",
@@ -2344,6 +2345,58 @@ pub struct PmSkillsChangedPayload {
     pub project_id: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmToolsReadParams {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refresh: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PmToolKind {
+    #[serde(rename = "source")]
+    Source,
+    #[serde(rename = "cli")]
+    Cli,
+    #[serde(rename = "mcp")]
+    Mcp,
+    #[serde(rename = "connector")]
+    Connector,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PmToolState {
+    #[serde(rename = "ready")]
+    Ready,
+    #[serde(rename = "needsSetup")]
+    NeedsSetup,
+    #[serde(rename = "missing")]
+    Missing,
+    #[serde(rename = "unknown")]
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmTool {
+    pub kind: PmToolKind,
+    pub name: String,
+    pub state: PmToolState,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmToolsReadResult {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    pub tools: Vec<PmTool>,
+    #[serde(rename = "readAtEpochMs")]
+    pub read_at_epoch_ms: u64,
+}
+
 pub type PmSystemVersionParams = EmptyParams;
 pub type PmProjectListParams = EmptyParams;
 pub type PmProjectCreateResult = PmProject;
@@ -2607,6 +2660,7 @@ fn validate_method(value: &Value) -> bool {
             "pm_settings_read",
             "pm_settings_update",
             "pm_skills_read",
+            "pm_tools_read",
             "pm_skill_suggestions_read",
             "pm_skill_set_enabled",
             "pm_skill_update",
@@ -8285,6 +8339,125 @@ fn validate_pm_skills_changed_payload(value: &Value) -> bool {
 }
 
 #[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_tools_read_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("projectId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("refresh").is_none_or(|field| field.is_boolean())
+            && object
+                .keys()
+                .all(|key| ["projectId", "refresh"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_tool_kind(value: &Value) -> bool {
+    value
+        .as_str()
+        .is_some_and(|text| ["source", "cli", "mcp", "connector"].contains(&text))
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_tool_state(value: &Value) -> bool {
+    value
+        .as_str()
+        .is_some_and(|text| ["ready", "needsSetup", "missing", "unknown"].contains(&text))
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_tool(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("kind")
+            .is_some_and(|field| validate_pm_tool_kind(field))
+            && object.get("name").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)
+            })
+            && object
+                .get("state")
+                .is_some_and(|field| validate_pm_tool_state(field))
+            && object.get("detail").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 200)
+            })
+            && object
+                .keys()
+                .all(|key| ["kind", "name", "state", "detail"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_tools_read_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("projectId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("tools").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() <= 64 && items.iter().all(|item| validate_pm_tool(item))
+            })
+        }) && object.get("readAtEpochMs").is_some_and(|field| {
+            field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 0_u64))
+            })
+        }) && object
+            .keys()
+            .all(|key| ["projectId", "tools", "readAtEpochMs"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
     clippy::absurd_extreme_comparisons,
     clippy::len_zero,
     clippy::redundant_closure
@@ -8502,6 +8675,10 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
         "pm_skills_read" => {
             serde_json::from_value::<PmSkillsReadParams>(params.clone()).is_ok()
                 && validate_pm_project_ref(params)
+        }
+        "pm_tools_read" => {
+            serde_json::from_value::<PmToolsReadParams>(params.clone()).is_ok()
+                && validate_pm_tools_read_params(params)
         }
         "pm_skill_suggestions_read" => {
             serde_json::from_value::<PmSkillSuggestionsReadParams>(params.clone()).is_ok()
@@ -8769,6 +8946,10 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         "pm_skills_read" => {
             serde_json::from_value::<PmSkillsReadResult>(result.clone()).is_ok()
                 && validate_pm_skills_read_result(result)
+        }
+        "pm_tools_read" => {
+            serde_json::from_value::<PmToolsReadResult>(result.clone()).is_ok()
+                && validate_pm_tools_read_result(result)
         }
         "pm_skill_suggestions_read" => {
             serde_json::from_value::<PmSkillSuggestionsReadResult>(result.clone()).is_ok()

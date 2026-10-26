@@ -59,6 +59,7 @@ export const RENDERER_METHODS = [
   "pm_settings_read",
   "pm_settings_update",
   "pm_skills_read",
+  "pm_tools_read",
   "pm_skill_suggestions_read",
   "pm_skill_set_enabled",
   "pm_skill_update",
