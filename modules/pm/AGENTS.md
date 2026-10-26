@@ -48,8 +48,10 @@
 - A proposed probe never runs; only the PM's approval (or a PM-written
   probe) lets it. A run of a probe that changed meanwhile is refused.
 - A project whose Jira source names a board mirrors that board's sprints:
-  Jira owns a mirrored sprint's name, end, and state, and which linked issues
-  its active sprint holds; unlinked tickets keep the PM's sprint. A failed
+  Jira owns a mirrored sprint's name, end, and state, which linked issues
+  its active sprint holds, and the status and assignee of each linked ticket
+  a pulled sprint lists; unlinked tickets keep the PM's sprint. The daemon's
+  fact refresh applies this mirror too. A failed
   pull, or one planned against changed sources or older than the last applied
   pull, changes nothing. A closed sprint is never reopened by a pull.
 - Jira is written only with a diff the PM confirmed: the confirmation token

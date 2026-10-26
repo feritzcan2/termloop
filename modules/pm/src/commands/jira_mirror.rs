@@ -1,7 +1,8 @@
 //! The Jira sprint mirror. A project whose Jira source names a board takes
 //! that board's sprints from Jira: Jira owns a mirrored sprint's name, end,
-//! and state, and which linked issues its active sprint holds. Tickets
-//! without a Jira link keep the sprint the PM gave them.
+//! and state, which linked issues its active sprint holds, and the status
+//! and assignee of every ticket a pulled sprint lists. Tickets without a
+//! Jira link keep the sprint the PM gave them.
 //!
 //! A pull is planned from the store, read through `termloop-providers`
 //! outside any transaction, and applied in one transaction. A failed read,
@@ -69,6 +70,8 @@ pub struct JiraPullChanges {
     pub sprints_closed: Vec<String>,
     pub tickets_created: Vec<String>,
     pub tickets_moved: Vec<String>,
+    /// Linked tickets whose status or assignee was taken from Jira.
+    pub tickets_updated: Vec<String>,
     /// Jira sprints or issues left out because a bound was reached.
     pub skipped: usize,
 }
@@ -169,12 +172,24 @@ fn single_line(text: &str, max_chars: usize) -> Option<String> {
     (!bounded.is_empty()).then(|| bounded.to_owned())
 }
 
-fn status_from_category(category: Option<&str>) -> TicketStatus {
-    match category {
+/// A Jira status as a ticket status: by its category, with a started
+/// status whose name says review as in review.
+fn issue_status(issue: &JiraIssueSnapshot) -> TicketStatus {
+    match issue.status_category.as_deref() {
+        Some("indeterminate") if issue.status_name.to_lowercase().contains("review") => {
+            TicketStatus::InReview
+        }
         Some("indeterminate") => TicketStatus::InProgress,
         Some("done") => TicketStatus::Done,
         _ => TicketStatus::Todo,
     }
+}
+
+fn issue_assignee(issue: &JiraIssueSnapshot) -> Option<String> {
+    issue
+        .assignee_display
+        .as_deref()
+        .and_then(|name| single_line(name, TICKET_ASSIGNEE_MAX_CHARS))
 }
 
 fn mirrored_sprint(sprints: &[Sprint], jira_sprint_id: u64) -> Option<&Sprint> {
@@ -540,13 +555,26 @@ fn mirror_sprint_issues(
         {
             Some(ticket) => {
                 listed.insert(ticket.id.as_str());
+                if closed(ticket.sprint_id.as_deref()) {
+                    continue;
+                }
+                // Jira owns a linked ticket's status and assignee.
+                let (status, assignee) = (issue_status(issue), issue_assignee(issue));
+                if ticket.status != status || ticket.assignee != assignee {
+                    connection.execute(
+                        "UPDATE tickets SET status = ?2, assignee = ?3, updated_at_epoch_ms = ?4 \
+                         WHERE id = ?1",
+                        params![ticket.id, status.as_str(), assignee, now],
+                    )?;
+                    changes.tickets_updated.push(ticket.id.clone());
+                }
                 if ticket.sprint_id.as_deref() == Some(sprint_id) {
                     connection.execute(
                         "UPDATE tickets SET jira_sprint_id = ?2, jira_pulled_at_epoch_ms = ?3 \
                          WHERE id = ?1",
                         params![ticket.id, jira_sprint_id, now],
                     )?;
-                } else if !closed(ticket.sprint_id.as_deref()) {
+                } else {
                     move_ticket(&ticket.id, Some(sprint_id), Some(jira_sprint_id))?;
                     changes.tickets_moved.push(ticket.id.clone());
                 }
@@ -595,10 +623,7 @@ fn insert_issue_ticket(
         })
         .filter(|text| valid_ticket_description(text))
         .unwrap_or_default();
-    let assignee = issue
-        .assignee_display
-        .as_deref()
-        .and_then(|name| single_line(name, TICKET_ASSIGNEE_MAX_CHARS));
+    let assignee = issue_assignee(issue);
     let rank = next_rank(connection, &pull.project_id, Some(sprint_id))?;
     connection.execute(
         "INSERT INTO tickets (id, project_id, title, status, priority, assignee, sprint_id, \
@@ -609,7 +634,7 @@ fn insert_issue_ticket(
             id,
             pull.project_id,
             title,
-            status_from_category(issue.status_category.as_deref()).as_str(),
+            issue_status(issue).as_str(),
             assignee,
             sprint_id,
             rank,

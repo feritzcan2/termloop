@@ -50,44 +50,13 @@ fn pull_outcome(outcome: &JiraPullOutcome) -> Value {
 /// Mirrors the project's Jira board into its sprints and tickets, then
 /// records the active sprint's issue facts on the tickets that link them.
 pub(crate) async fn pull(state: &AppState, project_id: &str) -> Result<Value, ControlError> {
-    let plan = state.store.lock().plan_jira_sprint_pull(project_id)?;
-    let outcome = match plan {
-        None => failed_outcome(&PmJiraFailure::NotConfigured),
-        Some(pull) => match credentials::resolve(&*state.credentials, &pull.credential_handle) {
-            Err(reason) => failed_outcome(&reason),
-            Ok(token) => {
-                let request = pull.clone();
-                let read = blocking(move || {
-                    let client = JiraCloudClient::new()?;
-                    let credential = JiraCredential {
-                        email: &request.account_email,
-                        api_token: token.expose(),
-                    };
-                    read_jira_sprints(&client, &request, credential)
-                })
-                .await?;
-                let issues = read
-                    .as_ref()
-                    .ok()
-                    .and_then(|read| read.active_issues.clone());
-                let mut store = state.store.lock();
-                let outcome = store.apply_jira_sprint_pull(&pull, read)?;
-                if matches!(outcome, JiraPullOutcome::Applied(_))
-                    && let Some(issues) = issues
-                {
-                    record_issue_facts(&mut store, project_id, &issues);
-                }
-                pull_outcome(&outcome)
-            }
-        },
-    };
+    let outcome = mirror_board(state, project_id).await?;
     let kind = outcome["kind"].clone();
     state.publish(
         EventName::PmJiraPulled,
         json!({ "projectId": project_id, "outcome": kind }),
     );
     if kind == "applied" {
-        state.board_changed(project_id);
         state.fact_refresh.notify_one();
         crate::app::skills::note_event(
             state,
@@ -96,6 +65,51 @@ pub(crate) async fn pull(state: &AppState, project_id: &str) -> Result<Value, Co
         );
     }
     Ok(json!({ "projectId": project_id, "outcome": outcome }))
+}
+
+/// Reads the project's Jira board and applies it to its sprints and
+/// tickets, then records the active sprint's issue facts. Returns the
+/// pull's outcome; an applied one has already announced the board change.
+pub(crate) async fn mirror_board(
+    state: &AppState,
+    project_id: &str,
+) -> Result<Value, ControlError> {
+    let plan = state.store.lock().plan_jira_sprint_pull(project_id)?;
+    let Some(pull) = plan else {
+        return Ok(failed_outcome(&PmJiraFailure::NotConfigured));
+    };
+    let token = match credentials::resolve(&*state.credentials, &pull.credential_handle) {
+        Ok(token) => token,
+        Err(reason) => return Ok(failed_outcome(&reason)),
+    };
+    let request = pull.clone();
+    let read = blocking(move || {
+        let client = JiraCloudClient::new()?;
+        let credential = JiraCredential {
+            email: &request.account_email,
+            api_token: token.expose(),
+        };
+        read_jira_sprints(&client, &request, credential)
+    })
+    .await?;
+    let issues = read
+        .as_ref()
+        .ok()
+        .and_then(|read| read.active_issues.clone());
+    let outcome = {
+        let mut store = state.store.lock();
+        let outcome = store.apply_jira_sprint_pull(&pull, read)?;
+        if matches!(outcome, JiraPullOutcome::Applied(_))
+            && let Some(issues) = issues
+        {
+            record_issue_facts(&mut store, project_id, &issues);
+        }
+        outcome
+    };
+    if matches!(outcome, JiraPullOutcome::Applied(_)) {
+        state.board_changed(project_id);
+    }
+    Ok(pull_outcome(&outcome))
 }
 
 fn import_outcome(outcome: &JiraSprintImportOutcome) -> Value {

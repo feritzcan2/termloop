@@ -1,5 +1,5 @@
 //! The PM daemon's schedules: each check tick abandons overdue delivery
-//! checks, starts the Playbook checks that are due, and runs due skills; the fact refresh reads Jira, follows each project folder's code
+//! checks, starts the Playbook checks that are due, and runs due skills; the fact refresh mirrors Jira, follows each project folder's code
 //! host, and reads its pull requests for the active sprint's tickets every
 //! ten minutes and after each Jira pull.
 
@@ -7,13 +7,13 @@ use std::time::Duration;
 
 use termloop_pm::{
     DeliveryCheck, DueCheck, FactRead, FactsObservation, PmError, PullRequestFact,
-    PullRequestsObservation, SprintState, read_jira_sprints,
+    PullRequestsObservation, SprintState,
 };
-use termloop_providers::{JiraCloudClient, JiraCredential, ProviderFailure};
+use termloop_providers::ProviderFailure;
 
 use crate::app::code_host::{self, CodeHost};
 use crate::app::control::errors::ControlError;
-use crate::app::{AppState, agents, credentials, jira, skills};
+use crate::app::{AppState, agents, jira, skills};
 
 const CHECK_TICK: Duration = Duration::from_secs(60);
 /// Expired skill data is dropped once every this many ticks; it expires
@@ -177,8 +177,8 @@ fn failure_code(failure: &ProviderFailure) -> &'static str {
     }
 }
 
-/// Reads the active sprint's facts for every project: Jira status from the
-/// sprint's issues, and pull requests naming each ticket's issue key.
+/// Refreshes every project: its Jira board mirror with the active sprint's
+/// facts, and pull requests naming each ticket's issue key.
 async fn refresh_facts(state: &AppState) {
     let projects = state.store.lock().projects().unwrap_or_default();
     for project in projects {
@@ -188,27 +188,11 @@ async fn refresh_facts(state: &AppState) {
     }
 }
 
+/// Mirrors the project's Jira board as a Pull does, so sprints, linked
+/// tickets' statuses and assignees, and Jira facts stay current.
 async fn refresh_jira_facts(state: &AppState, project_id: &str) {
-    let Ok(Some(pull)) = state.store.lock().plan_jira_sprint_pull(project_id) else {
-        return;
-    };
-    let Ok(token) = credentials::resolve(&*state.credentials, &pull.credential_handle) else {
-        return;
-    };
-    let read = tokio::task::spawn_blocking(move || {
-        let client = JiraCloudClient::new()?;
-        let credential = JiraCredential {
-            email: &pull.account_email,
-            api_token: token.expose(),
-        };
-        read_jira_sprints(&client, &pull, credential)
-    })
-    .await;
-    if let Ok(Ok(read)) = read
-        && let Some(issues) = read.active_issues
-    {
-        jira::record_issue_facts(&mut state.store.lock(), project_id, &issues);
-        state.board_changed(project_id);
+    if let Err(error) = jira::mirror_board(state, project_id).await {
+        tracing::debug!(?error, "skipped a Jira refresh");
     }
 }
 

@@ -203,6 +203,66 @@ fn a_board_pull_mirrors_sprints_and_the_active_sprints_issues() {
 }
 
 #[test]
+fn a_pull_takes_a_linked_tickets_status_and_assignee_from_jira() {
+    let mut store = store();
+    connect(&mut store, Some(7));
+    let active = || vec![jira_sprint(11, "Sprint 11", JiraSprintState::Active)];
+    let with = |status: &str, category: &str, assignee: Option<&str>| JiraIssueSnapshot {
+        status_name: status.into(),
+        status_category: Some(category.into()),
+        assignee_display: assignee.map(Into::into),
+        ..issue("PAY-1", "Linked")
+    };
+    let JiraPullOutcome::Applied(changes) = pull(
+        &mut store,
+        read(active(), Some(vec![with("To Do", "new", None)])),
+    ) else {
+        panic!("applied");
+    };
+    let id = changes.tickets_created[0].clone();
+    let current = |store: &PmStore| {
+        let ticket = store.ticket(&id).unwrap().unwrap();
+        (ticket.status, ticket.assignee)
+    };
+    assert_eq!(current(&store), (TicketStatus::Todo, None));
+
+    // A local change gives way to Jira on the next pull.
+    store.set_ticket_status(&id, TicketStatus::Done).unwrap();
+    let JiraPullOutcome::Applied(changes) = pull(
+        &mut store,
+        read(
+            active(),
+            Some(vec![with("Code Review", "indeterminate", Some("Mert"))]),
+        ),
+    ) else {
+        panic!("applied");
+    };
+    assert_eq!(changes.tickets_updated, vec![id.clone()]);
+    assert_eq!(
+        current(&store),
+        (TicketStatus::InReview, Some("Mert".into()))
+    );
+
+    let JiraPullOutcome::Applied(changes) = pull(
+        &mut store,
+        read(
+            active(),
+            Some(vec![with("Code Review", "indeterminate", Some("Mert"))]),
+        ),
+    ) else {
+        panic!("applied");
+    };
+    assert!(changes.tickets_updated.is_empty());
+    let JiraPullOutcome::Applied(_) = pull(
+        &mut store,
+        read(active(), Some(vec![with("Merged to master", "done", None)])),
+    ) else {
+        panic!("applied");
+    };
+    assert_eq!(current(&store), (TicketStatus::Done, None));
+}
+
+#[test]
 fn a_failed_stale_or_unsupported_pull_changes_nothing() {
     static NOW: AtomicU64 = AtomicU64::new(1_000);
     let mut store = store();
