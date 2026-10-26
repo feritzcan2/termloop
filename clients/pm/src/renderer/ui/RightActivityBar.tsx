@@ -1,14 +1,19 @@
 import { Icon, type IconName } from "./icons.js";
 import type { RightSidebarView } from "./types.js";
 
-const ITEMS: readonly { view: RightSidebarView; label: string; short: string; icon: IconName }[] = [
+type Item = { view: RightSidebarView; label: string; short: string; icon: IconName };
+
+const ITEMS: readonly Item[] = [
   { view: "sprints", label: "Sprints", short: "Sprints", icon: "flag" },
   { view: "suggestions", label: "Suggestions", short: "Inbox", icon: "inbox" },
   { view: "skills", label: "Skills", short: "Skills", icon: "skill" },
 ];
 
+/** Kept at the bottom of the bar, apart from the work views. */
+const SETTINGS: Item = { view: "settings", label: "Settings", short: "Settings", icon: "gear" };
+
 export function rightSidebarLabel(view: RightSidebarView): string {
-  return ITEMS.find((item) => item.view === view)!.label;
+  return [...ITEMS, SETTINGS].find((item) => item.view === view)!.label;
 }
 
 /** The Jira item: it switches the stage, not the right panel; disabled without a Jira source. */
@@ -21,24 +26,25 @@ export type JiraActivity = { available: boolean; active: boolean; onToggle(): vo
  */
 export function RightActivityBar(props: { open: boolean; view: RightSidebarView; onSelect(view: RightSidebarView): void; jira?: JiraActivity }) {
   const jira = props.jira;
+  const button = (item: Item, className?: string) => {
+    const selected = props.open && props.view === item.view;
+    return (
+      <button
+        key={item.view}
+        type="button"
+        aria-label={`${item.label} sidebar`}
+        aria-pressed={selected}
+        className={[selected ? "selected" : "", className ?? ""].join(" ").trim() || undefined}
+        title={selected ? `Hide ${item.label}` : `Show ${item.label}`}
+        onClick={() => props.onSelect(item.view)}
+      >
+        <Icon name={item.icon} /><span>{item.short}</span>
+      </button>
+    );
+  };
   return (
     <nav className="activity-bar" aria-label="Right sidebar">
-      {ITEMS.map((item) => {
-        const selected = props.open && props.view === item.view;
-        return (
-          <button
-            key={item.view}
-            type="button"
-            aria-label={`${item.label} sidebar`}
-            aria-pressed={selected}
-            className={selected ? "selected" : undefined}
-            title={selected ? `Hide ${item.label}` : `Show ${item.label}`}
-            onClick={() => props.onSelect(item.view)}
-          >
-            <Icon name={item.icon} /><span>{item.short}</span>
-          </button>
-        );
-      })}
+      {ITEMS.map((item) => button(item))}
       {jira && (
         <button
           type="button"
@@ -52,6 +58,7 @@ export function RightActivityBar(props: { open: boolean; view: RightSidebarView;
           <Icon name="jira" /><span>Jira</span>
         </button>
       )}
+      {button(SETTINGS, "bottom")}
     </nav>
   );
 }

@@ -387,6 +387,14 @@ CREATE TABLE environment_proposals (
 ) STRICT;
 "#;
 
+/// An Azure DevOps repository as the project's code host, in place of a
+/// GitHub one.
+const V12: &str = r#"
+ALTER TABLE project_sources ADD COLUMN azure_organization TEXT;
+ALTER TABLE project_sources ADD COLUMN azure_project TEXT;
+ALTER TABLE project_sources ADD COLUMN azure_repository TEXT;
+"#;
+
 /// Every migration in order; a version is never edited once released.
 const MIGRATIONS: &[(u32, &str)] = &[
     (1, V1),
@@ -400,6 +408,7 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (9, V9),
     (10, V10),
     (11, V11),
+    (12, V12),
 ];
 
 pub const SCHEMA_VERSION: u32 = MIGRATIONS[MIGRATIONS.len() - 1].0;

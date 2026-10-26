@@ -33,7 +33,7 @@ impl Tracking {
         environments: &[ProjectEnvironment],
         probes: &[DeliveryProbe],
     ) -> Self {
-        let code = sources.github.is_some();
+        let code = sources.has_code_host();
         let deploy = deploy_tracking_enabled(environments, probes);
         Self {
             jira: sources.jira.is_some(),

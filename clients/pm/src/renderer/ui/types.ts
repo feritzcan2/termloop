@@ -1,15 +1,15 @@
 // UI-local types. The UI imports contract types only; it never imports the
 // bridge, a transport, or the terminal adapter.
-import type { PmAgentProvider, PmAgentState, PmJiraApplyResult, PmJiraDiff, PmTicketPriority } from "@termloop/pm-contract/pm";
+import type { PmAgentProvider, PmAgentState, PmAzureDevOpsSource, PmGitHubSource, PmJiraApplyResult, PmJiraDiff, PmTicketPriority } from "@termloop/pm-contract/pm";
 
 /**
  * The stage's content; `jira` is the Jira issue browser the activity bar
  * toggles, `agent` the selected agent's terminal at full stage size.
  */
-export type PmView = "overview" | "ticket" | "settings" | "jira" | "agent" | "skill";
+export type PmView = "overview" | "ticket" | "jira" | "agent" | "skill";
 
 /** What the right activity bar opens in the right sidebar. */
-export type RightSidebarView = "sprints" | "suggestions" | "skills";
+export type RightSidebarView = "sprints" | "suggestions" | "skills" | "settings";
 
 export type JiraDialogView = {
   ticketId: string;
@@ -48,3 +48,6 @@ export type TicketCapture = {
   assignee: string;
   askAssistant: boolean;
 };
+
+/** The one code host a project reads pull requests from. */
+export type CodeHostInput = ({ kind: "github" } & PmGitHubSource) | ({ kind: "azureDevOps" } & PmAzureDevOpsSource) | null;

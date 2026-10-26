@@ -11,8 +11,10 @@ import type {
   PmTracking,
 } from "@termloop/pm-contract/pm";
 import { relativeTime } from "./format.js";
+import type { CodeHostInput } from "./types.js";
 
 export type JiraSourceDraft = { siteUrl: string; boardId: number | null; accountEmail: string; token: string };
+type CodeHostKind = "github" | "azureDevOps";
 
 export type SettingsPageProps = {
   projectName: string | undefined;
@@ -24,7 +26,7 @@ export type SettingsPageProps = {
   environments: PmEnvironment[];
   probes: PmProbe[];
   now: number;
-  onSaveSources(jira: JiraSourceDraft | null, github: { owner: string; name: string } | null): Promise<boolean>;
+  onSaveSources(jira: JiraSourceDraft | null, code: CodeHostInput): Promise<boolean>;
   onClearToken(): void;
   onPickFolder?(): Promise<string | null>;
   onSetFolder?(folder: string | null): void;
@@ -36,28 +38,22 @@ export type SettingsPageProps = {
   onDeleteProbe(probeId: string): void;
 };
 
+/** The right sidebar's Settings view: the open project's sources and the app-wide assistant. */
 export function SettingsPage(props: SettingsPageProps) {
   if (!props.projectName) {
-    return (
-      <section className="pane" aria-label="Settings">
-        <div className="pane-head"><b>Settings</b></div>
-        <div className="body"><p className="hint">Create a project to configure its sources.</p></div>
-      </section>
-    );
+    return <div className="settings-panel"><p className="hint">Create a project to configure its sources.</p></div>;
   }
   return (
-    <section className="pane settings-pane" aria-label="Settings">
-      <div className="pane-head"><b>Settings</b><span className="meta">{props.projectName}</span><span className="sp" /></div>
-      <div className="body">
-        <CodeFolderCard {...props} />
-        <SourcesCards {...props} />
-        <DeployCard {...props} />
-        <AgentCard settings={props.settings} catalog={props.catalog} onSave={props.onSaveSettings} />
-        <SettingsSection title="Your data" description={<>Everything lives on this computer in the PM daemon's store at <code>&lt;TermLoop state directory&gt;/pm/pm.sqlite</code>. There is no server and no account.</>}>
-          <p className="hint">Jira API tokens are kept in the operating system's secure credential store, never in that file or in this window.</p>
-        </SettingsSection>
-      </div>
-    </section>
+    <div className="settings-panel">
+      <div className="right-sidebar-tools"><span className="meta">{props.projectName}</span></div>
+      <CodeFolderCard {...props} />
+      <SourcesCards {...props} />
+      <DeployCard {...props} />
+      <AgentCard settings={props.settings} catalog={props.catalog} onSave={props.onSaveSettings} />
+      <SettingsSection title="Your data" description={<>Everything lives on this computer in the PM daemon's store at <code>&lt;TermLoop state directory&gt;/pm/pm.sqlite</code>. There is no server and no account.</>}>
+        <p className="hint">Jira API tokens are kept in the operating system's secure credential store, never in that file or in this window.</p>
+      </SettingsSection>
+    </div>
   );
 }
 
@@ -102,20 +98,26 @@ function CodeFolderCard(props: SettingsPageProps) {
 function SourcesCards(props: SettingsPageProps) {
   const jira = props.sources?.jira ?? null;
   const github = props.sources?.github ?? null;
+  const azure = props.sources?.azureDevOps ?? null;
   const [siteUrl, setSiteUrl] = useState(jira?.siteUrl ?? "");
   const [boardId, setBoardId] = useState(jira?.boardId?.toString() ?? "");
   const [accountEmail, setAccountEmail] = useState(jira?.accountEmail ?? "");
   // Write-only: the field starts empty and is cleared after every save.
   const [token, setToken] = useState("");
-  const [owner, setOwner] = useState(github?.owner ?? "");
-  const [repository, setRepository] = useState(github?.name ?? "");
+  const [host, setHost] = useState<CodeHostKind>(azure ? "azureDevOps" : "github");
+  // GitHub owner or Azure DevOps organization, the Azure project, the repository.
+  const [owner, setOwner] = useState(github?.owner ?? azure?.organization ?? "");
+  const [project, setProject] = useState(azure?.project ?? "");
+  const [repository, setRepository] = useState(github?.name ?? azure?.name ?? "");
   const [saving, setSaving] = useState(false);
   useEffect(() => {
     setSiteUrl(jira?.siteUrl ?? "");
     setBoardId(jira?.boardId?.toString() ?? "");
     setAccountEmail(jira?.accountEmail ?? "");
-    setOwner(github?.owner ?? "");
-    setRepository(github?.name ?? "");
+    setHost(azure ? "azureDevOps" : "github");
+    setOwner(github?.owner ?? azure?.organization ?? "");
+    setProject(azure?.project ?? "");
+    setRepository(github?.name ?? azure?.name ?? "");
   }, [props.sources]);
 
   const jiraFilled = siteUrl.trim() !== "" || accountEmail.trim() !== "";
@@ -125,9 +127,14 @@ function SourcesCards(props: SettingsPageProps) {
     const jiraDraft = jiraFilled
       ? { siteUrl: siteUrl.trim().replace(/\/+$/, ""), boardId: Number.isSafeInteger(parsedBoard) ? parsedBoard : null, accountEmail: accountEmail.trim(), token }
       : null;
-    const githubDraft = owner.trim() && repository.trim() ? { owner: owner.trim(), name: repository.trim() } : null;
+    const filled = owner.trim() !== "" && repository.trim() !== "" && (host === "github" || project.trim() !== "");
+    const code: CodeHostInput = !filled
+      ? null
+      : host === "github"
+        ? { kind: "github", owner: owner.trim(), name: repository.trim() }
+        : { kind: "azureDevOps", organization: owner.trim(), project: project.trim(), name: repository.trim() };
     try {
-      await props.onSaveSources(jiraDraft, githubDraft);
+      await props.onSaveSources(jiraDraft, code);
     } finally {
       setToken("");
       setSaving(false);
@@ -161,14 +168,28 @@ function SourcesCards(props: SettingsPageProps) {
         </p>
       </SettingsSection>
       <SettingsSection
-        title="GitHub"
-        state={github ? { tone: "ok", text: "CONNECTED" } : { tone: "off", text: "NOT CONNECTED" }}
-        description="Pull requests are matched to tickets by their issue key. The app reads review state and how long a pull request has been waiting."
+        title="Code host"
+        state={github ? { tone: "ok", text: "GITHUB" } : azure ? { tone: "ok", text: "AZURE DEVOPS" } : { tone: "off", text: "NOT CONNECTED" }}
+        description="Pull requests are matched to tickets by their issue key in the branch or title. The app reads review and build state and how long a pull request has been waiting."
       >
         <div className="fields">
-          <Field label="Owner"><input placeholder="e.g. acme" value={owner} onChange={(event) => setOwner(event.target.value)} /></Field>
+          <Field label="Host">
+            <select aria-label="Code host" value={host} onChange={(event) => setHost(event.target.value as CodeHostKind)}>
+              <option value="github">GitHub</option>
+              <option value="azureDevOps">Azure DevOps</option>
+            </select>
+          </Field>
+          <Field label={host === "github" ? "Owner" : "Organization"}>
+            <input placeholder={host === "github" ? "e.g. acme" : "e.g. contoso"} value={owner} onChange={(event) => setOwner(event.target.value)} />
+          </Field>
+          {host === "azureDevOps" && <Field label="Project"><input placeholder="e.g. Parking" value={project} onChange={(event) => setProject(event.target.value)} /></Field>}
           <Field label="Repository"><input placeholder="e.g. shop" value={repository} onChange={(event) => setRepository(event.target.value)} /></Field>
         </div>
+        <p className="hint">
+          {host === "github"
+            ? "Read with the GitHub CLI on this computer (gh auth login)."
+            : "Read with the Azure CLI on this computer (az login, with the azure-devops extension)."}
+        </p>
         {!props.tracking?.code && <p className="hint">Connect a repository to see code stages (in review, merged) on tickets.</p>}
         <div className="actions">
           <button type="submit" className="btn pri" disabled={saving}>Save connections</button>

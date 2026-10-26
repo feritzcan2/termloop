@@ -51,7 +51,7 @@ describe("PmController", () => {
   it("stores a typed Jira token in the credential store and sends only its handle with the sources", async () => {
     const bridge = fakeBridge((method) => {
       if (method === "pm_credential_store") return ok({ credentialHandle: "handle-1" });
-      if (method === "pm_sources_set") return ok({ projectId: "project-1", jira: null, github: null });
+      if (method === "pm_sources_set") return ok({ projectId: "project-1", jira: null, github: null, azureDevOps: null });
       if (method === "pm_board_read") return { ok: false, error: { code: "unavailable", message: "offline" } };
       return ok({});
     });
@@ -60,7 +60,18 @@ describe("PmController", () => {
     expect(bridge.calls[0]).toEqual({ method: "pm_credential_store", params: { kind: "jiraApiToken", secret: "s3cret" } });
     const sourcesCall = bridge.calls.find((call) => call.method === "pm_sources_set");
     expect(JSON.stringify(sourcesCall?.params)).not.toContain("s3cret");
-    expect(sourcesCall?.params).toMatchObject({ jira: { credentialHandle: "handle-1" } });
+    expect(sourcesCall?.params).toMatchObject({ jira: { credentialHandle: "handle-1" }, github: null, azureDevOps: null });
+  });
+
+  it("sends an Azure DevOps code host in place of a GitHub one", async () => {
+    const bridge = fakeBridge((method) => method === "pm_sources_set"
+      ? ok({ projectId: "project-1", jira: null, github: null, azureDevOps: null })
+      : { ok: false, error: { code: "unavailable", message: "offline" } });
+    const controller = new PmController(bridge, createPmStore({ projectId: "project-1" }));
+    await controller.saveSources(null, { kind: "azureDevOps", organization: "contoso", project: "Parking", name: "Nucleus" });
+    expect(bridge.calls.find((call) => call.method === "pm_sources_set")?.params).toEqual({
+      projectId: "project-1", jira: null, github: null, azureDevOps: { organization: "contoso", project: "Parking", name: "Nucleus" },
+    });
   });
 
   it("rereads the digest with every board reread, so board changes reach Since yesterday", async () => {

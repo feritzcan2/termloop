@@ -1,5 +1,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use termloop_providers::AzureRepository;
+
 use super::{sprint, store, ticket};
 use crate::{
     CommitAncestryFact, DataTier, DeliveryRiskKind, DeliveryStageKind, EnvironmentDeployState,
@@ -382,7 +384,7 @@ fn sources_hold_only_valid_non_secret_identifiers() {
             account_email: "ada@acme.example".into(),
             credential_handle: "jira-acme".into(),
         }),
-        github: None,
+        ..ProjectSources::default()
     };
     assert_eq!(store.set_project_sources("p1", &sources).unwrap(), sources);
     assert_eq!(store.project_sources("p1").unwrap(), sources);
@@ -401,6 +403,51 @@ fn sources_hold_only_valid_non_secret_identifiers() {
         store.project_sources("p1").unwrap(),
         ProjectSources::default()
     );
+}
+
+#[test]
+fn an_azure_devops_repository_is_stored_normalized_and_tracks_code() {
+    let mut store = store();
+    let stored = store
+        .set_project_sources(
+            "p1",
+            &ProjectSources {
+                azure_devops: Some(AzureRepository {
+                    organization: "Contoso".into(),
+                    project: "Parking".into(),
+                    name: "Nucleus".into(),
+                }),
+                ..ProjectSources::default()
+            },
+        )
+        .unwrap();
+    let azure = stored.azure_devops.clone().unwrap();
+    assert_eq!(azure.organization, "contoso");
+    assert_eq!(store.project_sources("p1").unwrap(), stored);
+    assert!(store.tracking("p1").unwrap().code);
+    let both = ProjectSources {
+        github: Some(GitHubSource {
+            owner: "acme".into(),
+            name: "pay".into(),
+        }),
+        ..stored.clone()
+    };
+    assert!(matches!(
+        store.set_project_sources("p1", &both),
+        Err(PmError::Invalid("sources"))
+    ));
+    let invalid = ProjectSources {
+        azure_devops: Some(AzureRepository {
+            name: "a/b".into(),
+            ..azure
+        }),
+        ..ProjectSources::default()
+    };
+    assert!(matches!(
+        store.set_project_sources("p1", &invalid),
+        Err(PmError::Invalid("sources"))
+    ));
+    assert_eq!(store.project_sources("p1").unwrap(), stored);
 }
 
 #[test]

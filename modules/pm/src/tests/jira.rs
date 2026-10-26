@@ -31,7 +31,7 @@ fn connect(store: &mut PmStore, board_id: Option<u64>) {
                     account_email: "ada@acme.example".into(),
                     credential_handle: "jira-acme".into(),
                 }),
-                github: None,
+                ..ProjectSources::default()
             },
         )
         .unwrap();

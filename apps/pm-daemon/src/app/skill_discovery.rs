@@ -68,6 +68,7 @@ pub(crate) fn pm_sources(store: &PmStore, project_id: &str) -> Result<Value, PmE
             "credentialStored": !jira.credential_handle.is_empty(),
         })),
         "github": sources.github.as_ref().map(|github| json!({ "repository": github.label() })),
+        "azureDevOps": sources.azure_devops.as_ref().map(|azure| json!({ "repository": azure.label() })),
         "environments": board.environments.iter().map(|environment| &environment.name).collect::<Vec<_>>(),
         "approvedProbes": approved_probes,
         "checkoutFolder": store.project(project_id)?.and_then(|project| project.folder).is_some(),

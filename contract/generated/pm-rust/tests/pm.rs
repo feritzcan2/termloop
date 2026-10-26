@@ -62,7 +62,7 @@ fn jira_links_are_only_secret_free_browse_urls() {
         assert!(!validate_method_result("pm_ticket_create", &copy), "{url}");
     }
     let source = |site: &str| {
-        json!({"projectId": "p1", "github": null, "jira": {
+        json!({"projectId": "p1", "github": null, "azureDevOps": null, "jira": {
             "siteUrl": site, "boardId": 84, "accountEmail": "ada@acme.example",
             "credentialHandle": "jira-acme"
         }})

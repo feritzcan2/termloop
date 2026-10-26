@@ -257,6 +257,7 @@ fn planning(state: &AppState, method: &str, params: &Value) -> Result<Value, Con
             let wanted = ProjectSources {
                 jira: params.jira.as_ref().map(convert).transpose()?,
                 github: params.github.as_ref().map(convert).transpose()?,
+                azure_devops: params.azure_dev_ops.as_ref().map(convert).transpose()?,
             };
             let stored = store.set_project_sources(&params.project_id, &wanted)?;
             state.board_changed(&params.project_id);
@@ -480,6 +481,7 @@ fn sources(project_id: &str, sources: &ProjectSources) -> Result<Value, ControlE
         "projectId": project_id,
         "jira": to_value(&sources.jira)?,
         "github": to_value(&sources.github)?,
+        "azureDevOps": to_value(&sources.azure_devops)?,
     }))
 }
 

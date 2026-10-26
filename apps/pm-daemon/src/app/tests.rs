@@ -650,7 +650,7 @@ async fn jira_browse_reads_need_a_source_and_a_stored_token() {
     call(
         state,
         "pm_sources_set",
-        json!({ "projectId": project_id, "github": null, "jira": {
+        json!({ "projectId": project_id, "github": null, "azureDevOps": null, "jira": {
             "siteUrl": "https://acme.atlassian.net", "boardId": 84,
             "accountEmail": "ada@acme.example", "credentialHandle": handle,
         }}),
@@ -666,6 +666,39 @@ async fn jira_browse_reads_need_a_source_and_a_stored_token() {
         );
         assert!(!error.message.contains(&handle));
     }
+}
+
+#[tokio::test]
+async fn sources_keep_one_azure_devops_repository_normalized() {
+    let fixture = fixture();
+    let state = &fixture.state;
+    let project_id = project(state).await;
+    let azure = json!({ "organization": "Contoso", "project": "Parking", "name": "Nucleus" });
+    let stored = call(
+        state,
+        "pm_sources_set",
+        json!({ "projectId": project_id, "jira": null, "github": null, "azureDevOps": azure }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        stored["azureDevOps"],
+        json!({ "organization": "contoso", "project": "Parking", "name": "Nucleus" })
+    );
+    assert_eq!(
+        call(state, "pm_sources_read", json!({ "projectId": project_id }))
+            .await
+            .unwrap(),
+        stored
+    );
+    let error = call_error(
+        state,
+        "pm_sources_set",
+        json!({ "projectId": project_id, "jira": null,
+            "github": { "owner": "acme", "name": "pay" }, "azureDevOps": azure }),
+    )
+    .await;
+    assert_eq!(error.code, ErrorCode::InvalidParams);
 }
 
 #[tokio::test]

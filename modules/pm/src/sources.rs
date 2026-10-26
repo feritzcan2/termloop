@@ -1,9 +1,9 @@
-//! Where a PM project reads from: a Jira Cloud site and a GitHub
-//! repository. Only non-secret identifiers are kept; a Jira API token lives
+//! Where a PM project reads from: a Jira Cloud site and one code host
+//! repository, on GitHub or Azure DevOps. Only non-secret identifiers are kept; a Jira API token lives
 //! in the platform credential store under the named handle and is read by
 //! the caller for one request, never stored here.
 
-use termloop_providers::{normalize_jira_site_base_url, valid_issue_key};
+use termloop_providers::{AzureRepository, normalize_jira_site_base_url, valid_issue_key};
 
 use crate::validation::{valid_id, valid_label};
 
@@ -73,12 +73,45 @@ pub struct ProjectSources {
     pub jira: Option<JiraSource>,
     #[serde(default)]
     pub github: Option<GitHubSource>,
+    /// Kept normalized: a lowercase organization and NFC names.
+    #[serde(default)]
+    pub azure_devops: Option<AzureRepository>,
 }
 
 impl ProjectSources {
+    /// A project reads pull requests from at most one code host.
     pub fn is_valid(&self) -> bool {
         self.jira.as_ref().is_none_or(JiraSource::is_valid)
             && self.github.as_ref().is_none_or(GitHubSource::is_valid)
+            && self
+                .azure_devops
+                .as_ref()
+                .is_none_or(|azure| azure.normalized().as_ref() == Some(azure))
+            && !(self.github.is_some() && self.azure_devops.is_some())
+    }
+
+    /// The same sources with the Azure DevOps repository normalized, or
+    /// `None` when its names are invalid.
+    pub fn normalized(&self) -> Option<Self> {
+        Some(Self {
+            azure_devops: match &self.azure_devops {
+                Some(azure) => Some(azure.normalized()?),
+                None => None,
+            },
+            ..self.clone()
+        })
+    }
+
+    pub fn has_code_host(&self) -> bool {
+        self.github.is_some() || self.azure_devops.is_some()
+    }
+
+    /// The label of the code host repository pull requests are read from.
+    pub fn code_label(&self) -> Option<String> {
+        self.github
+            .as_ref()
+            .map(GitHubSource::label)
+            .or_else(|| self.azure_devops.as_ref().map(AzureRepository::label))
     }
 }
 
@@ -133,5 +166,41 @@ mod tests {
             }
             .is_valid()
         );
+    }
+
+    #[test]
+    fn azure_devops_sources_are_kept_normalized_and_exclude_github() {
+        let raw = ProjectSources {
+            azure_devops: Some(AzureRepository {
+                organization: "Contoso".into(),
+                project: "Parking Platform".into(),
+                name: "Nucleus".into(),
+            }),
+            ..ProjectSources::default()
+        };
+        assert!(!raw.is_valid());
+        let sources = raw.normalized().expect("valid names");
+        assert!(sources.is_valid() && sources.has_code_host());
+        assert_eq!(
+            sources.code_label().as_deref(),
+            Some("dev.azure.com/contoso/Parking Platform/Nucleus")
+        );
+        let invalid = ProjectSources {
+            azure_devops: Some(AzureRepository {
+                project: "a/b".into(),
+                ..sources.azure_devops.clone().unwrap()
+            }),
+            ..ProjectSources::default()
+        };
+        assert_eq!(invalid.normalized(), None);
+        let both = ProjectSources {
+            github: Some(GitHubSource {
+                owner: "acme".into(),
+                name: "pay".into(),
+            }),
+            ..sources
+        };
+        assert!(!both.is_valid());
+        assert!(!ProjectSources::default().has_code_host());
     }
 }

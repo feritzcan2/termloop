@@ -58,11 +58,14 @@ describe("right activity bar", () => {
     const view = render(<RightActivityBar open view="sprints" onSelect={onSelect} />);
     cleanup = view.unmount;
     const buttons = [...view.container.querySelectorAll<HTMLButtonElement>(".activity-bar button")];
-    expect(buttons.map((button) => [button.textContent, button.getAttribute("aria-pressed")])).toEqual([["Sprints", "true"], ["Inbox", "false"], ["Skills", "false"]]);
+    expect(buttons.map((button) => [button.textContent, button.getAttribute("aria-pressed")])).toEqual([["Sprints", "true"], ["Inbox", "false"], ["Skills", "false"], ["Settings", "false"]]);
+    expect(buttons[3]!.classList.contains("bottom")).toBe(true);
     act(() => buttons[1]!.click());
     expect(onSelect).toHaveBeenLastCalledWith("suggestions");
     act(() => buttons[2]!.click());
     expect(onSelect).toHaveBeenLastCalledWith("skills");
+    act(() => buttons[3]!.click());
+    expect(onSelect).toHaveBeenLastCalledWith("settings");
   });
 });
 

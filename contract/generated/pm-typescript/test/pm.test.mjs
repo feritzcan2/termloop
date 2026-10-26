@@ -15,9 +15,13 @@ test("generated PM contract surface is stable", () => {
 test("PM results reject secrets and unknown fields", () => {
   assert.equal(validateMethodResult("pm_credential_store", { credentialHandle: "jira-acme" }), true);
   assert.equal(validateMethodResult("pm_credential_store", { credentialHandle: "jira-acme", secret: "x" }), false);
-  const sources = { projectId: "p1", github: { owner: "acme", name: "pay.api" }, jira: { siteUrl: "https://acme.atlassian.net", boardId: null, accountEmail: "ada@acme.example", credentialHandle: "jira-acme" } };
+  const sources = { projectId: "p1", github: { owner: "acme", name: "pay.api" }, azureDevOps: null, jira: { siteUrl: "https://acme.atlassian.net", boardId: null, accountEmail: "ada@acme.example", credentialHandle: "jira-acme" } };
   assert.equal(validateMethodResult("pm_sources_read", sources), true);
   assert.equal(validateMethodResult("pm_sources_read", { ...sources, jira: { ...sources.jira, siteUrl: "https://acme.atlassian.net/?token=x" } }), false);
+  const azure = { ...sources, github: null, azureDevOps: { organization: "contoso", project: "Parking Platform", name: "Nucleus" } };
+  assert.equal(validateMethodResult("pm_sources_read", azure), true);
+  assert.equal(validateMethodResult("pm_sources_read", { ...azure, azureDevOps: { ...azure.azureDevOps, organization: "-contoso" } }), false);
+  assert.equal(validateMethodResult("pm_sources_read", { ...azure, azureDevOps: { ...azure.azureDevOps, token: "x" } }), false);
   assert.equal(validateEventPayload("pmBoardChanged", { projectId: "p1" }), true);
   assert.equal(validateEventPayload("pmBoardChanged", { projectId: "" }), false);
 });

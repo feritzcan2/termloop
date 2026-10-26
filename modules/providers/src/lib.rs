@@ -133,6 +133,24 @@ impl AzureRepository {
     pub fn repository_key(&self) -> String {
         format!("{}|{}", self.project_key(), azure_name_key(&self.name))
     }
+
+    /// The secret-free `dev.azure.com/<organization>/<project>/<name>` label.
+    pub fn label(&self) -> String {
+        format!(
+            "{AZURE_HOST}/{}/{}/{}",
+            self.organization, self.project, self.name
+        )
+    }
+
+    /// The same repository with a lowercase organization and NFC display
+    /// names, or `None` when a part is not a valid Azure DevOps name.
+    pub fn normalized(&self) -> Option<Self> {
+        Some(Self {
+            organization: normalize_organization(&self.organization).ok()?,
+            project: normalize_azure_display_name(&self.project, AzureNameKind::Project).ok()?,
+            name: normalize_azure_display_name(&self.name, AzureNameKind::Repository).ok()?,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

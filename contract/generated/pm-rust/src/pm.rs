@@ -53,37 +53,41 @@ static CONTRACT_PATTERN_10: std::sync::LazyLock<regex::Regex> = std::sync::LazyL
     regex::Regex::new("^[A-Za-z0-9._-]+$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_11: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^[A-Za-z0-9]{1,32}$").expect("generated contract pattern")
+    regex::Regex::new("^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$")
+        .expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_12: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^[A-Za-z0-9_-][A-Za-z0-9_.-]*$").expect("generated contract pattern")
+    regex::Regex::new("^[A-Za-z0-9]{1,32}$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_13: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^[^\\s@]+@[^\\s@]+$").expect("generated contract pattern")
+    regex::Regex::new("^[A-Za-z0-9_-][A-Za-z0-9_.-]*$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_14: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^https://").expect("generated contract pattern")
+    regex::Regex::new("^[^\\s@]+@[^\\s@]+$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_15: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^https://[!-~]+$").expect("generated contract pattern")
+    regex::Regex::new("^https://").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_16: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
+    regex::Regex::new("^https://[!-~]+$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_17: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^https://[^\\s@/]+/[^\\s]*$").expect("generated contract pattern")
+    regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_18: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net$").expect("generated contract pattern")
+    regex::Regex::new("^https://[^\\s@/]+/[^\\s]*$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_19: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net/browse/[A-Z][A-Z0-9_]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
+    regex::Regex::new("^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_20: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new("^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net/browse/[A-Z][A-Z0-9_]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
+});
+static CONTRACT_PATTERN_21: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^mcp__[A-Za-z0-9_-]{1,64}__[A-Za-z0-9_-]{1,64}$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_21: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_22: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^pm_[a-z_]{1,60}$").expect("generated contract pattern")
 });
 
@@ -104,29 +108,30 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
         "^[A-Z][A-Z0-9_]{0,63}$" => CONTRACT_PATTERN_8.is_match(text),
         "^[A-Z][A-Z0-9_]{0,63}-[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_9.is_match(text),
         "^[A-Za-z0-9._-]+$" => CONTRACT_PATTERN_10.is_match(text),
-        "^[A-Za-z0-9]{1,32}$" => CONTRACT_PATTERN_11.is_match(text),
-        "^[A-Za-z0-9_-][A-Za-z0-9_.-]*$" => CONTRACT_PATTERN_12.is_match(text),
-        "^[^\\s@]+@[^\\s@]+$" => CONTRACT_PATTERN_13.is_match(text),
-        "^https://" => CONTRACT_PATTERN_14.is_match(text),
-        "^https://[!-~]+$" => CONTRACT_PATTERN_15.is_match(text),
+        "^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$" => CONTRACT_PATTERN_11.is_match(text),
+        "^[A-Za-z0-9]{1,32}$" => CONTRACT_PATTERN_12.is_match(text),
+        "^[A-Za-z0-9_-][A-Za-z0-9_.-]*$" => CONTRACT_PATTERN_13.is_match(text),
+        "^[^\\s@]+@[^\\s@]+$" => CONTRACT_PATTERN_14.is_match(text),
+        "^https://" => CONTRACT_PATTERN_15.is_match(text),
+        "^https://[!-~]+$" => CONTRACT_PATTERN_16.is_match(text),
         "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$" => {
-            CONTRACT_PATTERN_16.is_match(text)
+            CONTRACT_PATTERN_17.is_match(text)
         }
-        "^https://[^\\s@/]+/[^\\s]*$" => CONTRACT_PATTERN_17.is_match(text),
+        "^https://[^\\s@/]+/[^\\s]*$" => CONTRACT_PATTERN_18.is_match(text),
         "^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net$" => {
-            CONTRACT_PATTERN_18.is_match(text)
-        }
-        "^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net/browse/[A-Z][A-Z0-9_]{0,63}-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_19.is_match(text)
         }
-        "^mcp__[A-Za-z0-9_-]{1,64}__[A-Za-z0-9_-]{1,64}$" => CONTRACT_PATTERN_20.is_match(text),
-        "^pm_[a-z_]{1,60}$" => CONTRACT_PATTERN_21.is_match(text),
+        "^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net/browse/[A-Z][A-Z0-9_]{0,63}-[1-9][0-9]{0,19}$" => {
+            CONTRACT_PATTERN_20.is_match(text)
+        }
+        "^mcp__[A-Za-z0-9_-]{1,64}__[A-Za-z0-9_-]{1,64}$" => CONTRACT_PATTERN_21.is_match(text),
+        "^pm_[a-z_]{1,60}$" => CONTRACT_PATTERN_22.is_match(text),
         _ => false,
     }
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:562245c4cb0bf9c4c11778c4abfb9e051155be63eae9777fea292e8ac1d4865b";
+    "sha256:9b247a34b7682bf18c836d8ff373f2d75617d9e1b9c1330bae48f569b29f1c99";
 pub const CAPABILITY_SCOPE: &str = "pm.full";
 pub const METHODS: &[&str] = &[
     "pm_system_version",
@@ -873,6 +878,14 @@ pub struct PmGitHubSource {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
+pub struct PmAzureDevOpsSource {
+    pub organization: String,
+    pub project: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct PmSources {
     #[serde(rename = "projectId")]
     pub project_id: String,
@@ -880,6 +893,11 @@ pub struct PmSources {
     pub jira: Option<PmJiraSource>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub github: Option<PmGitHubSource>,
+    #[serde(
+        rename = "azureDevOps",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub azure_dev_ops: Option<PmAzureDevOpsSource>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -4082,6 +4100,37 @@ fn validate_pm_git_hub_source(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_pm_azure_dev_ops_source(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("organization").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 50
+                    && contract_pattern_matches("^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$", text)
+            })
+        }) && object.get("project").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+        }) && object.get("name").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+        }) && object
+            .keys()
+            .all(|key| ["organization", "project", "name"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_pm_sources(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object.get("projectId").is_some_and(|field| {
@@ -4097,8 +4146,11 @@ fn validate_pm_sources(value: &Value) -> bool {
                 .get("github")
                 .is_some_and(|field| (validate_pm_git_hub_source(field) || field.is_null()))
             && object
+                .get("azureDevOps")
+                .is_some_and(|field| (validate_pm_azure_dev_ops_source(field) || field.is_null()))
+            && object
                 .keys()
-                .all(|key| ["projectId", "jira", "github"].contains(&key.as_str()))
+                .all(|key| ["projectId", "jira", "github", "azureDevOps"].contains(&key.as_str()))
     })
 }
 

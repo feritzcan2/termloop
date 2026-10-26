@@ -17,6 +17,7 @@ export function JiraStage(props: {
   /** Where "Add to PM" files new tickets: the active sprint, or the backlog for `null`. */
   sprintId: string | null;
   now: number;
+  onOpenSettings(): void;
 }) {
   const { controller, projectId, connection, siteUrl } = props;
   const sprintId = useRef(props.sprintId);
@@ -46,12 +47,12 @@ export function JiraStage(props: {
     onNewIssue: siteUrl ? () => void controller.bridge.openExternal(newIssueUrl(siteUrl)) : undefined,
     onMode: (mode) => browser.setMode(mode),
     onCurrentSprint: (on) => void browser.setCurrentSprint(on),
-    onOpenSettings: () => controller.setView("settings"),
+    onOpenSettings: props.onOpenSettings,
     onCopyKey: (key) => void navigator.clipboard?.writeText(key),
     onOpenTicket: (ticketId) => void controller.selectTicket(ticketId),
     onAddToPm: (issue) => void browser.addToPm(issue),
     onOpenInJira: (url) => void controller.bridge.openExternal(url),
-  }), [browser, controller, siteUrl]);
+  }), [browser, controller, siteUrl, props.onOpenSettings]);
   return <JiraBrowser connection={connection} view={view} now={props.now} actions={actions} />;
 }
 

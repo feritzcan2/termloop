@@ -103,6 +103,11 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
   const shownSprintId = leftSprint(sprints, state.selectedSprintId)?.id;
   const lane = useMemo(() => (shownSprintId ? sprintTickets(allTickets, shownSprintId) : EMPTY), [allTickets, shownSprintId]);
   const [right, updateRight] = useRightSidebar();
+  const settingsOpen = right.open && right.view === "settings";
+  useEffect(() => {
+    if (settingsOpen && state.projectId) void controller.loadSettings();
+  }, [settingsOpen, state.projectId, controller]);
+  const openSettings = useCallback(() => updateRight((current) => ({ ...current, open: true, view: "settings" })), [updateRight]);
   const [leftWidth, setLeftWidth] = useLeftSidebarWidth();
   const viewport = useViewportWidth();
   const fitted = fitSidebarWidths(leftWidth, right.open ? right.width : undefined, viewport);
@@ -147,7 +152,6 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
     ...(openSkill ? [{ view: "skill" as const, label: `SKILL.md · ${openSkill.manifest.name}` }] : []),
     ...(activeAgent ? [{ view: "agent" as const, label: `${activeAgent.label} · ${activeAgent.detail}` }] : []),
     ...(jiraConnection === "connected" || view === "jira" ? [{ view: "jira" as const, label: "Jira issues" }] : []),
-    { view: "settings", label: "Settings" },
   ];
 
   return (
@@ -180,7 +184,6 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
           activeAgentSessionId={state.activeAgentSessionId}
           onSelectProject={(id) => void controller.selectProject(id)}
           onCreateProject={(name) => void controller.createProject(name)}
-          onView={(next) => controller.setView(next)}
           onPull={() => void controller.pullJira()}
           onStartAssistant={() => launchAgent(view === "ticket" ? ticketId : undefined)}
           onSelectAgent={(id) => controller.selectAgent(id)}
@@ -210,28 +213,6 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 <div className="pane-head"><b>Welcome to TermLoop PM</b></div>
                 <div className="body empty-state"><p className="lead">Create a project from the project picker in the sidebar to start planning.</p></div>
               </section>
-            ) : view === "settings" ? (
-              <SettingsPage
-                projectName={project.name}
-                projectFolder={project.folder}
-                settings={state.settings}
-                catalog={state.catalog}
-                sources={state.sources}
-                tracking={board?.tracking}
-                environments={board?.environments ?? EMPTY}
-                probes={board?.probes ?? EMPTY}
-                now={now}
-                onSaveSources={(jira, github) => controller.saveSources(jira, github)}
-                onClearToken={() => void controller.clearJiraToken()}
-                onPickFolder={() => controller.bridge.pickFolder()}
-                onSetFolder={(folder) => void controller.setProjectFolder(folder)}
-                onSaveSettings={(edit) => void controller.saveSettings(edit)}
-                onSetEnvironments={(environments) => void controller.setEnvironments(environments)}
-                onCreateProbe={(environment, argv, matcher) => void controller.createProbe(environment, argv, matcher)}
-                onApproveProbe={(id) => void controller.approveProbe(id)}
-                onRejectProbe={(id) => void controller.rejectProbe(id)}
-                onDeleteProbe={(id) => void controller.deleteProbe(id)}
-              />
             ) : view === "skill" && openSkill ? (
               <SkillFile
                 key={`${openSkill.id}:${openSkill.version}`}
@@ -257,6 +238,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 siteUrl={state.sources?.jira?.siteUrl}
                 sprintId={activeSprint?.id ?? null}
                 now={now}
+                onOpenSettings={openSettings}
               />
             ) : view === "ticket" && entry && ticketId ? (
               <TicketEditor
@@ -327,6 +309,28 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 onSelectSprint={(id) => controller.selectSprint(id)}
                 onActivateSprint={(id) => void controller.activateSprint(id)}
                 onCreateSprint={(name, goal) => void controller.createSprint(name, goal)}
+              />
+            ) : right.view === "settings" ? (
+              <SettingsPage
+                projectName={project?.name}
+                projectFolder={project?.folder ?? null}
+                settings={state.settings}
+                catalog={state.catalog}
+                sources={state.sources}
+                tracking={board?.tracking}
+                environments={board?.environments ?? EMPTY}
+                probes={board?.probes ?? EMPTY}
+                now={now}
+                onSaveSources={(jira, code) => controller.saveSources(jira, code)}
+                onClearToken={() => void controller.clearJiraToken()}
+                onPickFolder={() => controller.bridge.pickFolder()}
+                onSetFolder={(folder) => void controller.setProjectFolder(folder)}
+                onSaveSettings={(edit) => void controller.saveSettings(edit)}
+                onSetEnvironments={(environments) => void controller.setEnvironments(environments)}
+                onCreateProbe={(environment, argv, matcher) => void controller.createProbe(environment, argv, matcher)}
+                onApproveProbe={(id) => void controller.approveProbe(id)}
+                onRejectProbe={(id) => void controller.rejectProbe(id)}
+                onDeleteProbe={(id) => void controller.deleteProbe(id)}
               />
             ) : right.view === "suggestions" ? (
               <SuggestionsPanel

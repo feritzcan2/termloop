@@ -5,6 +5,8 @@ use std::collections::HashMap;
 
 use rusqlite::{Connection, OptionalExtension, Row, params, types::Type};
 
+use termloop_providers::AzureRepository;
+
 use super::rows::parsed;
 use crate::{
     DeliveryProbe, GitHubSource, JiraSource, PmError, ProbeAuthor, ProbeMatcher, ProbeStatus,
@@ -130,7 +132,7 @@ pub(crate) fn project_sources(
     let sources = connection
         .query_row(
             "SELECT jira_site_url, jira_board_id, jira_account_email, jira_credential_handle, \
-                 github_owner, github_name \
+                 github_owner, github_name, azure_organization, azure_project, azure_repository \
              FROM project_sources WHERE project_id = ?1",
             params![project_id],
             |row| {
@@ -150,6 +152,14 @@ pub(crate) fn project_sources(
                         Some(owner) => Some(GitHubSource {
                             owner,
                             name: row.get(5)?,
+                        }),
+                        None => None,
+                    },
+                    azure_devops: match row.get::<_, Option<String>>(6)? {
+                        Some(organization) => Some(AzureRepository {
+                            organization,
+                            project: row.get(7)?,
+                            name: row.get(8)?,
                         }),
                         None => None,
                     },

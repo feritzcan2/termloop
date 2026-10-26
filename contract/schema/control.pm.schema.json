@@ -2249,6 +2249,34 @@
         }
       }
     },
+    "pmAzureDevOpsSource": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "organization",
+        "project",
+        "name"
+      ],
+      "properties": {
+        "organization": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50,
+          "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$"
+        },
+        "project": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    },
     "pmSources": {
       "x-codegen": true,
       "type": "object",
@@ -2256,7 +2284,8 @@
       "required": [
         "projectId",
         "jira",
-        "github"
+        "github",
+        "azureDevOps"
       ],
       "properties": {
         "projectId": {
@@ -2279,6 +2308,16 @@
           "anyOf": [
             {
               "$ref": "#/$defs/pmGitHubSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "azureDevOps": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/pmAzureDevOpsSource"
             },
             {
               "type": "null"

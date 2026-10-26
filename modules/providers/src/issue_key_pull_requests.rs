@@ -279,27 +279,30 @@ fn capped_newest_first(
 }
 
 impl AzureDevOpsClient {
-    pub fn issue_key_pull_requests(
+    /// One `az repos pr list` for the repository, matched against every key
+    /// in memory: Azure DevOps cannot search by key, so listing once serves
+    /// all keys. Results follow `keys`; an invalid key fails alone. With
+    /// `include_checks`, each matched pull request's policy rollup is read
+    /// once, however many keys name it.
+    pub fn issue_keys_pull_requests(
         &self,
         repository: &AzureRepository,
-        key: &str,
+        keys: &[String],
         include_checks: bool,
         timeout: Duration,
-    ) -> Result<IssueKeyPullRequests, ProviderFailure> {
-        if !valid_issue_key(key) {
-            return Err(ProviderFailure::ProviderFailure);
+    ) -> Result<Vec<Result<IssueKeyPullRequests, ProviderFailure>>, ProviderFailure> {
+        if !keys.iter().any(|key| valid_issue_key(key)) {
+            return Ok(keys
+                .iter()
+                .map(|_| Err(ProviderFailure::ProviderFailure))
+                .collect());
         }
         let deadline =
-            termloop_platform::MonotonicDeadline::after(timeout.min(Duration::from_secs(8)))
+            termloop_platform::MonotonicDeadline::after(timeout.min(Duration::from_secs(20)))
                 .map_err(|_| ProviderFailure::Timeout)?;
-        let repository = AzureRepository {
-            organization: normalize_organization(&repository.organization)
-                .map_err(|_| ProviderFailure::ProviderFailure)?,
-            project: normalize_azure_display_name(&repository.project, AzureNameKind::Project)
-                .map_err(|_| ProviderFailure::ProviderFailure)?,
-            name: normalize_azure_display_name(&repository.name, AzureNameKind::Repository)
-                .map_err(|_| ProviderFailure::ProviderFailure)?,
-        };
+        let repository = repository
+            .normalized()
+            .ok_or(ProviderFailure::ProviderFailure)?;
         let project_key = repository.project_key();
         let repository_key = repository.repository_key();
         self.check_suppression(&project_key, &repository_key)?;
@@ -312,11 +315,47 @@ impl AzureDevOpsClient {
         .map_err(|_| ProviderFailure::ProviderUnavailable)?;
         self.classify_query_outcome(&project_key, &repository_key, generation, &outcome)?;
         let organization = repository.organization.clone();
-        let mut result = parse_azure_issue_key_pull_requests(repository, key, &outcome.stdout)?;
+        let mut results: Vec<_> = keys
+            .iter()
+            .map(|key| {
+                if !valid_issue_key(key) {
+                    return Err(ProviderFailure::ProviderFailure);
+                }
+                parse_azure_issue_key_pull_requests(repository.clone(), key, &outcome.stdout)
+            })
+            .collect();
         if include_checks {
-            self.attach_issue_key_checks(&organization, &mut result, deadline);
+            let mut matched = BTreeMap::new();
+            for summary in results
+                .iter()
+                .flatten()
+                .flat_map(|found| &found.pull_requests)
+            {
+                matched
+                    .entry(summary.number)
+                    .or_insert_with(|| summary.clone());
+            }
+            let mut checked = IssueKeyPullRequests {
+                pull_requests: matched.into_values().collect(),
+                truncated: false,
+            };
+            self.attach_issue_key_checks(&organization, &mut checked, deadline);
+            let checked: BTreeMap<_, _> = checked
+                .pull_requests
+                .into_iter()
+                .map(|summary| (summary.number, summary))
+                .collect();
+            for summary in results
+                .iter_mut()
+                .flatten()
+                .flat_map(|found| &mut found.pull_requests)
+            {
+                if let Some(with_checks) = checked.get(&summary.number) {
+                    *summary = with_checks.clone();
+                }
+            }
         }
-        Ok(result)
+        Ok(results)
     }
 
     /// The policy rollup attaches at most [`AZURE_MAX_MATCHES`] active pull
@@ -669,14 +708,17 @@ mod tests {
         let azure = AzureDevOpsClient::new(std::env::temp_dir().join("termloop-never-used"));
         assert_eq!(
             azure
-                .issue_key_pull_requests(
+                .issue_keys_pull_requests(
                     &azure_repository(),
-                    "PAY-42;rm",
+                    &["PAY-42;rm".to_owned(), "pay-42".to_owned()],
                     true,
                     Duration::from_secs(1)
                 )
-                .unwrap_err(),
-            ProviderFailure::ProviderFailure
+                .unwrap(),
+            vec![
+                Err(ProviderFailure::ProviderFailure),
+                Err(ProviderFailure::ProviderFailure)
+            ]
         );
         assert_eq!(azure.sequence.load(Ordering::Relaxed), 0);
         assert!(azure.discovery.get().is_none());

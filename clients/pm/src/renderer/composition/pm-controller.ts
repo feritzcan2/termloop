@@ -19,12 +19,11 @@ import type { PmApi, PmEvent, RendererMethod } from "../../pm-api.js";
 import type { PmState, PmStore, PmView } from "../state/presentation-store.js";
 import { touchesJira } from "../ui/proposal-change.js";
 import type { NoteDraft } from "../ui/NoteDialog.js";
-import type { DescriptionSaveOutcome, TicketCapture } from "../ui/types.js";
+import type { CodeHostInput, DescriptionSaveOutcome, TicketCapture } from "../ui/types.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export type JiraSourceInput = { siteUrl: string; boardId: number | null; accountEmail: string; token: string };
-export type GitHubSourceInput = { owner: string; name: string } | null;
 
 export class PmController {
   #unsubscribers: (() => void)[] = [];
@@ -77,7 +76,6 @@ export class PmController {
   setView(view: PmView): void {
     if (view === "jira" && this.state.view !== "jira") this.#beforeJira = this.state.view;
     this.#set({ view });
-    if (view === "settings") void this.loadSettings();
   }
 
   /** The activity bar's Jira item: shows the Jira browser in the stage, or returns to what it replaced. */
@@ -636,7 +634,7 @@ export class PmController {
    * Saves the Jira and GitHub sources. A typed token is stored first in the
    * daemon's credential store; only its handle reaches the sources record.
    */
-  async saveSources(jira: JiraSourceInput | null, github: GitHubSourceInput): Promise<boolean> {
+  async saveSources(jira: JiraSourceInput | null, code: CodeHostInput): Promise<boolean> {
     const projectId = this.state.projectId;
     if (!projectId) return false;
     let jiraSource: MethodParams["pm_sources_set"]["jira"] = null;
@@ -653,7 +651,9 @@ export class PmController {
       }
       jiraSource = { siteUrl: jira.siteUrl, boardId: jira.boardId, accountEmail: jira.accountEmail, credentialHandle };
     }
-    const sources = await this.call("pm_sources_set", { projectId, jira: jiraSource, github });
+    const github = code?.kind === "github" ? { owner: code.owner, name: code.name } : null;
+    const azureDevOps = code?.kind === "azureDevOps" ? { organization: code.organization, project: code.project, name: code.name } : null;
+    const sources = await this.call("pm_sources_set", { projectId, jira: jiraSource, github, azureDevOps });
     if (!sources) return false;
     this.#set({ sources, notice: { tone: "info", text: "Sources saved." } });
     await this.refreshBoard();

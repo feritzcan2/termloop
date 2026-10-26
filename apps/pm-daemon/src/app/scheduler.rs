@@ -12,11 +12,12 @@ use termloop_platform::{CommandRequest, CommandTermination};
 use termloop_pm::skill::SkillEvent;
 use termloop_pm::{
     CommitAncestryFact, DeliveryCheck, DeliveryProbe, FactRead, FactsObservation, NewCheck,
-    PmError, ProbeMatcher, ProbeOutcome, ProbeStatus, PullRequestFact, PullRequestsObservation,
-    SprintState, named_commit, read_jira_sprints,
+    PmError, ProbeMatcher, ProbeOutcome, ProbeStatus, ProjectSources, PullRequestFact,
+    PullRequestsObservation, SprintState, named_commit, read_jira_sprints,
 };
 use termloop_providers::{
-    GitHubClient, GitHubRepository, JiraCloudClient, JiraCredential, ProviderFailure,
+    AzureDevOpsClient, AzureRepository, GitHubClient, GitHubRepository, IssueKeyPullRequests,
+    JiraCloudClient, JiraCredential, ProviderFailure,
 };
 
 use crate::app::control::errors::ControlError;
@@ -355,13 +356,57 @@ async fn refresh_jira_facts(state: &AppState, project_id: &str) {
     }
 }
 
+/// The project's code host, read for pull requests naming an issue key.
+enum CodeHost {
+    GitHub(GitHubRepository),
+    Azure(AzureRepository),
+}
+
+impl CodeHost {
+    fn of(sources: ProjectSources) -> Option<Self> {
+        match (sources.github, sources.azure_devops) {
+            (Some(github), _) => Some(Self::GitHub(GitHubRepository {
+                owner: github.owner,
+                name: github.name,
+            })),
+            (None, Some(azure)) => Some(Self::Azure(azure)),
+            (None, None) => None,
+        }
+    }
+
+    /// One read per key on GitHub, which searches by key; one listing for
+    /// every key on Azure DevOps, which cannot.
+    fn pull_requests(
+        &self,
+        provider_directory: &Path,
+        keys: &[String],
+    ) -> Vec<Result<IssueKeyPullRequests, ProviderFailure>> {
+        match self {
+            Self::GitHub(repository) => {
+                let client = GitHubClient::new(provider_directory);
+                keys.iter()
+                    .map(|key| {
+                        client.issue_key_pull_requests(repository, key, PULL_REQUEST_TIMEOUT)
+                    })
+                    .collect()
+            }
+            Self::Azure(repository) => AzureDevOpsClient::new(provider_directory)
+                .issue_keys_pull_requests(repository, keys, true, PULL_REQUEST_TIMEOUT)
+                .unwrap_or_else(|failure| keys.iter().map(|_| Err(failure)).collect()),
+        }
+    }
+}
+
 async fn refresh_pull_request_facts(state: &AppState, project_id: &str) {
-    let (source, keys) = {
+    let (label, host, tickets) = {
         let store = state.store.lock();
-        let Ok(Some(source)) = store
-            .project_sources(project_id)
-            .map(|sources| sources.github)
-        else {
+        let Ok(sources) = store.project_sources(project_id) else {
+            return;
+        };
+        let Some(label) = sources.code_label() else {
+            return;
+        };
+        let Some(host) = CodeHost::of(sources) else {
             return;
         };
         let Ok(board) = store.board(project_id) else {
@@ -374,31 +419,23 @@ async fn refresh_pull_request_facts(state: &AppState, project_id: &str) {
         else {
             return;
         };
-        let keys: Vec<(String, String)> = board
+        let tickets: Vec<(String, String)> = board
             .tickets
             .iter()
             .filter(|ticket| ticket.sprint_id.as_deref() == Some(active.id.as_str()))
             .filter_map(|ticket| Some((ticket.id.clone(), ticket.jira_issue_key()?)))
             .take(PULL_REQUEST_TICKETS_MAX)
             .collect();
-        (source, keys)
+        (label, host, tickets)
     };
-    if keys.is_empty() {
+    if tickets.is_empty() {
         return;
     }
-    let label = source.label();
-    let repository = GitHubRepository {
-        owner: source.owner,
-        name: source.name,
-    };
-    let client = GitHubClient::new(state.provider_directory.as_path());
+    let provider_directory = state.provider_directory.clone();
     let reads = tokio::task::spawn_blocking(move || {
-        keys.into_iter()
-            .map(|(ticket_id, key)| {
-                let read = client.issue_key_pull_requests(&repository, &key, PULL_REQUEST_TIMEOUT);
-                (ticket_id, read)
-            })
-            .collect::<Vec<_>>()
+        let (ticket_ids, keys): (Vec<_>, Vec<_>) = tickets.into_iter().unzip();
+        let reads = host.pull_requests(&provider_directory, &keys);
+        ticket_ids.into_iter().zip(reads).collect::<Vec<_>>()
     })
     .await
     .unwrap_or_default();

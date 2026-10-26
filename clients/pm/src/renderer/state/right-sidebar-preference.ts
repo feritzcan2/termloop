@@ -11,7 +11,7 @@ export const RIGHT_SIDEBAR_MIN_WIDTH = 280;
 export const RIGHT_SIDEBAR_MAX_WIDTH = 640;
 export const RIGHT_SIDEBAR_DEFAULT_WIDTH = 320;
 
-const RIGHT_SIDEBAR_VIEWS: readonly RightSidebarView[] = ["sprints", "suggestions", "skills"];
+const RIGHT_SIDEBAR_VIEWS: readonly RightSidebarView[] = ["sprints", "suggestions", "skills", "settings"];
 export type RightSidebarPreference = { open: boolean; view: RightSidebarView; width: number };
 
 export const DEFAULT_RIGHT_SIDEBAR: RightSidebarPreference = { open: true, view: "sprints", width: RIGHT_SIDEBAR_DEFAULT_WIDTH };

@@ -16,7 +16,6 @@ export type SidebarProps = ProjectSwitcherProps &
     now: number;
     agents: AgentTab[];
     activeAgentSessionId: string | undefined;
-    onView(view: PmView): void;
     onPull(): void;
     onStartAssistant(): void;
     onSelectAgent(sessionId: string): void;
@@ -39,7 +38,6 @@ export function Sidebar(props: SidebarProps) {
   const pickMode = (next: Mode) => {
     setMode(next);
     setFolded((current) => ({ ...current, sprints: next === "agents", agents: false }));
-    if (next === "sprints" && props.view === "settings") props.onView("overview");
   };
   const shownAgent = props.view === "agent" ? props.activeAgentSessionId : undefined;
   const sprintsRail = (
@@ -96,7 +94,7 @@ export function Sidebar(props: SidebarProps) {
       <div className="view-bar">
         <div className="view-row">
           <div className="view-switch" role="group" aria-label="Sidebar view">
-            <button type="button" className={mode === "sprints" && props.view !== "settings" ? "selected" : ""} aria-pressed={mode === "sprints"} onClick={() => pickMode("sprints")}>
+            <button type="button" className={mode === "sprints" ? "selected" : ""} aria-pressed={mode === "sprints"} onClick={() => pickMode("sprints")}>
               <Icon name="flag" /><span>Sprints</span>
             </button>
             <button type="button" className={mode === "agents" ? "selected" : ""} aria-pressed={mode === "agents"} onClick={() => pickMode("agents")}>
@@ -105,9 +103,6 @@ export function Sidebar(props: SidebarProps) {
           </div>
           <button type="button" className="view-action" disabled={!props.hasProject} onClick={() => { pickMode("sprints"); setComposer("sprint"); }}>
             <Icon name="plus" />New sprint
-          </button>
-          <button type="button" className={`icb ${props.view === "settings" ? "on" : ""}`} aria-label="Settings" title="Settings" onClick={() => props.onView("settings")}>
-            <Icon name="gear" />
           </button>
         </div>
         <div className="launch-row">

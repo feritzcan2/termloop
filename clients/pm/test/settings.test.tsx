@@ -9,6 +9,7 @@ const sources: PmSources = {
   projectId: "project-1",
   jira: { siteUrl: "https://acme.atlassian.net", boardId: 3, accountEmail: "pm@acme.test", credentialHandle: "handle-1" },
   github: null,
+  azureDevOps: null,
 };
 
 function props(overrides: Partial<SettingsPageProps> = {}): SettingsPageProps {
@@ -34,6 +35,32 @@ describe("SettingsPage", () => {
     expect(onSaveSources).toHaveBeenCalledWith(expect.objectContaining({ token: "s3cret-token" }), null);
     expect(token.value).toBe("");
     expect(container.innerHTML).not.toContain("s3cret-token");
+    unmount();
+  });
+
+  it("saves an Azure DevOps repository as the code host", async () => {
+    const onSaveSources = vi.fn(async () => true);
+    const { container, unmount } = render(<SettingsPage {...props({ onSaveSources })} />);
+    const host = container.querySelector<HTMLSelectElement>('select[aria-label="Code host"]')!;
+    act(() => {
+      host.value = "azureDevOps";
+      host.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const input = (placeholder: string) => container.querySelector<HTMLInputElement>(`input[placeholder="${placeholder}"]`)!;
+    typeInto(input("e.g. contoso"), "contoso");
+    typeInto(input("e.g. Parking"), "Parking");
+    typeInto(input("e.g. shop"), "Nucleus");
+    await act(async () => { container.querySelector("form")!.requestSubmit(); });
+    expect(onSaveSources).toHaveBeenCalledWith(expect.anything(), { kind: "azureDevOps", organization: "contoso", project: "Parking", name: "Nucleus" });
+    unmount();
+  });
+
+  it("shows a stored Azure DevOps repository", () => {
+    const azure = { ...sources, azureDevOps: { organization: "contoso", project: "Parking", name: "Nucleus" } };
+    const { container, unmount } = render(<SettingsPage {...props({ sources: azure })} />);
+    expect(container.querySelector<HTMLSelectElement>('select[aria-label="Code host"]')!.value).toBe("azureDevOps");
+    expect(container.textContent).toContain("AZURE DEVOPS");
+    expect(container.querySelector<HTMLInputElement>('input[placeholder="e.g. Parking"]')!.value).toBe("Parking");
     unmount();
   });
 

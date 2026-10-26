@@ -317,12 +317,12 @@ describe("Jira stage navigation", () => {
   });
 
   it("returns the stage to what Jira replaced", () => {
-    const store = createPmStore({ view: "settings" });
+    const store = createPmStore({ view: "ticket" });
     const controller = new PmController(fakeBridge(() => ok({})), store);
     controller.toggleJiraStage();
     expect(store.getState().view).toBe("jira");
     controller.toggleJiraStage();
-    expect(store.getState().view).toBe("settings");
+    expect(store.getState().view).toBe("ticket");
     controller.setView("overview");
     controller.toggleJiraStage();
     controller.setView("jira");
