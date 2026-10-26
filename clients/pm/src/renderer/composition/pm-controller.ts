@@ -32,6 +32,8 @@ export class PmController {
   #boardStale = false;
   /** The stage content the Jira browser replaced; toggling Jira off returns to it. */
   #beforeJira: PmView = "overview";
+  /** The description update a PM note started, per ticket; a newer note replaces it. */
+  #noteUpdates = new Map<string, string>();
 
   constructor(readonly bridge: PmApi, readonly store: PmStore, readonly now: () => number = Date.now) {}
 
@@ -318,11 +320,23 @@ export class PmController {
     if (result) this.#set({ notes: { ...this.state.notes, [ticketId]: result.notes } });
   }
 
-  /** Records what the PM learned; the description changes only through a draft the PM applies. */
+  /**
+   * Records what the PM learned and starts a description update in the
+   * background; the description changes only through a draft the PM applies.
+   * A newer note stops the update the previous one started, so one draft
+   * merges every pending note.
+   */
   async addNote(ticketId: string, draft: NoteDraft): Promise<boolean> {
     const note = await this.call("pm_ticket_note_add", { ticketId, kind: draft.kind, text: draft.text, ...(draft.url ? { url: draft.url } : {}) });
     if (!note) return false;
     await this.loadNotes(ticketId);
+    const previous = this.#noteUpdates.get(ticketId);
+    if (previous && this.state.agents.some((session) => session.sessionId === previous)) await this.call("pm_agent_stop", { sessionId: previous });
+    const sessionId = await this.launchAgent(ticketId, false, "updateDescription");
+    if (sessionId) {
+      this.#noteUpdates.set(ticketId, sessionId);
+      this.#set({ notice: { tone: "info", text: "The assistant is drafting the description from your note." } });
+    }
     return true;
   }
 
@@ -468,14 +482,15 @@ export class PmController {
     this.#set({ agents: live, activeAgentSessionId: active, view });
   }
 
-  /** Starts an assistant and shows it in the stage unless `open` is false. */
-  async launchAgent(focusTicketId: string | undefined, open = true, task?: PmAssistantTask): Promise<void> {
+  /** Starts an assistant and shows it in the stage unless `open` is false; resolves its session id. */
+  async launchAgent(focusTicketId: string | undefined, open = true, task?: PmAssistantTask): Promise<string | undefined> {
     const projectId = this.state.projectId;
-    if (!projectId) return;
+    if (!projectId) return undefined;
     const session = await this.call("pm_agent_launch", { projectId, ...(focusTicketId ? { focusTicketId } : {}), ...(task ? { task } : {}) });
-    if (!session) return;
+    if (!session) return undefined;
     this.#set(open ? { activeAgentSessionId: session.sessionId, view: "agent" } : { activeAgentSessionId: session.sessionId });
     await this.refreshAgents();
+    return session.sessionId;
   }
 
   async stopAgent(sessionId: string): Promise<void> {

@@ -115,24 +115,38 @@ describe("PmController", () => {
     await new PmController(bridge, store).loadSettings();
     expect(store.getState().catalog).toEqual(catalog);
   });
-  it("records notes and starts a description update without changing the ticket", async () => {
+  it("records a note and starts a background description update without changing the ticket", async () => {
     const note = { id: "note-1", ticketId: "ticket-1", kind: "fact", text: "CSV too", url: null, sourceKey: null, author: "pm", createdAtEpochMs: 1, pending: true };
-    const session = { sessionId: "agent-1", projectId: "project-1", mode: "assistant", provider: "claude", focusTicketId: "ticket-1", checkId: null, skillId: null, state: "running", startedAtEpochMs: 0, exitedAtEpochMs: null };
+    const session = (sessionId: string) => ({ sessionId, projectId: "project-1", mode: "assistant", provider: "claude", focusTicketId: "ticket-1", checkId: null, skillId: null, state: "running", startedAtEpochMs: 0, exitedAtEpochMs: null });
+    let launched = 0;
+    const live: ReturnType<typeof session>[] = [];
     const bridge = fakeBridge((method) => {
       if (method === "pm_ticket_note_add") return ok(note);
       if (method === "pm_ticket_notes_read") return ok({ ticketId: "ticket-1", notes: [note] });
-      if (method === "pm_agent_launch") return ok(session);
-      if (method === "pm_agent_list") return ok({ sessions: [session] });
+      if (method === "pm_agent_launch") {
+        live.push(session(`agent-${++launched}`));
+        return ok(live.at(-1));
+      }
+      if (method === "pm_agent_list") return ok({ sessions: live });
       return ok({});
     });
-    const store = createPmStore({ projectId: "project-1" });
+    const store = createPmStore({ projectId: "project-1", view: "ticket", selectedTicketId: "ticket-1" });
     const controller = new PmController(bridge, store);
     expect(await controller.addNote("ticket-1", { kind: "fact", text: "CSV too", url: null })).toBe(true);
     expect(bridge.calls[0]).toEqual({ method: "pm_ticket_note_add", params: { ticketId: "ticket-1", kind: "fact", text: "CSV too" } });
     expect(store.getState().notes["ticket-1"]).toEqual([note]);
-    await controller.updateDescription("ticket-1");
     expect(bridge.calls.find((call) => call.method === "pm_agent_launch")?.params).toEqual({ projectId: "project-1", focusTicketId: "ticket-1", task: "updateDescription" });
-    expect(store.getState()).toMatchObject({ view: "agent", activeAgentSessionId: "agent-1" });
+    // The update runs in the background: the ticket stays in the stage.
+    expect(store.getState().view).toBe("ticket");
+    expect(bridge.calls.map((call) => call.method)).not.toContain("pm_agent_stop");
+
+    // A second note replaces the first update, so one draft merges both.
+    await controller.addNote("ticket-1", { kind: "fact", text: "PDF too", url: null });
+    expect(bridge.calls.filter((call) => call.method === "pm_agent_stop").map((call) => call.params)).toEqual([{ sessionId: "agent-1" }]);
+    expect(store.getState().activeAgentSessionId).toBe("agent-2");
+
+    await controller.updateDescription("ticket-1");
+    expect(store.getState()).toMatchObject({ view: "agent", activeAgentSessionId: "agent-3" });
     const methods = bridge.calls.map((call) => call.method);
     expect(methods).not.toContain("pm_ticket_description_save");
     expect(methods).not.toContain("pm_ticket_update");
