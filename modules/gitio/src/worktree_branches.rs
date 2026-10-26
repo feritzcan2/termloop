@@ -162,17 +162,16 @@ impl GitRunner {
         Ok(evidence)
     }
 
-    /// Remote-tracking refs whose tip is one of the exact worktree's own
-    /// commits: reachable from its checked-out HEAD and from none of the
-    /// supplied base commits. These are the branches this worktree pushed,
-    /// whatever name it pushed them under. A base ref that no longer exists is
-    /// skipped; the recorded base OID still bounds the result.
+    /// Remote-tracking refs whose tip is a commit the exact worktree made:
+    /// one its HEAD reflog records as committed, cherry-picked, merged,
+    /// rebased, reverted, or applied there. These are the branches this
+    /// worktree pushed, whatever name it pushed them under. Commits the
+    /// worktree only checked out, reset to, or fast-forwarded to are not its
+    /// own and never qualify.
     pub fn observe_worktree_pushed_remote_refs_with_timeout(
         &self,
         repository_path: &Path,
         worktree_path: &Path,
-        recorded_base_oid: &ObjectId,
-        current_base_ref: Option<&GitRefName>,
         timeout: Duration,
     ) -> Result<WorktreePushedRemoteRefs, GitError> {
         let timeout = timeout.min(WORKTREE_BRANCH_OBSERVATION_DEADLINE);
@@ -180,36 +179,51 @@ impl GitRunner {
             .clone()
             .with_shared_observation_budget(timeout, WORKTREE_BRANCH_OUTPUT_LIMIT)?;
         let mut scope = GitCommandScope::bounded(&runner, timeout)?;
-        let (_, checkout) =
+        let (worktree_root, _) =
             runner.registered_worktree_checkout(repository_path, worktree_path, &mut scope)?;
-        let head = match checkout {
-            WorktreeCheckout::Branch { oid: Some(oid), .. }
-            | WorktreeCheckout::Detached { oid } => oid,
-            _ => return Ok(WorktreePushedRemoteRefs::default()),
-        };
 
-        let mut excluded = vec![recorded_base_oid.clone()];
-        if let Some(reference) = current_base_ref
-            && let Some(oid) = exact_ref_oid(repository_path, reference, &mut scope)?
-        {
-            excluded.push(oid);
+        let reflog = scope.checked(
+            GitOperation::ReadReflog,
+            &worktree_root,
+            [
+                "reflog",
+                "show",
+                "--format=%H%x00%gs%x00",
+                "--max-count=257",
+                "HEAD",
+            ],
+        )?;
+        let (entries, reflog_truncated) = parse_head_reflog(&reflog.stdout)?;
+        let mut authored = Vec::<ObjectId>::new();
+        for entry in entries {
+            if authored_in_worktree(&entry.subject) && !authored.contains(&entry.oid) {
+                authored.push(entry.oid);
+            }
         }
+        if authored.is_empty() {
+            return Ok(WorktreePushedRemoteRefs {
+                references: Vec::new(),
+                truncated: reflog_truncated,
+            });
+        }
+
         let mut arguments = vec![
             OsString::from("for-each-ref"),
             OsString::from("--sort=refname"),
             OsString::from(format!("--count={}", PUSHED_REMOTE_REF_LIMIT + 1)),
             OsString::from("--format=%(refname)"),
-            OsString::from(format!("--merged={}", head.as_hex())),
         ];
         arguments.extend(
-            excluded
+            authored
                 .iter()
-                .map(|oid| OsString::from(format!("--no-merged={}", oid.as_hex()))),
+                .map(|oid| OsString::from(format!("--points-at={}", oid.as_hex()))),
         );
         arguments.push(OsString::from("refs/remotes/"));
         let outcome =
             scope.checked(GitOperation::ListRemoteBranches, repository_path, arguments)?;
-        parse_pushed_remote_refs(&outcome.stdout)
+        let mut pushed = parse_pushed_remote_refs(&outcome.stdout)?;
+        pushed.truncated |= reflog_truncated;
+        Ok(pushed)
     }
 
     fn registered_worktree_checkout(
@@ -254,33 +268,29 @@ pub struct WorktreePushedRemoteRefs {
     pub truncated: bool,
 }
 
-fn exact_ref_oid(
-    repository_path: &Path,
-    reference: &GitRefName,
-    scope: &mut GitCommandScope<'_>,
-) -> Result<Option<ObjectId>, GitError> {
-    let pattern = termloop_platform::os_string_from_process_bytes(reference.as_bytes().to_vec())
-        .map_err(|error| crate::error::map_platform_error(error, GitOperation::ResolveRef))?;
-    let outcome = scope.checked(
-        GitOperation::ResolveRef,
-        repository_path,
-        [
-            OsString::from("for-each-ref"),
-            OsString::from("--format=%(refname)%00%(objectname)%00"),
-            pattern,
-        ],
-    )?;
-    for line in outcome.stdout.split(|byte| *byte == b'\n') {
-        let line = strip_git_line_cr(line);
-        if line.is_empty() {
-            continue;
-        }
-        let fields = nul_fields(line, 2)?;
-        if fields[0] == reference.as_bytes() {
-            return ObjectId::from_hex(fields[1].to_vec()).map(Some);
-        }
-    }
-    Ok(None)
+/// Whether a HEAD reflog subject records a commit created in the worktree.
+/// Moving HEAD onto an existing commit (checkout, reset, a rebase's starting
+/// checkout, or a fast-forward) does not.
+fn authored_in_worktree(subject: &[u8]) -> bool {
+    let Some(separator) = find_bytes(subject, b": ") else {
+        return false;
+    };
+    let (action, message) = (&subject[..separator], &subject[separator + 2..]);
+    let authoring = [
+        b"commit".as_slice(),
+        b"cherry-pick",
+        b"revert",
+        b"am",
+        b"merge ",
+        b"rebase",
+        b"pull",
+    ]
+    .iter()
+    .any(|prefix| action.starts_with(prefix));
+    authoring
+        && find_bytes(action, b"(start)").is_none()
+        && find_bytes(action, b"(abort)").is_none()
+        && !message.starts_with(b"Fast-forward")
 }
 
 fn parse_pushed_remote_refs(bytes: &[u8]) -> Result<WorktreePushedRemoteRefs, GitError> {
@@ -510,6 +520,35 @@ mod tests {
 
     fn head_record(oid: &[u8], subject: &[u8]) -> Vec<u8> {
         [oid, b"\0", subject, b"\0\n"].concat()
+    }
+
+    #[test]
+    fn only_reflog_entries_that_create_a_commit_are_authored_here() {
+        for subject in [
+            b"commit: fix".as_slice(),
+            b"commit (amend): fix",
+            b"commit (merge): Merge branch 'main'",
+            b"cherry-pick: fix",
+            b"merge origin/main: Merge made by the 'ort' strategy.",
+            b"rebase (pick): fix",
+            b"rebase (finish): returning to refs/heads/topic",
+            b"pull --rebase (pick): fix",
+            b"revert: Revert \"fix\"",
+        ] {
+            assert!(authored_in_worktree(subject), "{subject:?}");
+        }
+        for subject in [
+            b"checkout: moving from main to topic".as_slice(),
+            b"reset: moving to HEAD~1",
+            b"rebase (start): checkout origin/main",
+            b"rebase (abort): returning to refs/heads/topic",
+            b"merge origin/main: Fast-forward",
+            b"pull: Fast-forward",
+            b"branch: Created from HEAD",
+            b"",
+        ] {
+            assert!(!authored_in_worktree(subject), "{subject:?}");
+        }
     }
 
     #[test]

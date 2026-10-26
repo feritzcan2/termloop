@@ -148,9 +148,6 @@ struct TaskSnapshot {
     worktree_path: Option<PathBuf>,
     worktree_generation: u64,
     force_refresh: bool,
-    /// The managed worktree's creation base as (ref, OID). It bounds which
-    /// pushed remote refs count as this worktree's own.
-    recorded_base: Option<(String, String)>,
 }
 
 #[derive(Clone)]
@@ -170,7 +167,6 @@ struct LocalFactsKey {
     branch_name: String,
     worktree_path: Option<PathBuf>,
     worktree_generation: u64,
-    recorded_base: Option<(String, String)>,
 }
 
 #[derive(Clone)]
@@ -462,10 +458,6 @@ impl CoreRuntime {
             .into_iter()
             .map(|task| {
                 let mut snapshot = snapshot(task);
-                snapshot.recorded_base = task
-                    .branch
-                    .as_ref()
-                    .and_then(|binding| self.task_recorded_branch_base(&task.id, binding));
                 snapshot.force_refresh = self
                     .git_host_invalidated_tasks
                     .iter()
@@ -1082,7 +1074,6 @@ fn snapshot(task: &TaskRecord) -> TaskSnapshot {
             .map(|worktree| PathBuf::from(&worktree.path)),
         worktree_generation: task.worktree_generation,
         force_refresh: false,
-        recorded_base: None,
     }
 }
 
@@ -1092,7 +1083,6 @@ fn local_facts_key(snapshot: &TaskSnapshot) -> Option<LocalFactsKey> {
         branch_name: snapshot.branch_name.clone()?,
         worktree_path: snapshot.worktree_path.clone(),
         worktree_generation: snapshot.worktree_generation,
-        recorded_base: snapshot.recorded_base.clone(),
     })
 }
 
@@ -1110,7 +1100,6 @@ fn observe_local_facts(
         repository_root,
         branch,
         snapshot.worktree_path.as_deref(),
-        snapshot.recorded_base.as_ref(),
         deadline,
     )
     .map_err(|error| map_git_error(&error))
@@ -1138,13 +1127,31 @@ fn normalize_candidate_sets(
         .first()
         .map(|branch_facts| pushed_candidates(&facts.pushed, &branch_facts.remotes))
         .unwrap_or_default();
+    // Pushed refs follow the durable Task branch's candidates (or the
+    // current branch's, when the durable branch was not observed), ahead of
+    // older aliases, so the candidate limit drops aliases first.
+    let pushed_after = facts
+        .branches
+        .iter()
+        .position(|branch_facts| {
+            snapshot.branch_name.as_deref().is_some_and(|branch| {
+                branch_facts
+                    .local_branch
+                    .as_bytes()
+                    .strip_prefix(b"refs/heads/")
+                    == Some(branch.as_bytes())
+            })
+        })
+        .unwrap_or(0);
     for (index, branch_facts) in facts.branches.iter().enumerate() {
         let normalized = normalize_candidates(snapshot, branch_facts);
         candidate_truncated |= normalized.candidate_truncated;
         local_reason = local_reason.or(normalized.local_reason);
-        // Pushed refs follow the current branch's own candidates, ahead of
-        // older aliases, so the candidate limit drops aliases first.
-        let pushed = if index == 0 { pushed.as_slice() } else { &[] };
+        let pushed = if index == pushed_after {
+            pushed.as_slice()
+        } else {
+            &[]
+        };
         for candidate in normalized
             .candidates
             .into_iter()
@@ -2058,7 +2065,6 @@ mod tests {
                     branch_name: "main".into(),
                     worktree_path: None,
                     worktree_generation: 0,
-                    recorded_base: None,
                 },
                 Err(GitHostProjectionReason::RepositoryUnavailable),
                 1,
@@ -2069,14 +2075,12 @@ mod tests {
             branch_name: "main".into(),
             worktree_path: None,
             worktree_generation: 0,
-            recorded_base: None,
         };
         let newest = LocalFactsKey {
             repository_root: PathBuf::from(format!("/repo/{MAX_LOCAL_FACTS:03}")),
             branch_name: "main".into(),
             worktree_path: None,
             worktree_generation: 0,
-            recorded_base: None,
         };
         assert!(cache.get(&oldest, 1).is_none());
         assert!(cache.get(&newest, LOCAL_FACTS_TTL_MS).is_some());
@@ -2237,7 +2241,6 @@ mod tests {
             worktree_path: None,
             worktree_generation: 0,
             force_refresh: false,
-            recorded_base: None,
         };
         let query = PullRequestQuery {
             repository: termloop_providers::GitHubRepository {
@@ -2277,7 +2280,6 @@ mod tests {
             worktree_path: None,
             worktree_generation: 0,
             force_refresh: false,
-            recorded_base: None,
         };
         let facts = BranchRemoteFacts {
             local_branch: termloop_gitio::GitRefName::from_bytes(b"refs/heads/local".to_vec())
@@ -2307,7 +2309,6 @@ mod tests {
             worktree_path: None,
             worktree_generation: 0,
             force_refresh: false,
-            recorded_base: None,
         };
         let facts = BranchRemoteFacts {
             local_branch: termloop_gitio::GitRefName::from_bytes(
@@ -2338,7 +2339,6 @@ mod tests {
             worktree_path: Some(PathBuf::from("/repo-worktree")),
             worktree_generation: 1,
             force_refresh: false,
-            recorded_base: None,
         };
         let facts = azure_worktree_facts(&["UKIE-804", "termloop/generated", "UKIE-803"]);
         let observation = normalize_candidate_sets(&snapshot, &facts);
@@ -2359,16 +2359,16 @@ mod tests {
         let snapshot = TaskSnapshot {
             task_id: "task".into(),
             project_id: "project".into(),
-            branch_name: Some("feature/nuc-s3-07".into()),
+            branch_name: Some("termloop/nuc-s6-10".into()),
             repository_root: Some(PathBuf::from("/repo")),
             worktree_path: Some(PathBuf::from("/repo-worktree")),
             worktree_generation: 1,
             force_refresh: false,
-            recorded_base: None,
         };
-        let mut facts = azure_worktree_facts(&["feature/nuc-s3-07", "UKIE-803"]);
+        let mut facts =
+            azure_worktree_facts(&["NUCLEUS-2852-MASTER", "termloop/nuc-s6-10", "UKIE-803"]);
         facts.pushed = [
-            "refs/remotes/origin/feature/NUCLEUS-2850-restrict-cors",
+            "refs/remotes/origin/NUCLEUS-2852",
             "refs/remotes/unconfigured/feature/other",
         ]
         .into_iter()
@@ -2388,8 +2388,9 @@ mod tests {
         assert_eq!(
             branches,
             vec![
-                "feature/nuc-s3-07",
-                "feature/NUCLEUS-2850-restrict-cors",
+                "NUCLEUS-2852-MASTER",
+                "termloop/nuc-s6-10",
+                "NUCLEUS-2852",
                 "UKIE-803"
             ]
         );
@@ -2406,7 +2407,6 @@ mod tests {
             worktree_path: Some(PathBuf::from("/repo-worktree")),
             worktree_generation: 1,
             force_refresh: false,
-            recorded_base: None,
         };
         let facts = azure_worktree_facts(&["UKIE-835", "termloop/generated"]);
         let local_facts = GitHostLocalFactsCache::default();
@@ -2456,7 +2456,6 @@ mod tests {
             worktree_path: Some(PathBuf::from("/repo-worktree")),
             worktree_generation: 1,
             force_refresh: false,
-            recorded_base: None,
         };
         let facts = azure_worktree_facts(&["UKIE-835-current", "termloop/generated", "UKIE-835"]);
         let local_facts = GitHostLocalFactsCache::default();
@@ -2559,7 +2558,6 @@ mod tests {
             worktree_path: Some(PathBuf::from("/repo-worktree")),
             worktree_generation: 1,
             force_refresh: false,
-            recorded_base: None,
         };
         let facts = azure_worktree_facts(&["UKIE-835-current", "termloop/generated", "UKIE-835"]);
         let local_facts = GitHostLocalFactsCache::default();
@@ -2639,7 +2637,6 @@ mod tests {
             worktree_path: Some(PathBuf::from("/repo-worktree")),
             worktree_generation: 1,
             force_refresh: false,
-            recorded_base: None,
         };
         let facts = BranchRemoteFacts {
             local_branch: termloop_gitio::GitRefName::from_bytes(
@@ -2691,7 +2688,6 @@ mod tests {
                 worktree_path: None,
                 worktree_generation: 0,
                 force_refresh: false,
-                recorded_base: None,
             },
             candidates: vec![ProviderQuery::Github(query.clone())],
             candidate_truncated: true,

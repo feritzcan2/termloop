@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use termloop_gitio::{GitRefName, GitRunner, ObjectId};
+use termloop_gitio::GitRunner;
 
 fn git(cwd: &Path, args: &[&str]) {
     let status = Command::new("git")
@@ -172,30 +172,24 @@ fn pushed_remote_refs_are_the_worktree_commits_under_any_remote_name() {
         &worktree,
         &["commit", "--allow-empty", "-m", "unpushed work"],
     );
+    // Another worktree's pushed commit, only visited here, is not this
+    // worktree's own.
+    git(&repository, &["commit", "--allow-empty", "-m", "elsewhere"]);
+    let elsewhere = head(&repository);
     git(
         &repository,
-        &["update-ref", "refs/remotes/origin/elsewhere", &base],
+        &["update-ref", "refs/remotes/origin/KEY-2", &elsewhere],
     );
-    git(
-        &repository,
-        &["commit", "--allow-empty", "-m", "base moved"],
-    );
-    let moved = head(&repository);
-    git(
-        &repository,
-        &["update-ref", "refs/remotes/origin/main", &moved],
-    );
-    git(&worktree, &["merge", "--no-edit", "main"]);
+    git(&worktree, &["checkout", "--detach", &elsewhere]);
+    git(&worktree, &["checkout", "generated"]);
+    git(&worktree, &["reset", "--hard", &elsewhere]);
+    git(&worktree, &["reset", "--hard", "HEAD@{1}"]);
 
     let runner = GitRunner::discover_with_timeout(Duration::from_millis(2_500)).unwrap();
-    let base_oid = ObjectId::from_hex(base.into_bytes()).unwrap();
-    let base_ref = GitRefName::from_bytes(b"refs/remotes/origin/main".to_vec()).unwrap();
     let observed = runner
         .observe_worktree_pushed_remote_refs_with_timeout(
             &repository,
             &worktree,
-            &base_oid,
-            Some(&base_ref),
             Duration::from_millis(2_500),
         )
         .unwrap();
@@ -208,24 +202,6 @@ fn pushed_remote_refs_are_the_worktree_commits_under_any_remote_name() {
         vec![b"refs/remotes/origin/feature/KEY-1-fix".as_slice()]
     );
     assert!(!observed.truncated);
-
-    let missing_ref = GitRefName::from_bytes(b"refs/remotes/origin/gone".to_vec()).unwrap();
-    let without_current_base = runner
-        .observe_worktree_pushed_remote_refs_with_timeout(
-            &repository,
-            &worktree,
-            &base_oid,
-            Some(&missing_ref),
-            Duration::from_millis(2_500),
-        )
-        .unwrap();
-    assert!(
-        without_current_base
-            .references
-            .iter()
-            .any(|reference| reference.as_bytes() == b"refs/remotes/origin/main"),
-        "only the recorded base bounds the result once the current base ref is gone"
-    );
 
     let _ = std::fs::remove_dir_all(repository.parent().unwrap());
 }
