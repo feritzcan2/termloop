@@ -18,13 +18,11 @@ function changes(skill: PmSkill, name: string, description: string, instructions
  * A skill as its SKILL.md, open in the stage: the frontmatter, then the
  * instructions its agent follows. The PM edits the name, description, and
  * instructions, and Save makes them live as the next version. What it
- * runs on, reads, and may call changes only through a reviewed revision;
- * a built-in skill is read-only.
+ * runs on, reads, and may call changes only through a reviewed revision.
  */
 export function SkillFile(props: { skill: PmSkill; onSave(edit: SkillEdit): Promise<boolean> }) {
   const { skill } = props;
   const { manifest } = skill;
-  const readOnly = skill.builtin !== null;
   const [name, setName] = useState(manifest.name);
   const [description, setDescription] = useState(manifest.description);
   const [instructions, setInstructions] = useState(manifest.instructions);
@@ -62,28 +60,23 @@ export function SkillFile(props: { skill: PmSkill; onSave(edit: SkillEdit): Prom
       <div className="pane-head">
         <b>SKILL.md</b>
         <span className="meta">{manifest.name} · v{skill.version}</span>
-        {readOnly && <span className="chip">Built in · read-only</span>}
         <span className="sp" />
         {dirty && <span className="meta">Unsaved</span>}
-        {!readOnly && (
-          <>
-            <button type="button" className="btn sm ghost" disabled={!dirty || saving} onClick={revert}>Revert</button>
-            <button type="button" className="btn sm pri" disabled={!dirty || blank || saving} onClick={() => void save()}>
-              {saving ? "Saving…" : `Save as v${skill.version + 1}`}
-            </button>
-          </>
-        )}
+        <button type="button" className="btn sm ghost" disabled={!dirty || saving} onClick={revert}>Revert</button>
+        <button type="button" className="btn sm pri" disabled={!dirty || blank || saving} onClick={() => void save()}>
+          {saving ? "Saving…" : `Save as v${skill.version + 1}`}
+        </button>
       </div>
       <div className="body skill-file-body">
         <div className="skill-frontmatter">
           <span className="fm-rule">---</span>
           <label className="fm-row">
             <span className="fm-key">name:</span>
-            <input aria-label="Name" value={name} maxLength={80} readOnly={readOnly} onChange={(event) => setName(event.target.value)} />
+            <input aria-label="Name" value={name} maxLength={80} onChange={(event) => setName(event.target.value)} />
           </label>
           <label className="fm-row">
             <span className="fm-key">description:</span>
-            <textarea aria-label="Description" rows={4} value={description} maxLength={500} readOnly={readOnly} onChange={(event) => setDescription(event.target.value)} />
+            <textarea aria-label="Description" rows={4} value={description} maxLength={500} onChange={(event) => setDescription(event.target.value)} />
           </label>
           {fixed.map(([key, value]) => (
             <div key={key} className="fm-row fixed">
@@ -99,14 +92,10 @@ export function SkillFile(props: { skill: PmSkill; onSave(edit: SkillEdit): Prom
           spellCheck={false}
           value={instructions}
           maxLength={8000}
-          readOnly={readOnly}
+         
           onChange={(event) => setInstructions(event.target.value)}
         />
-        <p className="hint">
-          {readOnly
-            ? "A built-in skill ships with the app and cannot be edited."
-            : "Saving makes the change live at once. What it runs on, reads, and may call changes through Revise, which you review with a dry run."}
-        </p>
+        <p className="hint">Saving makes the change live at once. What it runs on, reads, and may call changes through Revise, which you review with a dry run.</p>
       </div>
     </section>
   );

@@ -639,7 +639,10 @@ async fn launch_agent(
     Ok(())
 }
 
-fn select_base_ref(branches: &Value, configured: Option<&str>) -> Result<String, CoreError> {
+pub(super) fn select_base_ref(
+    branches: &Value,
+    configured: Option<&str>,
+) -> Result<String, CoreError> {
     let observed = observed_base_refs(branches).collect::<Vec<_>>();
     if let Some(configured) = configured {
         return Ok(configured.to_owned());

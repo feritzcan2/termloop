@@ -1,12 +1,12 @@
 import { useState } from "react";
 import type {
-  PmDataTier, PmSkill, PmSkillDraft, PmSkillManifest, PmSkillSetup, PmSkillsReadResult, PmTicket,
+  PmDataTier, PmPlaybookStep, PmSkill, PmSkillDraft, PmSkillManifest, PmSkillSetup, PmSkillsReadResult, PmTicket,
 } from "@termloop/pm-contract/pm";
 import { Icon } from "./icons.js";
 import { relativeTime, timeUntil } from "./format.js";
 import { EvidenceList, LineDiff } from "./ProposalCard.js";
 import { proposalKindLabel } from "./proposal-change.js";
-import { EnvironmentSetupDialog } from "./EnvironmentSetupDialog.js";
+import { PlaybookSetupDialog } from "./PlaybookSetupDialog.js";
 
 export type SkillsPanelProps = {
   skills: PmSkillsReadResult | undefined;
@@ -14,7 +14,7 @@ export type SkillsPanelProps = {
   tickets: PmTicket[];
   now: number;
   canCreate: boolean;
-  /** The project's code folder: Deployment control setup searches it. */
+  /** The project's code folder: the Playbook setup searches it. */
   repository: string | null;
   onSetEnabled(skillId: string, enabled: boolean): void;
   onRun(skillId: string): void;
@@ -30,9 +30,9 @@ export type SkillsPanelProps = {
   /** Resolves true once installed; `channels` are the ticked Slack channel ids. */
   onInstall(draftId: string, approvedTools: string[], channels: string[]): Promise<boolean>;
   onOpenLink(url: string): void;
-  /** Resolves true once applied: the ticked environments are listed and Deployment control is on. */
-  onApplyEnvironments(environments: string[], probeIds: string[]): Promise<boolean>;
-  onDiscardEnvironments(): void;
+  /** Resolves true once the reviewed steps are the project's Playbook. */
+  onApplyPlaybook(steps: PmPlaybookStep[]): Promise<boolean>;
+  onDiscardPlaybook(): void;
 };
 
 const OUTCOMES: Record<NonNullable<PmSkill["lastOutcome"]>, string> = {
@@ -55,26 +55,25 @@ export function triggerText(skill: PmSkillManifest): string {
 }
 
 /** The skills always listed, greyed out until the PM sets them up. */
-const KNOWN_SKILLS: { kind: PmSkillSetup; name: string; description: string; matches(skill: Pick<PmSkill, "builtin" | "manifest">): boolean }[] = [
-  {
-    kind: "deploymentControl",
-    name: "Deployment control",
-    description: "Finds out which environments run each ticket's change: it runs the approved probes and starts a delivery check when a ticket's deployment is unknown or changed.",
-    matches: (skill) => skill.builtin === "deploymentControl",
-  },
+const KNOWN_SKILLS: { kind: Exclude<PmSkillSetup, "playbook">; name: string; description: string; matches(skill: Pick<PmSkill, "manifest">): boolean }[] = [
   {
     kind: "bugOwnerFinder",
     name: "Bug owner finder",
     description: "Suggests who should own a new bug from code history, pull requests, and similar tickets.",
-    matches: (skill) => skill.builtin === null && skill.manifest.prefilter === "bugTickets",
+    matches: (skill) => skill.manifest.prefilter === "bugTickets",
   },
   {
     kind: "slackTracker",
     name: "Slack tracker",
     description: "Reads the Slack channels you pick and suggests ticket updates from messages that name tickets.",
-    matches: (skill) => skill.builtin === null && skill.manifest.prefilter === "slackMentions",
+    matches: (skill) => skill.manifest.prefilter === "slackMentions",
   },
 ];
+
+const PLAYBOOK_SETUP = {
+  name: "Playbook setup",
+  description: "Reads the repository's pipelines and deploy files and proposes this project's Playbook: the steps a ticket walks, and an agent check for each step facts cannot answer, such as an environment.",
+};
 
 /**
  * The right sidebar's "Skills" view: each installed skill as a tick, its
@@ -84,10 +83,8 @@ const KNOWN_SKILLS: { kind: PmSkillSetup; name: string; description: string; mat
 export function SkillsPanel(props: SkillsPanelProps) {
   const skills = props.skills?.skills ?? [];
   const drafts = props.skills?.drafts ?? [];
-  const proposal = props.skills?.environmentProposal ?? null;
+  const proposal = props.skills?.playbookProposal ?? null;
   const [reviewing, setReviewing] = useState(false);
-  // The built-in Deployment control shows as a Set up row until it is on.
-  const shown = skills.filter((skill) => skill.builtin === null || skill.enabled);
   const row = (skill: PmSkill) => (
     <SkillRow key={skill.id} skill={skill} now={props.now} onSetEnabled={props.onSetEnabled} onRun={props.onRun} onRevise={props.onRevise} onOpenFile={props.onOpenFile} />
   );
@@ -104,36 +101,31 @@ export function SkillsPanel(props: SkillsPanelProps) {
         <p className="hint pad">Loading skills…</p>
       ) : (
         <ul className="skill-list" aria-label="Skills">
+          <SetupRow
+            {...PLAYBOOK_SETUP}
+            needs={props.repository === null ? "Searches the project's git repository; choose it first." : undefined}
+            setUpLabel={props.repository === null ? "Choose repository…" : "Set up"}
+            onReview={proposal ? () => setReviewing(true) : undefined}
+            onSetUp={() => props.onSetUp("playbook")}
+          />
           {KNOWN_SKILLS.map((known) => {
-            const set = shown.filter((skill) => known.matches(skill));
+            const set = skills.filter((skill) => known.matches(skill));
             if (set.length > 0) return set.map(row);
-            const draft = drafts.find((draft) => draft.baseSkillId === null && known.matches({ builtin: null, manifest: draft.manifest }));
-            const review = known.kind === "deploymentControl"
-              ? proposal && (() => setReviewing(true))
-              : draft && (() => document.getElementById(draftAnchor(draft.id))?.scrollIntoView?.({ behavior: "smooth", block: "start" }));
-            const needsRepository = known.kind === "deploymentControl" && props.repository === null;
-            return (
-              <SetupRow
-                key={known.kind}
-                {...known}
-                needs={needsRepository ? "Searches the project's git repository; choose it first." : undefined}
-                setUpLabel={needsRepository ? "Choose repository…" : "Set up"}
-                onReview={review || undefined}
-                onSetUp={() => props.onSetUp(known.kind)}
-              />
-            );
+            const draft = drafts.find((draft) => draft.baseSkillId === null && known.matches(draft));
+            const review = draft && (() => document.getElementById(draftAnchor(draft.id))?.scrollIntoView?.({ behavior: "smooth", block: "start" }));
+            return <SetupRow key={known.kind} {...known} needs={undefined} setUpLabel="Set up" onReview={review} onSetUp={() => props.onSetUp(known.kind)} />;
           })}
-          {shown.filter((skill) => !KNOWN_SKILLS.some((known) => known.matches(skill))).map(row)}
+          {skills.filter((skill) => !KNOWN_SKILLS.some((known) => known.matches(skill))).map(row)}
         </ul>
       )}
       {props.tier === "tickets" && <p className="hint pad">Skills that read GitHub pull requests appear once a repository is connected.</p>}
       {proposal && reviewing && (
-        <EnvironmentSetupDialog
+        <PlaybookSetupDialog
           key={proposal.createdAtEpochMs}
           proposal={proposal}
           now={props.now}
-          onApply={props.onApplyEnvironments}
-          onDiscard={props.onDiscardEnvironments}
+          onApply={props.onApplyPlaybook}
+          onDiscard={props.onDiscardPlaybook}
           onClose={() => setReviewing(false)}
         />
       )}
@@ -204,7 +196,7 @@ function SkillRow({ skill, now, onSetEnabled, onRun, onRevise, onOpenFile }: {
         <span title="Runs today">{skill.runsToday} today</span>
         <span className="sp" />
         <button type="button" className="link skill-file-link" aria-label={`${skill.manifest.name} SKILL.md`} onClick={() => onOpenFile(skill.id)}>SKILL.md</button>
-        {skill.builtin === null && !skill.revisionReason && (
+        {!skill.revisionReason && (
           <button type="button" className="btn sm ghost" onClick={() => onRevise(skill.id)}>Revise</button>
         )}
         <button type="button" className="btn sm" disabled={skill.running} onClick={() => onRun(skill.id)}>{skill.running ? "Running…" : "Run now"}</button>

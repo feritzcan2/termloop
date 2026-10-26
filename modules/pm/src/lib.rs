@@ -1,6 +1,7 @@
 //! The Project Manager app's model and its own SQLite store: sprints,
-//! tickets with immutable description versions, project environments and
-//! sources, delivery facts and probes, and what is derived from them.
+//! tickets with immutable description versions, project sources, the
+//! delivery Playbook, delivery facts and verdicts, and what is derived from
+//! them.
 //! It never reads or writes the developer daemon's `termloop-store` state.
 
 pub mod agent;
@@ -8,9 +9,9 @@ mod board;
 mod commands;
 mod delivery;
 mod digest;
-mod environment;
 mod error;
 mod note;
+pub mod playbook;
 mod project;
 mod proposal;
 mod settings;
@@ -26,44 +27,27 @@ mod tests;
 
 pub use board::Board;
 pub use commands::{
-    AgentProbeReading, CHECK_PROBE_PROPOSALS_MAX, ChannelWatermark, CheckNotesObservation,
-    CheckReport, ClosedSprint, EnvironmentObservation, FactRead, FactsObservation,
+    ChannelWatermark, CheckReport, ClosedSprint, FactRead, FactsObservation,
     JIRA_PULL_NEW_TICKETS_MAX, JiraChange, JiraIssueState, JiraObservation, JiraPullChanges,
     JiraPullOutcome, JiraSprintPull, JiraSprintRead, JiraWriteDiff, JiraWriteOutcome,
-    JiraWriteTarget, NewCheck, NewEnvironmentProposal, NewProbe, NewTicket, ProposalOrigin,
-    PullRequestsObservation, RecordedCheckReport, RecordedProbeRun, ReportedEnvironment,
-    SKILL_DISCOVERY_MAX_BYTES, SKILL_PAUSE_AFTER_FAILURES, SKILL_RETRY_AFTER_MS,
-    SKILL_SLACK_RETENTION_MS, TicketEdit, apply_jira_write, read_jira_issue_state,
-    read_jira_sprints, slack_ts_at, slack_ts_key,
+    JiraWriteTarget, MARKED_PASSED_EVIDENCE, NewTicket, ProposalOrigin, PullRequestsObservation,
+    RecordedCheckReport, SKILL_DISCOVERY_MAX_BYTES, SKILL_PAUSE_AFTER_FAILURES,
+    SKILL_RETRY_AFTER_MS, SKILL_SLACK_RETENTION_MS, TicketEdit, apply_jira_write,
+    read_jira_issue_state, read_jira_sprints, slack_ts_at, slack_ts_key,
 };
-pub use delivery::check_reasons::{check_reasons, deploy_tracking_enabled};
 pub use delivery::checks::{
-    CHECK_DEADLINE_MS, CHECK_ENVIRONMENTS_MAX, CHECK_RETRY_AFTER_MS, DeliveryCheck,
-    DeliveryCheckOutcome, DeliveryCheckReason, DueCheck, PROJECT_RUNNING_CHECKS_MAX,
-    TICKET_FINISHED_CHECKS_MAX,
+    CHECK_DEADLINE_MS, CHECK_RETRY_AFTER_MS, DeliveryCheck, DeliveryCheckOutcome,
+    DeliveryCheckReason, DueCheck, PROJECT_RUNNING_CHECKS_MAX, TICKET_FINISHED_CHECKS_MAX,
 };
 pub use delivery::facts::{
-    CheckNotes, EnvironmentDeployState, EnvironmentFact, FACTS_STALE_AFTER_MS, FactReadFailure,
-    FactSource, JiraFact, JiraStatusCategory, PullRequestFact, PullRequestFactChecks,
-    PullRequestFactReview, PullRequestFactState, PullRequestsFact, TICKET_CHECK_NOTES_MAX_BYTES,
-    TICKET_ENVIRONMENT_FACTS_MAX, TICKET_PULL_REQUEST_FACTS_MAX, TicketDeliveryFacts, valid_commit,
-};
-pub use delivery::probe::{
-    CommitAncestryFact, DeliveryProbe, PROJECT_PROBES_MAX, ProbeAuthor, ProbeMatcher, ProbeOutcome,
-    ProbeRun, ProbeStatus, commit_ancestry_states, named_commit, valid_probe_argv,
-    valid_probe_environment,
+    FACTS_STALE_AFTER_MS, FactReadFailure, FactSource, JiraFact, JiraStatusCategory,
+    PullRequestFact, PullRequestFactChecks, PullRequestFactReview, PullRequestFactState,
+    PullRequestsFact, TICKET_PULL_REQUEST_FACTS_MAX, TicketDeliveryFacts, valid_commit,
 };
 pub use delivery::risks::{DeliveryRisk, DeliveryRiskKind, RiskInputs, delivery_risks};
-pub use delivery::stage::{DeliveryStage, DeliveryStageKind, delivery_stage};
 pub use delivery::tracking::{DataTier, Tracking};
 pub use delivery::{FactsSummary, TicketDelivery};
 pub use digest::{DIGEST_ENTRIES_MAX, Digest, DigestEntry, DigestKind, DigestSource, digest};
-pub use environment::{
-    ENVIRONMENT_EVIDENCE_MAX_CHARS, ENVIRONMENT_NAME_MAX_CHARS, ENVIRONMENT_PROPOSAL_PROBES_MAX,
-    ENVIRONMENT_PROPOSAL_SUMMARY_MAX_CHARS, EnvironmentProposal, PROJECT_ENVIRONMENTS_MAX,
-    ProjectEnvironment, ProposedEnvironment, environment_is_production, valid_environment_name,
-    valid_project_environments,
-};
 pub use error::PmError;
 pub use note::{
     NewTicketNote, TICKET_NOTE_LABEL_MAX_CHARS, TICKET_NOTE_MAX_CHARS, TICKET_NOTE_SOURCES_MAX,

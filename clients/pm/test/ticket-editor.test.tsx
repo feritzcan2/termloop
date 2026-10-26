@@ -99,10 +99,10 @@ describe("ticket fields", () => {
 
 function editor(entry: PmBoardTicket, overrides: Partial<TicketEditorProps> = {}): TicketEditorProps {
   return {
-    entry, sprints: [sprint()], tier: "tickets", jiraConfigured: false, deployTracking: false, proposals: [], versions: [], now: 0,
+    entry, sprints: [sprint()], tier: "tickets", jiraConfigured: false, playbook: undefined, proposals: [], versions: [], now: 0,
     onUpdate: noop, onMoveSprint: noop, onSaveDescription: async () => ({ kind: "failed" }), onLoadVersions: noop,
     onAddCriterion: noop, onSetCriterionDone: noop, onRemoveCriterion: noop, onAddBlocker: noop, onRemoveBlocker: noop,
-    onAcceptProposal: noop, onRejectProposal: noop, onOpenLink: noop, onWriteToJira: noop, onStartCheck: noop, onAskAgent: noop,
+    onAcceptProposal: noop, onRejectProposal: noop, onOpenLink: noop, onWriteToJira: noop, onStartCheck: noop, onMarkStep: noop, onAskAgent: noop,
     ...overrides,
   };
 }

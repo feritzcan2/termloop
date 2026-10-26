@@ -5,28 +5,26 @@ use rusqlite::{Connection, OptionalExtension, Row, types::Type};
 use crate::PmError;
 use crate::delivery::checks::{DeliveryCheck, DeliveryCheckOutcome, DeliveryCheckReason};
 
-const CHECK_COLUMNS: &str = "id, project_id, ticket_id, reason, environments_json, probe_id, \
-     started_at_epoch_ms, finished_at_epoch_ms, outcome";
+const CHECK_COLUMNS: &str = "id, project_id, ticket_id, step_id, reason, started_at_epoch_ms, \
+     finished_at_epoch_ms, outcome";
 
 fn invalid(index: usize) -> rusqlite::Error {
     rusqlite::Error::FromSqlConversionFailure(index, Type::Text, "invalid stored value".into())
 }
 
 fn check_row(row: &Row<'_>) -> rusqlite::Result<DeliveryCheck> {
-    let reason: String = row.get(3)?;
-    let environments: String = row.get(4)?;
-    let outcome: Option<String> = row.get(8)?;
+    let reason: String = row.get(4)?;
+    let outcome: Option<String> = row.get(7)?;
     let check = DeliveryCheck {
         id: row.get(0)?,
         project_id: row.get(1)?,
         ticket_id: row.get(2)?,
-        reason: DeliveryCheckReason::parse(&reason).ok_or_else(|| invalid(3))?,
-        environments: serde_json::from_str(&environments).map_err(|_| invalid(4))?,
-        probe_id: row.get(5)?,
-        started_at_epoch_ms: row.get(6)?,
-        finished_at_epoch_ms: row.get(7)?,
+        step_id: row.get(3)?,
+        reason: DeliveryCheckReason::parse(&reason).ok_or_else(|| invalid(4))?,
+        started_at_epoch_ms: row.get(5)?,
+        finished_at_epoch_ms: row.get(6)?,
         outcome: match outcome {
-            Some(outcome) => Some(DeliveryCheckOutcome::parse(&outcome).ok_or_else(|| invalid(8))?),
+            Some(outcome) => Some(DeliveryCheckOutcome::parse(&outcome).ok_or_else(|| invalid(7))?),
             None => None,
         },
     };

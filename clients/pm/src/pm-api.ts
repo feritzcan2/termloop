@@ -34,15 +34,10 @@ export const RENDERER_METHODS = [
   "pm_ticket_notes_read",
   "pm_ticket_note_add",
   "pm_ticket_note_remove",
-  "pm_environments_set",
   "pm_sources_read",
   "pm_sources_set",
   "pm_credential_store",
   "pm_credential_clear",
-  "pm_probe_create",
-  "pm_probe_approve",
-  "pm_probe_reject",
-  "pm_probe_delete",
   "pm_check_start",
   "pm_checks_read",
   "pm_jira_pull",
@@ -69,8 +64,10 @@ export const RENDERER_METHODS = [
   "pm_skill_feedback_read",
   "pm_skill_draft_dry_run",
   "pm_skill_draft_discard",
-  "pm_environment_proposal_apply",
-  "pm_environment_proposal_discard",
+  "pm_playbook_save",
+  "pm_playbook_proposal_apply",
+  "pm_playbook_proposal_discard",
+  "pm_playbook_step_mark",
 ] as const satisfies readonly Method[];
 
 export type RendererMethod = typeof RENDERER_METHODS[number];

@@ -9,7 +9,7 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde_json::{Value, json};
 use termloop_pm::agent::{
-    PM_BOARD_READ, PM_CHECK_REPORT, PM_ENVIRONMENTS_PROPOSE, PM_HOST_TOOLS, PM_OWNER_EVIDENCE_READ,
+    PM_BOARD_READ, PM_CHECK_REPORT, PM_HOST_TOOLS, PM_OWNER_EVIDENCE_READ, PM_PLAYBOOK_PROPOSE,
     PM_RISKS_READ, PM_SKILL_DISCOVERY_READ, PM_SKILL_DRAFT_SUBMIT, PM_SKILL_RUN_FINISH,
     PM_SKILL_TOOL_VERIFY, PM_TICKET_PROPOSE_DESCRIPTION, PM_TICKET_READ, PM_TICKET_SUGGEST,
     PmToolError, call_pm_tool, pm_tool_access, pm_tool_definitions,
@@ -157,7 +157,7 @@ pub(crate) async fn handle_message(
                     PM_TICKET_SUGGEST
                         | PM_SKILL_DRAFT_SUBMIT
                         | PM_SKILL_RUN_FINISH
-                        | PM_ENVIRONMENTS_PROPOSE
+                        | PM_PLAYBOOK_PROPOSE
                 )
             {
                 skills::publish(state, &context.project_id);

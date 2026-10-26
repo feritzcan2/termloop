@@ -3,12 +3,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use termloop_providers::AzureRepository;
 
 use super::{sprint, store, ticket};
+use crate::playbook::{AgentCheck, PlaybookStep, StepEvaluator, default_steps};
 use crate::{
-    CommitAncestryFact, DataTier, DeliveryRiskKind, DeliveryStageKind, EnvironmentDeployState,
-    EnvironmentObservation, FACTS_STALE_AFTER_MS, FactRead, FactSource, FactsObservation,
-    GitHubSource, JiraObservation, JiraSource, NewProbe, PmError, ProbeMatcher, ProbeOutcome,
-    ProbeStatus, ProjectEnvironment, ProjectSources, PullRequestFact, PullRequestFactChecks,
-    PullRequestFactReview, PullRequestFactState, PullRequestsObservation, TicketStatus,
+    DataTier, DeliveryRiskKind, FACTS_STALE_AFTER_MS, FactRead, FactSource, FactsObservation,
+    GitHubSource, JiraObservation, JiraSource, MARKED_PASSED_EVIDENCE, PmError, ProjectSources,
+    PullRequestFact, PullRequestFactChecks, PullRequestFactReview, PullRequestFactState,
+    PullRequestsObservation, TicketStatus,
 };
 
 fn merged_pull_request(commit: &str) -> PullRequestFact {
@@ -24,19 +24,6 @@ fn merged_pull_request(commit: &str) -> PullRequestFact {
         merge_commit: Some(commit.into()),
         updated_at_epoch_ms: 1,
         awaiting_review_since_epoch_ms: None,
-    }
-}
-
-fn new_probe(project_id: &str, environment: &str, matcher: ProbeMatcher) -> NewProbe {
-    NewProbe {
-        project_id: project_id.into(),
-        environment: environment.into(),
-        argv: vec![
-            "curl".into(),
-            format!("https://{environment}.example/version"),
-        ],
-        matcher,
-        reason: Some("Prints the deployed commit".into()),
     }
 }
 
@@ -61,7 +48,6 @@ fn facts_record_reads_keep_the_last_good_value_and_turn_stale() {
                     items: vec![merged_pull_request("abc1234def")],
                     truncated: false,
                 }),
-                ..FactsObservation::default()
             },
         )
         .unwrap();
@@ -83,7 +69,7 @@ fn facts_record_reads_keep_the_last_good_value_and_turn_stale() {
 
     let board = store.board("p1").unwrap();
     let delivery = &board.deliveries[0];
-    assert_eq!(delivery.stage.kind, DeliveryStageKind::Merged);
+    assert_eq!(delivery.playbook.position, Some(2));
     assert!(!delivery.facts.as_ref().unwrap().stale);
     assert!(
         delivery
@@ -118,170 +104,7 @@ fn facts_record_reads_keep_the_last_good_value_and_turn_stale() {
 }
 
 #[test]
-fn probes_are_proposed_approved_rejected_and_deleted() {
-    let mut store = store();
-    let proposed = store
-        .propose_probe(new_probe("p1", "staging", ProbeMatcher::Agent))
-        .unwrap();
-    assert_eq!(proposed.status, ProbeStatus::Proposed);
-    assert!(!store.deploy_tracking_enabled("p1").unwrap());
-    assert!(matches!(
-        store.propose_probe(NewProbe {
-            environment: "STAGING".into(),
-            ..new_probe("p1", "staging", ProbeMatcher::Agent)
-        }),
-        Err(PmError::Constraint(_))
-    ));
-    assert!(matches!(
-        store.record_probe_run(
-            &proposed.id,
-            &proposed.argv,
-            &ProbeOutcome::Failed("timedOut".into()),
-            &[]
-        ),
-        Err(PmError::Conflict)
-    ));
-    let approved = store.approve_probe(&proposed.id).unwrap();
-    assert_eq!(approved.status, ProbeStatus::Approved);
-    assert!(store.deploy_tracking_enabled("p1").unwrap());
-    assert!(matches!(
-        store.reject_probe(&proposed.id),
-        Err(PmError::Constraint(_))
-    ));
-    let written = store
-        .create_probe(new_probe("p1", "live", ProbeMatcher::CommitAncestry))
-        .unwrap();
-    assert_eq!(written.status, ProbeStatus::Approved);
-    let other = store
-        .propose_probe(new_probe("p1", "uat", ProbeMatcher::Agent))
-        .unwrap();
-    store.reject_probe(&other.id).unwrap();
-    store.delete_probe(&approved.id).unwrap();
-    assert_eq!(store.project_probes("p1").unwrap(), vec![written]);
-    assert!(matches!(
-        store.create_probe(NewProbe {
-            argv: vec!["-c".into()],
-            ..new_probe("p1", "dev", ProbeMatcher::Agent)
-        }),
-        Err(PmError::Invalid("argv"))
-    ));
-    assert!(matches!(
-        store.delete_probe(&other.id),
-        Err(PmError::NotFound)
-    ));
-}
-
-#[test]
-fn a_commit_ancestry_run_sets_environment_facts_from_git_answers() {
-    let mut store = store();
-    let shipped = ticket(&mut store, "p1", "Shipped", None);
-    let pending = ticket(&mut store, "p1", "Pending", None);
-    let elsewhere = ticket(&mut store, "p2", "Elsewhere", None);
-    for (ticket, commit) in [
-        (&shipped, "aaa1111"),
-        (&pending, "bbb2222"),
-        (&elsewhere, "ccc3333"),
-    ] {
-        store
-            .record_facts(
-                &ticket.id,
-                FactsObservation {
-                    pull_requests: FactRead::Read(PullRequestsObservation {
-                        repository: "github.com/acme/pay".into(),
-                        items: vec![merged_pull_request(commit)],
-                        truncated: false,
-                    }),
-                    ..FactsObservation::default()
-                },
-            )
-            .unwrap();
-    }
-    let probe = store
-        .create_probe(new_probe("p1", "live", ProbeMatcher::CommitAncestry))
-        .unwrap();
-    let mut targets = store.commit_ancestry_targets("p1").unwrap();
-    targets.sort();
-    let mut expected = vec![
-        (shipped.id.clone(), "aaa1111".to_owned()),
-        (pending.id.clone(), "bbb2222".to_owned()),
-    ];
-    expected.sort();
-    assert_eq!(targets, expected);
-
-    let answer = |ticket_id: &str, contained| CommitAncestryFact {
-        ticket_id: ticket_id.into(),
-        contained,
-    };
-    let recorded = store
-        .record_probe_run(
-            &probe.id,
-            &probe.argv,
-            &ProbeOutcome::Output {
-                output_hash: "a".repeat(64),
-                deployed_commit: Some("0123456789abcdef".into()),
-            },
-            &[
-                answer(&shipped.id, Some(true)),
-                answer(&pending.id, None),
-                answer(&elsewhere.id, Some(true)),
-            ],
-        )
-        .unwrap();
-    assert_eq!(recorded.ticket_ids, vec![shipped.id.clone()]);
-    assert!(!recorded.output_changed);
-    let facts = store.ticket_facts(&shipped.id).unwrap().unwrap();
-    let live = facts.environment("live").unwrap();
-    assert_eq!(live.state, EnvironmentDeployState::Deployed);
-    assert_eq!(live.source, FactSource::Probe);
-    assert_eq!(live.detail.as_deref(), Some("Runs 0123456789ab"));
-    assert!(
-        store
-            .ticket_facts(&pending.id)
-            .unwrap()
-            .unwrap()
-            .environments
-            .is_empty()
-    );
-    assert!(
-        store
-            .ticket_facts(&elsewhere.id)
-            .unwrap()
-            .unwrap()
-            .environments
-            .is_empty()
-    );
-    // Without an environment list, "live" is not named production.
-    let stage = &store.board("p1").unwrap().deliveries[0].stage;
-    assert_eq!(stage.kind, DeliveryStageKind::Deployed);
-    assert_eq!(stage.environment.as_deref(), Some("live"));
-
-    let again = store
-        .record_probe_run(
-            &probe.id,
-            &probe.argv,
-            &ProbeOutcome::Output {
-                output_hash: "b".repeat(64),
-                deployed_commit: None,
-            },
-            &[answer(&pending.id, Some(true))],
-        )
-        .unwrap();
-    assert!(again.output_changed);
-    assert_eq!(again.run.failure.as_deref(), Some("noCommit"));
-    assert!(again.ticket_ids.is_empty());
-    assert!(matches!(
-        store.record_probe_run(
-            &probe.id,
-            &["other".to_owned()],
-            &ProbeOutcome::Failed("failed".into()),
-            &[]
-        ),
-        Err(PmError::Conflict)
-    ));
-}
-
-#[test]
-fn the_board_derives_stages_check_reasons_and_the_tier() {
+fn the_board_walks_the_playbook_and_derives_the_tier() {
     let mut store = store();
     let active = sprint(&mut store, "p1", "Sprint 1");
     store.activate_sprint(&active.id).unwrap();
@@ -301,25 +124,29 @@ fn the_board_derives_stages_check_reasons_and_the_tier() {
         .unwrap();
     let board = store.board("p1").unwrap();
     assert_eq!(board.tracking.tier, DataTier::Tickets);
-    assert_eq!(board.deliveries[0].stage.kind, DeliveryStageKind::Merged);
-    // Without deploy tracking, nothing asks whether it reached production.
-    assert!(board.deliveries[0].check_reasons.is_empty());
+    assert_eq!(board.playbook.revision, 0);
+    assert_eq!(board.deliveries[0].playbook.position, Some(2));
 
-    store
-        .set_project_environments(
-            "p1",
-            &[
-                ProjectEnvironment {
-                    name: "staging".into(),
-                    production: false,
-                },
-                ProjectEnvironment {
-                    name: "live".into(),
-                    production: true,
-                },
-            ],
-        )
-        .unwrap();
+    // An agent-checked step turns deploy tracking on.
+    let mut steps = default_steps();
+    steps.insert(
+        3,
+        PlaybookStep {
+            id: "live".into(),
+            title: "In production".into(),
+            checks: vec![],
+            agent: Some(AgentCheck {
+                instructions: "Read the production release with az pipelines.".into(),
+                retry_minutes: 60,
+            }),
+        },
+    );
+    let saved = store.save_playbook("p1", 0, steps.clone()).unwrap();
+    assert_eq!(saved.revision, 1);
+    assert!(matches!(
+        store.save_playbook("p1", 0, steps.clone()),
+        Err(PmError::Constraint(_))
+    ));
     store
         .set_project_sources(
             "p1",
@@ -335,39 +162,77 @@ fn the_board_derives_stages_check_reasons_and_the_tier() {
     let board = store.board("p1").unwrap();
     assert_eq!(board.tracking.tier, DataTier::Deploy);
     assert!(board.tracking.code && board.tracking.deploy && !board.tracking.jira);
-    assert_eq!(
-        board.deliveries[0].check_reasons,
-        vec![
-            "No probe tells whether it reached staging",
-            "No probe tells whether it reached live"
-        ]
-    );
-    store
-        .record_facts(
-            &merged.id,
-            FactsObservation {
-                environments: vec![EnvironmentObservation {
-                    name: "staging".into(),
-                    state: EnvironmentDeployState::Deployed,
-                    detail: None,
-                    source: FactSource::ProjectManager,
-                }],
-                ..FactsObservation::default()
-            },
-        )
-        .unwrap();
+
+    // The project manager answers a step by hand; a changed step forgets it.
+    store.mark_step(&merged.id, "live", true).unwrap();
     let delivery = &store.board("p1").unwrap().deliveries[0];
-    assert_eq!(delivery.stage.kind, DeliveryStageKind::Deployed);
+    assert_eq!(delivery.playbook.position, Some(3));
     assert_eq!(
-        delivery.check_reasons,
-        vec!["No probe tells whether it reached live"]
+        delivery.playbook.steps[3].evidence.as_deref(),
+        Some(MARKED_PASSED_EVIDENCE)
     );
+    assert_eq!(
+        delivery.playbook.steps[3].evaluator,
+        Some(StepEvaluator::ProjectManager)
+    );
+    steps[3].agent.as_mut().unwrap().retry_minutes = 30;
+    store.save_playbook("p1", 1, steps).unwrap();
+    assert_eq!(
+        store.board("p1").unwrap().deliveries[0].playbook.position,
+        Some(2)
+    );
+    assert!(matches!(
+        store.mark_step(&merged.id, "missing", true),
+        Err(PmError::NotFound)
+    ));
+
     store
         .set_ticket_status(&merged.id, TicketStatus::Done)
         .unwrap();
     let delivery = &store.board("p1").unwrap().deliveries[0];
-    assert_eq!(delivery.stage.kind, DeliveryStageKind::Done);
-    assert!(delivery.check_reasons.is_empty() && delivery.risks.is_empty());
+    assert_eq!(delivery.playbook.position, Some(4));
+    assert!(delivery.playbook.next_index().is_none() && delivery.risks.is_empty());
+}
+
+#[test]
+fn a_setup_proposal_waits_for_the_project_manager() {
+    let mut store = store();
+    assert_eq!(store.playbook_proposal("p1").unwrap(), None);
+    let proposal = store
+        .propose_playbook(
+            "p1",
+            "Read .github/workflows/deploy.yml.".into(),
+            default_steps(),
+        )
+        .unwrap();
+    assert_eq!(store.playbook_proposal("p1").unwrap(), Some(proposal));
+    assert_eq!(store.playbook("p1").unwrap().revision, 0);
+    assert!(matches!(
+        store.propose_playbook("p1", " ".into(), default_steps()),
+        Err(PmError::Invalid("summary"))
+    ));
+    assert!(matches!(
+        store.propose_playbook("p1", "Nothing".into(), Vec::new()),
+        Err(PmError::Invalid("steps"))
+    ));
+
+    let mut kept = default_steps();
+    kept.truncate(3);
+    let applied = store.apply_playbook_proposal("p1", kept).unwrap();
+    assert_eq!((applied.revision, applied.steps.len()), (1, 3));
+    assert_eq!(store.playbook_proposal("p1").unwrap(), None);
+    assert!(matches!(
+        store.apply_playbook_proposal("p1", default_steps()),
+        Err(PmError::NotFound)
+    ));
+    store
+        .propose_playbook("p1", "Again".into(), default_steps())
+        .unwrap();
+    store.discard_playbook_proposal("p1").unwrap();
+    assert!(matches!(
+        store.discard_playbook_proposal("p1"),
+        Err(PmError::NotFound)
+    ));
 }
 
 #[test]

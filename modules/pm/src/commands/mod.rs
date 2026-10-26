@@ -4,12 +4,11 @@
 
 mod check_report;
 mod checks;
-mod environment;
 mod facts;
 mod jira_mirror;
 mod jira_write;
 mod note;
-mod probe;
+mod playbook;
 mod project;
 mod proposal;
 mod skill;
@@ -20,16 +19,8 @@ mod ticket;
 
 use rusqlite::{Connection, OptionalExtension, params};
 
-pub use check_report::{
-    AgentProbeReading, CHECK_PROBE_PROPOSALS_MAX, CheckReport, RecordedCheckReport,
-    ReportedEnvironment,
-};
-pub use checks::NewCheck;
-pub use environment::NewEnvironmentProposal;
-pub use facts::{
-    CheckNotesObservation, EnvironmentObservation, FactRead, FactsObservation, JiraObservation,
-    PullRequestsObservation,
-};
+pub use check_report::{CheckReport, RecordedCheckReport};
+pub use facts::{FactRead, FactsObservation, JiraObservation, PullRequestsObservation};
 pub use jira_mirror::{
     JIRA_PULL_NEW_TICKETS_MAX, JiraPullChanges, JiraPullOutcome, JiraSprintPull, JiraSprintRead,
     read_jira_sprints,
@@ -38,7 +29,7 @@ pub use jira_write::{
     JiraChange, JiraIssueState, JiraWriteDiff, JiraWriteOutcome, JiraWriteTarget, apply_jira_write,
     read_jira_issue_state,
 };
-pub use probe::{NewProbe, RecordedProbeRun};
+pub use playbook::MARKED_PASSED_EVIDENCE;
 pub use proposal::ProposalOrigin;
 pub use skill::{SKILL_DISCOVERY_MAX_BYTES, SKILL_PAUSE_AFTER_FAILURES, SKILL_RETRY_AFTER_MS};
 pub use skill_channels::{ChannelWatermark, SKILL_SLACK_RETENTION_MS, slack_ts_at, slack_ts_key};

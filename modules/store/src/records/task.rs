@@ -201,6 +201,76 @@ impl Store {
         Ok(updated)
     }
 
+    /// Unbinds the exact branch of a closed Task whose checkout is gone so the
+    /// next checkout can start a fresh branch from the latest base. The Git
+    /// branch itself is untouched, and its branch-family evidence leaves with
+    /// the binding.
+    pub fn release_closed_task_branch(
+        &mut self,
+        _authority: &CoreWriteAuthority,
+        task_id: &str,
+        expected: &TaskBranchBinding,
+        updated_at_epoch_ms: u64,
+    ) -> Result<TaskRecord, StoreError> {
+        let task_index = self
+            .state
+            .tasks
+            .iter()
+            .position(|value| value.id == task_id)
+            .ok_or(StoreError::NotFound)?;
+        let task = &self.state.tasks[task_index];
+        if task.status != TaskStatus::Closed
+            || task.archived_at_epoch_ms.is_some()
+            || task.worktree.is_some()
+            || task.branch.as_ref() != Some(expected)
+        {
+            return Err(StoreError::ConstraintViolation);
+        }
+        if let Some(operation_id) = self
+            .state
+            .provisioning_operations
+            .iter()
+            .filter(|operation| operation.task_id == task_id)
+            .map(|operation| &operation.operation_id)
+            .chain(
+                self.state
+                    .cleanup_operations
+                    .iter()
+                    .filter(|operation| operation.task_id == task_id)
+                    .map(|operation| &operation.operation_id),
+            )
+            .chain(
+                self.state
+                    .repair_operations
+                    .iter()
+                    .filter(|operation| operation.task_id == task_id)
+                    .map(|operation| &operation.operation_id),
+            )
+            .chain(
+                self.state
+                    .stale_resolution_operations
+                    .iter()
+                    .filter(|operation| operation.task_id == task_id)
+                    .map(|operation| &operation.operation_id),
+            )
+            .next()
+        {
+            return Err(StoreError::JournalConflict {
+                operation_id: operation_id.clone(),
+            });
+        }
+        let previous = self.state.clone();
+        self.state
+            .task_branch_sets
+            .retain(|set| set.task_id != task_id);
+        let task = &mut self.state.tasks[task_index];
+        task.branch = None;
+        task.updated_at_epoch_ms = updated_at_epoch_ms.max(task.updated_at_epoch_ms + 1);
+        let updated = task.clone();
+        self.commit_or_restore(previous)?;
+        Ok(updated)
+    }
+
     pub fn set_task_status(
         &mut self,
         _authority: &CoreWriteAuthority,

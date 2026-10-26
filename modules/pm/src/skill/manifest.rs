@@ -46,7 +46,7 @@ pub enum SkillTrigger {
 pub enum SkillEvent {
     /// A Jira pull applied changes.
     JiraPulled,
-    /// A probe run or delivery check changed what runs where.
+    /// A delivery check answered for a Playbook step.
     DeployChanged,
     /// A ticket or sprint changed.
     BoardChanged,
@@ -77,8 +77,6 @@ pub enum SkillPrefilter {
     SlackMentions,
     /// New or changed tickets that read like a bug.
     BugTickets,
-    /// Delivery checks that are due; the built-in Deployment control only.
-    DeliveryChecks,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -165,10 +163,6 @@ fn valid_channel_id(id: &str) -> bool {
 impl SkillManifest {
     /// Why the manifest is refused, naming the field; `None` when valid.
     pub fn invalid_field(&self) -> Option<&'static str> {
-        self.invalid_field_of(false)
-    }
-
-    pub(crate) fn invalid_field_of(&self, builtin: bool) -> Option<&'static str> {
         if !valid_label(&self.name, SKILL_NAME_MAX_CHARS) {
             return Some("name");
         }
@@ -220,8 +214,6 @@ impl SkillManifest {
         let fits = match self.prefilter {
             SkillPrefilter::BoardChanges | SkillPrefilter::BugTickets => true,
             SkillPrefilter::SlackMentions => slack,
-            // Only the built-in skill wraps delivery checks.
-            SkillPrefilter::DeliveryChecks => builtin,
         };
         (!fits).then_some("prefilter")
     }

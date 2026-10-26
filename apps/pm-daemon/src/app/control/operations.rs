@@ -5,10 +5,7 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 use termloop_pm::agent::AssistantTask;
-use termloop_pm::{
-    CHECK_ENVIRONMENTS_MAX, DeliveryCheckReason, NewCheck, PM_AGENT_PROVIDERS, PmSettings,
-    SettingsEdit, valid_setting_value,
-};
+use termloop_pm::{PM_AGENT_PROVIDERS, PmError, PmSettings, SettingsEdit, valid_setting_value};
 use termloop_pm_contract::pm::{
     PmAgentCatalog, PmAgentCatalogPermissions, PmAgentCatalogProvider, PmAgentLaunchParams,
     PmAgentStopParams, PmAssistantTask, PmCheckStartParams, PmChecksReadParams,
@@ -124,30 +121,25 @@ pub(super) fn agent_stop(state: &AppState, params: &Value) -> Result<Value, Cont
     Ok(json!({ "stopped": agents::stop(state, &params.session_id)? }))
 }
 
-/// Starts a requested check for each ticket, each with its own agent. A
-/// ticket that cannot be checked now is refused with the reason.
+/// Starts a requested check of each ticket's next Playbook step, each with
+/// its own agent. A ticket that cannot be checked now is refused with the
+/// reason.
 pub(super) async fn check_start(state: &AppState, params: &Value) -> Result<Value, ControlError> {
     let params: PmCheckStartParams = parse(params)?;
-    let environments: Vec<String> = {
-        let store = state.store.lock();
-        require_project(&store, &params.project_id)?;
-        store
-            .project_environments(&params.project_id)?
-            .into_iter()
-            .map(|environment| environment.name)
-            .take(CHECK_ENVIRONMENTS_MAX)
-            .collect()
-    };
+    require_project(&state.store.lock(), &params.project_id)?;
     let mut checks = Vec::new();
     let mut refused = Vec::new();
     for ticket_id in &params.ticket_ids {
-        let new = NewCheck {
-            ticket_id: ticket_id.clone(),
-            reason: DeliveryCheckReason::Requested,
-            environments: environments.clone(),
-            probe_id: None,
+        let requested = state.store.lock().requested_check(ticket_id);
+        let started = match requested {
+            Ok(Some(due)) => {
+                scheduler::start_check(state, &params.project_id, due, agents::launch_check)
+            }
+            Ok(None) => Err(scheduler::Refusal::NoAgentStep),
+            Err(PmError::NotFound | PmError::Invalid(_)) => Err(scheduler::Refusal::NotFound),
+            Err(error) => return Err(error.into()),
         };
-        match scheduler::start_check(state, &params.project_id, new, agents::launch_check) {
+        match started {
             Ok(check) => checks.push(check_value(state, &check)?),
             Err(reason) => {
                 refused.push(json!({ "ticketId": ticket_id, "reason": reason.as_str() }))

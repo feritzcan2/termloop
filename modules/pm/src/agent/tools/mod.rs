@@ -4,7 +4,7 @@
 //! [`PmToolContext`]; this module decides what that context may do.
 //!
 //! Tools read the PM store and write only PM-store proposals, ticket
-//! notes, check reports, skill drafts, skill run reports, and environment
+//! notes, check reports, skill drafts, skill run reports, and Playbook
 //! proposals. None writes Jira, a Git
 //! host, or any other external system. Host tools ([`PM_HOST_TOOLS`]) are
 //! defined here but answered by the daemon.
@@ -15,16 +15,16 @@ mod schema;
 use serde_json::Value;
 
 pub use handlers::{
-    AcceptanceCriteriaProposalParams, AgentProbeParams, BoardReadParams, BoardReadResult,
-    BoardScope, BoardSprint, BoardTicket, CheckReportParams, CheckReportResult,
-    DescriptionProposalParams, NoteAddParams, NoteAddResult, ProbeProposalParams, ProposalResult,
-    ReportedEnvironmentParams, RisksReadParams, RisksReadResult, SkillDraftSubmitParams,
-    SkillRunFinishParams, SuggestParams, TicketReadParams, TicketReadResult, TicketRisks,
+    AcceptanceCriteriaProposalParams, BoardReadParams, BoardReadResult, BoardScope, BoardSprint,
+    BoardTicket, CheckReportParams, CheckReportResult, DescriptionProposalParams, NoteAddParams,
+    NoteAddResult, PlaybookProposeParams, ProposalResult, RisksReadParams, RisksReadResult,
+    SkillDraftSubmitParams, SkillRunFinishParams, SuggestParams, TicketReadParams,
+    TicketReadResult, TicketRisks,
 };
 pub use schema::{PmToolDefinition, pm_tool_definitions};
 
 use super::{
-    PM_BOARD_READ, PM_CHECK_REPORT, PM_ENVIRONMENTS_PROPOSE, PM_HOST_TOOLS, PM_RISKS_READ,
+    PM_BOARD_READ, PM_CHECK_REPORT, PM_HOST_TOOLS, PM_PLAYBOOK_PROPOSE, PM_RISKS_READ,
     PM_SKILL_DRAFT_SUBMIT, PM_SKILL_RUN_FINISH, PM_TICKET_NOTE_ADD,
     PM_TICKET_PROPOSE_ACCEPTANCE_CRITERIA, PM_TICKET_PROPOSE_DESCRIPTION, PM_TICKET_READ,
     PM_TICKET_SUGGEST, PM_TOOLS, PmAgentMode, SKILL_PROPOSAL_TOOLS,
@@ -187,7 +187,7 @@ pub fn call_pm_tool(
         )?),
         PM_SKILL_DRAFT_SUBMIT => result(handlers::draft_submit(store, context, parse(arguments)?)?),
         PM_TICKET_NOTE_ADD => result(handlers::note_add(store, context, parse(arguments)?)?),
-        PM_ENVIRONMENTS_PROPOSE => result(handlers::environments_propose(
+        PM_PLAYBOOK_PROPOSE => result(handlers::playbook_propose(
             store,
             context,
             parse(arguments)?,

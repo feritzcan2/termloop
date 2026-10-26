@@ -1,15 +1,14 @@
 import { useState } from "react";
-import type { PmBoardTicket, PmDataTier, PmDigestEntry, PmEnvironment, PmSprint } from "@termloop/pm-contract/pm";
-import { EnvironmentBadges } from "./delivery-facts.js";
-import { RISK_LABEL, STAGE_LABEL, attentionRows, dayRuler, sprintDay, statusRibbon, ticketLabel, unknownDeployment } from "./format.js";
+import type { PmBoardTicket, PmDataTier, PmDigestEntry, PmPlaybook, PmSprint } from "@termloop/pm-contract/pm";
+import { RISK_LABEL, attentionRows, dayRuler, sprintDay, stepRibbon, ticketLabel, waitingAtStep } from "./format.js";
 
 export type SprintOverviewProps = {
   sprint: PmSprint | undefined;
   sprints: PmSprint[];
   tickets: PmBoardTicket[];
   tier: PmDataTier;
-  /** The project's environments in delivery order; attention rows show badges at the deploy tier. */
-  environments?: readonly PmEnvironment[];
+  /** The project's Playbook: the ribbon counts tickets per step. */
+  playbook: PmPlaybook | undefined;
   digest: PmDigestEntry[];
   now: number;
   onOpenTicket(ticketId: string): void;
@@ -40,9 +39,8 @@ export function SprintOverview(props: SprintOverviewProps) {
   const attention = attentionRows(tickets);
   const ruler = dayRuler(sprint, props.now);
   const position = sprintDay(sprint, props.now);
-  const ribbon = statusRibbon(tickets, props.tier);
-  const environments = props.tier === "deploy" ? props.environments ?? [] : [];
-  const unknown = props.tier === "deploy" ? unknownDeployment(tickets) : [];
+  const ribbon = props.playbook ? stepRibbon(tickets, props.playbook) : [];
+  const waiting = props.tier === "deploy" && props.playbook ? waitingAtStep(tickets, props.playbook) : [];
   const targets = props.sprints.filter((candidate) => candidate.id !== sprint.id && (candidate.state === "planned" || candidate.state === "backlog"));
   const known = (ticketId: string | null) => ticketId !== null && tickets.some((entry) => entry.ticket.id === ticketId);
   const meta = [
@@ -96,7 +94,7 @@ export function SprintOverview(props: SprintOverviewProps) {
           </div>
         )}
         <div className="ribbon" aria-hidden="true">
-          {ribbon.filter((segment) => segment.count > 0).map((segment) => <i key={segment.key} className={segment.key} style={{ flex: segment.count }} />)}
+          {ribbon.filter((segment) => segment.count > 0).map((segment) => <i key={segment.key} className={segment.className} style={{ flex: segment.count }} />)}
           {tickets.length === 0 && <i className="empty" style={{ flex: 1 }} />}
         </div>
         <div className="legend">
@@ -114,7 +112,6 @@ export function SprintOverview(props: SprintOverviewProps) {
                   <span>
                     <div className="ruled-title">{entry.ticket.title}</div>
                     <div className="ruled-detail">
-                      <EnvironmentBadges environments={environments} facts={entry.delivery.facts} now={props.now} />
                       <span className={row.tone}>{row.title}.</span> {row.detail}
                     </div>
                   </span>
@@ -140,18 +137,17 @@ export function SprintOverview(props: SprintOverviewProps) {
         )}
 
         {props.tier === "deploy" && (
-          <section aria-label="Where it is running">
-            <h3 className="s">Where it is running <small>{unknown.length} not known</small></h3>
-            {unknown.length === 0 ? <p className="hint">Every merged ticket has a known environment.</p> : (
+          <section aria-label="Waiting at a step">
+            <h3 className="s">Waiting at a step <small>{waiting.length} {waiting.length === 1 ? "ticket" : "tickets"}</small></h3>
+            {waiting.length === 0 ? <p className="hint">No ticket is waiting at a step an agent checks.</p> : (
               <div className="ruled">
-                {unknown.map((entry) => (
+                {waiting.map(({ entry, step, state }) => (
                   <div key={entry.ticket.id} className="ruled-row">
                     <span className="k">{ticketLabel(entry.ticket)}</span>
                     <span>
                       <div className="ruled-title">{entry.ticket.title}</div>
                       <div className="ruled-detail">
-                        {STAGE_LABEL[entry.delivery.stage.kind]}{entry.delivery.stage.environment ? ` on ${entry.delivery.stage.environment}` : ""}.{" "}
-                        {entry.delivery.risks.filter((risk) => risk.kind === "mergedNotDeployed" || risk.kind === "notInProduction").map((risk) => RISK_LABEL[risk.kind]).join(", ")}
+                        <span className={state.verdict === "blocked" ? "bad" : "warn"}>{step.title}: {state.verdict}.</span> {state.evidence}
                       </div>
                     </span>
                     {entry.delivery.checking

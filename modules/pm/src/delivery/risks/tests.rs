@@ -1,9 +1,8 @@
 use super::super::facts::{
-    CheckNotes, EnvironmentFact, FactReadFailure, JiraFact, PullRequestFact, PullRequestFactReview,
-    PullRequestsFact,
+    FactReadFailure, JiraFact, PullRequestFact, PullRequestFactReview, PullRequestsFact,
 };
-use super::super::stage::delivery_stage;
 use super::*;
+use crate::playbook::{AgentCheck, PlaybookStep, StepVerdictRecord, ticket_playbook};
 use crate::{AcceptanceCriterion, Blocker, TicketPriority};
 
 const NOW: u64 = 100 * DAY_MS;
@@ -73,17 +72,6 @@ fn pull_request(
     }
 }
 
-fn environment(name: &str, state: EnvironmentDeployState, changed: u64) -> EnvironmentFact {
-    EnvironmentFact {
-        name: name.into(),
-        state,
-        detail: None,
-        source: FactSource::Check,
-        observed_at_epoch_ms: NOW,
-        changed_at_epoch_ms: changed,
-    }
-}
-
 fn jira(status: &str) -> JiraFact {
     JiraFact {
         status: status.into(),
@@ -95,11 +83,7 @@ fn jira(status: &str) -> JiraFact {
     }
 }
 
-fn facts(
-    pull_requests: Vec<PullRequestFact>,
-    environments: Vec<EnvironmentFact>,
-    status: Option<&str>,
-) -> TicketDeliveryFacts {
+fn facts(pull_requests: Vec<PullRequestFact>, status: Option<&str>) -> TicketDeliveryFacts {
     TicketDeliveryFacts {
         jira: status.map(jira),
         pull_requests: Some(PullRequestsFact {
@@ -109,7 +93,6 @@ fn facts(
             observed_at_epoch_ms: NOW,
             changed_at_epoch_ms: NOW,
         }),
-        environments,
         ..TicketDeliveryFacts::new("t1")
     }
 }
@@ -118,17 +101,36 @@ fn risks_of(
     ticket: &Ticket,
     sprint: Option<&Sprint>,
     facts: Option<&TicketDeliveryFacts>,
-    environments: &[ProjectEnvironment],
+    verdicts: &[StepVerdictRecord],
 ) -> Vec<DeliveryRisk> {
-    let stage = delivery_stage(ticket.status, facts, environments);
+    let playbook = deployed_playbook();
+    let progress = ticket_playbook(&playbook, ticket.status, facts, verdicts);
     delivery_risks(RiskInputs {
         ticket,
         sprint,
         facts,
-        stage: &stage,
-        environments,
+        playbook: &playbook,
+        progress: &progress,
         now_epoch_ms: NOW,
     })
+}
+
+/// The default steps with an agent-checked "Deployed" after Merged.
+fn deployed_playbook() -> Playbook {
+    let mut playbook = Playbook::default_for("p1");
+    playbook.steps.insert(
+        3,
+        PlaybookStep {
+            id: "deployed".into(),
+            title: "Deployed".into(),
+            checks: vec![],
+            agent: Some(AgentCheck {
+                instructions: "Read the release pipeline.".into(),
+                retry_minutes: 30,
+            }),
+        },
+    );
+    playbook
 }
 
 fn kinds(facts: &TicketDeliveryFacts) -> Vec<DeliveryRiskKind> {
@@ -147,7 +149,6 @@ fn a_ticket_on_track_has_no_risk() {
             PullRequestFactChecks::Passing,
             NOW - DAY_MS,
         )],
-        vec![],
         Some("In Progress"),
     );
     assert_eq!(kinds(&on_track), vec![]);
@@ -166,21 +167,13 @@ fn blockers_failed_reads_failing_checks_and_review_waits_are_risks() {
     assert_eq!(risks[0].kind, DeliveryRiskKind::Blocked);
     assert_eq!(risks[0].detail, "Waiting on API keys");
 
-    let mut noted = facts(vec![], vec![], None);
-    noted.check_notes = Some(CheckNotes {
-        blockers: Some("QA environment down".into()),
-        markdown: "Checked".into(),
-        recorded_at_epoch_ms: NOW,
-    });
-    noted.read_failures.push(FactReadFailure {
+    let mut failed = facts(vec![], None);
+    failed.read_failures.push(FactReadFailure {
         source: FactSource::Jira,
         reason: "unauthorized".into(),
         at_epoch_ms: NOW,
     });
-    assert_eq!(
-        kinds(&noted),
-        vec![DeliveryRiskKind::Blocked, DeliveryRiskKind::ReadFailed]
-    );
+    assert_eq!(kinds(&failed), vec![DeliveryRiskKind::ReadFailed]);
 
     let waiting = facts(
         vec![
@@ -197,7 +190,6 @@ fn blockers_failed_reads_failing_checks_and_review_waits_are_risks() {
                 NOW - 3 * DAY_MS,
             ),
         ],
-        vec![],
         None,
     );
     let risks = risks_of(&ticket(), None, Some(&waiting), &[]);
@@ -221,7 +213,7 @@ fn blockers_failed_reads_failing_checks_and_review_waits_are_risks() {
 
 #[test]
 fn a_status_unchanged_too_long_is_stuck() {
-    let mut stuck = facts(vec![], vec![], Some("In Progress"));
+    let mut stuck = facts(vec![], Some("In Progress"));
     stuck.jira.as_mut().unwrap().changed_at_epoch_ms = NOW - STUCK_IN_STATUS_MS;
     assert_eq!(kinds(&stuck), vec![DeliveryRiskKind::StuckInStatus]);
     // Work not started yet is not stuck.
@@ -230,7 +222,7 @@ fn a_status_unchanged_too_long_is_stuck() {
 }
 
 #[test]
-fn merged_work_must_reach_an_environment_and_then_production() {
+fn a_step_the_agent_could_not_check_is_a_risk_until_it_passes() {
     let merged = facts(
         vec![pull_request(
             1,
@@ -238,59 +230,41 @@ fn merged_work_must_reach_an_environment_and_then_production() {
             PullRequestFactChecks::Passing,
             NOW - 3 * DAY_MS,
         )],
-        vec![],
         None,
     );
-    assert_eq!(kinds(&merged), vec![DeliveryRiskKind::MergedNotDeployed]);
-
-    let on_staging = facts(
-        vec![],
-        vec![environment(
-            "staging",
-            EnvironmentDeployState::Deployed,
-            NOW - 4 * DAY_MS,
-        )],
+    let answer = |verdict| StepVerdictRecord {
+        ticket_id: "t1".into(),
+        step_id: "deployed".into(),
+        verdict,
+        evidence: "The pipeline needs a login.\nmore".into(),
+        evaluator: crate::playbook::StepEvaluator::Agent,
+        decided_at_epoch_ms: NOW - DAY_MS,
+        next_attempt_at_epoch_ms: None,
+    };
+    let blocked = risks_of(
+        &ticket(),
         None,
+        Some(&merged),
+        &[answer(StepVerdict::Blocked)],
     );
-    let order = [
-        ProjectEnvironment {
-            name: "staging".into(),
-            production: false,
-        },
-        ProjectEnvironment {
-            name: "live".into(),
-            production: true,
-        },
-    ];
-    let risks = risks_of(&ticket(), None, Some(&on_staging), &order);
-    assert_eq!(risks[0].kind, DeliveryRiskKind::NotInProduction);
-    assert_eq!(risks[0].detail, "On staging for 4 days but not on live");
-    // Without a production environment there is nothing to fall short of.
-    assert_eq!(kinds(&on_staging), vec![]);
-}
-
-#[test]
-fn jira_and_production_must_agree() {
-    let live_not_done = facts(
-        vec![],
-        vec![environment(
-            "production",
-            EnvironmentDeployState::Deployed,
-            NOW,
-        )],
-        Some("In Review"),
+    assert_eq!(blocked[0].kind, DeliveryRiskKind::StepBlocked);
+    assert_eq!(
+        blocked[0].detail,
+        "Can't check Deployed: The pipeline needs a login."
     );
-    assert_eq!(kinds(&live_not_done), vec![DeliveryRiskKind::JiraBehind]);
-    let done_not_live = facts(
-        vec![],
-        vec![environment(
-            "production",
-            EnvironmentDeployState::NotDeployed,
-            NOW,
-        )],
-        Some("Done"),
+    assert_eq!(blocked[0].since_epoch_ms, Some(NOW - DAY_MS));
+    assert_eq!(
+        risks_of(
+            &ticket(),
+            None,
+            Some(&merged),
+            &[answer(StepVerdict::Waiting)]
+        ),
+        vec![]
     );
-    assert_eq!(kinds(&done_not_live), vec![DeliveryRiskKind::JiraAhead]);
+    // Past the step, its old answer no longer matters.
+    let done = facts(vec![], Some("Done"));
+    assert_eq!(kinds(&done), vec![]);
 }
 
 #[test]
@@ -315,7 +289,7 @@ fn sprint_tickets_need_an_owner_criteria_and_a_start_before_the_end() {
     assert_eq!(risks[1].detail, "Carried over 2 times");
 
     // A Jira assignee counts as an owner.
-    let assigned = facts(vec![], vec![], None);
+    let assigned = facts(vec![], None);
     let mut assigned = TicketDeliveryFacts {
         jira: Some(JiraFact {
             assignee: Some("Ada".into()),

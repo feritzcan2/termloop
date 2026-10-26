@@ -395,6 +395,63 @@ ALTER TABLE project_sources ADD COLUMN azure_project TEXT;
 ALTER TABLE project_sources ADD COLUMN azure_repository TEXT;
 "#;
 
+/// The Playbook replaces environments, probes, and Deployment control: a
+/// project's ordered steps, the verdicts agents and the project manager
+/// gave, and what a setup proposed. Delivery checks now look at one step of
+/// one ticket, so the old checks go with what they asked about; environment
+/// facts and check notes leave the stored facts. The `skills.builtin`
+/// column stays, always NULL.
+const V13: &str = r#"
+DROP TABLE delivery_probes;
+DROP TABLE environment_proposals;
+DROP TABLE project_environments;
+DROP TABLE delivery_checks;
+DELETE FROM skills WHERE builtin IS NOT NULL;
+UPDATE ticket_delivery_facts
+    SET facts_json = json_remove(facts_json, '$.environments', '$.checkNotes');
+
+CREATE TABLE playbooks (
+    project_id TEXT PRIMARY KEY,
+    revision INTEGER NOT NULL CHECK (revision > 0),
+    steps_json TEXT NOT NULL,
+    updated_at_epoch_ms INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE playbook_verdicts (
+    ticket_id TEXT NOT NULL REFERENCES tickets (id) ON DELETE CASCADE,
+    step_id TEXT NOT NULL,
+    verdict TEXT NOT NULL CHECK (verdict IN ('passed', 'waiting', 'blocked')),
+    evidence TEXT NOT NULL,
+    evaluator TEXT NOT NULL CHECK (evaluator IN ('agent', 'projectManager')),
+    decided_at_epoch_ms INTEGER NOT NULL,
+    next_attempt_at_epoch_ms INTEGER,
+    PRIMARY KEY (ticket_id, step_id)
+) STRICT;
+
+CREATE TABLE playbook_proposals (
+    project_id TEXT PRIMARY KEY,
+    summary TEXT NOT NULL,
+    steps_json TEXT NOT NULL,
+    created_at_epoch_ms INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE delivery_checks (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    ticket_id TEXT NOT NULL REFERENCES tickets (id) ON DELETE CASCADE,
+    step_id TEXT NOT NULL,
+    reason TEXT NOT NULL CHECK (reason IN ('due', 'requested')),
+    started_at_epoch_ms INTEGER NOT NULL,
+    finished_at_epoch_ms INTEGER,
+    outcome TEXT CHECK (outcome IN ('reported', 'failed', 'abandoned')),
+    CHECK ((finished_at_epoch_ms IS NULL) = (outcome IS NULL))
+) STRICT;
+CREATE UNIQUE INDEX delivery_checks_running ON delivery_checks (ticket_id)
+    WHERE finished_at_epoch_ms IS NULL;
+CREATE INDEX delivery_checks_by_project ON delivery_checks (project_id, started_at_epoch_ms);
+CREATE INDEX delivery_checks_by_ticket ON delivery_checks (ticket_id, started_at_epoch_ms);
+"#;
+
 /// Every migration in order; a version is never edited once released.
 const MIGRATIONS: &[(u32, &str)] = &[
     (1, V1),
@@ -409,6 +466,7 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (10, V10),
     (11, V11),
     (12, V12),
+    (13, V13),
 ];
 
 pub const SCHEMA_VERSION: u32 = MIGRATIONS[MIGRATIONS.len() - 1].0;

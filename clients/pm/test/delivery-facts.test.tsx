@@ -1,26 +1,24 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
-import type { PmBoardTicket, PmDataTier, PmEnvironment, PmFactsSummary } from "@termloop/pm-contract/pm";
+import type { PmBoardTicket, PmDataTier, PmFactsSummary } from "@termloop/pm-contract/pm";
 import { SprintOverview } from "../src/renderer/ui/SprintOverview.js";
 import { SprintSidebar } from "../src/renderer/ui/SprintSidebar.js";
 import { TicketFields } from "../src/renderer/ui/TicketFields.js";
-import { boardTicket, sprint } from "./fixtures.js";
+import { boardTicket, playbook, sprint, stepState } from "./fixtures.js";
 import { render } from "./render.js";
 
 const noop = () => undefined;
 let cleanup: (() => void) | undefined;
 afterEach(() => { cleanup?.(); cleanup = undefined; });
 
-const ENVIRONMENTS: PmEnvironment[] = [{ name: "dev", production: false }, { name: "stg", production: false }, { name: "prod", production: true }];
-
 function facts(overrides: Partial<PmFactsSummary> = {}): PmFactsSummary {
-  return { recordedAtEpochMs: 0, stale: false, jiraStatus: null, jiraAssignee: null, pullRequests: 2, deployedEnvironments: ["dev", "stg"], failedReads: [], ...overrides };
+  return { recordedAtEpochMs: 0, stale: false, jiraStatus: null, jiraAssignee: null, pullRequests: 2, failedReads: [], ...overrides };
 }
 
 function sidebar(tier: PmDataTier, entry: PmBoardTicket, versions?: Record<string, { number: number; description: string; recordedAtEpochMs: number }[]>) {
   const view = render(
     <SprintSidebar
-      sprints={[sprint()]} tickets={[entry]} tier={tier} environments={ENVIRONMENTS} versions={versions ?? {}}
+      sprints={[sprint()]} tickets={[entry]} tier={tier} playbook={playbook()} versions={versions ?? {}}
       selectedSprintId="sprint-1" selectedTicketId={undefined} now={0}
       onSelectSprint={noop} onSelectTicket={noop} onCreateSprint={noop} onCreateTicket={noop} onMoveTicket={noop}
     />,
@@ -29,30 +27,31 @@ function sidebar(tier: PmDataTier, entry: PmBoardTicket, versions?: Record<strin
   return view.container.querySelector<HTMLElement>(".pm-ticket-item .row-sub")!;
 }
 
-describe("environment badges", () => {
-  it("show each environment in delivery order only at the deploy tier", () => {
-    const entry = boardTicket({}, { facts: facts() });
-    expect(sidebar("code", entry).querySelector('[data-testid="env-badges"]')).toBeNull();
-    const badges = sidebar("deploy", entry).querySelector<HTMLElement>('[data-testid="env-badges"]')!;
-    expect([...badges.querySelectorAll(".env")].map((badge) => `${badge.className}|${badge.textContent}`))
-      .toEqual(["env on|dev ✓", "env on|stg ✓", "env off|prod"]);
-    expect(badges.classList.contains("uncertain")).toBe(false);
+/** Merged; the agent found the "Live" step waiting. */
+function waitingLive(): PmBoardTicket {
+  return boardTicket({}, {
+    facts: facts(),
+    playbook: { position: 2, steps: [stepState("started"), stepState("review"), stepState("merged"), stepState("live", { verdict: "waiting", evaluator: "agent", evidence: "Not in the prod deploy log yet" }), stepState("done")] },
+  });
+}
+
+describe("playbook steps", () => {
+  it("pill a sidebar row whose next step an agent found waiting", () => {
+    expect(sidebar("deploy", boardTicket({}, { facts: facts() })).querySelector('[data-testid="step-pill"]')).toBeNull();
+    const pill = sidebar("deploy", waitingLive()).querySelector<HTMLElement>('[data-testid="step-pill"]')!;
+    expect(pill.textContent).toBe("waiting · live");
+    expect(pill.title).toBe("Not in the prod deploy log yet");
   });
 
-  it("dim with a reason when facts are stale or a read failed", () => {
-    const badges = sidebar("deploy", boardTicket({}, { facts: facts({ stale: true, failedReads: ["probe"] }) })).querySelector<HTMLElement>('[data-testid="env-badges"]')!;
-    expect(badges.classList.contains("uncertain")).toBe(true);
-    expect(badges.title).toBe("Facts are stale (read just now). Could not read probes");
-  });
-
-  it("show in the overview's attention rows at the deploy tier", () => {
-    const entry = boardTicket({}, { facts: facts(), risks: [{ kind: "notInProduction", detail: "", sinceEpochMs: null }] });
+  it("list tickets waiting at a step in the overview at the deploy tier", () => {
     const view = render(
-      <SprintOverview sprint={sprint()} sprints={[sprint()]} tickets={[entry]} tier="deploy" environments={ENVIRONMENTS} digest={[]} now={0}
+      <SprintOverview sprint={sprint()} sprints={[sprint()]} tickets={[waitingLive()]} tier="deploy" playbook={playbook()} digest={[]} now={0}
         onOpenTicket={noop} onActivate={noop} onClose={noop} />,
     );
     cleanup = view.unmount;
-    expect(view.container.querySelector(".attn-row [data-testid=\"env-badges\"]")?.textContent).toBe("dev ✓stg ✓prod");
+    const section = view.container.querySelector<HTMLElement>('[aria-label="Waiting at a step"]')!;
+    expect(section.textContent).toContain("Live");
+    expect(section.textContent).toContain("Not in the prod deploy log yet");
   });
 });
 

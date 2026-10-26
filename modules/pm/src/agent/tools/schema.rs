@@ -6,12 +6,18 @@ use serde_json::{Value, json};
 
 use super::PmToolContext;
 use crate::agent::{
-    PM_BOARD_READ, PM_CHECK_REPORT, PM_ENVIRONMENTS_PROPOSE, PM_OWNER_EVIDENCE_READ, PM_RISKS_READ,
+    PM_BOARD_READ, PM_CHECK_REPORT, PM_OWNER_EVIDENCE_READ, PM_PLAYBOOK_PROPOSE, PM_RISKS_READ,
     PM_SKILL_DISCOVERY_READ, PM_SKILL_DRAFT_SUBMIT, PM_SKILL_DRY_RUN_REQUEST, PM_SKILL_RUN_FINISH,
     PM_SKILL_TOOL_VERIFY, PM_TICKET_NOTE_ADD, PM_TICKET_PROPOSE_ACCEPTANCE_CRITERIA,
     PM_TICKET_PROPOSE_DESCRIPTION, PM_TICKET_READ, PM_TICKET_SUGGEST, SKILL_READ_TOOLS,
 };
 use crate::commands::{TS_FRACTION_MAX_DIGITS, TS_SECONDS_MAX_DIGITS};
+use crate::playbook::{
+    PLAYBOOK_BRANCH_MAX_CHARS, PLAYBOOK_EVIDENCE_MAX_CHARS, PLAYBOOK_INSTRUCTIONS_MAX_CHARS,
+    PLAYBOOK_RETRY_MINUTES_MAX, PLAYBOOK_RETRY_MINUTES_MIN, PLAYBOOK_STATUS_NAME_MAX_CHARS,
+    PLAYBOOK_STATUS_NAMES_MAX, PLAYBOOK_STEP_CHECKS_MAX, PLAYBOOK_STEP_TITLE_MAX_CHARS,
+    PLAYBOOK_STEPS_MAX, PLAYBOOK_SUMMARY_MAX_CHARS,
+};
 use crate::proposal::{ASSIGNEE_SHORTLIST_MAX, JIRA_COMMENT_MAX_CHARS};
 use crate::skill::{
     CHANNEL_ID_MAX_BYTES, CHANNEL_NAME_MAX_CHARS, EVIDENCE_LABEL_MAX_CHARS, EVIDENCE_MAX,
@@ -22,11 +28,8 @@ use crate::skill::{
     SKILL_WHAT_IT_DOES_MAX_CHARS,
 };
 use crate::{
-    CHECK_PROBE_PROPOSALS_MAX, ENVIRONMENT_EVIDENCE_MAX_CHARS, ENVIRONMENT_NAME_MAX_CHARS,
-    ENVIRONMENT_PROPOSAL_PROBES_MAX, ENVIRONMENT_PROPOSAL_SUMMARY_MAX_CHARS,
-    PROJECT_ENVIRONMENTS_MAX, PROPOSAL_SUMMARY_MAX_CHARS, TICKET_ASSIGNEE_MAX_CHARS,
-    TICKET_BLOCKERS_MAX, TICKET_CHECK_NOTES_MAX_BYTES, TICKET_CRITERIA_MAX,
-    TICKET_DESCRIPTION_MAX_CHARS, TICKET_ENVIRONMENT_FACTS_MAX, TICKET_ITEM_MAX_CHARS,
+    PROPOSAL_SUMMARY_MAX_CHARS, TICKET_ASSIGNEE_MAX_CHARS, TICKET_BLOCKERS_MAX,
+    TICKET_CRITERIA_MAX, TICKET_DESCRIPTION_MAX_CHARS, TICKET_ITEM_MAX_CHARS,
     TICKET_NOTE_LABEL_MAX_CHARS, TICKET_NOTE_MAX_CHARS, TICKET_NOTE_URL_MAX_BYTES,
 };
 
@@ -37,8 +40,6 @@ pub struct PmToolDefinition {
     pub description: &'static str,
     pub input_schema: Value,
 }
-
-const DEPLOY_STATES: [&str; 4] = ["deployed", "inProgress", "notDeployed", "unknown"];
 
 fn ticket_id() -> Value {
     json!({ "type": "string", "minLength": 1, "description": "The PM ticket id." })
@@ -60,10 +61,6 @@ fn object(properties: Value, required: &[&str]) -> Value {
         "required": required,
         "additionalProperties": false
     })
-}
-
-fn deploy_state() -> Value {
-    json!({ "type": "string", "enum": DEPLOY_STATES })
 }
 
 fn evidence() -> Value {
@@ -217,46 +214,23 @@ fn definition(name: &'static str) -> PmToolDefinition {
             object(json!({ "ticketId": ticket_id() }), &[]),
         ),
         PM_CHECK_REPORT => (
-            "Report what this delivery check found about its ticket, once. Records environment \
-             states, blockers, and notes in the PM; probe commands are proposed for the PM to \
-             approve. Nothing external is written.",
+            "Report, once, whether this check's ticket passed its Playbook step. passed: you \
+             read evidence that it did. waiting: you read where it shows and it has not \
+             happened yet. blocked: you could not read what the step needs. Recorded in the PM \
+             only; nothing external is written.",
             object(
                 json!({
                     "ticketId": ticket_id(),
-                    "environments": {
-                        "type": "array",
-                        "maxItems": TICKET_ENVIRONMENT_FACTS_MAX,
-                        "items": object(
-                            json!({
-                                "name": { "type": "string", "minLength": 1, "maxLength": ENVIRONMENT_NAME_MAX_CHARS },
-                                "state": deploy_state(),
-                                "detail": { "type": "string", "minLength": 1 }
-                            }),
-                            &["name", "state"],
-                        )
-                    },
-                    "blockers": { "type": "string", "minLength": 1 },
-                    "notesMarkdown": {
+                    "stepId": { "type": "string", "minLength": 1, "description": "The step this check looks at." },
+                    "verdict": { "type": "string", "enum": ["passed", "waiting", "blocked"] },
+                    "evidence": {
                         "type": "string",
                         "minLength": 1,
-                        "maxLength": TICKET_CHECK_NOTES_MAX_BYTES,
-                        "description": "Markdown with ## Observed, ## Inferred, and ## Unknown sections."
-                    },
-                    "agentProbe": object(
-                        json!({
-                            "probeId": { "type": "string", "minLength": 1 },
-                            "state": deploy_state(),
-                            "detail": { "type": "string", "minLength": 1 }
-                        }),
-                        &["probeId", "state"],
-                    ),
-                    "probeProposals": {
-                        "type": "array",
-                        "maxItems": CHECK_PROBE_PROPOSALS_MAX,
-                        "items": probe_proposal()
+                        "maxLength": PLAYBOOK_EVIDENCE_MAX_CHARS,
+                        "description": "One or two factual sentences: what you read and what it showed, e.g. 'The INT pipeline's last successful run (#812) deployed main at a1b2c3d, which contains PR #7.'"
                     }
                 }),
-                &["ticketId", "environments", "notesMarkdown"],
+                &["ticketId", "stepId", "verdict", "evidence"],
             ),
         ),
         PM_TICKET_SUGGEST => (
@@ -298,8 +272,8 @@ fn definition(name: &'static str) -> PmToolDefinition {
             ),
         ),
         PM_SKILL_DISCOVERY_READ => (
-            "Read what this PM project can use: its own sources (Jira, GitHub, environments, \
-             probes, Slack) with their tiers, allowlisted command-line tools on the PATH and \
+            "Read what this PM project can use: its own sources (Jira, GitHub, the Playbook, \
+             Slack) with their tiers, allowlisted command-line tools on the PATH and \
              whether each is logged in, and the MCP servers configured for Claude and Codex \
              (name and transport only). Cached; set refresh to read again. Read-only.",
             object(
@@ -438,44 +412,28 @@ fn definition(name: &'static str) -> PmToolDefinition {
                 &["ticketId", "kind", "text"],
             ),
         ),
-        PM_ENVIRONMENTS_PROPOSE => (
-            "Propose the environments this project deploys to, in delivery order, with where \
-             you read each one, and probe commands that tell what each environment runs. The \
-             PM ticks what to keep in the Skills panel; nothing is listed or run until then. \
-             A new proposal replaces the previous one.",
+        PM_PLAYBOOK_PROPOSE => (
+            "Propose the project's Playbook: the steps a ticket passes on its way to done, in \
+             order. A step passes by facts the PM app reads itself (a status, a pull request) or, \
+             when no fact shows it, by an agent following the step's instructions. The PM \
+             reviews and edits it in the Skills panel; nothing changes until then. A new \
+             proposal replaces the previous one.",
             object(
                 json!({
                     "summary": {
                         "type": "string",
                         "minLength": 1,
-                        "maxLength": ENVIRONMENT_PROPOSAL_SUMMARY_MAX_CHARS,
-                        "description": "What you found and how, in a few lines for the PM."
+                        "maxLength": PLAYBOOK_SUMMARY_MAX_CHARS,
+                        "description": "What you read and what each step rests on, in a few plain lines for the PM."
                     },
-                    "environments": {
+                    "steps": {
                         "type": "array",
                         "minItems": 1,
-                        "maxItems": PROJECT_ENVIRONMENTS_MAX,
-                        "items": object(
-                            json!({
-                                "name": { "type": "string", "minLength": 1, "maxLength": ENVIRONMENT_NAME_MAX_CHARS },
-                                "production": { "type": "boolean" },
-                                "evidence": {
-                                    "type": "string",
-                                    "minLength": 1,
-                                    "maxLength": ENVIRONMENT_EVIDENCE_MAX_CHARS,
-                                    "description": "Where you read it, e.g. .github/workflows/deploy.yml (environment: staging)."
-                                }
-                            }),
-                            &["name", "production", "evidence"],
-                        )
-                    },
-                    "probes": {
-                        "type": "array",
-                        "maxItems": ENVIRONMENT_PROPOSAL_PROBES_MAX,
-                        "items": probe_proposal()
+                        "maxItems": PLAYBOOK_STEPS_MAX,
+                        "items": playbook_step()
                     }
                 }),
-                &["summary", "environments"],
+                &["summary", "steps"],
             ),
         ),
         _ => unreachable!("every PM tool has a definition"),
@@ -492,21 +450,52 @@ pub fn pm_tool_definitions(context: &PmToolContext) -> Vec<PmToolDefinition> {
     context.tools().into_iter().map(definition).collect()
 }
 
-/// One probe an agent proposes; it runs only once the PM approves it.
-fn probe_proposal() -> Value {
+/// One Playbook step as the setup proposes it.
+fn playbook_step() -> Value {
+    let label = |max: usize| json!({ "type": "string", "minLength": 1, "maxLength": max });
     object(
         json!({
-            "environment": { "type": "string", "minLength": 1, "description": "The environment the probe reads." },
-            "argv": {
-                "type": "array",
-                "minItems": 1,
-                "items": { "type": "string" },
-                "description": "A read-only command, as argv, whose output tells what the environment runs."
+            "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[a-z0-9-]+$",
+                "description": "A short stable id, e.g. on-int."
             },
-            "matcher": { "type": "string", "enum": ["commitAncestry", "agent"] },
-            "reason": { "type": "string", "minLength": 1 }
+            "title": label(PLAYBOOK_STEP_TITLE_MAX_CHARS),
+            "checks": {
+                "type": "array",
+                "maxItems": PLAYBOOK_STEP_CHECKS_MAX,
+                "description": "Facts that pass the step; any one is enough.",
+                "items": {
+                    "oneOf": [
+                        object(json!({
+                            "kind": { "const": "status" },
+                            "names": { "type": "array", "maxItems": PLAYBOOK_STATUS_NAMES_MAX, "items": label(PLAYBOOK_STATUS_NAME_MAX_CHARS), "description": "Jira status names, matched ignoring case." },
+                            "category": { "type": "string", "enum": ["started", "done"] }
+                        }), &["kind"]),
+                        object(json!({
+                            "kind": { "const": "pullRequest" },
+                            "state": { "type": "string", "enum": ["open", "merged"] },
+                            "baseBranch": label(PLAYBOOK_BRANCH_MAX_CHARS)
+                        }), &["kind", "state"])
+                    ]
+                }
+            },
+            "agent": object(
+                json!({
+                    "instructions": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": PLAYBOOK_INSTRUCTIONS_MAX_CHARS,
+                        "description": "For the check agent: what to read, with which read-only command or tool, and what counts as passed. Name the exact command and where you found it."
+                    },
+                    "retryMinutes": { "type": "integer", "minimum": PLAYBOOK_RETRY_MINUTES_MIN, "maximum": PLAYBOOK_RETRY_MINUTES_MAX }
+                }),
+                &["instructions", "retryMinutes"],
+            )
         }),
-        &["environment", "argv", "matcher"],
+        &["id", "title"],
     )
 }
 

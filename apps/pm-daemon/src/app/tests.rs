@@ -8,7 +8,7 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 use termloop_platform::test_support::MemorySecureCredentialStore;
 use termloop_pm::agent::PmAgentMode;
-use termloop_pm::{DeliveryCheck, DeliveryCheckReason, NewCheck, PmStore};
+use termloop_pm::{DeliveryCheck, DeliveryCheckReason, DueCheck, PmStore};
 use termloop_pm_contract::pm::{
     CONTRACT_IDENTITY, ControlRequest, ErrorCode, EventName, PmJiraFailure, PmJiraSearchParams,
     ProtocolError, ProtocolErrorDetails, validate_method_result,
@@ -166,7 +166,7 @@ async fn a_project_code_folder_must_exist_and_can_be_cleared() {
         call(
             state,
             "pm_skill_creator_launch",
-            json!({ "projectId": project_id, "setup": "deploymentControl" })
+            json!({ "projectId": project_id, "setup": "playbook" })
         )
         .await,
         Err(ErrorCode::Constraint)
@@ -469,29 +469,59 @@ fn launched(_: &AppState, _: &DeliveryCheck) -> Result<String, ControlError> {
     Ok("session-check".to_owned())
 }
 
+/// Steps whose first one an agent checks, so a new ticket is due for it.
+fn agent_steps() -> Value {
+    json!([
+        {
+            "id": "live",
+            "title": "Live",
+            "checks": [],
+            "agent": { "instructions": "Read the last deploy run.", "retryMinutes": 30 },
+        },
+        {
+            "id": "done",
+            "title": "Done",
+            "checks": [{ "kind": "status", "names": [], "category": "done" }],
+            "agent": null,
+        },
+    ])
+}
+
+async fn save_agent_playbook(state: &AppState, project_id: &str) -> Value {
+    call(
+        state,
+        "pm_playbook_save",
+        json!({ "projectId": project_id, "baseRevision": 0, "steps": agent_steps() }),
+    )
+    .await
+    .unwrap()
+}
+
 #[tokio::test]
 async fn the_check_scheduler_starts_at_most_one_check_per_ticket() {
     let fixture = fixture();
     let state = &fixture.state;
     let project_id = project(state).await;
-    call(
-        state,
-        "pm_environments_set",
-        json!({ "projectId": project_id, "environments": [{ "name": "prod", "production": true }] }),
-    )
-    .await
-    .unwrap();
     let ticket_id = ticket(state, &project_id, json!({})).await["id"]
         .as_str()
         .unwrap()
         .to_owned();
-    let new = || NewCheck {
-        ticket_id: ticket_id.clone(),
-        reason: DeliveryCheckReason::Requested,
-        environments: vec!["prod".to_owned()],
-        probe_id: None,
-    };
+    // The default steps have no agent step to check.
+    let refused = call(
+        state,
+        "pm_check_start",
+        json!({ "projectId": project_id, "ticketIds": [ticket_id] }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(refused["refused"][0]["reason"], "noAgentStep");
 
+    save_agent_playbook(state, &project_id).await;
+    let new = || DueCheck {
+        ticket_id: ticket_id.clone(),
+        step_id: "live".to_owned(),
+        reason: DeliveryCheckReason::Requested,
+    };
     let first = scheduler::start_check(state, &project_id, new(), launched).unwrap();
     assert!(first.is_running());
     assert_eq!(
@@ -885,135 +915,124 @@ async fn searched_issues_name_the_ticket_that_links_them() {
 }
 
 #[tokio::test]
-async fn deployment_control_gates_automatic_checks_and_can_be_turned_off() {
+async fn the_tick_checks_active_sprint_tickets_at_an_agent_step() {
     let fixture = fixture();
     let state = &fixture.state;
     let project_id = project(state).await;
-    let read = call(state, "pm_skills_read", json!({ "projectId": project_id }))
-        .await
-        .unwrap();
-    assert_eq!(read["skills"].as_array().unwrap().len(), 0);
-
+    let sprint = call(
+        state,
+        "pm_sprint_create",
+        json!({ "projectId": project_id, "name": "Sprint 1" }),
+    )
+    .await
+    .unwrap();
+    let sprint_id = sprint["id"].as_str().unwrap().to_owned();
     call(
         state,
-        "pm_environments_set",
-        json!({ "projectId": project_id, "environments": [{ "name": "prod", "production": true }] }),
+        "pm_sprint_activate",
+        json!({ "sprintId": sprint_id }),
     )
     .await
     .unwrap();
-    let read = call(state, "pm_skills_read", json!({ "projectId": project_id }))
-        .await
-        .unwrap();
-    let skill = &read["skills"][0];
-    assert_eq!(skill["builtin"], "deploymentControl");
-    let skill_id = skill["id"].as_str().unwrap().to_owned();
-    let enabled = state
-        .store
-        .lock()
-        .deployment_control_enabled(&project_id)
-        .unwrap();
-    assert_eq!(skill["enabled"], enabled);
-
-    // Its file opens read-only: the PM's edit is refused.
-    assert_eq!(
-        call(
-            state,
-            "pm_skill_update",
-            json!({ "skillId": skill_id, "instructions": "Do more." }),
-        )
-        .await,
-        Err(ErrorCode::Constraint)
-    );
-
-    let turned_off = call(
-        state,
-        "pm_skill_set_enabled",
-        json!({ "skillId": skill_id, "enabled": false }),
-    )
-    .await
-    .unwrap();
-    assert_eq!(turned_off["enabled"], false);
-    assert!(
-        !state
-            .store
-            .lock()
-            .deployment_control_enabled(&project_id)
-            .unwrap()
-    );
-    // Turned off, the tick starts no check, and new environments do not
-    // turn it back on.
-    let ticket_id = ticket(state, &project_id, json!({})).await["id"]
+    let ticket_id = ticket(state, &project_id, json!({ "sprintId": sprint_id })).await["id"]
         .as_str()
         .unwrap()
         .to_owned();
-    scheduler::check_tick(state, launched).await;
-    assert!(
+    let running = |state: &AppState| {
         state
             .store
             .lock()
             .delivery_checks(&project_id)
             .unwrap()
             .iter()
-            .all(|check| check.ticket_id != ticket_id || !check.is_running())
-    );
-    let read = call(state, "pm_skills_read", json!({ "projectId": project_id }))
+            .filter(|check| check.ticket_id == ticket_id && check.is_running())
+            .count()
+    };
+
+    // The default steps are read from facts alone: the tick starts nothing.
+    scheduler::check_tick(state, launched).await;
+    assert_eq!(running(state), 0);
+
+    save_agent_playbook(state, &project_id).await;
+    scheduler::check_tick(state, launched).await;
+    assert_eq!(running(state), 1);
+    let board = call(state, "pm_board_read", json!({ "projectId": project_id }))
         .await
         .unwrap();
-    assert_eq!(read["skills"][0]["enabled"], false);
+    assert_eq!(board["playbook"]["steps"][0]["id"], "live");
+    assert_eq!(board["runningChecks"][0]["stepId"], "live");
+    assert_eq!(board["tickets"][0]["delivery"]["checking"], true);
+
+    // The PM's own mark moves the ticket past the step.
+    let delivery = call(
+        state,
+        "pm_playbook_step_mark",
+        json!({ "ticketId": ticket_id, "stepId": "live", "passed": true }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(delivery["playbook"]["position"], 0);
+    assert_eq!(
+        delivery["playbook"]["steps"][0]["evaluator"],
+        "projectManager"
+    );
 }
 
 #[tokio::test]
-async fn the_pm_applies_the_environments_the_deployment_setup_found() {
+async fn the_pm_applies_the_playbook_the_setup_found() {
     let fixture = fixture();
     let state = &fixture.state;
     let project_id = project(state).await;
     let read = call(state, "pm_skills_read", json!({ "projectId": project_id }))
         .await
         .unwrap();
-    assert_eq!(read["environmentProposal"], Value::Null);
+    assert_eq!(read["playbookProposal"], Value::Null);
     let none = call(
         state,
-        "pm_environment_proposal_discard",
+        "pm_playbook_proposal_discard",
         json!({ "projectId": project_id }),
     )
     .await;
     assert!(none.is_err());
 
+    let steps: Vec<termloop_pm::playbook::PlaybookStep> =
+        serde_json::from_value(agent_steps()).unwrap();
     state
         .store
         .lock()
-        .propose_environments(termloop_pm::NewEnvironmentProposal {
-            project_id: project_id.clone(),
-            summary: "Production deploys from the workflow.".into(),
-            environments: vec![termloop_pm::ProposedEnvironment {
-                name: "production".into(),
-                production: true,
-                evidence: ".github/workflows/deploy.yml".into(),
-            }],
-            probes: Vec::new(),
-        })
+        .propose_playbook(
+            &project_id,
+            "Production deploys from the workflow.".into(),
+            steps,
+        )
         .unwrap();
     let read = call(state, "pm_skills_read", json!({ "projectId": project_id }))
         .await
         .unwrap();
-    assert_eq!(
-        read["environmentProposal"]["environments"][0]["name"],
-        "production"
-    );
+    assert_eq!(read["playbookProposal"]["steps"][0]["title"], "Live");
     let applied = call(
         state,
-        "pm_environment_proposal_apply",
-        json!({ "projectId": project_id, "environments": ["production"], "probeIds": [] }),
+        "pm_playbook_proposal_apply",
+        json!({ "projectId": project_id, "steps": agent_steps() }),
     )
     .await
     .unwrap();
-    assert_eq!(applied["environments"][0]["production"], true);
+    assert_eq!(applied["revision"], 1);
     let read = call(state, "pm_skills_read", json!({ "projectId": project_id }))
         .await
         .unwrap();
-    assert_eq!(read["environmentProposal"], Value::Null);
-    assert_eq!(read["skills"][0]["builtin"], "deploymentControl");
-    assert_eq!(read["skills"][0]["enabled"], true);
+    assert_eq!(read["playbookProposal"], Value::Null);
+
+    // A save over a newer revision is refused.
+    assert_eq!(
+        call(
+            state,
+            "pm_playbook_save",
+            json!({ "projectId": project_id, "baseRevision": 0, "steps": agent_steps() }),
+        )
+        .await,
+        Err(ErrorCode::Constraint)
+    );
 }
 
 #[tokio::test]
@@ -1163,7 +1182,7 @@ async fn a_skill_with_nothing_new_records_a_skipped_run_without_an_agent() {
         call(
             state,
             "pm_skill_creator_launch",
-            json!({ "projectId": project_id, "setup": "deploymentControl" })
+            json!({ "projectId": project_id, "setup": "playbook" })
         )
         .await,
         Err(ErrorCode::Constraint)

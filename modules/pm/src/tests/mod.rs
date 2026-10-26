@@ -2,6 +2,7 @@ mod checks;
 mod delivery;
 mod jira;
 mod note;
+mod playbook;
 mod project;
 mod skill;
 mod skill_owners;

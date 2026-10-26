@@ -1,5 +1,5 @@
 //! Method dispatch for the planning surface: projects, sprints, tickets,
-//! proposals, environments, sources, probes, and skills. Each mutation
+//! proposals, sources, the Playbook, and skills. Each mutation
 //! publishes `pmBoardChanged` for its project.
 
 use serde::Serialize;
@@ -7,20 +7,20 @@ use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
 use termloop_pm::skill::SkillEvent;
 use termloop_pm::{
-    DeliveryCheck, NewProbe, NewTicket, NewTicketNote, PmStore, ProjectEnvironment, ProjectSources,
-    Ticket, TicketAuthor, TicketEdit,
+    DeliveryCheck, NewTicket, NewTicketNote, PmStore, ProjectSources, Ticket, TicketAuthor,
+    TicketEdit,
 };
 use termloop_pm_contract::pm::{
-    CONTRACT_IDENTITY, ErrorCode, PmDigestReadParams, PmEnvironmentsSetParams, PmProbeCreateParams,
-    PmProbeRef, PmProjectRef, PmSourcesSetParams, PmSprintCloseParams, PmSprintCreateParams,
-    PmSprintRef, PmSprintUpdateParams, PmTicketBlockerAddParams, PmTicketBlockerRemoveParams,
-    PmTicketCreateParams, PmTicketCriterionAddParams, PmTicketCriterionRemoveParams,
-    PmTicketCriterionSetDoneParams, PmTicketDescriptionSaveParams, PmTicketMoveParams,
-    PmTicketNoteAddParams, PmTicketNoteRef, PmTicketRef, PmTicketUpdateParams,
+    CONTRACT_IDENTITY, ErrorCode, PmDigestReadParams, PmProjectRef, PmSourcesSetParams,
+    PmSprintCloseParams, PmSprintCreateParams, PmSprintRef, PmSprintUpdateParams,
+    PmTicketBlockerAddParams, PmTicketBlockerRemoveParams, PmTicketCreateParams,
+    PmTicketCriterionAddParams, PmTicketCriterionRemoveParams, PmTicketCriterionSetDoneParams,
+    PmTicketDescriptionSaveParams, PmTicketMoveParams, PmTicketNoteAddParams, PmTicketNoteRef,
+    PmTicketRef, PmTicketUpdateParams,
 };
 
 use super::errors::{ControlError, error, internal, not_found};
-use super::{operations, skill_methods};
+use super::{operations, playbook_methods, skill_methods};
 use crate::app::{AppState, jira_browse, skills};
 
 const PRODUCT: &str = "termloop-pm";
@@ -70,10 +70,10 @@ pub(crate) async fn dispatch(
         "pm_skill_feedback_read" => skill_methods::feedback_read(state, params),
         "pm_skill_draft_dry_run" => skill_methods::draft_dry_run(state, params),
         "pm_skill_draft_discard" => skill_methods::draft_discard(state, params),
-        "pm_environment_proposal_apply" => skill_methods::environment_proposal_apply(state, params),
-        "pm_environment_proposal_discard" => {
-            skill_methods::environment_proposal_discard(state, params)
-        }
+        "pm_playbook_save" => playbook_methods::save(state, params),
+        "pm_playbook_proposal_apply" => playbook_methods::proposal_apply(state, params),
+        "pm_playbook_proposal_discard" => playbook_methods::proposal_discard(state, params),
+        "pm_playbook_step_mark" => playbook_methods::step_mark(state, params),
         "pm_ticket_proposal_accept" => skill_methods::proposal_accept(state, params),
         "pm_ticket_proposal_reject" => skill_methods::proposal_reject(state, params),
         _ => {
@@ -217,17 +217,6 @@ fn planning(state: &AppState, method: &str, params: &Value) -> Result<Value, Con
             changed_ticket(state, store, &note.ticket_id)?;
             Ok(json!({ "deleted": true }))
         }
-        "pm_environments_set" => {
-            let params: PmEnvironmentsSetParams = parse(params)?;
-            require_project(store, &params.project_id)?;
-            let environments: Vec<ProjectEnvironment> = convert(&params.environments)?;
-            let environments = store.set_project_environments(&params.project_id, &environments)?;
-            state.board_changed(&params.project_id);
-            Ok(json!({
-                "projectId": params.project_id,
-                "environments": to_value(&environments)?,
-            }))
-        }
         "pm_sources_read" => {
             let params: PmProjectRef = parse(params)?;
             require_project(store, &params.project_id)?;
@@ -248,40 +237,6 @@ fn planning(state: &AppState, method: &str, params: &Value) -> Result<Value, Con
             state.board_changed(&params.project_id);
             state.fact_refresh.notify_one();
             sources(&params.project_id, &stored)
-        }
-        "pm_probe_create" => {
-            let params: PmProbeCreateParams = parse(params)?;
-            require_project(store, &params.project_id)?;
-            let probe = store.create_probe(NewProbe {
-                project_id: params.project_id,
-                environment: params.environment,
-                argv: params.argv,
-                matcher: convert(&params.matcher)?,
-                reason: params.reason,
-            })?;
-            state.board_changed(&probe.project_id);
-            to_value(&probe)
-        }
-        "pm_probe_approve" => {
-            let params: PmProbeRef = parse(params)?;
-            let probe = store.approve_probe(&params.probe_id)?;
-            state.board_changed(&probe.project_id);
-            to_value(&probe)
-        }
-        "pm_probe_reject" | "pm_probe_delete" => {
-            let params: PmProbeRef = parse(params)?;
-            let probe = store.probe(&params.probe_id)?.ok_or_else(not_found)?;
-            if method == "pm_probe_reject" {
-                store.reject_probe(&params.probe_id)?;
-            } else {
-                store.delete_probe(&params.probe_id)?;
-            }
-            state.board_changed(&probe.project_id);
-            Ok(if method == "pm_probe_reject" {
-                json!({ "rejected": true })
-            } else {
-                json!({ "deleted": true })
-            })
         }
         _ => Err(error(ErrorCode::MethodNotFound, "unknown method")),
     }
@@ -441,8 +396,7 @@ pub(crate) fn board(
         "projectId": board.project_id,
         "sprints": to_value(&board.sprints)?,
         "tickets": tickets,
-        "environments": to_value(&board.environments)?,
-        "probes": to_value(&board.probes)?,
+        "playbook": to_value(&board.playbook)?,
         "runningChecks": running,
         "tracking": to_value(&board.tracking)?,
     }))

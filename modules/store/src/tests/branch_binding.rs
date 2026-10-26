@@ -231,3 +231,71 @@ fn branch_reservations_are_atomic_across_binding_and_provisioning() {
     assert_eq!(store.provisioning_operations().len(), 1);
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn closed_task_branch_release_requires_the_exact_binding_without_a_checkout() {
+    let path = std::env::temp_dir().join(format!(
+        "termloop-store-task-branch-release-{}-{}.json",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let authority = issue_core_write_authority_for_composition();
+    let mut store = Store::open(&path).unwrap();
+    let binding = TaskBranchBinding {
+        repository_root: "/repo".into(),
+        name: "feature".into(),
+    };
+    store
+        .insert_task(
+            &authority,
+            TaskRecord {
+                id: "task-1".into(),
+                project_id: "project-1".into(),
+                title: "Task".into(),
+                brief: None,
+                developer_notes: vec![],
+                status: TaskStatus::Open,
+                archived_at_epoch_ms: None,
+                branch: None,
+                worktree: None,
+                worktree_generation: 0,
+                steward_brief_markdown: String::new(),
+                steward_brief_revision: 1,
+                rank: 0,
+                created_at_epoch_ms: 1,
+                updated_at_epoch_ms: 1,
+            },
+        )
+        .unwrap();
+    store
+        .bind_task_branch(&authority, "task-1", binding.clone(), 2)
+        .unwrap();
+    assert!(matches!(
+        store.release_closed_task_branch(&authority, "task-1", &binding, 2),
+        Err(StoreError::ConstraintViolation)
+    ));
+    store
+        .set_task_status(&authority, "task-1", TaskStatus::Closed, 3)
+        .unwrap();
+    let other = TaskBranchBinding {
+        repository_root: "/repo".into(),
+        name: "other".into(),
+    };
+    assert!(matches!(
+        store.release_closed_task_branch(&authority, "task-1", &other, 4),
+        Err(StoreError::ConstraintViolation)
+    ));
+    let released = store
+        .release_closed_task_branch(&authority, "task-1", &binding, 4)
+        .unwrap();
+    assert_eq!(released.branch, None);
+    // The released name is free again, so a failed fresh checkout can rebind it.
+    let rebound = store
+        .bind_task_branch(&authority, "task-1", binding.clone(), 5)
+        .unwrap();
+    assert_eq!(rebound.branch.as_ref(), Some(&binding));
+    let _ = std::fs::remove_file(path);
+}

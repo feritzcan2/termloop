@@ -4,14 +4,13 @@ use super::{store, ticket};
 use crate::agent::{PM_BOARD_READ, PM_RISKS_READ, PM_TICKET_READ, PM_TICKET_SUGGEST};
 use crate::agent::{PmAgentMode, PmAgentProfile, PmToolContext, SkillRunContext, SkillSetup};
 use crate::skill::{
-    BuiltinSkill, DryRunState, Evidence, FeedbackOutcome, NeededTool, NewSkillDraft,
-    SKILL_RUN_DEADLINE_MS, SkillChannel, SkillDraftOrigin, SkillEdit, SkillEvent, SkillManifest,
-    SkillPrefilter, SkillRunOutcome, SkillRunTrigger, SkillSample, SkillSource, SkillTrigger,
-    evidence_sources, revision_reason,
+    DryRunState, Evidence, FeedbackOutcome, NeededTool, NewSkillDraft, SKILL_RUN_DEADLINE_MS,
+    SkillChannel, SkillDraftOrigin, SkillEdit, SkillEvent, SkillManifest, SkillPrefilter,
+    SkillRunOutcome, SkillRunTrigger, SkillSample, SkillSource, SkillTrigger, evidence_sources,
+    revision_reason,
 };
 use crate::{
-    NewEnvironmentProposal, NewProbe, PmError, PmStore, ProbeMatcher, ProjectEnvironment,
-    ProposalChange, ProposalOrigin, ProposedEnvironment, SKILL_PAUSE_AFTER_FAILURES,
+    PmError, PmStore, ProposalChange, ProposalOrigin, SKILL_PAUSE_AFTER_FAILURES,
     SKILL_RETRY_AFTER_MS, TicketStatus,
 };
 
@@ -91,18 +90,6 @@ fn skill_proposal(
         .unwrap()
 }
 
-fn with_environments(store: &mut PmStore) {
-    store
-        .set_project_environments(
-            "p1",
-            &[ProjectEnvironment {
-                name: "live".into(),
-                production: true,
-            }],
-        )
-        .unwrap();
-}
-
 #[test]
 fn v8_carries_earlier_proposals_into_the_change_column() {
     let mut store = PmStore::open_from_version(7, |connection| {
@@ -180,46 +167,11 @@ fn manifests_are_bounded_and_name_the_refused_field() {
         refused(|m| m.prefilter = SkillPrefilter::SlackMentions),
         Some("prefilter")
     );
-    assert_eq!(
-        refused(|m| m.prefilter = SkillPrefilter::DeliveryChecks),
-        Some("prefilter")
-    );
-    assert!(
-        BuiltinSkill::DeploymentControl
-            .manifest()
-            .invalid_field_of(true)
-            .is_none()
-    );
     let wire = serde_json::to_value(manifest().trigger).unwrap();
     assert_eq!(
         wire,
         serde_json::json!({"kind": "schedule", "everyMinutes": 30})
     );
-}
-
-#[test]
-fn deployment_control_appears_off_with_environments_and_runs_once_set_up() {
-    let mut store = store();
-    assert!(!store.deployment_control_enabled("p1").unwrap());
-    assert!(store.skills("p1").unwrap().is_empty());
-    with_environments(&mut store);
-    // Listed, but off until the PM sets it up.
-    assert!(!store.deployment_control_enabled("p1").unwrap());
-    let skills = store.skills("p1").unwrap();
-    assert_eq!(skills.len(), 1);
-    assert_eq!(skills[0].builtin, Some(BuiltinSkill::DeploymentControl));
-    assert!(!skills[0].enabled);
-    store.set_skill_enabled(&skills[0].id, true).unwrap();
-    assert!(store.deployment_control_enabled("p1").unwrap());
-    store.set_skill_enabled(&skills[0].id, false).unwrap();
-    store.ensure_builtin_skills("p1").unwrap();
-    assert!(!store.deployment_control_enabled("p1").unwrap());
-    assert_eq!(store.skills("p1").unwrap().len(), 1);
-    // It runs without an agent.
-    assert!(matches!(
-        store.start_skill_run(&skills[0].id, SkillRunTrigger::Manual, 1),
-        Err(PmError::Constraint(_))
-    ));
 }
 
 #[test]
@@ -265,19 +217,6 @@ fn the_pm_edits_a_skill_live_as_its_next_version_keeping_its_tools() {
         Err(PmError::Invalid("name"))
     ));
     assert_eq!(store.skill(&skill.id).unwrap().unwrap(), edited);
-
-    with_environments(&mut store);
-    store.ensure_builtin_skills("p1").unwrap();
-    let builtin = store
-        .skills("p1")
-        .unwrap()
-        .into_iter()
-        .find(|skill| skill.builtin.is_some())
-        .unwrap();
-    assert!(matches!(
-        store.update_skill(&builtin.id, SkillEdit::default()),
-        Err(PmError::Constraint(_))
-    ));
 }
 
 #[test]
@@ -548,16 +487,11 @@ fn each_skill_has_its_own_setup_creator() {
 }
 
 #[test]
-fn deployment_control_sets_up_with_its_own_reader_of_the_project() {
+fn the_playbook_setup_reads_the_project_itself_and_proposes_steps() {
     let store = store();
-    let setup =
-        PmAgentProfile::build_skill_setup(&store, "p1", SkillSetup::DeploymentControl).unwrap();
-    assert!(setup.tools.contains(&crate::agent::PM_ENVIRONMENTS_PROPOSE));
-    assert!(
-        setup
-            .system_prompt
-            .contains("Mode: Deployment control setup.")
-    );
+    let setup = PmAgentProfile::build_skill_setup(&store, "p1", SkillSetup::Playbook).unwrap();
+    assert!(setup.tools.contains(&crate::agent::PM_PLAYBOOK_PROPOSE));
+    assert!(setup.system_prompt.contains("Mode: Playbook setup."));
     // It reads the project itself, so the creator's no-commands rule is out.
     assert!(!setup.system_prompt.contains("never run commands"));
     // It researches before it asks, and works with what the project has.
@@ -567,101 +501,8 @@ fn deployment_control_sets_up_with_its_own_reader_of_the_project() {
         setup
             .first_message
             .unwrap()
-            .starts_with("Research the repository now and call pm_environments_propose")
+            .starts_with("Research the repository now and call pm_playbook_propose")
     );
-}
-
-fn proposed(name: &str, production: bool) -> ProposedEnvironment {
-    ProposedEnvironment {
-        name: name.into(),
-        production,
-        evidence: ".github/workflows/deploy.yml".into(),
-    }
-}
-
-fn probe(environment: &str, url: &str) -> NewProbe {
-    NewProbe {
-        project_id: "p1".into(),
-        environment: environment.into(),
-        argv: vec!["curl".into(), url.into()],
-        matcher: ProbeMatcher::CommitAncestry,
-        reason: None,
-    }
-}
-
-fn environment_proposal(store: &mut PmStore) -> crate::EnvironmentProposal {
-    store
-        .propose_environments(NewEnvironmentProposal {
-            project_id: "p1".into(),
-            summary: "Staging and production deploy from the workflow.".into(),
-            environments: vec![proposed("staging", false), proposed("production", true)],
-            probes: vec![
-                probe("staging", "https://staging.example/version"),
-                probe("production", "https://example/version"),
-            ],
-        })
-        .unwrap()
-}
-
-#[test]
-fn an_environment_proposal_lists_and_runs_nothing_until_the_pm_applies_it() {
-    let mut store = store();
-    let proposal = environment_proposal(&mut store);
-    assert_eq!(proposal.probes.len(), 2);
-    assert!(store.project_environments("p1").unwrap().is_empty());
-    assert!(!store.deploy_tracking_enabled("p1").unwrap());
-    // A probe must name a proposed environment.
-    assert!(matches!(
-        store.propose_environments(NewEnvironmentProposal {
-            project_id: "p1".into(),
-            summary: "x".into(),
-            environments: vec![proposed("staging", false)],
-            probes: vec![probe("qa", "https://qa.example/version")],
-        }),
-        Err(PmError::Invalid("probes"))
-    ));
-
-    let staging_probe = proposal.probes[0].id.clone();
-    let listed = store
-        .apply_environment_proposal(
-            "p1",
-            &["staging".into()],
-            std::slice::from_ref(&staging_probe),
-        )
-        .unwrap();
-    assert_eq!(
-        listed,
-        [ProjectEnvironment {
-            name: "staging".into(),
-            production: false
-        }]
-    );
-    assert!(store.environment_proposal("p1").unwrap().is_none());
-    let probes = store.project_probes("p1").unwrap();
-    assert_eq!(probes.len(), 1, "the unticked probe is dropped");
-    assert_eq!(probes[0].id, staging_probe);
-    assert_eq!(probes[0].status, crate::ProbeStatus::Approved);
-    assert!(store.deployment_control_enabled("p1").unwrap());
-}
-
-#[test]
-fn a_new_environment_proposal_replaces_the_last_and_discard_drops_its_probes() {
-    let mut store = store();
-    let first = environment_proposal(&mut store);
-    let second = environment_proposal(&mut store);
-    assert_ne!(first.probes[0].id, second.probes[0].id);
-    assert_eq!(store.project_probes("p1").unwrap().len(), 2);
-    assert!(matches!(
-        store.apply_environment_proposal("p1", &["qa".into()], &[]),
-        Err(PmError::Invalid("environments"))
-    ));
-    store.discard_environment_proposal("p1").unwrap();
-    assert!(store.environment_proposal("p1").unwrap().is_none());
-    assert!(store.project_probes("p1").unwrap().is_empty());
-    assert!(matches!(
-        store.discard_environment_proposal("p1"),
-        Err(PmError::NotFound)
-    ));
 }
 
 #[test]
@@ -704,18 +545,6 @@ fn the_creator_revises_a_skill_from_its_manifest_and_verdicts() {
     assert!(matches!(
         PmAgentProfile::build_skill_reviser(&store, "p2", &skill.id),
         Err(PmError::NotFound)
-    ));
-    with_environments(&mut store);
-    store.ensure_builtin_skills("p1").unwrap();
-    let builtin = store
-        .skills("p1")
-        .unwrap()
-        .into_iter()
-        .find(|skill| skill.builtin.is_some())
-        .unwrap();
-    assert!(matches!(
-        PmAgentProfile::build_skill_reviser(&store, "p1", &builtin.id),
-        Err(PmError::Constraint(_))
     ));
 }
 

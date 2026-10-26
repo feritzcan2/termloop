@@ -1,12 +1,13 @@
 import { useEffect, useState, type ReactNode } from "react";
-import type { PmDataTier, PmSprint, PmTicket, PmTicketDelivery, PmTicketPriority, PmTicketStatus } from "@termloop/pm-contract/pm";
+import type { PmDataTier, PmPlaybook, PmSprint, PmTicket, PmTicketDelivery, PmTicketPriority, PmTicketStatus } from "@termloop/pm-contract/pm";
 import {
   PRIORITY_LABEL,
+  NOT_STARTED,
   PRIORITY_ORDER,
-  STAGE_LABEL,
   STATUS_LABEL,
   STATUS_ORDER,
   relativeTime,
+  ticketStep,
   tierAtLeast,
 } from "./format.js";
 import { SOURCE_LABEL, pullRequestLine } from "./delivery-facts.js";
@@ -17,6 +18,7 @@ export type TicketFieldsProps = {
   delivery: PmTicketDelivery;
   sprints: PmSprint[];
   tier: PmDataTier;
+  playbook?: PmPlaybook | undefined;
   now: number;
   onUpdate(fields: TicketFieldUpdate): void;
   /** Moves the ticket to a sprint, or the backlog for `null`. */
@@ -27,10 +29,10 @@ export type TicketFieldsProps = {
 
 /**
  * The ticket's field chips: status, priority, assignee, sprint, and Jira link
- * are editable; delivery stage and pull requests are read from facts. Each
+ * are editable; the Playbook step and pull requests are read from facts. Each
  * change is one update; free text is committed when it loses focus.
  */
-export function TicketFields({ ticket, delivery, sprints, tier, now, onUpdate, onMoveSprint, actions }: TicketFieldsProps) {
+export function TicketFields({ ticket, delivery, sprints, tier, playbook, now, onUpdate, onMoveSprint, actions }: TicketFieldsProps) {
   const [assignee, setAssignee] = useState(ticket.assignee ?? "");
   const [jiraUrl, setJiraUrl] = useState(ticket.jiraUrl ?? "");
   const [jiraInvalid, setJiraInvalid] = useState(false);
@@ -80,7 +82,7 @@ export function TicketFields({ ticket, delivery, sprints, tier, now, onUpdate, o
           </select>
         </label>
         {ticket.blockers.length > 0 && <span className="chip-static bad">Blocked · {ticket.blockers[0]!.text}{ticket.blockers.length > 1 ? ` +${ticket.blockers.length - 1}` : ""}</span>}
-        {showCode && <span className="chip-static">{STAGE_LABEL[delivery.stage.kind]}{delivery.stage.environment ? ` · ${delivery.stage.environment}` : ""}</span>}
+        {playbook && <span className="chip-static" data-testid="step-chip">{ticketStep(playbook, delivery)?.title ?? NOT_STARTED}</span>}
         {ticket.carryOverCount > 0 && <span className="chip-static">Carried over ×{ticket.carryOverCount}</span>}
         <span className="sp" />
         {actions}
@@ -113,12 +115,6 @@ export function TicketFields({ ticket, delivery, sprints, tier, now, onUpdate, o
           <div>
             <dt>Pull requests</dt>
             <dd className={pullRequests.unavailable ? "warning" : undefined} data-testid="pr-line">{pullRequests.text}</dd>
-          </div>
-        )}
-        {showCode && facts && facts.deployedEnvironments.length > 0 && (
-          <div>
-            <dt>Deployed to</dt>
-            <dd>{facts.deployedEnvironments.join(", ")}</dd>
           </div>
         )}
         {facts && (

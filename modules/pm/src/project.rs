@@ -13,8 +13,7 @@ pub const PROJECTS_MAX: usize = 256;
 pub struct Project {
     pub id: String,
     pub name: String,
-    /// The local folder agents of the project run in, and where Git answers
-    /// commit-ancestry probes.
+    /// The local folder agents of the project run in: its code repository.
     #[serde(default)]
     pub folder: Option<String>,
     pub created_at_epoch_ms: u64,

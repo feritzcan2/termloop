@@ -36,7 +36,7 @@ export function AgentPanel(props: AgentPanelProps) {
       ) : (
         <div className="agent-empty">
           <p>No assistant is running.</p>
-          <p className="hint">The assistant reads this project's board and drafts descriptions, criteria and probes for you to review.</p>
+          <p className="hint">The assistant reads this project's board and drafts descriptions, criteria and Playbook steps for you to review.</p>
           <button type="button" className="btn pri" disabled={!props.canStart} onClick={props.onStart}>
             Start assistant{props.focusLabel ? ` on ${props.focusLabel}` : ""}
           </button>

@@ -7,10 +7,8 @@ use rusqlite::{Connection, OptionalExtension, Row, params, types::Type};
 
 use termloop_providers::AzureRepository;
 
-use super::rows::parsed;
 use crate::{
-    DeliveryProbe, GitHubSource, JiraSource, PmError, ProbeAuthor, ProbeMatcher, ProbeStatus,
-    ProjectSources, TicketDeliveryFacts, TicketProposal,
+    GitHubSource, JiraSource, PmError, ProjectSources, TicketDeliveryFacts, TicketProposal,
 };
 
 pub(crate) fn json_column<T: serde::de::DeserializeOwned>(
@@ -67,61 +65,6 @@ pub(crate) fn project_facts(
         .map(|facts| facts.map(|facts| (facts.ticket_id.clone(), facts)))
         .collect::<Result<_, _>>()?;
     Ok(facts)
-}
-
-const PROBE_COLUMNS: &str = "id, project_id, environment, argv_json, matcher, status, author, \
-     reason, created_at_epoch_ms, last_run_json";
-
-fn probe_row(row: &Row<'_>) -> rusqlite::Result<DeliveryProbe> {
-    let last_run: Option<String> = row.get(9)?;
-    let probe = DeliveryProbe {
-        id: row.get(0)?,
-        project_id: row.get(1)?,
-        environment: row.get(2)?,
-        argv: json_column(row, 3)?,
-        matcher: parsed(row, 4, ProbeMatcher::parse)?,
-        status: parsed(row, 5, ProbeStatus::parse)?,
-        author: parsed(row, 6, ProbeAuthor::parse)?,
-        reason: row.get(7)?,
-        created_at_epoch_ms: row.get(8)?,
-        last_run: match last_run {
-            Some(_) => Some(json_column(row, 9)?),
-            None => None,
-        },
-    };
-    if probe.is_valid() {
-        Ok(probe)
-    } else {
-        Err(invalid_row(0))
-    }
-}
-
-pub(crate) fn probe_by_id(
-    connection: &Connection,
-    probe_id: &str,
-) -> Result<Option<DeliveryProbe>, PmError> {
-    Ok(connection
-        .query_row(
-            &format!("SELECT {PROBE_COLUMNS} FROM delivery_probes WHERE id = ?1"),
-            [probe_id],
-            probe_row,
-        )
-        .optional()?)
-}
-
-/// A project's probes in creation order.
-pub(crate) fn project_probes(
-    connection: &Connection,
-    project_id: &str,
-) -> Result<Vec<DeliveryProbe>, PmError> {
-    let mut statement = connection.prepare(&format!(
-        "SELECT {PROBE_COLUMNS} FROM delivery_probes WHERE project_id = ?1 \
-         ORDER BY created_at_epoch_ms, id"
-    ))?;
-    let probes = statement
-        .query_map([project_id], probe_row)?
-        .collect::<Result<_, _>>()?;
-    Ok(probes)
 }
 
 /// A project's sources; none configured is the empty value.

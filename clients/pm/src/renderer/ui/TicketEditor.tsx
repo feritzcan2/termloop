@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import type { PmBoardTicket, PmDataTier, PmProposal, PmSprint, PmTicketVersion } from "@termloop/pm-contract/pm";
+import type { PmBoardTicket, PmDataTier, PmPlaybook, PmProposal, PmSprint, PmTicketVersion } from "@termloop/pm-contract/pm";
 import { MarkdownEditor } from "./MarkdownEditor.js";
 import { ProposalCard } from "./ProposalCard.js";
 import { TicketFields } from "./TicketFields.js";
 import { TicketNotes, type TicketNotesProps } from "./TicketNotes.js";
+import { TicketPlaybook } from "./TicketPlaybook.js";
 import { AUTHOR_LABEL, VersionsList } from "./VersionsList.js";
 import { RISK_LABEL, jiraKey, relativeTime, riskTone, sprintName, ticketLabel } from "./format.js";
 import { ticketScope } from "./scope.js";
@@ -15,7 +16,8 @@ export type TicketEditorProps = {
   sprints: PmSprint[];
   tier: PmDataTier;
   jiraConfigured: boolean;
-  deployTracking: boolean;
+  /** The project's Playbook; absent until the board is read. */
+  playbook: PmPlaybook | undefined;
   proposals: PmProposal[];
   versions: PmTicketVersion[] | undefined;
   now: number;
@@ -35,6 +37,7 @@ export type TicketEditorProps = {
   notes?: Omit<TicketNotesProps, "now" | "onOpenLink">;
   onWriteToJira(): void;
   onStartCheck(): void;
+  onMarkStep(stepId: string, passed: boolean): void;
   onAskAgent(): void;
 };
 
@@ -132,19 +135,20 @@ export function TicketEditor(props: TicketEditorProps) {
           delivery={delivery}
           sprints={props.sprints}
           tier={props.tier}
+          playbook={props.playbook}
           now={props.now}
           onUpdate={props.onUpdate}
           onMoveSprint={props.onMoveSprint}
-          actions={<>
-            <button type="button" className="btn sm ghost" onClick={props.onAskAgent}>Ask assistant</button>
-            {props.deployTracking && <button type="button" className="btn sm ghost" disabled={delivery.checking} onClick={props.onStartCheck}>{delivery.checking ? "Checking…" : "Check delivery"}</button>}
-          </>}
+          actions={<button type="button" className="btn sm ghost" onClick={props.onAskAgent}>Ask assistant</button>}
         />
         {(delivery.risks.length > 0 || scope) && (
           <ul className="risk-list">
             {delivery.risks.map((risk, index) => <li key={index} className={riskTone(risk.kind)}><strong>{RISK_LABEL[risk.kind]}</strong> {risk.detail}</li>)}
             {scope && <li className="warn" data-testid="scope-grew"><strong>Scope grew</strong> {scope.explanation}.</li>}
           </ul>
+        )}
+        {props.playbook && (
+          <TicketPlaybook playbook={props.playbook} delivery={delivery} now={props.now} onCheck={props.onStartCheck} onMark={props.onMarkStep} />
         )}
 
         <h3 className="s">Description <span className="r">⌘S saves as v{headVersion + 1}</span></h3>

@@ -30,64 +30,61 @@ static CONTRACT_PATTERN_3: std::sync::LazyLock<regex::Regex> = std::sync::LazyLo
     regex::Regex::new("^[0-9a-f]{64}$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_4: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^[0-9a-f]{7,64}$").expect("generated contract pattern")
-});
-static CONTRACT_PATTERN_5: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_6: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_5: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_7: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_6: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_8: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_7: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Z][A-Z0-9_]{0,63}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_9: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_8: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Z][A-Z0-9_]{0,63}-[1-9][0-9]{0,19}$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_10: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_9: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z0-9._-]+$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_11: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_10: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_12: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_11: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z0-9]{1,32}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_13: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_12: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z0-9_-][A-Za-z0-9_.-]*$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_14: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_13: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[^\\s@]+@[^\\s@]+$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_15: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_14: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_16: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_15: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[!-~]+$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_17: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_16: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_18: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_17: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[^\\s@/]+/[^\\s]*$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_19: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_18: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_20: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_19: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net/browse/[A-Z][A-Z0-9_]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_21: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_20: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^mcp__[A-Za-z0-9_-]{1,64}__[A-Za-z0-9_-]{1,64}$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_22: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_21: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^pm_[a-z_]{1,60}$").expect("generated contract pattern")
 });
 
@@ -99,39 +96,38 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
         "^[!-~]+$" => CONTRACT_PATTERN_1.is_match(text),
         "^[0-9]{1,64}$" => CONTRACT_PATTERN_2.is_match(text),
         "^[0-9a-f]{64}$" => CONTRACT_PATTERN_3.is_match(text),
-        "^[0-9a-f]{7,64}$" => CONTRACT_PATTERN_4.is_match(text),
         "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" => {
-            CONTRACT_PATTERN_5.is_match(text)
+            CONTRACT_PATTERN_4.is_match(text)
         }
-        "^[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_6.is_match(text),
-        "^[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_7.is_match(text),
-        "^[A-Z][A-Z0-9_]{0,63}$" => CONTRACT_PATTERN_8.is_match(text),
-        "^[A-Z][A-Z0-9_]{0,63}-[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_9.is_match(text),
-        "^[A-Za-z0-9._-]+$" => CONTRACT_PATTERN_10.is_match(text),
-        "^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$" => CONTRACT_PATTERN_11.is_match(text),
-        "^[A-Za-z0-9]{1,32}$" => CONTRACT_PATTERN_12.is_match(text),
-        "^[A-Za-z0-9_-][A-Za-z0-9_.-]*$" => CONTRACT_PATTERN_13.is_match(text),
-        "^[^\\s@]+@[^\\s@]+$" => CONTRACT_PATTERN_14.is_match(text),
-        "^https://" => CONTRACT_PATTERN_15.is_match(text),
-        "^https://[!-~]+$" => CONTRACT_PATTERN_16.is_match(text),
+        "^[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_5.is_match(text),
+        "^[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_6.is_match(text),
+        "^[A-Z][A-Z0-9_]{0,63}$" => CONTRACT_PATTERN_7.is_match(text),
+        "^[A-Z][A-Z0-9_]{0,63}-[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_8.is_match(text),
+        "^[A-Za-z0-9._-]+$" => CONTRACT_PATTERN_9.is_match(text),
+        "^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$" => CONTRACT_PATTERN_10.is_match(text),
+        "^[A-Za-z0-9]{1,32}$" => CONTRACT_PATTERN_11.is_match(text),
+        "^[A-Za-z0-9_-][A-Za-z0-9_.-]*$" => CONTRACT_PATTERN_12.is_match(text),
+        "^[^\\s@]+@[^\\s@]+$" => CONTRACT_PATTERN_13.is_match(text),
+        "^https://" => CONTRACT_PATTERN_14.is_match(text),
+        "^https://[!-~]+$" => CONTRACT_PATTERN_15.is_match(text),
         "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$" => {
-            CONTRACT_PATTERN_17.is_match(text)
+            CONTRACT_PATTERN_16.is_match(text)
         }
-        "^https://[^\\s@/]+/[^\\s]*$" => CONTRACT_PATTERN_18.is_match(text),
+        "^https://[^\\s@/]+/[^\\s]*$" => CONTRACT_PATTERN_17.is_match(text),
         "^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net$" => {
-            CONTRACT_PATTERN_19.is_match(text)
+            CONTRACT_PATTERN_18.is_match(text)
         }
         "^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.atlassian\\.net/browse/[A-Z][A-Z0-9_]{0,63}-[1-9][0-9]{0,19}$" => {
-            CONTRACT_PATTERN_20.is_match(text)
+            CONTRACT_PATTERN_19.is_match(text)
         }
-        "^mcp__[A-Za-z0-9_-]{1,64}__[A-Za-z0-9_-]{1,64}$" => CONTRACT_PATTERN_21.is_match(text),
-        "^pm_[a-z_]{1,60}$" => CONTRACT_PATTERN_22.is_match(text),
+        "^mcp__[A-Za-z0-9_-]{1,64}__[A-Za-z0-9_-]{1,64}$" => CONTRACT_PATTERN_20.is_match(text),
+        "^pm_[a-z_]{1,60}$" => CONTRACT_PATTERN_21.is_match(text),
         _ => false,
     }
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:d1e361de139ea0f5735ba457791dcd2abec898392f7692705d0ea1897571781f";
+    "sha256:ded3c190ba14895d4fe389cfd20639826db774dd7a05968e42b940d49bdc9636";
 pub const CAPABILITY_SCOPE: &str = "pm.full";
 pub const METHODS: &[&str] = &[
     "pm_system_version",
@@ -162,15 +158,14 @@ pub const METHODS: &[&str] = &[
     "pm_ticket_notes_read",
     "pm_ticket_note_add",
     "pm_ticket_note_remove",
-    "pm_environments_set",
     "pm_sources_read",
     "pm_sources_set",
     "pm_credential_store",
     "pm_credential_clear",
-    "pm_probe_create",
-    "pm_probe_approve",
-    "pm_probe_reject",
-    "pm_probe_delete",
+    "pm_playbook_save",
+    "pm_playbook_proposal_apply",
+    "pm_playbook_proposal_discard",
+    "pm_playbook_step_mark",
     "pm_check_start",
     "pm_checks_read",
     "pm_jira_pull",
@@ -197,8 +192,6 @@ pub const METHODS: &[&str] = &[
     "pm_skill_feedback_read",
     "pm_skill_draft_dry_run",
     "pm_skill_draft_discard",
-    "pm_environment_proposal_apply",
-    "pm_environment_proposal_discard",
 ];
 pub const EVENTS: &[&str] = &[
     "pmBoardChanged",
@@ -520,56 +513,12 @@ pub struct PmTicketVersion {
     pub recorded_at_epoch_ms: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct PmEnvironment {
-    pub name: String,
-    pub production: bool,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum PmFactSource {
     #[serde(rename = "jira")]
     Jira,
     #[serde(rename = "gitHost")]
     GitHost,
-    #[serde(rename = "probe")]
-    Probe,
-    #[serde(rename = "check")]
-    Check,
-    #[serde(rename = "projectManager")]
-    ProjectManager,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum PmDeliveryStageKind {
-    #[serde(rename = "toDo")]
-    ToDo,
-    #[serde(rename = "inProgress")]
-    InProgress,
-    #[serde(rename = "inReview")]
-    InReview,
-    #[serde(rename = "merged")]
-    Merged,
-    #[serde(rename = "deployed")]
-    Deployed,
-    #[serde(rename = "live")]
-    Live,
-    #[serde(rename = "done")]
-    Done,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct PmDeliveryStage {
-    pub kind: PmDeliveryStageKind,
-    #[serde(deserialize_with = "deserialize_required_nullable")]
-    pub environment: Option<String>,
-    #[serde(
-        rename = "sinceEpochMs",
-        deserialize_with = "deserialize_required_nullable"
-    )]
-    pub since_epoch_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -584,14 +533,8 @@ pub enum PmDeliveryRiskKind {
     ReviewWaiting,
     #[serde(rename = "stuckInStatus")]
     StuckInStatus,
-    #[serde(rename = "mergedNotDeployed")]
-    MergedNotDeployed,
-    #[serde(rename = "notInProduction")]
-    NotInProduction,
-    #[serde(rename = "jiraBehind")]
-    JiraBehind,
-    #[serde(rename = "jiraAhead")]
-    JiraAhead,
+    #[serde(rename = "stepBlocked")]
+    StepBlocked,
     #[serde(rename = "notStartedNearSprintEnd")]
     NotStartedNearSprintEnd,
     #[serde(rename = "carriedOver")]
@@ -632,8 +575,6 @@ pub struct PmFactsSummary {
     pub jira_assignee: Option<String>,
     #[serde(rename = "pullRequests")]
     pub pull_requests: u64,
-    #[serde(rename = "deployedEnvironments")]
-    pub deployed_environments: Vec<String>,
     #[serde(rename = "failedReads")]
     pub failed_reads: Vec<PmFactSource>,
 }
@@ -643,10 +584,8 @@ pub struct PmFactsSummary {
 pub struct PmTicketDelivery {
     #[serde(rename = "ticketId")]
     pub ticket_id: String,
-    pub stage: PmDeliveryStage,
+    pub playbook: PmTicketPlaybook,
     pub risks: Vec<PmDeliveryRisk>,
-    #[serde(rename = "checkReasons")]
-    pub check_reasons: Vec<String>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub facts: Option<PmFactsSummary>,
     pub checking: bool,
@@ -681,78 +620,9 @@ pub struct PmTracking {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum PmProbeMatcher {
-    #[serde(rename = "commitAncestry")]
-    CommitAncestry,
-    #[serde(rename = "agent")]
-    Agent,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct PmProbeRun {
-    #[serde(rename = "atEpochMs")]
-    pub at_epoch_ms: u64,
-    #[serde(
-        rename = "outputHash",
-        deserialize_with = "deserialize_required_nullable"
-    )]
-    pub output_hash: Option<String>,
-    #[serde(
-        rename = "changedAtEpochMs",
-        deserialize_with = "deserialize_required_nullable"
-    )]
-    pub changed_at_epoch_ms: Option<u64>,
-    #[serde(
-        rename = "deployedCommit",
-        deserialize_with = "deserialize_required_nullable"
-    )]
-    pub deployed_commit: Option<String>,
-    #[serde(deserialize_with = "deserialize_required_nullable")]
-    pub failure: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum PmProbeStatus {
-    #[serde(rename = "proposed")]
-    Proposed,
-    #[serde(rename = "approved")]
-    Approved,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum PmProbeAuthor {
-    #[serde(rename = "projectManager")]
-    ProjectManager,
-    #[serde(rename = "agent")]
-    Agent,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct PmProbe {
-    pub id: String,
-    #[serde(rename = "projectId")]
-    pub project_id: String,
-    pub environment: String,
-    pub argv: Vec<String>,
-    pub matcher: PmProbeMatcher,
-    pub status: PmProbeStatus,
-    pub author: PmProbeAuthor,
-    #[serde(deserialize_with = "deserialize_required_nullable")]
-    pub reason: Option<String>,
-    #[serde(rename = "createdAtEpochMs")]
-    pub created_at_epoch_ms: u64,
-    #[serde(rename = "lastRun", deserialize_with = "deserialize_required_nullable")]
-    pub last_run: Option<PmProbeRun>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum PmCheckReason {
-    #[serde(rename = "checkReasons")]
-    CheckReasons,
-    #[serde(rename = "probeChanged")]
-    ProbeChanged,
+    #[serde(rename = "due")]
+    Due,
     #[serde(rename = "requested")]
     Requested,
 }
@@ -775,10 +645,9 @@ pub struct PmCheck {
     pub project_id: String,
     #[serde(rename = "ticketId")]
     pub ticket_id: String,
+    #[serde(rename = "stepId")]
+    pub step_id: String,
     pub reason: PmCheckReason,
-    pub environments: Vec<String>,
-    #[serde(rename = "probeId", deserialize_with = "deserialize_required_nullable")]
-    pub probe_id: Option<String>,
     #[serde(
         rename = "sessionId",
         deserialize_with = "deserialize_required_nullable"
@@ -802,8 +671,7 @@ pub struct PmBoard {
     pub project_id: String,
     pub sprints: Vec<PmSprint>,
     pub tickets: Vec<PmBoardTicket>,
-    pub environments: Vec<PmEnvironment>,
-    pub probes: Vec<PmProbe>,
+    pub playbook: PmPlaybook,
     #[serde(rename = "runningChecks")]
     pub running_checks: Vec<PmCheck>,
     pub tracking: PmTracking,
@@ -1058,13 +926,6 @@ pub struct PmTicketRef {
 pub struct PmSprintRef {
     #[serde(rename = "sprintId")]
     pub sprint_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct PmProbeRef {
-    #[serde(rename = "probeId")]
-    pub probe_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1438,22 +1299,6 @@ pub struct PmRejectedResult {
     pub rejected: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct PmEnvironmentsSetParams {
-    #[serde(rename = "projectId")]
-    pub project_id: String,
-    pub environments: Vec<PmEnvironment>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct PmEnvironmentsSetResult {
-    #[serde(rename = "projectId")]
-    pub project_id: String,
-    pub environments: Vec<PmEnvironment>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum PmCredentialKind {
     #[serde(rename = "jiraApiToken")]
@@ -1489,18 +1334,6 @@ pub struct PmCredentialClearResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub struct PmProbeCreateParams {
-    #[serde(rename = "projectId")]
-    pub project_id: String,
-    pub environment: String,
-    pub argv: Vec<String>,
-    pub matcher: PmProbeMatcher,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
 pub struct PmDeletedResult {
     pub deleted: bool,
 }
@@ -1518,8 +1351,8 @@ pub struct PmCheckStartParams {
 pub enum PmCheckRefusalReason {
     #[serde(rename = "notFound")]
     NotFound,
-    #[serde(rename = "deployTrackingOff")]
-    DeployTrackingOff,
+    #[serde(rename = "noAgentStep")]
+    NoAgentStep,
     #[serde(rename = "alreadyRunning")]
     AlreadyRunning,
     #[serde(rename = "projectLimitReached")]
@@ -1961,8 +1794,6 @@ pub enum PmSkillPrefilter {
     SlackMentions,
     #[serde(rename = "bugTickets")]
     BugTickets,
-    #[serde(rename = "deliveryChecks")]
-    DeliveryChecks,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -2003,12 +1834,6 @@ pub struct PmSkillChannel {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum PmBuiltinSkill {
-    #[serde(rename = "deploymentControl")]
-    DeploymentControl,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum PmSkillRunOutcome {
     #[serde(rename = "reported")]
     Reported,
@@ -2038,8 +1863,6 @@ pub struct PmSkill {
     pub id: String,
     #[serde(rename = "projectId")]
     pub project_id: String,
-    #[serde(deserialize_with = "deserialize_required_nullable")]
-    pub builtin: Option<PmBuiltinSkill>,
     pub enabled: bool,
     pub version: u32,
     pub manifest: PmSkillManifest,
@@ -2213,10 +2036,10 @@ pub struct PmSkillsReadResult {
     pub skills: Vec<PmSkill>,
     pub drafts: Vec<PmSkillDraft>,
     #[serde(
-        rename = "environmentProposal",
+        rename = "playbookProposal",
         deserialize_with = "deserialize_required_nullable"
     )]
-    pub environment_proposal: Option<PmEnvironmentProposal>,
+    pub playbook_proposal: Option<PmPlaybookProposal>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -2269,10 +2092,7 @@ pub struct PmSkillInstallParams {
 #[serde(deny_unknown_fields)]
 pub struct PmSkillRunResult {
     pub skill: PmSkill,
-    #[serde(deserialize_with = "deserialize_required_nullable")]
-    pub run: Option<PmSkillRun>,
-    #[serde(rename = "checksStarted")]
-    pub checks_started: u32,
+    pub run: PmSkillRun,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -2288,8 +2108,8 @@ pub struct PmSkillCreatorLaunchParams {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum PmSkillSetup {
-    #[serde(rename = "deploymentControl")]
-    DeploymentControl,
+    #[serde(rename = "playbook")]
+    Playbook,
     #[serde(rename = "bugOwnerFinder")]
     BugOwnerFinder,
     #[serde(rename = "slackTracker")]
@@ -2308,42 +2128,6 @@ pub struct PmSkillFeedbackReadResult {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct PmSkillDraftDiscardResult {
-    pub discarded: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct PmProposedEnvironment {
-    pub name: String,
-    pub production: bool,
-    pub evidence: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct PmEnvironmentProposal {
-    #[serde(rename = "projectId")]
-    pub project_id: String,
-    pub summary: String,
-    pub environments: Vec<PmProposedEnvironment>,
-    pub probes: Vec<PmProbe>,
-    #[serde(rename = "createdAtEpochMs")]
-    pub created_at_epoch_ms: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct PmEnvironmentProposalApplyParams {
-    #[serde(rename = "projectId")]
-    pub project_id: String,
-    pub environments: Vec<String>,
-    #[serde(rename = "probeIds")]
-    pub probe_ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct PmEnvironmentProposalDiscardResult {
     pub discarded: bool,
 }
 
@@ -2424,6 +2208,164 @@ pub struct PmToolsReadResult {
     pub read_at_epoch_ms: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmPlaybook {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    pub revision: u64,
+    pub steps: Vec<PmPlaybookStep>,
+    #[serde(rename = "updatedAtEpochMs")]
+    pub updated_at_epoch_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmPlaybookStep {
+    pub id: String,
+    pub title: String,
+    pub checks: Vec<PmStepCheck>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub agent: Option<PmAgentCheck>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PmStatusCategory {
+    #[serde(rename = "started")]
+    Started,
+    #[serde(rename = "done")]
+    Done,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PmPullRequestStepState {
+    #[serde(rename = "open")]
+    Open,
+    #[serde(rename = "merged")]
+    Merged,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind", deny_unknown_fields)]
+pub enum PmStepCheck {
+    #[serde(rename = "status")]
+    Status {
+        names: Vec<String>,
+        category: Option<PmStatusCategory>,
+    },
+    #[serde(rename = "pullRequest")]
+    PullRequest {
+        state: PmPullRequestStepState,
+        #[serde(rename = "baseBranch")]
+        base_branch: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmAgentCheck {
+    pub instructions: String,
+    #[serde(rename = "retryMinutes")]
+    pub retry_minutes: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PmStepVerdict {
+    #[serde(rename = "passed")]
+    Passed,
+    #[serde(rename = "waiting")]
+    Waiting,
+    #[serde(rename = "blocked")]
+    Blocked,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PmStepEvaluator {
+    #[serde(rename = "facts")]
+    Facts,
+    #[serde(rename = "agent")]
+    Agent,
+    #[serde(rename = "projectManager")]
+    ProjectManager,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmStepState {
+    #[serde(rename = "stepId")]
+    pub step_id: String,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub verdict: Option<PmStepVerdict>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub evidence: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub evaluator: Option<PmStepEvaluator>,
+    #[serde(
+        rename = "decidedAtEpochMs",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub decided_at_epoch_ms: Option<u64>,
+    pub implied: bool,
+    #[serde(
+        rename = "nextAttemptAtEpochMs",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub next_attempt_at_epoch_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmTicketPlaybook {
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub position: Option<u64>,
+    pub steps: Vec<PmStepState>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmPlaybookProposal {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    pub summary: String,
+    pub steps: Vec<PmPlaybookStep>,
+    #[serde(rename = "createdAtEpochMs")]
+    pub created_at_epoch_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmPlaybookSaveParams {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    #[serde(rename = "baseRevision")]
+    pub base_revision: u64,
+    pub steps: Vec<PmPlaybookStep>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmPlaybookProposalApplyParams {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    pub steps: Vec<PmPlaybookStep>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmPlaybookProposalDiscardResult {
+    pub discarded: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmPlaybookStepMarkParams {
+    #[serde(rename = "ticketId")]
+    pub ticket_id: String,
+    #[serde(rename = "stepId")]
+    pub step_id: String,
+    pub passed: bool,
+}
+
 pub type PmSystemVersionParams = EmptyParams;
 pub type PmProjectListParams = EmptyParams;
 pub type PmProjectCreateResult = PmProject;
@@ -2456,13 +2398,10 @@ pub type PmTicketNoteRemoveResult = PmDeletedResult;
 pub type PmSourcesReadParams = PmProjectRef;
 pub type PmSourcesReadResult = PmSources;
 pub type PmSourcesSetResult = PmSources;
-pub type PmProbeCreateResult = PmProbe;
-pub type PmProbeApproveParams = PmProbeRef;
-pub type PmProbeApproveResult = PmProbe;
-pub type PmProbeRejectParams = PmProbeRef;
-pub type PmProbeRejectResult = PmRejectedResult;
-pub type PmProbeDeleteParams = PmProbeRef;
-pub type PmProbeDeleteResult = PmDeletedResult;
+pub type PmPlaybookSaveResult = PmPlaybook;
+pub type PmPlaybookProposalApplyResult = PmPlaybook;
+pub type PmPlaybookProposalDiscardParams = PmProjectRef;
+pub type PmPlaybookStepMarkResult = PmTicketDelivery;
 pub type PmJiraPullParams = PmProjectRef;
 pub type PmJiraDiffReadParams = PmTicketRef;
 pub type PmJiraDiffReadResult = PmJiraDiff;
@@ -2486,8 +2425,6 @@ pub type PmSkillFeedbackReadParams = PmSkillRef;
 pub type PmSkillDraftDryRunParams = PmSkillDraftRef;
 pub type PmSkillDraftDryRunResult = PmSkillRun;
 pub type PmSkillDraftDiscardParams = PmSkillDraftRef;
-pub type PmEnvironmentProposalApplyResult = PmEnvironmentsSetResult;
-pub type PmEnvironmentProposalDiscardParams = PmProjectRef;
 
 #[allow(
     dead_code,
@@ -2661,15 +2598,14 @@ fn validate_method(value: &Value) -> bool {
             "pm_ticket_notes_read",
             "pm_ticket_note_add",
             "pm_ticket_note_remove",
-            "pm_environments_set",
             "pm_sources_read",
             "pm_sources_set",
             "pm_credential_store",
             "pm_credential_clear",
-            "pm_probe_create",
-            "pm_probe_approve",
-            "pm_probe_reject",
-            "pm_probe_delete",
+            "pm_playbook_save",
+            "pm_playbook_proposal_apply",
+            "pm_playbook_proposal_discard",
+            "pm_playbook_step_mark",
             "pm_check_start",
             "pm_checks_read",
             "pm_jira_pull",
@@ -2696,8 +2632,6 @@ fn validate_method(value: &Value) -> bool {
             "pm_skill_feedback_read",
             "pm_skill_draft_dry_run",
             "pm_skill_draft_discard",
-            "pm_environment_proposal_apply",
-            "pm_environment_proposal_discard",
         ]
         .contains(&text)
     })
@@ -3180,90 +3114,10 @@ fn validate_pm_ticket_version(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
-fn validate_pm_environment(value: &Value) -> bool {
-    value.as_object().is_some_and(|object| {
-        object.get("name").is_some_and(|field| {
-            field
-                .as_str()
-                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 120)
-        }) && object
-            .get("production")
-            .is_some_and(|field| field.is_boolean())
-            && object
-                .keys()
-                .all(|key| ["name", "production"].contains(&key.as_str()))
-    })
-}
-
-#[allow(
-    dead_code,
-    unused_comparisons,
-    unused_parens,
-    unused_variables,
-    clippy::absurd_extreme_comparisons,
-    clippy::len_zero,
-    clippy::redundant_closure
-)]
 fn validate_pm_fact_source(value: &Value) -> bool {
     value
         .as_str()
-        .is_some_and(|text| ["jira", "gitHost", "probe", "check", "projectManager"].contains(&text))
-}
-
-#[allow(
-    dead_code,
-    unused_comparisons,
-    unused_parens,
-    unused_variables,
-    clippy::absurd_extreme_comparisons,
-    clippy::len_zero,
-    clippy::redundant_closure
-)]
-fn validate_pm_delivery_stage_kind(value: &Value) -> bool {
-    value.as_str().is_some_and(|text| {
-        [
-            "toDo",
-            "inProgress",
-            "inReview",
-            "merged",
-            "deployed",
-            "live",
-            "done",
-        ]
-        .contains(&text)
-    })
-}
-
-#[allow(
-    dead_code,
-    unused_comparisons,
-    unused_parens,
-    unused_variables,
-    clippy::absurd_extreme_comparisons,
-    clippy::len_zero,
-    clippy::redundant_closure
-)]
-fn validate_pm_delivery_stage(value: &Value) -> bool {
-    value.as_object().is_some_and(|object| {
-        object
-            .get("kind")
-            .is_some_and(|field| validate_pm_delivery_stage_kind(field))
-            && object.get("environment").is_some_and(|field| {
-                (field
-                    .as_str()
-                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 120)
-                    || field.is_null())
-            })
-            && object.get("sinceEpochMs").is_some_and(|field| {
-                (field.as_number().is_some_and(|number| {
-                    (number.as_i64().is_some() || number.as_u64().is_some())
-                        && (number.as_u64().is_some_and(|number| number >= 0_u64))
-                }) || field.is_null())
-            })
-            && object
-                .keys()
-                .all(|key| ["kind", "environment", "sinceEpochMs"].contains(&key.as_str()))
-    })
+        .is_some_and(|text| ["jira", "gitHost"].contains(&text))
 }
 
 #[allow(
@@ -3283,10 +3137,7 @@ fn validate_pm_delivery_risk_kind(value: &Value) -> bool {
             "checksFailing",
             "reviewWaiting",
             "stuckInStatus",
-            "mergedNotDeployed",
-            "notInProduction",
-            "jiraBehind",
-            "jiraAhead",
+            "stepBlocked",
             "notStartedNearSprintEnd",
             "carriedOver",
             "unassigned",
@@ -3362,19 +3213,9 @@ fn validate_pm_facts_summary(value: &Value) -> bool {
                         && (number.as_u64().is_some_and(|number| number >= 0_u64))
                 })
             })
-            && object.get("deployedEnvironments").is_some_and(|field| {
-                field.as_array().is_some_and(|items| {
-                    items.len() <= 12
-                        && items.iter().all(|item| {
-                            item.as_str().is_some_and(|text| {
-                                text.chars().count() >= 1 && text.chars().count() <= 120
-                            })
-                        })
-                })
-            })
             && object.get("failedReads").is_some_and(|field| {
                 field.as_array().is_some_and(|items| {
-                    items.len() <= 5 && items.iter().all(|item| validate_pm_fact_source(item))
+                    items.len() <= 2 && items.iter().all(|item| validate_pm_fact_source(item))
                 })
             })
             && object.keys().all(|key| {
@@ -3384,7 +3225,6 @@ fn validate_pm_facts_summary(value: &Value) -> bool {
                     "jiraStatus",
                     "jiraAssignee",
                     "pullRequests",
-                    "deployedEnvironments",
                     "failedReads",
                 ]
                 .contains(&key.as_str())
@@ -3410,20 +3250,11 @@ fn validate_pm_ticket_delivery(value: &Value) -> bool {
                     && contract_pattern_matches("^[!-~]+$", text)
             })
         }) && object
-            .get("stage")
-            .is_some_and(|field| validate_pm_delivery_stage(field))
+            .get("playbook")
+            .is_some_and(|field| validate_pm_ticket_playbook(field))
             && object.get("risks").is_some_and(|field| {
                 field.as_array().is_some_and(|items| {
                     items.len() <= 16 && items.iter().all(|item| validate_pm_delivery_risk(item))
-                })
-            })
-            && object.get("checkReasons").is_some_and(|field| {
-                field.as_array().is_some_and(|items| {
-                    items.len() <= 12
-                        && items.iter().all(|item| {
-                            item.as_str()
-                                .is_some_and(|text| text.chars().count() <= 1000)
-                        })
                 })
             })
             && object
@@ -3433,15 +3264,7 @@ fn validate_pm_ticket_delivery(value: &Value) -> bool {
                 .get("checking")
                 .is_some_and(|field| field.is_boolean())
             && object.keys().all(|key| {
-                [
-                    "ticketId",
-                    "stage",
-                    "risks",
-                    "checkReasons",
-                    "facts",
-                    "checking",
-                ]
-                .contains(&key.as_str())
+                ["ticketId", "playbook", "risks", "facts", "checking"].contains(&key.as_str())
             })
     })
 }
@@ -3522,182 +3345,10 @@ fn validate_pm_tracking(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
-fn validate_pm_probe_matcher(value: &Value) -> bool {
-    value
-        .as_str()
-        .is_some_and(|text| ["commitAncestry", "agent"].contains(&text))
-}
-
-#[allow(
-    dead_code,
-    unused_comparisons,
-    unused_parens,
-    unused_variables,
-    clippy::absurd_extreme_comparisons,
-    clippy::len_zero,
-    clippy::redundant_closure
-)]
-fn validate_pm_probe_run(value: &Value) -> bool {
-    value.as_object().is_some_and(|object| {
-        object.get("atEpochMs").is_some_and(|field| {
-            field.as_number().is_some_and(|number| {
-                (number.as_i64().is_some() || number.as_u64().is_some())
-                    && (number.as_u64().is_some_and(|number| number >= 0_u64))
-            })
-        }) && object.get("outputHash").is_some_and(|field| {
-            (field
-                .as_str()
-                .is_some_and(|text| contract_pattern_matches("^[0-9a-f]{64}$", text))
-                || field.is_null())
-        }) && object.get("changedAtEpochMs").is_some_and(|field| {
-            (field.as_number().is_some_and(|number| {
-                (number.as_i64().is_some() || number.as_u64().is_some())
-                    && (number.as_u64().is_some_and(|number| number >= 0_u64))
-            }) || field.is_null())
-        }) && object.get("deployedCommit").is_some_and(|field| {
-            (field
-                .as_str()
-                .is_some_and(|text| contract_pattern_matches("^[0-9a-f]{7,64}$", text))
-                || field.is_null())
-        }) && object.get("failure").is_some_and(|field| {
-            (field
-                .as_str()
-                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
-                || field.is_null())
-        }) && object.keys().all(|key| {
-            [
-                "atEpochMs",
-                "outputHash",
-                "changedAtEpochMs",
-                "deployedCommit",
-                "failure",
-            ]
-            .contains(&key.as_str())
-        })
-    })
-}
-
-#[allow(
-    dead_code,
-    unused_comparisons,
-    unused_parens,
-    unused_variables,
-    clippy::absurd_extreme_comparisons,
-    clippy::len_zero,
-    clippy::redundant_closure
-)]
-fn validate_pm_probe_status(value: &Value) -> bool {
-    value
-        .as_str()
-        .is_some_and(|text| ["proposed", "approved"].contains(&text))
-}
-
-#[allow(
-    dead_code,
-    unused_comparisons,
-    unused_parens,
-    unused_variables,
-    clippy::absurd_extreme_comparisons,
-    clippy::len_zero,
-    clippy::redundant_closure
-)]
-fn validate_pm_probe_author(value: &Value) -> bool {
-    value
-        .as_str()
-        .is_some_and(|text| ["projectManager", "agent"].contains(&text))
-}
-
-#[allow(
-    dead_code,
-    unused_comparisons,
-    unused_parens,
-    unused_variables,
-    clippy::absurd_extreme_comparisons,
-    clippy::len_zero,
-    clippy::redundant_closure
-)]
-fn validate_pm_probe(value: &Value) -> bool {
-    value.as_object().is_some_and(|object| {
-        object.get("id").is_some_and(|field| {
-            field.as_str().is_some_and(|text| {
-                text.chars().count() >= 1
-                    && text.chars().count() <= 128
-                    && contract_pattern_matches("^[!-~]+$", text)
-            })
-        }) && object.get("projectId").is_some_and(|field| {
-            field.as_str().is_some_and(|text| {
-                text.chars().count() >= 1
-                    && text.chars().count() <= 128
-                    && contract_pattern_matches("^[!-~]+$", text)
-            })
-        }) && object.get("environment").is_some_and(|field| {
-            field
-                .as_str()
-                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 120)
-        }) && object.get("argv").is_some_and(|field| {
-            field.as_array().is_some_and(|items| {
-                items.len() >= 1
-                    && items.len() <= 32
-                    && items.iter().all(|item| {
-                        item.as_str()
-                            .is_some_and(|text| text.chars().count() >= 1 && text.len() <= 1024)
-                    })
-            })
-        }) && object
-            .get("matcher")
-            .is_some_and(|field| validate_pm_probe_matcher(field))
-            && object
-                .get("status")
-                .is_some_and(|field| validate_pm_probe_status(field))
-            && object
-                .get("author")
-                .is_some_and(|field| validate_pm_probe_author(field))
-            && object.get("reason").is_some_and(|field| {
-                (field
-                    .as_str()
-                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 400)
-                    || field.is_null())
-            })
-            && object.get("createdAtEpochMs").is_some_and(|field| {
-                field.as_number().is_some_and(|number| {
-                    (number.as_i64().is_some() || number.as_u64().is_some())
-                        && (number.as_u64().is_some_and(|number| number >= 0_u64))
-                })
-            })
-            && object
-                .get("lastRun")
-                .is_some_and(|field| (validate_pm_probe_run(field) || field.is_null()))
-            && object.keys().all(|key| {
-                [
-                    "id",
-                    "projectId",
-                    "environment",
-                    "argv",
-                    "matcher",
-                    "status",
-                    "author",
-                    "reason",
-                    "createdAtEpochMs",
-                    "lastRun",
-                ]
-                .contains(&key.as_str())
-            })
-    })
-}
-
-#[allow(
-    dead_code,
-    unused_comparisons,
-    unused_parens,
-    unused_variables,
-    clippy::absurd_extreme_comparisons,
-    clippy::len_zero,
-    clippy::redundant_closure
-)]
 fn validate_pm_check_reason(value: &Value) -> bool {
     value
         .as_str()
-        .is_some_and(|text| ["checkReasons", "probeChanged", "requested"].contains(&text))
+        .is_some_and(|text| ["due", "requested"].contains(&text))
 }
 
 #[allow(
@@ -3744,26 +3395,15 @@ fn validate_pm_check(value: &Value) -> bool {
                     && text.chars().count() <= 128
                     && contract_pattern_matches("^[!-~]+$", text)
             })
+        }) && object.get("stepId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
         }) && object
             .get("reason")
             .is_some_and(|field| validate_pm_check_reason(field))
-            && object.get("environments").is_some_and(|field| {
-                field.as_array().is_some_and(|items| {
-                    items.len() <= 12
-                        && items.iter().all(|item| {
-                            item.as_str().is_some_and(|text| {
-                                text.chars().count() >= 1 && text.chars().count() <= 120
-                            })
-                        })
-                })
-            })
-            && object.get("probeId").is_some_and(|field| {
-                (field.as_str().is_some_and(|text| {
-                    text.chars().count() >= 1
-                        && text.chars().count() <= 128
-                        && contract_pattern_matches("^[!-~]+$", text)
-                }) || field.is_null())
-            })
             && object.get("sessionId").is_some_and(|field| {
                 (field.as_str().is_some_and(|text| {
                     contract_pattern_matches(
@@ -3792,9 +3432,8 @@ fn validate_pm_check(value: &Value) -> bool {
                     "id",
                     "projectId",
                     "ticketId",
+                    "stepId",
                     "reason",
-                    "environments",
-                    "probeId",
                     "sessionId",
                     "startedAtEpochMs",
                     "finishedAtEpochMs",
@@ -3830,28 +3469,23 @@ fn validate_pm_board(value: &Value) -> bool {
             field.as_array().is_some_and(|items| {
                 items.len() <= 10000 && items.iter().all(|item| validate_pm_board_ticket(item))
             })
-        }) && object.get("environments").is_some_and(|field| {
-            field.as_array().is_some_and(|items| {
-                items.len() <= 12 && items.iter().all(|item| validate_pm_environment(item))
-            })
-        }) && object.get("probes").is_some_and(|field| {
-            field.as_array().is_some_and(|items| {
-                items.len() <= 16 && items.iter().all(|item| validate_pm_probe(item))
-            })
-        }) && object.get("runningChecks").is_some_and(|field| {
-            field.as_array().is_some_and(|items| {
-                items.len() <= 8 && items.iter().all(|item| validate_pm_check(item))
-            })
         }) && object
-            .get("tracking")
-            .is_some_and(|field| validate_pm_tracking(field))
+            .get("playbook")
+            .is_some_and(|field| validate_pm_playbook(field))
+            && object.get("runningChecks").is_some_and(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() <= 8 && items.iter().all(|item| validate_pm_check(item))
+                })
+            })
+            && object
+                .get("tracking")
+                .is_some_and(|field| validate_pm_tracking(field))
             && object.keys().all(|key| {
                 [
                     "projectId",
                     "sprints",
                     "tickets",
-                    "environments",
-                    "probes",
+                    "playbook",
                     "runningChecks",
                     "tracking",
                 ]
@@ -4624,27 +4258,6 @@ fn validate_pm_sprint_ref(value: &Value) -> bool {
         }) && object
             .keys()
             .all(|key| ["sprintId"].contains(&key.as_str()))
-    })
-}
-
-#[allow(
-    dead_code,
-    unused_comparisons,
-    unused_parens,
-    unused_variables,
-    clippy::absurd_extreme_comparisons,
-    clippy::len_zero,
-    clippy::redundant_closure
-)]
-fn validate_pm_probe_ref(value: &Value) -> bool {
-    value.as_object().is_some_and(|object| {
-        object.get("probeId").is_some_and(|field| {
-            field.as_str().is_some_and(|text| {
-                text.chars().count() >= 1
-                    && text.chars().count() <= 128
-                    && contract_pattern_matches("^[!-~]+$", text)
-            })
-        }) && object.keys().all(|key| ["probeId"].contains(&key.as_str()))
     })
 }
 
@@ -5667,60 +5280,6 @@ fn validate_pm_rejected_result(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
-fn validate_pm_environments_set_params(value: &Value) -> bool {
-    value.as_object().is_some_and(|object| {
-        object.get("projectId").is_some_and(|field| {
-            field.as_str().is_some_and(|text| {
-                text.chars().count() >= 1
-                    && text.chars().count() <= 128
-                    && contract_pattern_matches("^[!-~]+$", text)
-            })
-        }) && object.get("environments").is_some_and(|field| {
-            field.as_array().is_some_and(|items| {
-                items.len() <= 12 && items.iter().all(|item| validate_pm_environment(item))
-            })
-        }) && object
-            .keys()
-            .all(|key| ["projectId", "environments"].contains(&key.as_str()))
-    })
-}
-
-#[allow(
-    dead_code,
-    unused_comparisons,
-    unused_parens,
-    unused_variables,
-    clippy::absurd_extreme_comparisons,
-    clippy::len_zero,
-    clippy::redundant_closure
-)]
-fn validate_pm_environments_set_result(value: &Value) -> bool {
-    value.as_object().is_some_and(|object| {
-        object.get("projectId").is_some_and(|field| {
-            field.as_str().is_some_and(|text| {
-                text.chars().count() >= 1
-                    && text.chars().count() <= 128
-                    && contract_pattern_matches("^[!-~]+$", text)
-            })
-        }) && object.get("environments").is_some_and(|field| {
-            field.as_array().is_some_and(|items| {
-                items.len() <= 12 && items.iter().all(|item| validate_pm_environment(item))
-            })
-        }) && object
-            .keys()
-            .all(|key| ["projectId", "environments"].contains(&key.as_str()))
-    })
-}
-
-#[allow(
-    dead_code,
-    unused_comparisons,
-    unused_parens,
-    unused_variables,
-    clippy::absurd_extreme_comparisons,
-    clippy::len_zero,
-    clippy::redundant_closure
-)]
 fn validate_pm_credential_kind(value: &Value) -> bool {
     value
         .as_str()
@@ -5825,50 +5384,6 @@ fn validate_pm_credential_clear_result(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
-fn validate_pm_probe_create_params(value: &Value) -> bool {
-    value.as_object().is_some_and(|object| {
-        object.get("projectId").is_some_and(|field| {
-            field.as_str().is_some_and(|text| {
-                text.chars().count() >= 1
-                    && text.chars().count() <= 128
-                    && contract_pattern_matches("^[!-~]+$", text)
-            })
-        }) && object.get("environment").is_some_and(|field| {
-            field
-                .as_str()
-                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 120)
-        }) && object.get("argv").is_some_and(|field| {
-            field.as_array().is_some_and(|items| {
-                items.len() >= 1
-                    && items.len() <= 32
-                    && items.iter().all(|item| {
-                        item.as_str()
-                            .is_some_and(|text| text.chars().count() >= 1 && text.len() <= 1024)
-                    })
-            })
-        }) && object
-            .get("matcher")
-            .is_some_and(|field| validate_pm_probe_matcher(field))
-            && object.get("reason").is_none_or(|field| {
-                field
-                    .as_str()
-                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 400)
-            })
-            && object.keys().all(|key| {
-                ["projectId", "environment", "argv", "matcher", "reason"].contains(&key.as_str())
-            })
-    })
-}
-
-#[allow(
-    dead_code,
-    unused_comparisons,
-    unused_parens,
-    unused_variables,
-    clippy::absurd_extreme_comparisons,
-    clippy::len_zero,
-    clippy::redundant_closure
-)]
 fn validate_pm_deleted_result(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object
@@ -5927,7 +5442,7 @@ fn validate_pm_check_refusal_reason(value: &Value) -> bool {
     value.as_str().is_some_and(|text| {
         [
             "notFound",
-            "deployTrackingOff",
+            "noAgentStep",
             "alreadyRunning",
             "projectLimitReached",
             "agentUnavailable",
@@ -7187,15 +6702,9 @@ fn validate_pm_skill_source(value: &Value) -> bool {
     clippy::redundant_closure
 )]
 fn validate_pm_skill_prefilter(value: &Value) -> bool {
-    value.as_str().is_some_and(|text| {
-        [
-            "boardChanges",
-            "slackMentions",
-            "bugTickets",
-            "deliveryChecks",
-        ]
-        .contains(&text)
-    })
+    value
+        .as_str()
+        .is_some_and(|text| ["boardChanges", "slackMentions", "bugTickets"].contains(&text))
 }
 
 #[allow(
@@ -7359,21 +6868,6 @@ fn validate_pm_skill_channel(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
-fn validate_pm_builtin_skill(value: &Value) -> bool {
-    value
-        .as_str()
-        .is_some_and(|text| ["deploymentControl"].contains(&text))
-}
-
-#[allow(
-    dead_code,
-    unused_comparisons,
-    unused_parens,
-    unused_variables,
-    clippy::absurd_extreme_comparisons,
-    clippy::len_zero,
-    clippy::redundant_closure
-)]
 fn validate_pm_skill_run_outcome(value: &Value) -> bool {
     value
         .as_str()
@@ -7419,11 +6913,8 @@ fn validate_pm_skill(value: &Value) -> bool {
                     && contract_pattern_matches("^[!-~]+$", text)
             })
         }) && object
-            .get("builtin")
-            .is_some_and(|field| (validate_pm_builtin_skill(field) || field.is_null()))
-            && object
-                .get("enabled")
-                .is_some_and(|field| field.is_boolean())
+            .get("enabled")
+            .is_some_and(|field| field.is_boolean())
             && object.get("version").is_some_and(|field| {
                 field.as_number().is_some_and(|number| {
                     (number.as_i64().is_some() || number.as_u64().is_some())
@@ -7491,7 +6982,6 @@ fn validate_pm_skill(value: &Value) -> bool {
                 [
                     "id",
                     "projectId",
-                    "builtin",
                     "enabled",
                     "version",
                     "manifest",
@@ -7917,10 +7407,10 @@ fn validate_pm_skills_read_result(value: &Value) -> bool {
                 items.len() <= 16 && items.iter().all(|item| validate_pm_skill_draft(item))
             })
         }) && object
-            .get("environmentProposal")
-            .is_some_and(|field| (validate_pm_environment_proposal(field) || field.is_null()))
+            .get("playbookProposal")
+            .is_some_and(|field| (validate_pm_playbook_proposal(field) || field.is_null()))
             && object.keys().all(|key| {
-                ["projectId", "skills", "drafts", "environmentProposal"].contains(&key.as_str())
+                ["projectId", "skills", "drafts", "playbookProposal"].contains(&key.as_str())
             })
     })
 }
@@ -8090,16 +7580,10 @@ fn validate_pm_skill_run_result(value: &Value) -> bool {
             .is_some_and(|field| validate_pm_skill(field))
             && object
                 .get("run")
-                .is_some_and(|field| (validate_pm_skill_run(field) || field.is_null()))
-            && object.get("checksStarted").is_some_and(|field| {
-                field.as_number().is_some_and(|number| {
-                    (number.as_i64().is_some() || number.as_u64().is_some())
-                        && (number.as_u64().is_some_and(|number| number >= 0_u64))
-                })
-            })
+                .is_some_and(|field| validate_pm_skill_run(field))
             && object
                 .keys()
-                .all(|key| ["skill", "run", "checksStarted"].contains(&key.as_str()))
+                .all(|key| ["skill", "run"].contains(&key.as_str()))
     })
 }
 
@@ -8147,7 +7631,7 @@ fn validate_pm_skill_creator_launch_params(value: &Value) -> bool {
 fn validate_pm_skill_setup(value: &Value) -> bool {
     value
         .as_str()
-        .is_some_and(|text| ["deploymentControl", "bugOwnerFinder", "slackTracker"].contains(&text))
+        .is_some_and(|text| ["playbook", "bugOwnerFinder", "slackTracker"].contains(&text))
 }
 
 #[allow(
@@ -8191,152 +7675,6 @@ fn validate_pm_skill_feedback_read_result(value: &Value) -> bool {
     clippy::redundant_closure
 )]
 fn validate_pm_skill_draft_discard_result(value: &Value) -> bool {
-    value.as_object().is_some_and(|object| {
-        object
-            .get("discarded")
-            .is_some_and(|field| field == &serde_json::json!(true))
-            && object
-                .keys()
-                .all(|key| ["discarded"].contains(&key.as_str()))
-    })
-}
-
-#[allow(
-    dead_code,
-    unused_comparisons,
-    unused_parens,
-    unused_variables,
-    clippy::absurd_extreme_comparisons,
-    clippy::len_zero,
-    clippy::redundant_closure
-)]
-fn validate_pm_proposed_environment(value: &Value) -> bool {
-    value.as_object().is_some_and(|object| {
-        object.get("name").is_some_and(|field| {
-            field
-                .as_str()
-                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 120)
-        }) && object
-            .get("production")
-            .is_some_and(|field| field.is_boolean())
-            && object.get("evidence").is_some_and(|field| {
-                field
-                    .as_str()
-                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 300)
-            })
-            && object
-                .keys()
-                .all(|key| ["name", "production", "evidence"].contains(&key.as_str()))
-    })
-}
-
-#[allow(
-    dead_code,
-    unused_comparisons,
-    unused_parens,
-    unused_variables,
-    clippy::absurd_extreme_comparisons,
-    clippy::len_zero,
-    clippy::redundant_closure
-)]
-fn validate_pm_environment_proposal(value: &Value) -> bool {
-    value.as_object().is_some_and(|object| {
-        object.get("projectId").is_some_and(|field| {
-            field.as_str().is_some_and(|text| {
-                text.chars().count() >= 1
-                    && text.chars().count() <= 128
-                    && contract_pattern_matches("^[!-~]+$", text)
-            })
-        }) && object.get("summary").is_some_and(|field| {
-            field
-                .as_str()
-                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 600)
-        }) && object.get("environments").is_some_and(|field| {
-            field.as_array().is_some_and(|items| {
-                items.len() >= 1
-                    && items.len() <= 12
-                    && items
-                        .iter()
-                        .all(|item| validate_pm_proposed_environment(item))
-            })
-        }) && object.get("probes").is_some_and(|field| {
-            field.as_array().is_some_and(|items| {
-                items.len() <= 12 && items.iter().all(|item| validate_pm_probe(item))
-            })
-        }) && object.get("createdAtEpochMs").is_some_and(|field| {
-            field.as_number().is_some_and(|number| {
-                (number.as_i64().is_some() || number.as_u64().is_some())
-                    && (number.as_u64().is_some_and(|number| number >= 0_u64))
-            })
-        }) && object.keys().all(|key| {
-            [
-                "projectId",
-                "summary",
-                "environments",
-                "probes",
-                "createdAtEpochMs",
-            ]
-            .contains(&key.as_str())
-        })
-    })
-}
-
-#[allow(
-    dead_code,
-    unused_comparisons,
-    unused_parens,
-    unused_variables,
-    clippy::absurd_extreme_comparisons,
-    clippy::len_zero,
-    clippy::redundant_closure
-)]
-fn validate_pm_environment_proposal_apply_params(value: &Value) -> bool {
-    value.as_object().is_some_and(|object| {
-        object.get("projectId").is_some_and(|field| {
-            field.as_str().is_some_and(|text| {
-                text.chars().count() >= 1
-                    && text.chars().count() <= 128
-                    && contract_pattern_matches("^[!-~]+$", text)
-            })
-        }) && object.get("environments").is_some_and(|field| {
-            field.as_array().is_some_and(|items| {
-                items.len() >= 1
-                    && items.len() <= 12
-                    && json_array_unique(items)
-                    && items.iter().all(|item| {
-                        item.as_str().is_some_and(|text| {
-                            text.chars().count() >= 1 && text.chars().count() <= 120
-                        })
-                    })
-            })
-        }) && object.get("probeIds").is_some_and(|field| {
-            field.as_array().is_some_and(|items| {
-                items.len() <= 12
-                    && json_array_unique(items)
-                    && items.iter().all(|item| {
-                        item.as_str().is_some_and(|text| {
-                            text.chars().count() >= 1
-                                && text.chars().count() <= 128
-                                && contract_pattern_matches("^[!-~]+$", text)
-                        })
-                    })
-            })
-        }) && object
-            .keys()
-            .all(|key| ["projectId", "environments", "probeIds"].contains(&key.as_str()))
-    })
-}
-
-#[allow(
-    dead_code,
-    unused_comparisons,
-    unused_parens,
-    unused_variables,
-    clippy::absurd_extreme_comparisons,
-    clippy::len_zero,
-    clippy::redundant_closure
-)]
-fn validate_pm_environment_proposal_discard_result(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object
             .get("discarded")
@@ -8544,6 +7882,452 @@ fn validate_pm_tools_read_result(value: &Value) -> bool {
 }
 
 #[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_playbook(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("projectId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("revision").is_some_and(|field| {
+            field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 0_u64))
+            })
+        }) && object.get("steps").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() >= 1
+                    && items.len() <= 16
+                    && items.iter().all(|item| validate_pm_playbook_step(item))
+            })
+        }) && object.get("updatedAtEpochMs").is_some_and(|field| {
+            field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 0_u64))
+            })
+        }) && object.keys().all(|key| {
+            ["projectId", "revision", "steps", "updatedAtEpochMs"].contains(&key.as_str())
+        })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_playbook_step(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("id").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("title").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 60)
+        }) && object.get("checks").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() <= 4 && items.iter().all(|item| validate_pm_step_check(item))
+            })
+        }) && object
+            .get("agent")
+            .is_some_and(|field| (validate_pm_agent_check(field) || field.is_null()))
+            && object
+                .keys()
+                .all(|key| ["id", "title", "checks", "agent"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_status_category(value: &Value) -> bool {
+    value
+        .as_str()
+        .is_some_and(|text| ["started", "done"].contains(&text))
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_pull_request_step_state(value: &Value) -> bool {
+    value
+        .as_str()
+        .is_some_and(|text| ["open", "merged"].contains(&text))
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_step_check(value: &Value) -> bool {
+    (value.as_object().is_some_and(|object| {
+        object
+            .get("kind")
+            .is_some_and(|field| field == &serde_json::json!("status"))
+            && object.get("names").is_some_and(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() <= 12
+                        && items.iter().all(|item| {
+                            item.as_str().is_some_and(|text| {
+                                text.chars().count() >= 1 && text.chars().count() <= 120
+                            })
+                        })
+                })
+            })
+            && object
+                .get("category")
+                .is_some_and(|field| (validate_pm_status_category(field) || field.is_null()))
+            && object
+                .keys()
+                .all(|key| ["kind", "names", "category"].contains(&key.as_str()))
+    }) || value.as_object().is_some_and(|object| {
+        object
+            .get("kind")
+            .is_some_and(|field| field == &serde_json::json!("pullRequest"))
+            && object
+                .get("state")
+                .is_some_and(|field| validate_pm_pull_request_step_state(field))
+            && object.get("baseBranch").is_some_and(|field| {
+                (field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 255)
+                    || field.is_null())
+            })
+            && object
+                .keys()
+                .all(|key| ["kind", "state", "baseBranch"].contains(&key.as_str()))
+    }))
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_agent_check(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("instructions").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 8000)
+        }) && object.get("retryMinutes").is_some_and(|field| {
+            field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 5_u64))
+                    && (number.as_u64().is_some_and(|number| number <= 1440_u64))
+            })
+        }) && object
+            .keys()
+            .all(|key| ["instructions", "retryMinutes"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_step_verdict(value: &Value) -> bool {
+    value
+        .as_str()
+        .is_some_and(|text| ["passed", "waiting", "blocked"].contains(&text))
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_step_evaluator(value: &Value) -> bool {
+    value
+        .as_str()
+        .is_some_and(|text| ["facts", "agent", "projectManager"].contains(&text))
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_step_state(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("stepId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object
+            .get("verdict")
+            .is_some_and(|field| (validate_pm_step_verdict(field) || field.is_null()))
+            && object.get("evidence").is_some_and(|field| {
+                (field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 600)
+                    || field.is_null())
+            })
+            && object
+                .get("evaluator")
+                .is_some_and(|field| (validate_pm_step_evaluator(field) || field.is_null()))
+            && object.get("decidedAtEpochMs").is_some_and(|field| {
+                (field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                }) || field.is_null())
+            })
+            && object
+                .get("implied")
+                .is_some_and(|field| field.is_boolean())
+            && object.get("nextAttemptAtEpochMs").is_some_and(|field| {
+                (field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                }) || field.is_null())
+            })
+            && object.keys().all(|key| {
+                [
+                    "stepId",
+                    "verdict",
+                    "evidence",
+                    "evaluator",
+                    "decidedAtEpochMs",
+                    "implied",
+                    "nextAttemptAtEpochMs",
+                ]
+                .contains(&key.as_str())
+            })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_ticket_playbook(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("position").is_some_and(|field| {
+            (field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                    && (number.as_u64().is_some_and(|number| number <= 15_u64))
+            }) || field.is_null())
+        }) && object.get("steps").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() <= 16 && items.iter().all(|item| validate_pm_step_state(item))
+            })
+        }) && object
+            .keys()
+            .all(|key| ["position", "steps"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_playbook_proposal(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("projectId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("summary").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 600)
+        }) && object.get("steps").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() >= 1
+                    && items.len() <= 16
+                    && items.iter().all(|item| validate_pm_playbook_step(item))
+            })
+        }) && object.get("createdAtEpochMs").is_some_and(|field| {
+            field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 0_u64))
+            })
+        }) && object.keys().all(|key| {
+            ["projectId", "summary", "steps", "createdAtEpochMs"].contains(&key.as_str())
+        })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_playbook_save_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("projectId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("baseRevision").is_some_and(|field| {
+            field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 0_u64))
+            })
+        }) && object.get("steps").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() >= 1
+                    && items.len() <= 16
+                    && items.iter().all(|item| validate_pm_playbook_step(item))
+            })
+        }) && object
+            .keys()
+            .all(|key| ["projectId", "baseRevision", "steps"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_playbook_proposal_apply_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("projectId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("steps").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() >= 1
+                    && items.len() <= 16
+                    && items.iter().all(|item| validate_pm_playbook_step(item))
+            })
+        }) && object
+            .keys()
+            .all(|key| ["projectId", "steps"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_playbook_proposal_discard_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("discarded")
+            .is_some_and(|field| field == &serde_json::json!(true))
+            && object
+                .keys()
+                .all(|key| ["discarded"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_playbook_step_mark_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("ticketId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("stepId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("passed").is_some_and(|field| field.is_boolean())
+            && object
+                .keys()
+                .all(|key| ["ticketId", "stepId", "passed"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
     clippy::absurd_extreme_comparisons,
     clippy::len_zero,
     clippy::redundant_closure
@@ -8662,10 +8446,6 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<PmTicketNoteRemoveParams>(params.clone()).is_ok()
                 && validate_pm_ticket_note_ref(params)
         }
-        "pm_environments_set" => {
-            serde_json::from_value::<PmEnvironmentsSetParams>(params.clone()).is_ok()
-                && validate_pm_environments_set_params(params)
-        }
         "pm_sources_read" => {
             serde_json::from_value::<PmSourcesReadParams>(params.clone()).is_ok()
                 && validate_pm_project_ref(params)
@@ -8682,21 +8462,21 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<PmCredentialClearParams>(params.clone()).is_ok()
                 && validate_pm_credential_clear_params(params)
         }
-        "pm_probe_create" => {
-            serde_json::from_value::<PmProbeCreateParams>(params.clone()).is_ok()
-                && validate_pm_probe_create_params(params)
+        "pm_playbook_save" => {
+            serde_json::from_value::<PmPlaybookSaveParams>(params.clone()).is_ok()
+                && validate_pm_playbook_save_params(params)
         }
-        "pm_probe_approve" => {
-            serde_json::from_value::<PmProbeApproveParams>(params.clone()).is_ok()
-                && validate_pm_probe_ref(params)
+        "pm_playbook_proposal_apply" => {
+            serde_json::from_value::<PmPlaybookProposalApplyParams>(params.clone()).is_ok()
+                && validate_pm_playbook_proposal_apply_params(params)
         }
-        "pm_probe_reject" => {
-            serde_json::from_value::<PmProbeRejectParams>(params.clone()).is_ok()
-                && validate_pm_probe_ref(params)
+        "pm_playbook_proposal_discard" => {
+            serde_json::from_value::<PmPlaybookProposalDiscardParams>(params.clone()).is_ok()
+                && validate_pm_project_ref(params)
         }
-        "pm_probe_delete" => {
-            serde_json::from_value::<PmProbeDeleteParams>(params.clone()).is_ok()
-                && validate_pm_probe_ref(params)
+        "pm_playbook_step_mark" => {
+            serde_json::from_value::<PmPlaybookStepMarkParams>(params.clone()).is_ok()
+                && validate_pm_playbook_step_mark_params(params)
         }
         "pm_check_start" => {
             serde_json::from_value::<PmCheckStartParams>(params.clone()).is_ok()
@@ -8801,14 +8581,6 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
         "pm_skill_draft_discard" => {
             serde_json::from_value::<PmSkillDraftDiscardParams>(params.clone()).is_ok()
                 && validate_pm_skill_draft_ref(params)
-        }
-        "pm_environment_proposal_apply" => {
-            serde_json::from_value::<PmEnvironmentProposalApplyParams>(params.clone()).is_ok()
-                && validate_pm_environment_proposal_apply_params(params)
-        }
-        "pm_environment_proposal_discard" => {
-            serde_json::from_value::<PmEnvironmentProposalDiscardParams>(params.clone()).is_ok()
-                && validate_pm_project_ref(params)
         }
         _ => false,
     }
@@ -8933,10 +8705,6 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
             serde_json::from_value::<PmTicketNoteRemoveResult>(result.clone()).is_ok()
                 && validate_pm_deleted_result(result)
         }
-        "pm_environments_set" => {
-            serde_json::from_value::<PmEnvironmentsSetResult>(result.clone()).is_ok()
-                && validate_pm_environments_set_result(result)
-        }
         "pm_sources_read" => {
             serde_json::from_value::<PmSourcesReadResult>(result.clone()).is_ok()
                 && validate_pm_sources(result)
@@ -8953,21 +8721,21 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
             serde_json::from_value::<PmCredentialClearResult>(result.clone()).is_ok()
                 && validate_pm_credential_clear_result(result)
         }
-        "pm_probe_create" => {
-            serde_json::from_value::<PmProbeCreateResult>(result.clone()).is_ok()
-                && validate_pm_probe(result)
+        "pm_playbook_save" => {
+            serde_json::from_value::<PmPlaybookSaveResult>(result.clone()).is_ok()
+                && validate_pm_playbook(result)
         }
-        "pm_probe_approve" => {
-            serde_json::from_value::<PmProbeApproveResult>(result.clone()).is_ok()
-                && validate_pm_probe(result)
+        "pm_playbook_proposal_apply" => {
+            serde_json::from_value::<PmPlaybookProposalApplyResult>(result.clone()).is_ok()
+                && validate_pm_playbook(result)
         }
-        "pm_probe_reject" => {
-            serde_json::from_value::<PmProbeRejectResult>(result.clone()).is_ok()
-                && validate_pm_rejected_result(result)
+        "pm_playbook_proposal_discard" => {
+            serde_json::from_value::<PmPlaybookProposalDiscardResult>(result.clone()).is_ok()
+                && validate_pm_playbook_proposal_discard_result(result)
         }
-        "pm_probe_delete" => {
-            serde_json::from_value::<PmProbeDeleteResult>(result.clone()).is_ok()
-                && validate_pm_deleted_result(result)
+        "pm_playbook_step_mark" => {
+            serde_json::from_value::<PmPlaybookStepMarkResult>(result.clone()).is_ok()
+                && validate_pm_ticket_delivery(result)
         }
         "pm_check_start" => {
             serde_json::from_value::<PmCheckStartResult>(result.clone()).is_ok()
@@ -9072,14 +8840,6 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         "pm_skill_draft_discard" => {
             serde_json::from_value::<PmSkillDraftDiscardResult>(result.clone()).is_ok()
                 && validate_pm_skill_draft_discard_result(result)
-        }
-        "pm_environment_proposal_apply" => {
-            serde_json::from_value::<PmEnvironmentProposalApplyResult>(result.clone()).is_ok()
-                && validate_pm_environments_set_result(result)
-        }
-        "pm_environment_proposal_discard" => {
-            serde_json::from_value::<PmEnvironmentProposalDiscardResult>(result.clone()).is_ok()
-                && validate_pm_environment_proposal_discard_result(result)
         }
         _ => false,
     }

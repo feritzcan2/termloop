@@ -5,9 +5,12 @@ import type {
   PmBoardTicket,
   PmDataTier,
   PmDeliveryRiskKind,
-  PmDeliveryStageKind,
+  PmPlaybook,
+  PmPlaybookStep,
   PmSprint,
   PmTicket,
+  PmStepState,
+  PmTicketDelivery,
   PmTicketPriority,
   PmTicketStatus,
 } from "@termloop/pm-contract/pm";
@@ -27,26 +30,13 @@ export const STATUS_LABEL: Record<PmTicketStatus, string> = {
 
 export const STATUS_ORDER: PmTicketStatus[] = ["todo", "inProgress", "inReview", "done"];
 
-export const STAGE_LABEL: Record<PmDeliveryStageKind, string> = {
-  toDo: "To do",
-  inProgress: "Building",
-  inReview: "In review",
-  merged: "Merged",
-  deployed: "Deployed",
-  live: "Live",
-  done: "Done",
-};
-
 export const RISK_LABEL: Record<PmDeliveryRiskKind, string> = {
   blocked: "Blocked",
   readFailed: "Source read failed",
   checksFailing: "Checks failing",
   reviewWaiting: "Waiting for review",
   stuckInStatus: "Stuck in status",
-  mergedNotDeployed: "Merged, not deployed",
-  notInProduction: "Not in production",
-  jiraBehind: "Jira is behind",
-  jiraAhead: "Jira is ahead",
+  stepBlocked: "Step blocked",
   notStartedNearSprintEnd: "Not started near sprint end",
   carriedOver: "Carried over",
   unassigned: "Unassigned",
@@ -99,18 +89,41 @@ export function sprintTickets(tickets: PmBoardTicket[], sprintId: string | undef
     .sort((left, right) => left.ticket.rank - right.ticket.rank);
 }
 
-/** A lane split by status in {@link STATUS_ORDER}, empty statuses left out, lane order kept within each. */
-export function statusSections(lane: PmBoardTicket[]): { status: PmTicketStatus; tickets: PmBoardTicket[] }[] {
-  return STATUS_ORDER
-    .map((status) => ({ status, tickets: lane.filter((entry) => entry.ticket.status === status) }))
-    .filter((section) => section.tickets.length > 0);
+/** The step a ticket stands at: the furthest one it passed, `undefined` before the first. */
+export function ticketStep(playbook: PmPlaybook, delivery: PmTicketDelivery): PmPlaybookStep | undefined {
+  const position = delivery.playbook.position;
+  return position === null ? undefined : playbook.steps[position];
 }
 
-/** Tickets whose code shipped but whose deployment is not known. */
-export function unknownDeployment(tickets: PmBoardTicket[]): PmBoardTicket[] {
-  return tickets.filter((entry) =>
-    entry.delivery.stage.kind === "merged"
-    || entry.delivery.risks.some((risk) => risk.kind === "mergedNotDeployed" || risk.kind === "notInProduction"));
+/** The step a ticket works toward with its state, `undefined` once every step passed. */
+export function nextStep(playbook: PmPlaybook, delivery: PmTicketDelivery): { step: PmPlaybookStep; state: PmStepState | undefined } | undefined {
+  const index = delivery.playbook.position === null ? 0 : delivery.playbook.position + 1;
+  const step = playbook.steps[index];
+  return step && { step, state: delivery.playbook.steps[index] };
+}
+
+export const NOT_STARTED = "Not started";
+
+/** A lane split by Playbook position, "Not started" first; empty steps left out, lane order kept within each. */
+export function stepSections(lane: PmBoardTicket[], playbook: PmPlaybook): { key: string; title: string; tickets: PmBoardTicket[] }[] {
+  return [
+    { key: "none", title: NOT_STARTED, tickets: lane.filter((entry) => entry.delivery.playbook.position === null) },
+    ...playbook.steps.map((step, index) => ({
+      key: step.id,
+      title: step.title,
+      tickets: lane.filter((entry) => entry.delivery.playbook.position === index),
+    })),
+  ].filter((section) => section.tickets.length > 0);
+}
+
+/** Tickets an agent looked at and found waiting or blocked at their next step. */
+export function waitingAtStep(tickets: PmBoardTicket[], playbook: PmPlaybook): { entry: PmBoardTicket; step: PmPlaybookStep; state: PmStepState }[] {
+  return tickets.flatMap((entry) => {
+    const next = nextStep(playbook, entry.delivery);
+    return next?.state?.verdict === "waiting" || next?.state?.verdict === "blocked"
+      ? [{ entry, step: next.step, state: next.state }]
+      : [];
+  });
 }
 
 export function relativeTime(epochMs: number, now: number): string {
@@ -246,24 +259,23 @@ export function sprintDay(sprint: PmSprint, now: number): { day: number; of: num
   return { day, of: days.length };
 }
 
-export type RibbonSegment = { key: string; label: string; count: number };
+export type RibbonSegment = { key: string; className: string; label: string; count: number };
 
 /**
- * Sprint tickets by status for the overview ribbon. From the code tier on,
- * unfinished tickets whose code merged but is not live get their own segment.
+ * Sprint tickets by Playbook position for the overview ribbon: not started,
+ * then one segment per step, the last one "done".
  */
-export function statusRibbon(tickets: PmBoardTicket[], tier: PmDataTier): RibbonSegment[] {
-  const mergedOnly = (entry: PmBoardTicket) =>
-    tierAtLeast(tier, "code") && entry.ticket.status !== "done" && (entry.delivery.stage.kind === "merged" || entry.delivery.stage.kind === "deployed");
-  const count = (status: PmTicketStatus) => tickets.filter((entry) => entry.ticket.status === status && !mergedOnly(entry)).length;
-  const segments: RibbonSegment[] = [
-    { key: "todo", label: "to do", count: count("todo") },
-    { key: "inProgress", label: "in progress", count: count("inProgress") },
-    { key: "inReview", label: "in review", count: count("inReview") },
+export function stepRibbon(tickets: PmBoardTicket[], playbook: PmPlaybook): RibbonSegment[] {
+  const at = (position: number | null) => tickets.filter((entry) => entry.delivery.playbook.position === position).length;
+  return [
+    { key: "none", className: "todo", label: NOT_STARTED.toLowerCase(), count: at(null) },
+    ...playbook.steps.map((step, index) => ({
+      key: step.id,
+      className: index === playbook.steps.length - 1 ? "done" : `step-${Math.min(index, 3)}`,
+      label: step.title.toLowerCase(),
+      count: at(index),
+    })),
   ];
-  if (tierAtLeast(tier, "code")) segments.push({ key: "merged", label: "merged, not live", count: tickets.filter(mergedOnly).length });
-  segments.push({ key: "done", label: "done", count: count("done") });
-  return segments;
 }
 
 /** The newest Jira pull time recorded on any sprint or ticket. */

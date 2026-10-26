@@ -64,11 +64,6 @@ const CONNECTOR_PREFIX: &str = "claude.ai ";
 pub(crate) fn pm_sources(store: &PmStore, project_id: &str) -> Result<Value, PmError> {
     let sources = store.project_sources(project_id)?;
     let board = store.board(project_id)?;
-    let approved_probes = board
-        .probes
-        .iter()
-        .filter(|probe| probe.status == termloop_pm::ProbeStatus::Approved)
-        .count();
     Ok(json!({
         "tier": board.tracking.tier,
         "jira": sources.jira.as_ref().map(|jira| json!({
@@ -78,8 +73,11 @@ pub(crate) fn pm_sources(store: &PmStore, project_id: &str) -> Result<Value, PmE
         })),
         "github": sources.github.as_ref().map(|github| json!({ "repository": github.label() })),
         "azureDevOps": sources.azure_devops.as_ref().map(|azure| json!({ "repository": azure.label() })),
-        "environments": board.environments.iter().map(|environment| &environment.name).collect::<Vec<_>>(),
-        "approvedProbes": approved_probes,
+        "playbook": {
+            "saved": board.playbook.revision > 0,
+            "steps": board.playbook.steps.len(),
+            "agentSteps": board.playbook.steps.iter().filter(|step| step.agent.is_some()).count(),
+        },
         "checkoutFolder": store.project(project_id)?.and_then(|project| project.folder).is_some(),
     }))
 }

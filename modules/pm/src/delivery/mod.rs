@@ -1,20 +1,17 @@
-//! Delivery: what the PM observes about each ticket on its way to
-//! production, and what is derived from it on every read (stage, risks,
-//! check reasons, data tier). Only observations and probes are stored.
+//! Delivery: what the PM observes about each ticket on its way to done, and
+//! what is derived from it on every read (where it stands on the Playbook,
+//! risks, data tier). Only observations and verdicts are stored.
 
-pub(crate) mod check_reasons;
 pub(crate) mod checks;
 pub(crate) mod facts;
-pub(crate) mod probe;
 pub(crate) mod risks;
-pub(crate) mod stage;
 pub(crate) mod tracking;
 
-use facts::{EnvironmentDeployState, FactSource, TicketDeliveryFacts};
+use facts::{FactSource, TicketDeliveryFacts};
 use risks::{DeliveryRisk, RiskInputs, delivery_risks};
-use stage::{DeliveryStage, delivery_stage};
 
-use crate::{DeliveryProbe, ProjectEnvironment, Sprint, SprintState, Ticket};
+use crate::playbook::{Playbook, StepVerdictRecord, TicketPlaybook, ticket_playbook};
+use crate::{Sprint, Ticket};
 
 /// The few facts a board card shows.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -26,7 +23,6 @@ pub struct FactsSummary {
     pub jira_status: Option<String>,
     pub jira_assignee: Option<String>,
     pub pull_requests: usize,
-    pub deployed_environments: Vec<String>,
     pub failed_reads: Vec<FactSource>,
 }
 
@@ -38,12 +34,6 @@ impl FactsSummary {
             jira_status: facts.jira.as_ref().map(|jira| jira.status.clone()),
             jira_assignee: facts.jira.as_ref().and_then(|jira| jira.assignee.clone()),
             pull_requests: facts.pull_request_items().len(),
-            deployed_environments: facts
-                .environments
-                .iter()
-                .filter(|environment| environment.state == EnvironmentDeployState::Deployed)
-                .map(|environment| environment.name.clone())
-                .collect(),
             failed_reads: facts
                 .read_failures
                 .iter()
@@ -58,10 +48,9 @@ impl FactsSummary {
 #[serde(rename_all = "camelCase")]
 pub struct TicketDelivery {
     pub ticket_id: String,
-    pub stage: DeliveryStage,
+    /// Where the ticket stands on its project's Playbook.
+    pub playbook: TicketPlaybook,
     pub risks: Vec<DeliveryRisk>,
-    /// Only tickets of the active sprint ask for a delivery check.
-    pub check_reasons: Vec<String>,
     pub facts: Option<FactsSummary>,
     /// A delivery check is running for the ticket.
     pub checking: bool,
@@ -71,34 +60,28 @@ pub struct TicketDelivery {
 pub(crate) fn ticket_delivery(
     ticket: &Ticket,
     sprints: &[Sprint],
+    playbook: &Playbook,
     facts: Option<&TicketDeliveryFacts>,
-    probes: &[DeliveryProbe],
-    environments: &[ProjectEnvironment],
+    verdicts: &[StepVerdictRecord],
     now_epoch_ms: u64,
 ) -> TicketDelivery {
     let sprint = ticket
         .sprint_id
         .as_deref()
         .and_then(|sprint_id| sprints.iter().find(|sprint| sprint.id == sprint_id));
-    let stage = delivery_stage(ticket.status, facts, environments);
+    let progress = ticket_playbook(playbook, ticket.status, facts, verdicts);
     let risks = delivery_risks(RiskInputs {
         ticket,
         sprint,
         facts,
-        stage: &stage,
-        environments,
+        playbook,
+        progress: &progress,
         now_epoch_ms,
     });
-    let check_reasons = if sprint.is_some_and(|sprint| sprint.state == SprintState::Active) {
-        check_reasons::check_reasons(&stage, facts, probes, environments)
-    } else {
-        Vec::new()
-    };
     TicketDelivery {
         ticket_id: ticket.id.clone(),
-        stage,
+        playbook: progress,
         risks,
-        check_reasons,
         facts: facts.map(|facts| FactsSummary::of(facts, now_epoch_ms)),
         checking: false,
     }

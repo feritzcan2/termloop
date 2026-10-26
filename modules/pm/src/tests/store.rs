@@ -1,5 +1,5 @@
 use super::{sprint, store, ticket};
-use crate::{PmError, PmStore, ProjectEnvironment, SCHEMA_VERSION, TicketAuthor};
+use crate::{PmError, PmStore, SCHEMA_VERSION, TicketAuthor};
 
 fn migration_rows(store: &PmStore) -> u32 {
     store
@@ -104,35 +104,4 @@ fn stored_enums_are_checked_by_the_schema() {
         [],
     );
     assert!(insert.is_err());
-}
-
-fn env(name: &str, production: bool) -> ProjectEnvironment {
-    ProjectEnvironment {
-        name: name.into(),
-        production,
-    }
-}
-
-#[test]
-fn environments_keep_their_order_and_an_empty_list_clears_them() {
-    let mut store = store();
-    let list = [env("dev", false), env("staging", false), env("live", true)];
-    assert_eq!(store.set_project_environments("p1", &list).unwrap(), list);
-    assert_eq!(store.board("p1").unwrap().environments, list);
-    assert!(store.project_environments("p2").unwrap().is_empty());
-    assert!(matches!(
-        store.set_project_environments("p1", &[env("dev", false), env("Dev", true)]),
-        Err(PmError::Invalid("environments"))
-    ));
-    assert_eq!(store.project_environments("p1").unwrap(), list);
-    assert!(
-        store
-            .set_project_environments("p1", &[])
-            .unwrap()
-            .is_empty()
-    );
-    assert!(matches!(
-        store.set_project_environments("p 1", &list),
-        Err(PmError::Invalid("projectId"))
-    ));
 }

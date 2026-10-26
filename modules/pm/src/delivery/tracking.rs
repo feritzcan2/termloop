@@ -1,10 +1,9 @@
 //! How much of a project's delivery the PM can see, derived from its
-//! configuration on every read: tickets only, tickets and code, or all the
-//! way to deployments.
+//! configuration on every read: tickets only, tickets and code, or past the
+//! merge through agent-checked Playbook steps.
 
-use super::check_reasons::deploy_tracking_enabled;
-use super::probe::DeliveryProbe;
-use crate::{ProjectEnvironment, ProjectSources};
+use crate::ProjectSources;
+use crate::playbook::Playbook;
 
 /// The furthest kind of delivery data a project has.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
@@ -14,7 +13,7 @@ pub enum DataTier {
     Tickets,
     /// Plus pull requests from a GitHub repository.
     Code,
-    /// Plus which environments run each change.
+    /// Plus Playbook steps an agent checks, such as a deployment.
     Deploy,
 }
 
@@ -28,13 +27,9 @@ pub struct Tracking {
 }
 
 impl Tracking {
-    pub fn derive(
-        sources: &ProjectSources,
-        environments: &[ProjectEnvironment],
-        probes: &[DeliveryProbe],
-    ) -> Self {
+    pub fn derive(sources: &ProjectSources, playbook: &Playbook) -> Self {
         let code = sources.has_code_host();
-        let deploy = deploy_tracking_enabled(environments, probes);
+        let deploy = playbook.steps.iter().any(|step| step.agent.is_some());
         Self {
             jira: sources.jira.is_some(),
             code,
@@ -58,7 +53,8 @@ mod tests {
     #[test]
     fn the_tier_is_the_furthest_configured_kind_of_data() {
         let none = ProjectSources::default();
-        assert_eq!(Tracking::derive(&none, &[], &[]).tier, DataTier::Tickets);
+        let default = Playbook::default_for("p1");
+        assert_eq!(Tracking::derive(&none, &default).tier, DataTier::Tickets);
         let github = ProjectSources {
             github: Some(GitHubSource {
                 owner: "acme".into(),
@@ -66,12 +62,13 @@ mod tests {
             }),
             ..ProjectSources::default()
         };
-        let tracking = Tracking::derive(&github, &[], &[]);
+        let tracking = Tracking::derive(&github, &default);
         assert_eq!((tracking.tier, tracking.jira), (DataTier::Code, false));
-        let live = [ProjectEnvironment {
-            name: "live".into(),
-            production: true,
-        }];
-        assert_eq!(Tracking::derive(&none, &live, &[]).tier, DataTier::Deploy);
+        let mut checked = default;
+        checked.steps[3].agent = Some(crate::playbook::AgentCheck {
+            instructions: "Read the release pipeline.".into(),
+            retry_minutes: 30,
+        });
+        assert_eq!(Tracking::derive(&none, &checked).tier, DataTier::Deploy);
     }
 }

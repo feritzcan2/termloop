@@ -513,6 +513,99 @@ fn reopen_resumes_worktree_removed_agent_inside_recreated_worktree() {
 }
 
 #[test]
+fn reopen_starts_a_fresh_branch_from_base_and_resumes_the_agent_inside_it() {
+    let mut fixture = Fixture::new();
+    let (task_id, session_id) = close_with_worktree_removed(&mut fixture);
+    let plan = fixture.runtime.plan_task_reopen_worktree(&task_id).unwrap();
+    let crate::task_worktree::TaskWorktreeRecreationBase::FreshFromBase {
+        released,
+        configured_base_ref,
+    } = plan.base
+    else {
+        panic!("reopen must start from the latest base");
+    };
+    assert_eq!(released.name, "feature/cleanup");
+    assert_eq!(configured_base_ref, None);
+    fixture
+        .runtime
+        .release_task_branch_for_fresh_checkout(&task_id, &released)
+        .unwrap();
+    let destination = fixture
+        .project_directory
+        .with_file_name(format!("feature-cleanup-r2_worktree-{}", Uuid::new_v4()));
+    fixture
+        .runtime
+        .provision_task_worktree(json!({
+            "operationId": plan.operation_id,
+            "taskId": task_id,
+            "repositoryPath": fixture.project_directory,
+            "destinationPath": destination,
+            "branchName": "feature/cleanup-r2",
+            "branchMode": "create",
+            "baseRef": "refs/remotes/origin/main",
+        }))
+        .unwrap();
+    let task = fixture
+        .runtime
+        .store
+        .tasks()
+        .iter()
+        .find(|task| task.id == task_id)
+        .unwrap()
+        .clone();
+    assert_eq!(task.branch.unwrap().name, "feature/cleanup-r2");
+    let worktree_path = task.worktree.unwrap().path;
+
+    let (reopened, resume_session_ids) = fixture
+        .runtime
+        .reopen_task_with_resume_plan(json!({ "taskId": task_id }))
+        .unwrap();
+    assert_eq!(reopened["status"], "open");
+    assert_eq!(resume_session_ids, vec![session_id.to_owned()]);
+    let session = &fixture.runtime.store.sessions()[0];
+    assert_eq!(session.process.cwd, worktree_path);
+    assert_eq!(
+        session.resume_launch_guard.as_ref().unwrap().path,
+        worktree_path
+    );
+}
+
+#[test]
+fn failed_fresh_checkout_rebinds_the_released_branch() {
+    let mut fixture = Fixture::new();
+    let (task_id, _) = close_with_worktree_removed(&mut fixture);
+    let plan = fixture.runtime.plan_task_reopen_worktree(&task_id).unwrap();
+    let crate::task_worktree::TaskWorktreeRecreationBase::FreshFromBase { released, .. } =
+        plan.base
+    else {
+        panic!("reopen must start from the latest base");
+    };
+    fixture
+        .runtime
+        .release_task_branch_for_fresh_checkout(&task_id, &released)
+        .unwrap();
+    fixture
+        .runtime
+        .rebind_task_branch_after_failed_fresh_checkout(&task_id, released.clone())
+        .unwrap();
+    let task = fixture
+        .runtime
+        .store
+        .tasks()
+        .iter()
+        .find(|task| task.id == task_id)
+        .unwrap();
+    assert_eq!(task.branch.as_ref(), Some(&released));
+    // Reopen still finds its parked Agent and plans a checkout again.
+    assert!(
+        fixture
+            .runtime
+            .plan_task_reopen_worktree(&task_id)
+            .is_some()
+    );
+}
+
+#[test]
 fn reopen_plans_no_worktree_for_open_or_agentless_tasks() {
     let mut fixture = Fixture::new();
     let task = fixture.create_task("No agents", Value::Null);

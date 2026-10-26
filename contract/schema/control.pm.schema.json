@@ -34,15 +34,14 @@
       "pm_ticket_notes_read",
       "pm_ticket_note_add",
       "pm_ticket_note_remove",
-      "pm_environments_set",
       "pm_sources_read",
       "pm_sources_set",
       "pm_credential_store",
       "pm_credential_clear",
-      "pm_probe_create",
-      "pm_probe_approve",
-      "pm_probe_reject",
-      "pm_probe_delete",
+      "pm_playbook_save",
+      "pm_playbook_proposal_apply",
+      "pm_playbook_proposal_discard",
+      "pm_playbook_step_mark",
       "pm_check_start",
       "pm_checks_read",
       "pm_jira_pull",
@@ -68,9 +67,7 @@
       "pm_skill_creator_launch",
       "pm_skill_feedback_read",
       "pm_skill_draft_dry_run",
-      "pm_skill_draft_discard",
-      "pm_environment_proposal_apply",
-      "pm_environment_proposal_discard"
+      "pm_skill_draft_discard"
     ]
   },
   "x-events": {
@@ -325,14 +322,6 @@
         "$ref": "#/$defs/pmDeletedResult"
       }
     },
-    "pm_environments_set": {
-      "params": {
-        "$ref": "#/$defs/pmEnvironmentsSetParams"
-      },
-      "result": {
-        "$ref": "#/$defs/pmEnvironmentsSetResult"
-      }
-    },
     "pm_sources_read": {
       "params": {
         "$ref": "#/$defs/pmProjectRef"
@@ -365,36 +354,36 @@
         "$ref": "#/$defs/pmCredentialClearResult"
       }
     },
-    "pm_probe_create": {
+    "pm_playbook_save": {
       "params": {
-        "$ref": "#/$defs/pmProbeCreateParams"
+        "$ref": "#/$defs/pmPlaybookSaveParams"
       },
       "result": {
-        "$ref": "#/$defs/pmProbe"
+        "$ref": "#/$defs/pmPlaybook"
       }
     },
-    "pm_probe_approve": {
+    "pm_playbook_proposal_apply": {
       "params": {
-        "$ref": "#/$defs/pmProbeRef"
+        "$ref": "#/$defs/pmPlaybookProposalApplyParams"
       },
       "result": {
-        "$ref": "#/$defs/pmProbe"
+        "$ref": "#/$defs/pmPlaybook"
       }
     },
-    "pm_probe_reject": {
+    "pm_playbook_proposal_discard": {
       "params": {
-        "$ref": "#/$defs/pmProbeRef"
+        "$ref": "#/$defs/pmProjectRef"
       },
       "result": {
-        "$ref": "#/$defs/pmRejectedResult"
+        "$ref": "#/$defs/pmPlaybookProposalDiscardResult"
       }
     },
-    "pm_probe_delete": {
+    "pm_playbook_step_mark": {
       "params": {
-        "$ref": "#/$defs/pmProbeRef"
+        "$ref": "#/$defs/pmPlaybookStepMarkParams"
       },
       "result": {
-        "$ref": "#/$defs/pmDeletedResult"
+        "$ref": "#/$defs/pmTicketDelivery"
       }
     },
     "pm_check_start": {
@@ -604,22 +593,6 @@
       "result": {
         "$ref": "#/$defs/pmSkillDraftDiscardResult"
       }
-    },
-    "pm_environment_proposal_apply": {
-      "params": {
-        "$ref": "#/$defs/pmEnvironmentProposalApplyParams"
-      },
-      "result": {
-        "$ref": "#/$defs/pmEnvironmentsSetResult"
-      }
-    },
-    "pm_environment_proposal_discard": {
-      "params": {
-        "$ref": "#/$defs/pmProjectRef"
-      },
-      "result": {
-        "$ref": "#/$defs/pmEnvironmentProposalDiscardResult"
-      }
     }
   },
   "$defs": {
@@ -773,15 +746,14 @@
         "pm_ticket_notes_read",
         "pm_ticket_note_add",
         "pm_ticket_note_remove",
-        "pm_environments_set",
         "pm_sources_read",
         "pm_sources_set",
         "pm_credential_store",
         "pm_credential_clear",
-        "pm_probe_create",
-        "pm_probe_approve",
-        "pm_probe_reject",
-        "pm_probe_delete",
+        "pm_playbook_save",
+        "pm_playbook_proposal_apply",
+        "pm_playbook_proposal_discard",
+        "pm_playbook_step_mark",
         "pm_check_start",
         "pm_checks_read",
         "pm_jira_pull",
@@ -807,9 +779,7 @@
         "pm_skill_creator_launch",
         "pm_skill_feedback_read",
         "pm_skill_draft_dry_run",
-        "pm_skill_draft_discard",
-        "pm_environment_proposal_apply",
-        "pm_environment_proposal_discard"
+        "pm_skill_draft_discard"
       ]
     },
     "eventName": {
@@ -1356,79 +1326,13 @@
         }
       }
     },
-    "pmEnvironment": {
-      "x-codegen": true,
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "name",
-        "production"
-      ],
-      "properties": {
-        "name": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 120
-        },
-        "production": {
-          "type": "boolean"
-        }
-      }
-    },
     "pmFactSource": {
       "x-codegen": true,
       "type": "string",
       "enum": [
         "jira",
-        "gitHost",
-        "probe",
-        "check",
-        "projectManager"
+        "gitHost"
       ]
-    },
-    "pmDeliveryStageKind": {
-      "x-codegen": true,
-      "type": "string",
-      "enum": [
-        "toDo",
-        "inProgress",
-        "inReview",
-        "merged",
-        "deployed",
-        "live",
-        "done"
-      ]
-    },
-    "pmDeliveryStage": {
-      "x-codegen": true,
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "kind",
-        "environment",
-        "sinceEpochMs"
-      ],
-      "properties": {
-        "kind": {
-          "$ref": "#/$defs/pmDeliveryStageKind"
-        },
-        "environment": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "minLength": 1,
-          "maxLength": 120
-        },
-        "sinceEpochMs": {
-          "type": [
-            "integer",
-            "null"
-          ],
-          "minimum": 0,
-          "x-rust-type": "u64"
-        }
-      }
     },
     "pmDeliveryRiskKind": {
       "x-codegen": true,
@@ -1439,10 +1343,7 @@
         "checksFailing",
         "reviewWaiting",
         "stuckInStatus",
-        "mergedNotDeployed",
-        "notInProduction",
-        "jiraBehind",
-        "jiraAhead",
+        "stepBlocked",
         "notStartedNearSprintEnd",
         "carriedOver",
         "unassigned",
@@ -1486,7 +1387,6 @@
         "jiraStatus",
         "jiraAssignee",
         "pullRequests",
-        "deployedEnvironments",
         "failedReads"
       ],
       "properties": {
@@ -1519,21 +1419,12 @@
           "minimum": 0,
           "x-rust-type": "u64"
         },
-        "deployedEnvironments": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 120
-          },
-          "maxItems": 12
-        },
         "failedReads": {
           "type": "array",
           "items": {
             "$ref": "#/$defs/pmFactSource"
           },
-          "maxItems": 5
+          "maxItems": 2
         }
       }
     },
@@ -1543,9 +1434,8 @@
       "additionalProperties": false,
       "required": [
         "ticketId",
-        "stage",
+        "playbook",
         "risks",
-        "checkReasons",
         "facts",
         "checking"
       ],
@@ -1556,8 +1446,8 @@
           "maxLength": 128,
           "pattern": "^[!-~]+$"
         },
-        "stage": {
-          "$ref": "#/$defs/pmDeliveryStage"
+        "playbook": {
+          "$ref": "#/$defs/pmTicketPlaybook"
         },
         "risks": {
           "type": "array",
@@ -1565,14 +1455,6 @@
             "$ref": "#/$defs/pmDeliveryRisk"
           },
           "maxItems": 16
-        },
-        "checkReasons": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "maxLength": 1000
-          },
-          "maxItems": 12
         },
         "facts": {
           "anyOf": [
@@ -1646,163 +1528,11 @@
         }
       }
     },
-    "pmProbeMatcher": {
-      "x-codegen": true,
-      "type": "string",
-      "enum": [
-        "commitAncestry",
-        "agent"
-      ]
-    },
-    "pmProbeRun": {
-      "x-codegen": true,
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "atEpochMs",
-        "outputHash",
-        "changedAtEpochMs",
-        "deployedCommit",
-        "failure"
-      ],
-      "properties": {
-        "atEpochMs": {
-          "type": "integer",
-          "minimum": 0,
-          "x-rust-type": "u64"
-        },
-        "outputHash": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "pattern": "^[0-9a-f]{64}$"
-        },
-        "changedAtEpochMs": {
-          "type": [
-            "integer",
-            "null"
-          ],
-          "minimum": 0,
-          "x-rust-type": "u64"
-        },
-        "deployedCommit": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "pattern": "^[0-9a-f]{7,64}$"
-        },
-        "failure": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "minLength": 1,
-          "maxLength": 64
-        }
-      }
-    },
-    "pmProbeStatus": {
-      "x-codegen": true,
-      "type": "string",
-      "enum": [
-        "proposed",
-        "approved"
-      ]
-    },
-    "pmProbeAuthor": {
-      "x-codegen": true,
-      "type": "string",
-      "enum": [
-        "projectManager",
-        "agent"
-      ]
-    },
-    "pmProbe": {
-      "x-codegen": true,
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "id",
-        "projectId",
-        "environment",
-        "argv",
-        "matcher",
-        "status",
-        "author",
-        "reason",
-        "createdAtEpochMs",
-        "lastRun"
-      ],
-      "properties": {
-        "id": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "pattern": "^[!-~]+$"
-        },
-        "projectId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "pattern": "^[!-~]+$"
-        },
-        "environment": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 120
-        },
-        "argv": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "x-utf8-max-bytes": 1024
-          },
-          "minItems": 1,
-          "maxItems": 32
-        },
-        "matcher": {
-          "$ref": "#/$defs/pmProbeMatcher"
-        },
-        "status": {
-          "$ref": "#/$defs/pmProbeStatus"
-        },
-        "author": {
-          "$ref": "#/$defs/pmProbeAuthor"
-        },
-        "reason": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "minLength": 1,
-          "maxLength": 400
-        },
-        "createdAtEpochMs": {
-          "type": "integer",
-          "minimum": 0,
-          "x-rust-type": "u64"
-        },
-        "lastRun": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/pmProbeRun"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      }
-    },
     "pmCheckReason": {
       "x-codegen": true,
       "type": "string",
       "enum": [
-        "checkReasons",
-        "probeChanged",
+        "due",
         "requested"
       ]
     },
@@ -1823,9 +1553,8 @@
         "id",
         "projectId",
         "ticketId",
+        "stepId",
         "reason",
-        "environments",
-        "probeId",
         "sessionId",
         "startedAtEpochMs",
         "finishedAtEpochMs",
@@ -1850,26 +1579,14 @@
           "maxLength": 128,
           "pattern": "^[!-~]+$"
         },
-        "reason": {
-          "$ref": "#/$defs/pmCheckReason"
-        },
-        "environments": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 120
-          },
-          "maxItems": 12
-        },
-        "probeId": {
-          "type": [
-            "string",
-            "null"
-          ],
+        "stepId": {
+          "type": "string",
           "minLength": 1,
           "maxLength": 128,
           "pattern": "^[!-~]+$"
+        },
+        "reason": {
+          "$ref": "#/$defs/pmCheckReason"
         },
         "sessionId": {
           "type": [
@@ -1911,8 +1628,7 @@
         "projectId",
         "sprints",
         "tickets",
-        "environments",
-        "probes",
+        "playbook",
         "runningChecks",
         "tracking"
       ],
@@ -1937,19 +1653,8 @@
           },
           "maxItems": 10000
         },
-        "environments": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/pmEnvironment"
-          },
-          "maxItems": 12
-        },
-        "probes": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/pmProbe"
-          },
-          "maxItems": 16
+        "playbook": {
+          "$ref": "#/$defs/pmPlaybook"
         },
         "runningChecks": {
           "type": "array",
@@ -2747,22 +2452,6 @@
       ],
       "properties": {
         "sprintId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "pattern": "^[!-~]+$"
-        }
-      }
-    },
-    "pmProbeRef": {
-      "x-codegen": true,
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "probeId"
-      ],
-      "properties": {
-        "probeId": {
           "type": "string",
           "minLength": 1,
           "maxLength": 128,
@@ -3686,54 +3375,6 @@
         }
       }
     },
-    "pmEnvironmentsSetParams": {
-      "x-codegen": true,
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "projectId",
-        "environments"
-      ],
-      "properties": {
-        "projectId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "pattern": "^[!-~]+$"
-        },
-        "environments": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/pmEnvironment"
-          },
-          "maxItems": 12
-        }
-      }
-    },
-    "pmEnvironmentsSetResult": {
-      "x-codegen": true,
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "projectId",
-        "environments"
-      ],
-      "properties": {
-        "projectId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "pattern": "^[!-~]+$"
-        },
-        "environments": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/pmEnvironment"
-          },
-          "maxItems": 12
-        }
-      }
-    },
     "pmCredentialKind": {
       "x-codegen": true,
       "type": "string",
@@ -3805,48 +3446,6 @@
         }
       }
     },
-    "pmProbeCreateParams": {
-      "x-codegen": true,
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "projectId",
-        "environment",
-        "argv",
-        "matcher"
-      ],
-      "properties": {
-        "projectId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "pattern": "^[!-~]+$"
-        },
-        "environment": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 120
-        },
-        "argv": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "x-utf8-max-bytes": 1024
-          },
-          "minItems": 1,
-          "maxItems": 32
-        },
-        "matcher": {
-          "$ref": "#/$defs/pmProbeMatcher"
-        },
-        "reason": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 400
-        }
-      }
-    },
     "pmDeletedResult": {
       "x-codegen": true,
       "type": "object",
@@ -3894,7 +3493,7 @@
       "type": "string",
       "enum": [
         "notFound",
-        "deployTrackingOff",
+        "noAgentStep",
         "alreadyRunning",
         "projectLimitReached",
         "agentUnavailable"
@@ -5073,8 +4672,7 @@
       "enum": [
         "boardChanges",
         "slackMentions",
-        "bugTickets",
-        "deliveryChecks"
+        "bugTickets"
       ]
     },
     "pmSkillTrigger": {
@@ -5223,13 +4821,6 @@
         }
       }
     },
-    "pmBuiltinSkill": {
-      "x-codegen": true,
-      "type": "string",
-      "enum": [
-        "deploymentControl"
-      ]
-    },
     "pmSkillRunOutcome": {
       "x-codegen": true,
       "type": "string",
@@ -5257,7 +4848,6 @@
       "required": [
         "id",
         "projectId",
-        "builtin",
         "enabled",
         "version",
         "manifest",
@@ -5284,16 +4874,6 @@
           "minLength": 1,
           "maxLength": 128,
           "pattern": "^[!-~]+$"
-        },
-        "builtin": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/pmBuiltinSkill"
-            },
-            {
-              "type": "null"
-            }
-          ]
         },
         "enabled": {
           "type": "boolean"
@@ -5732,7 +5312,7 @@
         "projectId",
         "skills",
         "drafts",
-        "environmentProposal"
+        "playbookProposal"
       ],
       "properties": {
         "projectId": {
@@ -5755,10 +5335,10 @@
           },
           "maxItems": 16
         },
-        "environmentProposal": {
+        "playbookProposal": {
           "anyOf": [
             {
-              "$ref": "#/$defs/pmEnvironmentProposal"
+              "$ref": "#/$defs/pmPlaybookProposal"
             },
             {
               "type": "null"
@@ -5891,27 +5471,14 @@
       "additionalProperties": false,
       "required": [
         "skill",
-        "run",
-        "checksStarted"
+        "run"
       ],
       "properties": {
         "skill": {
           "$ref": "#/$defs/pmSkill"
         },
         "run": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/pmSkillRun"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "checksStarted": {
-          "type": "integer",
-          "minimum": 0,
-          "x-rust-type": "u32"
+          "$ref": "#/$defs/pmSkillRun"
         }
       }
     },
@@ -5944,7 +5511,7 @@
       "x-codegen": true,
       "type": "string",
       "enum": [
-        "deploymentControl",
+        "playbook",
         "bugOwnerFinder",
         "slackTracker"
       ]
@@ -5982,129 +5549,6 @@
       }
     },
     "pmSkillDraftDiscardResult": {
-      "x-codegen": true,
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "discarded"
-      ],
-      "properties": {
-        "discarded": {
-          "const": true
-        }
-      }
-    },
-    "pmProposedEnvironment": {
-      "x-codegen": true,
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "name",
-        "production",
-        "evidence"
-      ],
-      "properties": {
-        "name": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 120
-        },
-        "production": {
-          "type": "boolean"
-        },
-        "evidence": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 300
-        }
-      }
-    },
-    "pmEnvironmentProposal": {
-      "x-codegen": true,
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "projectId",
-        "summary",
-        "environments",
-        "probes",
-        "createdAtEpochMs"
-      ],
-      "properties": {
-        "projectId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "pattern": "^[!-~]+$"
-        },
-        "summary": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 600
-        },
-        "environments": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/pmProposedEnvironment"
-          },
-          "minItems": 1,
-          "maxItems": 12
-        },
-        "probes": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/pmProbe"
-          },
-          "maxItems": 12
-        },
-        "createdAtEpochMs": {
-          "type": "integer",
-          "minimum": 0,
-          "x-rust-type": "u64"
-        }
-      }
-    },
-    "pmEnvironmentProposalApplyParams": {
-      "x-codegen": true,
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "projectId",
-        "environments",
-        "probeIds"
-      ],
-      "properties": {
-        "projectId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "pattern": "^[!-~]+$"
-        },
-        "environments": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 120
-          },
-          "minItems": 1,
-          "maxItems": 12,
-          "uniqueItems": true
-        },
-        "probeIds": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128,
-            "pattern": "^[!-~]+$"
-          },
-          "maxItems": 12,
-          "uniqueItems": true
-        }
-      }
-    },
-    "pmEnvironmentProposalDiscardResult": {
       "x-codegen": true,
       "type": "object",
       "additionalProperties": false,
@@ -6270,6 +5714,434 @@
           "type": "integer",
           "minimum": 0,
           "x-rust-type": "u64"
+        }
+      }
+    },
+    "pmPlaybook": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "revision",
+        "steps",
+        "updatedAtEpochMs"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmPlaybookStep"
+          },
+          "minItems": 1,
+          "maxItems": 16
+        },
+        "updatedAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "pmPlaybookStep": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "checks",
+        "agent"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmStepCheck"
+          },
+          "maxItems": 4
+        },
+        "agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/pmAgentCheck"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "pmStatusCategory": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "started",
+        "done"
+      ]
+    },
+    "pmPullRequestStepState": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "open",
+        "merged"
+      ]
+    },
+    "pmStepCheck": {
+      "x-codegen": true,
+      "x-codegen-name": "PmStepCheck",
+      "x-codegen-tagged-union": "kind",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "names",
+            "category"
+          ],
+          "properties": {
+            "kind": {
+              "const": "status"
+            },
+            "names": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              "maxItems": 12
+            },
+            "category": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/pmStatusCategory"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "state",
+            "baseBranch"
+          ],
+          "properties": {
+            "kind": {
+              "const": "pullRequest"
+            },
+            "state": {
+              "$ref": "#/$defs/pmPullRequestStepState"
+            },
+            "baseBranch": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1,
+              "maxLength": 255
+            }
+          }
+        }
+      ]
+    },
+    "pmAgentCheck": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "instructions",
+        "retryMinutes"
+      ],
+      "properties": {
+        "instructions": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8000
+        },
+        "retryMinutes": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 1440,
+          "x-rust-type": "u32"
+        }
+      }
+    },
+    "pmStepVerdict": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "passed",
+        "waiting",
+        "blocked"
+      ]
+    },
+    "pmStepEvaluator": {
+      "x-codegen": true,
+      "type": "string",
+      "enum": [
+        "facts",
+        "agent",
+        "projectManager"
+      ]
+    },
+    "pmStepState": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stepId",
+        "verdict",
+        "evidence",
+        "evaluator",
+        "decidedAtEpochMs",
+        "implied",
+        "nextAttemptAtEpochMs"
+      ],
+      "properties": {
+        "stepId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "verdict": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/pmStepVerdict"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidence": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 600
+        },
+        "evaluator": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/pmStepEvaluator"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decidedAtEpochMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "implied": {
+          "type": "boolean"
+        },
+        "nextAttemptAtEpochMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "pmTicketPlaybook": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "position",
+        "steps"
+      ],
+      "properties": {
+        "position": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 15,
+          "x-rust-type": "u64"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmStepState"
+          },
+          "maxItems": 16
+        }
+      }
+    },
+    "pmPlaybookProposal": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "summary",
+        "steps",
+        "createdAtEpochMs"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 600
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmPlaybookStep"
+          },
+          "minItems": 1,
+          "maxItems": 16
+        },
+        "createdAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "pmPlaybookSaveParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "baseRevision",
+        "steps"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "baseRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmPlaybookStep"
+          },
+          "minItems": 1,
+          "maxItems": 16
+        }
+      }
+    },
+    "pmPlaybookProposalApplyParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "steps"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmPlaybookStep"
+          },
+          "minItems": 1,
+          "maxItems": 16
+        }
+      }
+    },
+    "pmPlaybookProposalDiscardResult": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "discarded"
+      ],
+      "properties": {
+        "discarded": {
+          "const": true
+        }
+      }
+    },
+    "pmPlaybookStepMarkParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ticketId",
+        "stepId",
+        "passed"
+      ],
+      "properties": {
+        "ticketId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "stepId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "passed": {
+          "type": "boolean"
         }
       }
     }

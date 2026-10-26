@@ -73,7 +73,10 @@ mod branch_commits;
 mod changes;
 mod cleanup;
 mod close;
-pub use close::{TaskClosePlan, TaskClosePreparation, TaskWorktreeRecreationPlan};
+pub use close::{
+    TaskClosePlan, TaskClosePreparation, TaskWorktreeRecreationBase, TaskWorktreeRecreationPlan,
+    branch_worktree_leaf,
+};
 mod commit_changes;
 mod git_mapping;
 mod health;

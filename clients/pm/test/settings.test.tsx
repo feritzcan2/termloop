@@ -3,7 +3,8 @@ import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { PmAgentCatalog, PmSettings, PmSources } from "@termloop/pm-contract/pm";
 import { SettingsPage, type SettingsPageProps } from "../src/renderer/ui/SettingsPage.js";
-import { render, typeInto } from "./render.js";
+import { playbook } from "./fixtures.js";
+import { render, rerender, typeInto } from "./render.js";
 
 const sources: PmSources = {
   projectId: "project-1",
@@ -16,8 +17,8 @@ function props(overrides: Partial<SettingsPageProps> = {}): SettingsPageProps {
   const noop = () => undefined;
   return {
     projectName: "Shop", settings: undefined, catalog: undefined, sources, tracking: { jira: true, code: false, deploy: false, tier: "tickets" },
-    environments: [], probes: [], tools: undefined, now: 0, onReadTools: async () => undefined, onSaveSources: vi.fn(async () => true), onClearToken: noop, onSaveSettings: noop,
-    onSetEnvironments: noop, onCreateProbe: noop, onApproveProbe: noop, onRejectProbe: noop, onDeleteProbe: noop, ...overrides,
+    playbook: playbook(), tools: undefined, now: 0, onReadTools: async () => undefined, onSaveSources: vi.fn(async () => true), onClearToken: noop, onSaveSettings: noop,
+    onSavePlaybook: vi.fn(async () => true), ...overrides,
   };
 }
 
@@ -69,10 +70,42 @@ describe("SettingsPage", () => {
     set.unmount();
   });
 
-  it("explains deploy tracking instead of offering a switch", () => {
-    const { container, unmount } = render(<SettingsPage {...props()} />);
-    expect(container.textContent).toContain("Deploy tracking is on whenever this project has an environment or an approved probe");
-    expect(container.querySelector('input[type="checkbox"][aria-label*="deploy" i]')).toBeNull();
+  it("edits the Playbook and saves it over the revision it was read at", async () => {
+    const onSavePlaybook = vi.fn(async () => true);
+    const { container, unmount } = render(<SettingsPage {...props({ playbook: playbook({ revision: 3 }), onSavePlaybook })} />);
+    const section = container.querySelector<HTMLElement>('section.settings-section[aria-label="Playbook"]')!;
+    expect(section.textContent).toContain("5 STEPS · 1 BY AN AGENT");
+    const save = () => [...section.querySelectorAll("button")].find((button) => button.textContent === "Save Playbook")!;
+    expect(save().disabled).toBe(true);
+    const title = section.querySelector<HTMLInputElement>('input[aria-label="Step 4 title"]')!;
+    typeInto(title, " ");
+    expect(save().disabled).toBe(true);
+    expect(section.textContent).toContain("Give every step a title.");
+    typeInto(title, "On prod ");
+    await act(async () => save().click());
+    const [revision, steps] = onSavePlaybook.mock.calls[0] as unknown as [number, { id: string; title: string }[]];
+    expect(revision).toBe(3);
+    expect(steps.map((step) => step.title)).toEqual(["In progress", "In review", "Merged", "On prod", "Done"]);
+    unmount();
+  });
+
+  it("keeps an edit in progress across board reads, and takes a newer revision", () => {
+    const { container, root, unmount } = render(<SettingsPage {...props({ playbook: playbook({ revision: 3 }) })} />);
+    const title = () => container.querySelector<HTMLInputElement>('input[aria-label="Step 4 title"]')!;
+    typeInto(title(), "On prod");
+    rerender(root, <SettingsPage {...props({ playbook: playbook({ revision: 3 }) })} />);
+    expect(title().value).toBe("On prod");
+    rerender(root, <SettingsPage {...props({ playbook: playbook({ revision: 4 }) })} />);
+    expect(title().value).toBe("Live");
+    unmount();
+  });
+
+  it("removes a step and keeps the rest in order", async () => {
+    const onSavePlaybook = vi.fn(async () => true);
+    const { container, unmount } = render(<SettingsPage {...props({ playbook: playbook(), onSavePlaybook })} />);
+    act(() => container.querySelector<HTMLButtonElement>('button[aria-label="Remove step 2"]')!.click());
+    await act(async () => [...container.querySelectorAll("button")].find((button) => button.textContent === "Save Playbook")!.click());
+    expect((onSavePlaybook.mock.calls[0] as unknown as [number, { id: string }[]])[1].map((step) => step.id)).toEqual(["started", "merged", "live", "done"]);
     unmount();
   });
 

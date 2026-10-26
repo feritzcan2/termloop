@@ -5,8 +5,8 @@ import type {
   MethodParams,
   MethodResults,
   PmAssistantTask,
-  PmEnvironment,
-  PmProbeMatcher,
+  PmCheckRefusalReason,
+  PmPlaybookStep,
   PmProposal,
   PmSettingsUpdateParams,
   PmSkillSetup,
@@ -22,6 +22,14 @@ import type { NoteDraft } from "../ui/NoteDialog.js";
 import type { DescriptionSaveOutcome, TicketCapture } from "../ui/types.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+const CHECK_REFUSAL: Record<PmCheckRefusalReason, string> = {
+  notFound: "the ticket is gone",
+  noAgentStep: "the step it works toward has no agent check",
+  alreadyRunning: "a check is already running",
+  projectLimitReached: "this project already runs as many checks as it may",
+  agentUnavailable: "no agent is available",
+};
 
 /** Stage views the right activity bar toggles, as opposed to ones opened from the board. */
 export type BarStage = "jira" | "settings";
@@ -272,10 +280,6 @@ export class PmController {
     if (await this.call("pm_ticket_update", { ticketId, ...fields })) await this.refreshBoard();
   }
 
-  async setStatus(ticketId: string, status: PmTicketStatus): Promise<void> {
-    await this.updateTicket(ticketId, { status });
-  }
-
   /** Moves a ticket to a lane (a sprint, or the backlog for `null`), at `index` within it when given. */
   async moveTicket(ticketId: string, sprintId: string | null, index?: number): Promise<void> {
     const params = index === undefined ? { ticketId, sprintId } : { ticketId, sprintId, index };
@@ -418,7 +422,7 @@ export class PmController {
     if (!projectId) return;
     const result = await this.call("pm_check_start", { projectId, ticketIds: [ticketId] });
     const refusal = result?.refused[0];
-    if (refusal) this.#set({ notice: { tone: "error", text: `Check not started: ${refusal.reason}.` } });
+    if (refusal) this.#set({ notice: { tone: "error", text: `Check not started: ${CHECK_REFUSAL[refusal.reason]}.` } });
     await Promise.all([this.refreshBoard(), this.refreshAgents()]);
   }
 
@@ -547,15 +551,12 @@ export class PmController {
   }
 
   /**
-   * A skill row's Set up opens that skill's own creator. Deployment control
-   * turns on directly when the project already lists its environments;
-   * otherwise its setup searches the project's git repository, so the PM
-   * picks one first when the project has no code folder.
+   * A skill row's Set up opens that skill's own creator. The Playbook setup
+   * searches the project's git repository, so the PM picks one first when
+   * the project has no code folder.
    */
   async setUpSkill(kind: PmSkillSetup): Promise<void> {
-    const builtin = this.state.skills?.skills.find((skill) => skill.builtin === "deploymentControl");
-    if (kind === "deploymentControl" && builtin) return this.setSkillEnabled(builtin.id, true);
-    if (kind === "deploymentControl" && !this.state.projects.find((project) => project.id === this.state.projectId)?.folder) {
+    if (kind === "playbook" && !this.state.projects.find((project) => project.id === this.state.projectId)?.folder) {
       const folder = await this.bridge.pickFolder();
       if (!folder) return;
       await this.setProjectFolder(folder);
@@ -564,19 +565,34 @@ export class PmController {
     return this.launchSkillCreator({ setup: kind });
   }
 
-  /** Lists the environments and approves the probes the PM ticked; Deployment control turns on. */
-  async applyEnvironmentProposal(environments: string[], probeIds: string[]): Promise<boolean> {
+  /** Saves the steps the PM kept from the Playbook setup's proposal, as edited. */
+  async applyPlaybookProposal(steps: PmPlaybookStep[]): Promise<boolean> {
     const projectId = this.state.projectId;
     if (!projectId) return false;
-    const applied = await this.call("pm_environment_proposal_apply", { projectId, environments, probeIds });
-    if (!applied) return false;
-    this.#set({ notice: { tone: "info", text: "Deployment control is on." } });
+    if (!(await this.call("pm_playbook_proposal_apply", { projectId, steps }))) return false;
+    this.#set({ notice: { tone: "info", text: "The Playbook is saved." } });
+    await Promise.all([this.refreshBoard(), this.loadSkills()]);
     return true;
   }
 
-  async discardEnvironmentProposal(): Promise<void> {
+  async discardPlaybookProposal(): Promise<void> {
     const projectId = this.state.projectId;
-    if (projectId) await this.call("pm_environment_proposal_discard", { projectId });
+    if (projectId && (await this.call("pm_playbook_proposal_discard", { projectId }))) await this.loadSkills();
+  }
+
+  /** Saves the PM's edit of the Playbook over the revision it was read at. Resolves true once saved. */
+  async savePlaybook(baseRevision: number, steps: PmPlaybookStep[]): Promise<boolean> {
+    const projectId = this.state.projectId;
+    if (!projectId) return false;
+    if (!(await this.call("pm_playbook_save", { projectId, baseRevision, steps }))) return false;
+    this.#set({ notice: { tone: "info", text: "The Playbook is saved." } });
+    await this.refreshBoard();
+    return true;
+  }
+
+  /** The PM's own answer for a ticket's step: passed, or cleared so it is looked at again. */
+  async markStep(ticketId: string, stepId: string, passed: boolean): Promise<void> {
+    if (await this.call("pm_playbook_step_mark", { ticketId, stepId, passed })) await this.refreshBoard();
   }
 
   /** Runs a skill now; a run with nothing new says so instead of starting an agent. */
@@ -584,9 +600,7 @@ export class PmController {
     const result = await this.call("pm_skill_run", { skillId });
     if (!result) return;
     const name = result.skill.manifest.name;
-    const text = result.run === null
-      ? `${name}: ${result.checksStarted} check(s) started.`
-      : result.run.outcome === "skipped"
+    const text = result.run.outcome === "skipped"
         ? `${name}: nothing new since the last run.`
         : `${name} is running.`;
     this.#set({ notice: { tone: "info", text } });
@@ -681,30 +695,6 @@ export class PmController {
     if (await this.call("pm_credential_clear", { credentialHandle: handle })) {
       this.#set({ notice: { tone: "info", text: "Jira token removed from the credential store." } });
     }
-  }
-
-  async setEnvironments(environments: PmEnvironment[]): Promise<void> {
-    const projectId = this.state.projectId;
-    if (!projectId) return;
-    if (await this.call("pm_environments_set", { projectId, environments })) await this.refreshBoard();
-  }
-
-  async createProbe(environment: string, argv: string[], matcher: PmProbeMatcher): Promise<void> {
-    const projectId = this.state.projectId;
-    if (!projectId || argv.length === 0) return;
-    if (await this.call("pm_probe_create", { projectId, environment, argv, matcher })) await this.refreshBoard();
-  }
-
-  async approveProbe(probeId: string): Promise<void> {
-    if (await this.call("pm_probe_approve", { probeId })) await this.refreshBoard();
-  }
-
-  async rejectProbe(probeId: string): Promise<void> {
-    if (await this.call("pm_probe_reject", { probeId })) await this.refreshBoard();
-  }
-
-  async deleteProbe(probeId: string): Promise<void> {
-    if (await this.call("pm_probe_delete", { probeId })) await this.refreshBoard();
   }
 }
 

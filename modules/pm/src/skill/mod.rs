@@ -25,7 +25,7 @@ use crate::ProposalChange;
 use crate::delivery::risks::DAY_MS;
 use crate::validation::{valid_id, valid_label, valid_non_blank_text};
 
-/// Skills one project may hold, the built-in one included.
+/// Skills one project may hold.
 pub const PROJECT_SKILLS_MAX: usize = 32;
 /// Drafts waiting for review per project.
 pub const PROJECT_SKILL_DRAFTS_MAX: usize = 16;
@@ -56,42 +56,6 @@ pub const EVIDENCE_LABEL_MAX_CHARS: usize = 120;
 pub const EVIDENCE_QUOTE_MAX_CHARS: usize = 280;
 const EVIDENCE_URL_MAX_BYTES: usize = 2_048;
 const NEEDED_TOOL_NAME_MAX_CHARS: usize = 80;
-
-/// A built-in skill the PM app ships.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum BuiltinSkill {
-    /// Wraps the delivery checks and probes; listed off when the project
-    /// lists environments, until the PM sets it up.
-    DeploymentControl,
-}
-
-crate::ticket::stored_names!(BuiltinSkill {
-    DeploymentControl => "deploymentControl",
-});
-
-impl BuiltinSkill {
-    pub fn manifest(self) -> SkillManifest {
-        match self {
-            Self::DeploymentControl => SkillManifest {
-                name: "Deployment control".to_owned(),
-                description: "Finds out which environments run each ticket's change: it runs \
-                              the approved probes and starts a delivery check when a ticket's \
-                              deployment is unknown or changed."
-                    .to_owned(),
-                trigger: SkillTrigger::Event {
-                    event: SkillEvent::DeployChanged,
-                },
-                sources: vec![SkillSource::Deployments, SkillSource::Board],
-                prefilter: SkillPrefilter::DeliveryChecks,
-                approved_tools: Vec::new(),
-                instructions: "Start the delivery checks that are due.".to_owned(),
-                channels: Vec::new(),
-                agent_tools: Vec::new(),
-            },
-        }
-    }
-}
 
 /// One link a suggestion rests on: a Slack permalink, a pull request, a
 /// commit. A quote is at most 280 characters; full message text is never
@@ -223,7 +187,6 @@ impl SkillRun {
 pub struct Skill {
     pub id: String,
     pub project_id: String,
-    pub builtin: Option<BuiltinSkill>,
     pub enabled: bool,
     pub version: u32,
     pub manifest: SkillManifest,

@@ -22,6 +22,7 @@ use errors::error;
 mod dispatch;
 pub(crate) mod errors;
 mod operations;
+mod playbook_methods;
 mod skill_methods;
 
 pub(crate) use dispatch::{dispatch, to_value};

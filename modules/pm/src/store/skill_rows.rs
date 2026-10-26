@@ -8,8 +8,8 @@ use super::delivery_rows::{invalid_row, json_column};
 use super::rows::parsed;
 use crate::PmError;
 use crate::skill::{
-    BuiltinSkill, DryRunState, FeedbackOutcome, REVISION_WINDOW, SkillDraft, SkillDraftOrigin,
-    SkillFeedback, SkillManifest, SkillRun, SkillRunOutcome, SkillRunTrigger,
+    DryRunState, FeedbackOutcome, REVISION_WINDOW, SkillDraft, SkillDraftOrigin, SkillFeedback,
+    SkillManifest, SkillRun, SkillRunOutcome, SkillRunTrigger,
 };
 
 /// One `skills` row before its manifest and derived state are joined in.
@@ -17,7 +17,6 @@ use crate::skill::{
 pub(crate) struct SkillRecord {
     pub(crate) id: String,
     pub(crate) project_id: String,
-    pub(crate) builtin: Option<BuiltinSkill>,
     pub(crate) enabled: bool,
     pub(crate) version: u32,
     pub(crate) consecutive_failures: u32,
@@ -27,25 +26,20 @@ pub(crate) struct SkillRecord {
     pub(crate) created_at_epoch_ms: u64,
 }
 
-const SKILL_COLUMNS: &str = "id, project_id, builtin, enabled, version, consecutive_failures, \
+const SKILL_COLUMNS: &str = "id, project_id, enabled, version, consecutive_failures, \
      paused_reason, event_pending_at_epoch_ms, next_attempt_at_epoch_ms, created_at_epoch_ms";
 
 fn skill_row(row: &Row<'_>) -> rusqlite::Result<SkillRecord> {
-    let builtin: Option<String> = row.get(2)?;
     Ok(SkillRecord {
         id: row.get(0)?,
         project_id: row.get(1)?,
-        builtin: match builtin {
-            Some(name) => Some(BuiltinSkill::parse(&name).ok_or_else(|| invalid_row(2))?),
-            None => None,
-        },
-        enabled: row.get(3)?,
-        version: row.get(4)?,
-        consecutive_failures: row.get(5)?,
-        paused_reason: row.get(6)?,
-        event_pending_at_epoch_ms: row.get(7)?,
-        next_attempt_at_epoch_ms: row.get(8)?,
-        created_at_epoch_ms: row.get(9)?,
+        enabled: row.get(2)?,
+        version: row.get(3)?,
+        consecutive_failures: row.get(4)?,
+        paused_reason: row.get(5)?,
+        event_pending_at_epoch_ms: row.get(6)?,
+        next_attempt_at_epoch_ms: row.get(7)?,
+        created_at_epoch_ms: row.get(8)?,
     })
 }
 
@@ -62,33 +56,19 @@ pub(crate) fn skill_record(
         .optional()?)
 }
 
-/// A project's skills: the built-in ones first, then by install time.
+/// A project's skills by install time.
 pub(crate) fn project_skill_records(
     connection: &Connection,
     project_id: &str,
 ) -> Result<Vec<SkillRecord>, PmError> {
     let mut statement = connection.prepare(&format!(
         "SELECT {SKILL_COLUMNS} FROM skills WHERE project_id = ?1 \
-         ORDER BY builtin IS NULL, created_at_epoch_ms, id"
+         ORDER BY created_at_epoch_ms, id"
     ))?;
     let records = statement
         .query_map([project_id], skill_row)?
         .collect::<Result<_, _>>()?;
     Ok(records)
-}
-
-pub(crate) fn builtin_skill_record(
-    connection: &Connection,
-    project_id: &str,
-    builtin: BuiltinSkill,
-) -> Result<Option<SkillRecord>, PmError> {
-    Ok(connection
-        .query_row(
-            &format!("SELECT {SKILL_COLUMNS} FROM skills WHERE project_id = ?1 AND builtin = ?2"),
-            params![project_id, builtin.as_str()],
-            skill_row,
-        )
-        .optional()?)
 }
 
 /// One tool approval the PM ticked at an install.
@@ -103,14 +83,13 @@ pub(crate) fn skill_manifest(
     connection: &Connection,
     skill_id: &str,
     version: u32,
-    builtin: bool,
 ) -> Result<SkillManifest, PmError> {
     let manifest = connection.query_row(
         "SELECT manifest_json FROM skill_versions WHERE skill_id = ?1 AND version = ?2",
         params![skill_id, version],
         |row| json_column::<SkillManifest>(row, 0),
     )?;
-    if manifest.invalid_field_of(builtin).is_some() {
+    if manifest.invalid_field().is_some() {
         return Err(PmError::Storage("invalid stored skill manifest".into()));
     }
     Ok(manifest)

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import { SprintOverview, standupNote } from "../src/renderer/ui/SprintOverview.js";
-import { boardTicket, sprint } from "./fixtures.js";
+import { boardTicket, playbook, sprint } from "./fixtures.js";
 import { render } from "./render.js";
 
 const noop = () => undefined;
@@ -10,13 +10,13 @@ describe("sprint overview", () => {
   it("lists a ticket with several risks once and counts tickets, not risks", () => {
     const risky = boardTicket({ id: "t1" }, {
       risks: [
-        { kind: "mergedNotDeployed", detail: "Merged 3 days ago", sinceEpochMs: null },
+        { kind: "stepBlocked", detail: "Merged 3 days ago", sinceEpochMs: null },
         { kind: "stuckInStatus", detail: "No change for 5 days", sinceEpochMs: null },
       ],
     });
     const { container, unmount } = render(
       <SprintOverview sprint={sprint()} sprints={[sprint()]} tickets={[risky, boardTicket({ id: "t2" })]} tier="tickets"
-        digest={[]} now={0} onOpenTicket={noop} onActivate={noop} onClose={noop} />,
+        playbook={playbook()} digest={[]} now={0} onOpenTicket={noop} onActivate={noop} onClose={noop} />,
     );
     const rows = container.querySelectorAll(".attn-row");
     expect(rows).toHaveLength(1);

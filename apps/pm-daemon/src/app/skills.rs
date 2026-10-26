@@ -1,7 +1,6 @@
 //! Skills in the daemon: the skill creator, runs and dry runs of installed
 //! skills, the deterministic prefilter that decides before any launch
-//! whether a run has anything new, the built-in Deployment control, and
-//! the host tools the creator calls.
+//! whether a run has anything new, and the host tools the creator calls.
 //!
 //! A run's agent sees only its approved read tools and the proposal tools;
 //! everything it suggests is a draft for the PM.
@@ -15,15 +14,14 @@ use termloop_pm::agent::{
     SkillRunContext, SkillSetup, SlackChannelBrief,
 };
 use termloop_pm::skill::{
-    BuiltinSkill, SKILL_DRY_RUN_WINDOW_MS, SkillManifest, SkillPrefilter, SkillRun,
-    SkillRunTrigger, SkillSource,
+    SKILL_DRY_RUN_WINDOW_MS, SkillManifest, SkillPrefilter, SkillRun, SkillRunTrigger, SkillSource,
 };
 use termloop_pm::{PmError, PmStore, SprintState, Ticket, slack_ts_at};
 use termloop_pm_contract::pm::{EventName, PmToolState};
 
 use crate::app::control::errors::{ControlError, constraint, not_found};
 use crate::app::control::to_value;
-use crate::app::{AppState, agents, owners, scheduler, skill_discovery, tool_list};
+use crate::app::{AppState, agents, owners, skill_discovery, tool_list};
 
 /// A skill's first run reads this far back.
 const FIRST_RUN_WINDOW_MS: u64 = 24 * 60 * 60 * 1000;
@@ -53,15 +51,14 @@ pub(crate) fn publish(state: &AppState, project_id: &str) {
     );
 }
 
-/// The project's skills (the built-in ones it qualifies for included), the
-/// drafts waiting for review, and the Deployment control setup's proposal.
-pub(crate) fn skills_value(store: &mut PmStore, project_id: &str) -> Result<Value, ControlError> {
-    store.ensure_builtin_skills(project_id)?;
+/// The project's skills, the drafts waiting for review, and the Playbook
+/// setup's proposal.
+pub(crate) fn skills_value(store: &PmStore, project_id: &str) -> Result<Value, ControlError> {
     Ok(json!({
         "projectId": project_id,
         "skills": to_value(&store.skills(project_id)?)?,
         "drafts": to_value(&store.skill_drafts(project_id)?)?,
-        "environmentProposal": to_value(&store.environment_proposal(project_id)?)?,
+        "playbookProposal": to_value(&store.playbook_proposal(project_id)?)?,
     }))
 }
 
@@ -120,9 +117,7 @@ pub(crate) fn prefilter(
                 .take(RUN_TICKETS_MAX)
                 .map(|ticket| ticket.id.clone())
                 .collect()
-        }
-        // Delivery checks are the built-in skill's and never run here.
-        SkillPrefilter::DeliveryChecks => Vec::new(),
+        } // Delivery checks are the built-in skill's and never run here.
     };
     Ok(Kept {
         ticket_ids,
@@ -220,21 +215,14 @@ fn launch_run(
     Ok(())
 }
 
-/// Runs a skill now. The built-in Deployment control starts the delivery
-/// checks that are due; any other skill runs its prefilter and launches an
-/// agent only when it kept something.
+/// Runs a skill now: its prefilter, then an agent only when it kept
+/// something.
 pub(crate) fn run(
     state: &AppState,
     skill_id: &str,
     trigger: SkillRunTrigger,
 ) -> Result<Value, ControlError> {
     let skill = state.store.lock().skill(skill_id)?.ok_or_else(not_found)?;
-    if skill.builtin == Some(BuiltinSkill::DeploymentControl) {
-        let started = scheduler::start_due_checks(state, &skill.project_id, agents::launch_check);
-        let skill = state.store.lock().skill(skill_id)?.ok_or_else(not_found)?;
-        publish(state, &skill.project_id);
-        return Ok(json!({ "skill": to_value(&skill)?, "run": null, "checksStarted": started }));
-    }
     let now = termloop_platform::current_epoch_ms();
     let (run, kept) = {
         let mut store = state.store.lock();
@@ -259,7 +247,6 @@ pub(crate) fn run(
     Ok(json!({
         "skill": to_value(&store.skill(skill_id)?.ok_or_else(not_found)?)?,
         "run": to_value(&store.skill_run(&run.id)?.ok_or_else(not_found)?)?,
-        "checksStarted": 0,
     }))
 }
 
@@ -304,7 +291,7 @@ pub(crate) fn launch_creator(
                 PmAgentProfile::build(&store, project_id, PmAgentMode::SkillCreator, None)?
             }
             CreatorLaunch::Setup(setup) => {
-                if setup == SkillSetup::DeploymentControl {
+                if setup == SkillSetup::Playbook {
                     require_git_repository(&store, project_id)?;
                 }
                 PmAgentProfile::build_skill_setup(&store, project_id, setup)?
@@ -317,7 +304,7 @@ pub(crate) fn launch_creator(
     agents::launch_profile(state, project_id, &profile, None, None, None)
 }
 
-/// Deployment control setup searches the project's git repository, so the
+/// The Playbook setup searches the project's git repository, so the
 /// code folder must be one.
 fn require_git_repository(store: &PmStore, project_id: &str) -> Result<(), ControlError> {
     let folder = store.project(project_id)?.ok_or_else(not_found)?.folder;
@@ -543,13 +530,12 @@ async fn verify_source(
         SkillSource::Board => (true, "the PM board is always readable"),
         SkillSource::Deployments => {
             let board = state.store.lock().board(project_id).map_err(host_error)?;
-            let approved = board
-                .probes
-                .iter()
-                .filter(|probe| probe.status == termloop_pm::ProbeStatus::Approved)
-                .count();
-            let environments = tool_list::environments(board.environments.len(), approved as u64);
-            return Ok(verdict("source", name, environments));
+            let playbook = json!({
+                "saved": board.playbook.revision > 0,
+                "steps": board.playbook.steps.len(),
+                "agentSteps": board.playbook.steps.iter().filter(|step| step.agent.is_some()).count(),
+            });
+            return Ok(verdict("source", name, tool_list::playbook(&playbook)));
         }
         SkillSource::Jira => crate::app::jira::verify(state, project_id).await,
         SkillSource::Git => {

@@ -1,11 +1,10 @@
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useState } from "react";
-import type { PmBoardTicket, PmDataTier, PmEnvironment, PmSprint } from "@termloop/pm-contract/pm";
-import { EnvironmentBadges } from "./delivery-facts.js";
+import type { PmBoardTicket, PmDataTier, PmPlaybook, PmSprint } from "@termloop/pm-contract/pm";
 import { Icon } from "./icons.js";
 import {
-  RISK_LABEL, STAGE_LABEL, STATUS_DOT, STATUS_LABEL, daysLeft, jiraKey, leftSprint, riskTone, sprintDay, sprintTickets, statusSections, tierAtLeast,
+  RISK_LABEL, STATUS_DOT, STATUS_LABEL, daysLeft, jiraKey, leftSprint, nextStep, riskTone, sprintDay, sprintTickets, stepSections, tierAtLeast,
 } from "./format.js";
 import { ticketScope, type ScopeGrowth, type ScopeVersion } from "./scope.js";
 import { TicketContextMenu, type ContextMenuAt, type ContextMenuItem } from "./TicketContextMenu.js";
@@ -19,8 +18,8 @@ export type SprintSidebarProps = {
   sprints: PmSprint[];
   tickets: PmBoardTicket[];
   tier: PmDataTier;
-  /** The project's environments in delivery order; badges show at the deploy tier. */
-  environments?: readonly PmEnvironment[];
+  /** The project's Playbook; the rail groups tickets by the step they stand at. */
+  playbook: PmPlaybook | undefined;
   /** Description versions loaded so far, by ticket; they drive the `scope` tag. */
   versions?: Readonly<Record<string, readonly ScopeVersion[]>>;
   /** The focused sprint; the rail shows it only when no sprint is active. */
@@ -53,7 +52,7 @@ export type SprintSidebarProps = {
 
 /**
  * The left "Sprint" rail: the active sprint (else the focused one) expanded
- * into status sections, then a count of the other sprints. Its tickets are
+ * into one section per Playbook step, then a count of the other sprints. Its tickets are
  * sortable items of the shell's {@link SprintDnd} context.
  */
 export function SprintSidebar(props: SprintSidebarProps) {
@@ -91,7 +90,7 @@ export function SprintSidebar(props: SprintSidebarProps) {
               tickets={lane}
               all={props.sprints}
               tier={props.tier}
-              environments={props.tier === "deploy" && props.environments ? props.environments : NO_ENVIRONMENTS}
+              playbook={props.playbook}
               versions={props.versions}
               now={props.now ?? Date.now()}
               selectedTicketId={props.selectedTicketId}
@@ -120,7 +119,6 @@ export function SprintSidebar(props: SprintSidebarProps) {
   );
 }
 
-const NO_ENVIRONMENTS: readonly PmEnvironment[] = [];
 const NO_AGENTS: readonly AgentTab[] = [];
 
 /** The group head's progress: "day X/N", else days left, else the sprint state. */
@@ -169,8 +167,7 @@ function FocusedSprint(props: {
   tickets: PmBoardTicket[];
   all: PmSprint[];
   tier: PmDataTier;
-  /** Empty below the deploy tier. */
-  environments: readonly PmEnvironment[];
+  playbook: PmPlaybook | undefined;
   versions: SprintSidebarProps["versions"];
   now: number;
   selectedTicketId: string | undefined;
@@ -189,10 +186,10 @@ function FocusedSprint(props: {
   const [folded, setFolded] = useState(false);
   const { sprint, tickets } = props;
   const done = tickets.filter((entry) => entry.ticket.status === "done").length;
-  const showStage = tierAtLeast(props.tier, "code");
+  const showCode = tierAtLeast(props.tier, "code");
   const moveTargets = props.all.filter((candidate) => candidate.state !== "closed" && candidate.id !== sprint.id);
-  const sections = statusSections(tickets);
-  // Move up/down stays within a status section, landing at the neighbour's
+  const sections = props.playbook ? stepSections(tickets, props.playbook) : [{ key: "all", title: "Tickets", tickets }];
+  // Move up/down stays within a step section, landing at the neighbour's
   // position in the whole lane.
   const step = (entry: PmBoardTicket, neighbour: PmBoardTicket | undefined) =>
     neighbour ? () => props.onMoveTicket(entry.ticket.id, sprint.id, tickets.indexOf(neighbour)) : undefined;
@@ -215,20 +212,20 @@ function FocusedSprint(props: {
       {sprint.goal && <div className="gsub">{sprint.goal}</div>}
       <div className="bar"><i style={{ width: `${tickets.length ? Math.round((done / tickets.length) * 100) : 0}%` }} /></div>
       {!folded && (
-        // One sortable context in display order, so a drag can cross status
+        // One sortable context in display order, so a drag can cross step
         // sections; the subheads are plain list items between the rows.
         <SortableContext items={sections.flatMap((section) => section.tickets.map((entry) => entry.ticket.id))} strategy={verticalListSortingStrategy}>
           <ul className="list" aria-label={`${sprint.name} tickets`}>
             {sections.map((section) => [
-              <li key={section.status} className="rail-subhead pm-status-head">
-                {STATUS_LABEL[section.status]}<span className="n">{section.tickets.length}</span>
+              <li key={section.key} className="rail-subhead pm-status-head">
+                {section.title}<span className="n">{section.tickets.length}</span>
               </li>,
               ...section.tickets.map((entry, index) => (
                 <TicketRow
                   key={entry.ticket.id}
                   entry={entry}
-                  showStage={showStage}
-                  environments={props.environments}
+                  showCode={showCode}
+                  playbook={props.playbook}
                   scope={ticketScope(entry.ticket, props.all, props.versions?.[entry.ticket.id])}
                   now={props.now}
                   selected={entry.ticket.id === props.selectedTicketId}
@@ -299,9 +296,8 @@ function moveItems(moves: TicketMoves): ContextMenuItem[] {
 
 function TicketRow(props: {
   entry: PmBoardTicket;
-  showStage: boolean;
-  /** Empty below the deploy tier. */
-  environments: readonly PmEnvironment[];
+  showCode: boolean;
+  playbook: PmPlaybook | undefined;
   scope: ScopeGrowth | undefined;
   now: number;
   selected: boolean;
@@ -318,7 +314,10 @@ function TicketRow(props: {
   const key = jiraKey(ticket);
   const sortable = useSortable({ id: ticket.id });
   const style = { transform: CSS.Transform.toString(sortable.transform), transition: sortable.transition };
-  const pullRequests = props.showStage ? delivery.facts?.pullRequests ?? 0 : 0;
+  const pullRequests = props.showCode ? delivery.facts?.pullRequests ?? 0 : 0;
+  // What an agent found at the step the ticket works toward.
+  const next = props.playbook ? nextStep(props.playbook, delivery) : undefined;
+  const waiting = next?.state?.verdict === "waiting" ? next : undefined;
   const risks = delivery.risks.filter((risk) => risk.kind !== "unassigned" && risk.kind !== "carriedOver");
   return (
     <li ref={sortable.setNodeRef} style={style} className={`pm-ticket-item ${sortable.isDragging ? "dragging" : ""}`}>
@@ -345,12 +344,11 @@ function TicketRow(props: {
             <span className="row-sub">
               {ticket.assignee ? <span className="who">{ticket.assignee}</span> : <span className="warn">unassigned</span>}
               <span>{STATUS_LABEL[ticket.status].toLowerCase()}</span>
-              {props.showStage && (
-                <span className="stage" data-testid="stage-pill">
-                  {STAGE_LABEL[delivery.stage.kind].toLowerCase()}{delivery.stage.environment ? ` · ${delivery.stage.environment}` : ""}
+              {waiting && (
+                <span className="step-pill" data-testid="step-pill" title={waiting.state?.evidence ?? undefined}>
+                  waiting · {waiting.step.title.toLowerCase()}
                 </span>
               )}
-              <EnvironmentBadges environments={props.environments} facts={delivery.facts} now={props.now} />
               {pullRequests > 0 && <span className="pr-chip" title="Linked pull requests">PR·{pullRequests}</span>}
               {props.scope && <span className="warn" title={props.scope.explanation} data-testid="scope-tag">scope</span>}
               {ticket.carryOverCount > 0 && <span className="warn" title="Carried over">carried over ×{ticket.carryOverCount}</span>}

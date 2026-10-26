@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { PmDataTier } from "@termloop/pm-contract/pm";
 import { SprintOverview } from "../src/renderer/ui/SprintOverview.js";
 import { SprintSidebar } from "../src/renderer/ui/SprintSidebar.js";
-import { boardTicket, sprint } from "./fixtures.js";
+import { boardTicket, playbook, sprint } from "./fixtures.js";
 import { render } from "./render.js";
 
 const noop = () => undefined;
@@ -14,8 +14,9 @@ function sidebar(tier: PmDataTier) {
   const view = render(
     <SprintSidebar
       sprints={[sprint()]}
-      tickets={[boardTicket({ carryOverCount: 2 }, { checking: true, risks: [{ kind: "mergedNotDeployed", detail: "Merged 3 days ago", sinceEpochMs: null }] })]}
+      tickets={[boardTicket({ carryOverCount: 2 }, { checking: true, risks: [{ kind: "stepBlocked", detail: "Merged 3 days ago", sinceEpochMs: null }] })]}
       tier={tier}
+      playbook={playbook()}
       selectedSprintId="sprint-1"
       selectedTicketId={undefined}
       onSelectSprint={noop}
@@ -34,8 +35,9 @@ function overview(tier: PmDataTier) {
     <SprintOverview
       sprint={sprint()}
       sprints={[sprint()]}
-      tickets={[boardTicket({}, { risks: [{ kind: "mergedNotDeployed", detail: "Merged 3 days ago", sinceEpochMs: null }] })]}
+      tickets={[boardTicket({}, { risks: [{ kind: "stepBlocked", detail: "Merged 3 days ago", sinceEpochMs: null }] })]}
       tier={tier}
+      playbook={playbook()}
       digest={[]}
       now={0}
       onOpenTicket={noop}
@@ -48,25 +50,20 @@ function overview(tier: PmDataTier) {
 }
 
 describe("data tiers", () => {
-  it("hides the ticket stage pill below the code tier", () => {
-    const container = sidebar("tickets");
-    expect(container.querySelector('[data-testid="stage-pill"]')).toBeNull();
-    const row = container.querySelector(".pm-ticket-item .row")!;
+  it("shows the row's basics at every tier", () => {
+    const row = sidebar("tickets").querySelector(".pm-ticket-item .row")!;
     expect(row.querySelector(".key")?.textContent).toBe("SHOP-7");
     expect(row.querySelector(".who")?.textContent).toBe("ada");
     expect(row.textContent).toContain("carried over ×2");
     expect(row.textContent).toContain("checking…");
   });
 
-  it("shows the stage pill from the code tier up", () => {
-    expect(sidebar("code").querySelector('[data-testid="stage-pill"]')?.textContent).toContain("merged");
+  it("sections the sprint by the step each ticket passed", () => {
+    expect([...sidebar("tickets").querySelectorAll(".pm-status-head")].map((element) => element.firstChild?.textContent)).toEqual(["Merged"]);
   });
 
-  it("shows where-it-runs only at the deploy tier", () => {
-    expect(overview("tickets").textContent).not.toContain("Where it is running");
-    expect(overview("code").textContent).not.toContain("Where it is running");
-    const deploy = overview("deploy");
-    expect(deploy.textContent).toContain("Where it is running");
-    expect(deploy.textContent).toContain("Needs your attention");
+  it("lists tickets waiting at a step only at the deploy tier", () => {
+    expect(overview("tickets").textContent).not.toContain("Waiting at a step");
+    expect(overview("code").textContent).toContain("Needs your attention");
   });
 });

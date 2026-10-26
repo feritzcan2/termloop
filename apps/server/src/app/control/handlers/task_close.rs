@@ -1,15 +1,19 @@
 use serde_json::{Value, json};
 use termloop_core::CoreError;
-use termloop_core::task_worktree::{TaskClosePreparation, TaskWorktreeRecreationPlan};
+use termloop_core::task_worktree::{
+    TaskClosePreparation, TaskWorktreeRecreationBase, TaskWorktreeRecreationPlan,
+    branch_worktree_leaf,
+};
 
 use super::super::super::AppState;
 use super::super::super::invalidation::{
     CommitImpact, queue_changed_commit_invalidation, queue_durable_commit_invalidation,
 };
 
-/// Recreates the checkout a closed Task lost at close, before reopen resumes
-/// its parked Agents, so they come back inside the Task's worktree. Any
-/// failure leaves reopen's Project-root fallback in place.
+/// Recreates the checkout a closed Task lost at close on a fresh branch from
+/// the latest base, before reopen resumes its parked Agents, so they come back
+/// inside the Task's worktree. Any failure keeps the original branch and
+/// leaves reopen's Project-root fallback in place.
 pub(in crate::app) async fn recreate_reopened_task_worktree(params: &Value, state: &AppState) {
     let Some(task_id) = params.get("taskId").and_then(Value::as_str) else {
         return;
@@ -60,37 +64,114 @@ async fn recreate_task_worktree(
         .get("repository_root")
         .and_then(Value::as_str)
         .ok_or_else(|| CoreError::InvalidParams("projectId".into()))?;
-    let branch_ref = format!("refs/heads/{}", plan.branch_name);
-    let branch_exists = branches
+    let local_refs = branches
         .get("branches")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .any(|branch| branch.get("exact_ref").and_then(Value::as_str) == Some(branch_ref.as_str()));
-    if !branch_exists {
-        return Err(CoreError::InvalidParams("branchName".into()));
-    }
-    let destination = match &plan.destination_path {
-        Some(path) => path.clone(),
-        None => termloop_platform::sibling_directory_path(repository_path, &plan.worktree_leaf)
+        .filter_map(|branch| branch.get("exact_ref").and_then(Value::as_str))
+        .collect::<Vec<_>>();
+    let sibling = |leaf: &str| -> Result<String, CoreError> {
+        termloop_platform::sibling_directory_path(repository_path, leaf)
             .map_err(|_| CoreError::InvalidParams("projectId".into()))?
             .to_str()
-            .ok_or_else(|| CoreError::InvalidParams("projectId".into()))?
-            .to_owned(),
+            .ok_or_else(|| CoreError::InvalidParams("projectId".into()))
+            .map(str::to_owned)
     };
-    super::provision_task_worktree(
+    let (released, configured_base_ref) = match &plan.base {
+        TaskWorktreeRecreationBase::ExistingBranch => {
+            let branch_ref = format!("refs/heads/{}", plan.branch_name);
+            if !local_refs.contains(&branch_ref.as_str()) {
+                return Err(CoreError::InvalidParams("branchName".into()));
+            }
+            let destination = match &plan.destination_path {
+                Some(path) => path.clone(),
+                None => sibling(&plan.worktree_leaf)?,
+            };
+            return super::provision_task_worktree(
+                json!({
+                    "operationId": plan.operation_id,
+                    "taskId": plan.task_id,
+                    "repositoryPath": repository_path,
+                    "destinationPath": destination,
+                    "branchName": plan.branch_name,
+                    "branchMode": "existing",
+                }),
+                state,
+            )
+            .await
+            .map(drop);
+        }
+        TaskWorktreeRecreationBase::FreshFromBase {
+            released,
+            configured_base_ref,
+        } => (released, configured_base_ref),
+    };
+    let base_ref =
+        crate::app::task_automation::select_base_ref(&branches, configured_base_ref.as_deref())?;
+    let (branch_name, destination) = fresh_branch_checkout(&plan.branch_name, |name| {
+        let destination = sibling(&branch_worktree_leaf(name))?;
+        let taken = local_refs.contains(&format!("refs/heads/{name}").as_str())
+            || std::path::Path::new(&destination).exists();
+        Ok((!taken).then_some(destination))
+    })?;
+    state
+        .core
+        .lock()
+        .await
+        .release_task_branch_for_fresh_checkout(&plan.task_id, released)?;
+    let provisioned = super::provision_task_worktree(
         json!({
             "operationId": plan.operation_id,
             "taskId": plan.task_id,
             "repositoryPath": repository_path,
             "destinationPath": destination,
-            "branchName": plan.branch_name,
-            "branchMode": "existing",
+            "branchName": branch_name,
+            "branchMode": "create",
+            "baseRef": base_ref,
         }),
         state,
     )
-    .await?;
+    .await;
+    if let Err(error) = provisioned {
+        // Keep the Task on its original branch; reopen then falls back to the
+        // Project root exactly as before.
+        if let Err(rebind) = state
+            .core
+            .lock()
+            .await
+            .rebind_task_branch_after_failed_fresh_checkout(&plan.task_id, released.clone())
+        {
+            tracing::warn!(%rebind, task_id = plan.task_id, "Released Task branch could not be rebound");
+        }
+        return Err(error);
+    }
     Ok(())
+}
+
+/// Derives the first free `<branch>-r<n>` for a fresh checkout, dropping a
+/// previous restore's `-r<n>` so repeated restores do not stack suffixes.
+/// `available` returns the checkout folder when both the branch and the
+/// folder are free.
+fn fresh_branch_checkout(
+    released_name: &str,
+    mut available: impl FnMut(&str) -> Result<Option<String>, CoreError>,
+) -> Result<(String, String), CoreError> {
+    let stem = released_name
+        .rsplit_once("-r")
+        .filter(|(stem, number)| {
+            !stem.is_empty()
+                && !number.is_empty()
+                && number.bytes().all(|byte| byte.is_ascii_digit())
+        })
+        .map_or(released_name, |(stem, _)| stem);
+    for number in 2..=99 {
+        let name = format!("{stem}-r{number}");
+        if let Some(destination) = available(&name)? {
+            return Ok((name, destination));
+        }
+    }
+    Err(CoreError::InvalidParams("branchName".into()))
 }
 
 /// Closes a Task and parks the live Agents in its checkout. Core plans the
@@ -169,4 +250,37 @@ pub(in crate::app) async fn close_task(
     )
     .await;
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fresh_branch_checkout;
+
+    #[test]
+    fn fresh_branch_names_skip_taken_names_and_never_stack_suffixes() {
+        let free = |taken: &'static [&'static str]| {
+            move |name: &str| Ok((!taken.contains(&name)).then(|| format!("/x/{name}")))
+        };
+        assert_eq!(
+            fresh_branch_checkout("feature/search-d7fa6880", free(&[]))
+                .unwrap()
+                .0,
+            "feature/search-d7fa6880-r2"
+        );
+        assert_eq!(
+            fresh_branch_checkout(
+                "feature/search-d7fa6880-r2",
+                free(&["feature/search-d7fa6880-r2"])
+            )
+            .unwrap()
+            .0,
+            "feature/search-d7fa6880-r3"
+        );
+        assert_eq!(
+            fresh_branch_checkout("termloop/fix-run-r", free(&[]))
+                .unwrap()
+                .0,
+            "termloop/fix-run-r-r2"
+        );
+    }
 }

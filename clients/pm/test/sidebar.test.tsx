@@ -3,7 +3,7 @@ import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { SprintSidebar } from "../src/renderer/ui/SprintSidebar.js";
 import { dropTarget } from "../src/renderer/ui/sprint-dnd.js";
-import { boardTicket, sprint } from "./fixtures.js";
+import { boardTicket, playbook, sprint } from "./fixtures.js";
 import { render } from "./render.js";
 
 const noop = () => undefined;
@@ -18,6 +18,7 @@ describe("sprint sidebar moves", () => {
         sprints={[sprint()]}
         tickets={lane}
         tier="tickets"
+        playbook={playbook()}
         selectedSprintId="sprint-1"
         selectedTicketId={undefined}
         onSelectSprint={noop}
@@ -50,24 +51,25 @@ describe("sprint sidebar moves", () => {
     expect(dropTarget("a", undefined, lane, "sprint-1")).toBeUndefined();
   });
 
-  it("takes the status of a ticket dropped on in another status section", () => {
+  it("never changes a ticket's status on a drop", () => {
     const mixed = [boardTicket({ id: "a", rank: 0, status: "todo" }), boardTicket({ id: "b", rank: 1, status: "done" })];
-    expect(dropTarget("a", "b", mixed, "sprint-1")).toEqual({ sprintId: "sprint-1", index: 1, status: "done" });
-    expect(dropTarget("b", "lane:sprint-2", mixed, "sprint-1")).toEqual({ sprintId: "sprint-2" });
+    expect(dropTarget("a", "b", mixed, "sprint-1")).toEqual({ sprintId: "sprint-1", index: 1 });
   });
 
-  it("groups the focused sprint into status sections and keeps move up/down inside one", () => {
+  it("groups the focused sprint into Playbook step sections and keeps move up/down inside one", () => {
     const onMoveTicket = vi.fn();
+    const standing = (position: number | null) => ({ playbook: { position, steps: [] } });
     const tickets = [
-      boardTicket({ id: "a", rank: 0, status: "done", title: "A" }),
-      boardTicket({ id: "b", rank: 1, status: "todo", title: "B" }),
-      boardTicket({ id: "c", rank: 2, status: "done", title: "C" }),
+      boardTicket({ id: "a", rank: 0, title: "A" }, standing(4)),
+      boardTicket({ id: "b", rank: 1, title: "B" }, standing(null)),
+      boardTicket({ id: "c", rank: 2, title: "C" }, standing(4)),
     ];
     const { container, unmount } = render(
       <SprintSidebar
         sprints={[sprint()]}
         tickets={tickets}
         tier="tickets"
+        playbook={playbook()}
         selectedSprintId="sprint-1"
         selectedTicketId={undefined}
         onSelectSprint={noop}
@@ -79,7 +81,7 @@ describe("sprint sidebar moves", () => {
     );
     const items = [...container.querySelectorAll(".group .list > li")].map((item) =>
       item.classList.contains("pm-status-head") ? `# ${item.textContent}` : item.querySelector(".row-title")!.textContent);
-    expect(items).toEqual(["# To do1", "SHOP-7B", "# Done2", "SHOP-7A", "SHOP-7C"]);
+    expect(items).toEqual(["# Not started1", "SHOP-7B", "# Done2", "SHOP-7A", "SHOP-7C"]);
     const menuOf = (index: number) => {
       act(() => container.querySelectorAll<HTMLButtonElement>(".pm-move-menu > button")[index]!.click());
       return [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
@@ -100,6 +102,7 @@ describe("sprint sidebar moves", () => {
         sprints={[sprint(), sprint({ id: "sprint-2", name: "Sprint 13", state: "planned" }), sprint({ id: "old", name: "Old", state: "closed" })]}
         tickets={lane}
         tier="tickets"
+        playbook={playbook()}
         selectedSprintId="sprint-1"
         selectedTicketId={undefined}
         onSelectSprint={noop}

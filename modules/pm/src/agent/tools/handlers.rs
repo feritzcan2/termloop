@@ -8,16 +8,15 @@ use crate::agent::{
     PM_TICKET_PROPOSE_ACCEPTANCE_CRITERIA, PM_TICKET_PROPOSE_DESCRIPTION, PM_TICKET_READ,
     PM_TICKET_SUGGEST, PmAgentMode,
 };
+use crate::playbook::{PlaybookStep, StepVerdict};
 use crate::skill::{
     Evidence, NeededTool, NewSkillDraft, SkillChannel, SkillDraftOrigin, SkillManifest,
     SkillPrefilter, SkillSample, SkillSource, SkillTrigger,
 };
 use crate::{
-    AgentProbeReading, Board, ChannelWatermark, CheckReport, DataTier, DeliveryRisk, DeliveryStage,
-    EnvironmentDeployState, NewEnvironmentProposal, NewProbe, NewTicketNote, PmError, PmStore,
-    ProbeMatcher, ProposalChange, ProposalOrigin, ProposedEnvironment, ReportedEnvironment,
-    SprintState, Ticket, TicketAuthor, TicketDelivery, TicketDeliveryFacts, TicketNote,
-    TicketNoteKind, TicketPriority, TicketProposal, TicketStatus,
+    Board, ChannelWatermark, CheckReport, DataTier, DeliveryRisk, NewTicketNote, PmError, PmStore,
+    ProposalChange, ProposalOrigin, SprintState, Ticket, TicketAuthor, TicketDelivery,
+    TicketDeliveryFacts, TicketNote, TicketNoteKind, TicketPriority, TicketProposal, TicketStatus,
 };
 
 /// Which tickets a board read lists.
@@ -59,9 +58,11 @@ pub struct BoardTicket {
     pub assignee: Option<String>,
     pub sprint_id: Option<String>,
     pub jira_key: Option<String>,
-    pub stage: DeliveryStage,
+    /// The title of the furthest Playbook step the ticket passed.
+    pub step: Option<String>,
+    /// The title of the step it works toward; `None` once every step passed.
+    pub next_step: Option<String>,
     pub risks: usize,
-    pub check_reasons: Vec<String>,
     /// A delivery check is running for the ticket.
     pub checking: bool,
 }
@@ -72,7 +73,8 @@ pub struct BoardReadResult {
     /// The furthest delivery data the project has; data beyond it is absent,
     /// not empty.
     pub tier: DataTier,
-    pub environments: Vec<String>,
+    /// The Playbook step titles, in order.
+    pub steps: Vec<String>,
     pub sprints: Vec<BoardSprint>,
     pub tickets: Vec<BoardTicket>,
 }
@@ -236,64 +238,35 @@ pub struct RisksReadResult {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct ReportedEnvironmentParams {
-    pub name: String,
-    pub state: EnvironmentDeployState,
-    #[serde(default)]
-    pub detail: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct AgentProbeParams {
-    pub probe_id: String,
-    pub state: EnvironmentDeployState,
-    #[serde(default)]
-    pub detail: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct ProbeProposalParams {
-    pub environment: String,
-    pub argv: Vec<String>,
-    pub matcher: ProbeMatcher,
-    #[serde(default)]
-    pub reason: Option<String>,
-}
-
-impl ProbeProposalParams {
-    fn into_new_probe(self, project_id: &str) -> NewProbe {
-        NewProbe {
-            project_id: project_id.to_owned(),
-            environment: self.environment,
-            argv: self.argv,
-            matcher: self.matcher,
-            reason: self.reason,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct CheckReportParams {
     pub ticket_id: String,
-    pub environments: Vec<ReportedEnvironmentParams>,
-    #[serde(default)]
-    pub blockers: Option<String>,
-    pub notes_markdown: String,
-    #[serde(default)]
-    pub agent_probe: Option<AgentProbeParams>,
-    #[serde(default)]
-    pub probe_proposals: Vec<ProbeProposalParams>,
+    pub step_id: String,
+    pub verdict: StepVerdict,
+    /// One or two factual sentences: what was read and what it showed.
+    pub evidence: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CheckReportResult {
     pub accepted: bool,
-    pub stage: DeliveryStage,
-    pub proposed_probe_ids: Vec<String>,
+    /// When the step is looked at again; `None` once passed.
+    pub next_attempt_at_epoch_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PlaybookProposeParams {
+    /// What the setup read and what each step rests on, in plain words.
+    pub summary: String,
+    pub steps: Vec<PlaybookStep>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaybookProposeResult {
+    /// Always false: the project manager reviews and applies it.
+    pub applied: bool,
 }
 
 /// The ticket a call names, when the caller may touch it: it belongs to the
@@ -345,18 +318,21 @@ pub(super) fn board_read(
             BoardScope::ActiveSprint => active.is_some() && ticket.sprint_id.as_deref() == active,
             BoardScope::All => true,
         })
-        .map(|(ticket, delivery)| BoardTicket {
-            id: ticket.id.clone(),
-            title: ticket.title.clone(),
-            status: ticket.status,
-            priority: ticket.priority,
-            assignee: ticket.assignee.clone(),
-            sprint_id: ticket.sprint_id.clone(),
-            jira_key: ticket.jira_issue_key(),
-            stage: delivery.stage.clone(),
-            risks: delivery.risks.len(),
-            check_reasons: delivery.check_reasons.clone(),
-            checking: delivery.checking,
+        .map(|(ticket, delivery)| {
+            let title = |index: usize| board.playbook.steps[index].title.clone();
+            BoardTicket {
+                id: ticket.id.clone(),
+                title: ticket.title.clone(),
+                status: ticket.status,
+                priority: ticket.priority,
+                assignee: ticket.assignee.clone(),
+                sprint_id: ticket.sprint_id.clone(),
+                jira_key: ticket.jira_issue_key(),
+                step: delivery.playbook.position.map(title),
+                next_step: delivery.playbook.next_index().map(title),
+                risks: delivery.risks.len(),
+                checking: delivery.checking,
+            }
         })
         .collect();
     let sprints = board
@@ -373,15 +349,12 @@ pub(super) fn board_read(
         .collect();
     Ok(BoardReadResult {
         tier: board.tracking.tier,
-        environments: if board.tracking.deploy {
-            board
-                .environments
-                .iter()
-                .map(|environment| environment.name.clone())
-                .collect()
-        } else {
-            Vec::new()
-        },
+        steps: board
+            .playbook
+            .steps
+            .iter()
+            .map(|step| step.title.clone())
+            .collect(),
         sprints,
         tickets,
     })
@@ -610,41 +583,15 @@ pub(super) fn draft_submit(
     })
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct EnvironmentsProposeParams {
-    pub summary: String,
-    pub environments: Vec<ProposedEnvironment>,
-    #[serde(default)]
-    pub probes: Vec<ProbeProposalParams>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EnvironmentsProposeResult {
-    pub proposed_probe_ids: Vec<String>,
-}
-
-/// The Deployment control setup proposes what it found; the PM ticks it in
-/// the Skills panel.
-pub(super) fn environments_propose(
+/// The Playbook setup proposes the steps it found; the project manager
+/// reviews them in the Skills panel.
+pub(super) fn playbook_propose(
     store: &mut PmStore,
     context: &PmToolContext,
-    params: EnvironmentsProposeParams,
-) -> Result<EnvironmentsProposeResult, PmToolError> {
-    let proposal = store.propose_environments(NewEnvironmentProposal {
-        project_id: context.project_id.clone(),
-        summary: params.summary,
-        environments: params.environments,
-        probes: params
-            .probes
-            .into_iter()
-            .map(|probe| probe.into_new_probe(&context.project_id))
-            .collect(),
-    })?;
-    Ok(EnvironmentsProposeResult {
-        proposed_probe_ids: proposal.probes.into_iter().map(|probe| probe.id).collect(),
-    })
+    params: PlaybookProposeParams,
+) -> Result<PlaybookProposeResult, PmToolError> {
+    store.propose_playbook(&context.project_id, params.summary, params.steps)?;
+    Ok(PlaybookProposeResult { applied: false })
 }
 
 pub(super) fn risks_read(
@@ -684,41 +631,17 @@ pub(super) fn check_report(
     params: CheckReportParams,
 ) -> Result<CheckReportResult, PmToolError> {
     let ticket = scoped_ticket(store, context, PM_CHECK_REPORT, &params.ticket_id)?;
-    if !store.deploy_tracking_enabled(&context.project_id)? {
-        return Err(denied(
-            PM_CHECK_REPORT,
-            "the project does not track deployments",
-        ));
-    }
-    let report = CheckReport {
-        ticket_id: ticket.id.clone(),
-        environments: params
-            .environments
-            .into_iter()
-            .map(|environment| ReportedEnvironment {
-                name: environment.name,
-                state: environment.state,
-                detail: environment.detail,
-            })
-            .collect(),
-        blockers: params.blockers,
-        notes_markdown: params.notes_markdown,
-        agent_probe: params.agent_probe.map(|reading| AgentProbeReading {
-            probe_id: reading.probe_id,
-            state: reading.state,
-            detail: reading.detail,
-        }),
-        probe_proposals: params
-            .probe_proposals
-            .into_iter()
-            .map(|probe| probe.into_new_probe(&context.project_id))
-            .collect(),
-    };
-    let recorded = store.record_check_report(&context.project_id, report)?;
-    let board = store.board(&context.project_id)?;
+    let recorded = store.record_check_report(
+        &context.project_id,
+        CheckReport {
+            ticket_id: ticket.id,
+            step_id: params.step_id,
+            verdict: params.verdict,
+            evidence: params.evidence,
+        },
+    )?;
     Ok(CheckReportResult {
         accepted: true,
-        stage: delivery_of(&board, &ticket.id)?.stage,
-        proposed_probe_ids: recorded.proposed_probe_ids,
+        next_attempt_at_epoch_ms: recorded.verdict.next_attempt_at_epoch_ms,
     })
 }

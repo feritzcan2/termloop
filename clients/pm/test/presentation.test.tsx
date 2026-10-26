@@ -2,8 +2,8 @@
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { ProjectSwitcher } from "../src/renderer/ui/ProjectSwitcher.js";
-import { STATUS_DOT, agentTone, attentionRows, dayRuler, lastJiraPull, sprintDay, statusRibbon, statusSections } from "../src/renderer/ui/format.js";
-import { boardTicket, sprint } from "./fixtures.js";
+import { STATUS_DOT, agentTone, attentionRows, dayRuler, lastJiraPull, nextStep, sprintDay, stepRibbon, stepSections, ticketStep, waitingAtStep } from "../src/renderer/ui/format.js";
+import { boardTicket, playbook, sprint, stepState } from "./fixtures.js";
 import { render } from "./render.js";
 
 const at = (year: number, month: number, day: number, hour = 12) => new Date(year, month - 1, day, hour).getTime();
@@ -61,25 +61,28 @@ describe("sidebar tones", () => {
     expect(rows[1]).toMatchObject({ label: "SHOP-7", title: "Waiting for review", tone: "warn" });
   });
 
-  it("splits merged-but-not-live tickets out of the ribbon only from the code tier", () => {
-    const tickets = [
-      boardTicket({ id: "a", status: "todo" }, { stage: { kind: "toDo", environment: null, sinceEpochMs: null } }),
-      boardTicket({ id: "b", status: "inReview" }, { stage: { kind: "merged", environment: null, sinceEpochMs: null } }),
-      boardTicket({ id: "c", status: "done" }, { stage: { kind: "merged", environment: null, sinceEpochMs: null } }),
-    ];
-    const counts = (tier: "tickets" | "code") => Object.fromEntries(statusRibbon(tickets, tier).map((segment) => [segment.key, segment.count]));
-    expect(counts("tickets")).toEqual({ todo: 1, inProgress: 0, inReview: 1, done: 1 });
-    expect(counts("code")).toEqual({ todo: 1, inProgress: 0, inReview: 0, merged: 1, done: 1 });
+  it("counts the ribbon by the step each ticket passed, the last step as done", () => {
+    const standing = (position: number | null) => ({ playbook: { position, steps: [] } });
+    const tickets = [boardTicket({ id: "a" }, standing(null)), boardTicket({ id: "b" }, standing(2)), boardTicket({ id: "c" }, standing(2)), boardTicket({ id: "d" }, standing(4))];
+    expect(stepRibbon(tickets, playbook()).map((segment) => [segment.className, segment.count]))
+      .toEqual([["todo", 1], ["step-0", 0], ["step-1", 0], ["step-2", 2], ["step-3", 0], ["done", 1]]);
   });
 
-  it("splits a lane into ordered status sections, skipping empty ones and keeping lane order", () => {
-    const lane = [
-      boardTicket({ id: "a", status: "done" }),
-      boardTicket({ id: "b", status: "todo" }),
-      boardTicket({ id: "c", status: "done" }),
-    ];
-    expect(statusSections(lane).map((section) => [section.status, section.tickets.map((entry) => entry.ticket.id)]))
-      .toEqual([["todo", ["b"]], ["done", ["a", "c"]]]);
+  it("splits a lane into Playbook sections, Not started first, skipping empty steps", () => {
+    const standing = (position: number | null) => ({ playbook: { position, steps: [] } });
+    const lane = [boardTicket({ id: "a" }, standing(2)), boardTicket({ id: "b" }, standing(null)), boardTicket({ id: "c" }, standing(2))];
+    expect(stepSections(lane, playbook()).map((section) => [section.title, section.tickets.map((entry) => entry.ticket.id)]))
+      .toEqual([["Not started", ["b"]], ["Merged", ["a", "c"]]]);
+  });
+
+  it("names the step a ticket passed and the one it works toward", () => {
+    const merged = boardTicket({}, { playbook: { position: 2, steps: [stepState("started"), stepState("review"), stepState("merged"), stepState("live", { verdict: "blocked", evaluator: "agent", evidence: "Deploy failed" })] } });
+    expect(ticketStep(playbook(), merged.delivery)?.title).toBe("Merged");
+    expect(nextStep(playbook(), merged.delivery)?.step.id).toBe("live");
+    expect(waitingAtStep([merged, boardTicket({ id: "x" })], playbook()).map((row) => [row.entry.ticket.id, row.step.id, row.state.verdict]))
+      .toEqual([["ticket-1", "live", "blocked"]]);
+    const finished = boardTicket({}, { playbook: { position: 4, steps: [] } });
+    expect(nextStep(playbook(), finished.delivery)).toBeUndefined();
   });
 
   it("finds the newest Jira pull on sprints and tickets", () => {

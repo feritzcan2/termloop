@@ -33,14 +33,6 @@ describe("SkillFile", () => {
     unmount();
   });
 
-  it("opens a built-in skill read-only", () => {
-    const { container, unmount } = render(<SkillFile skill={skill({ builtin: "deploymentControl" })} onSave={async () => true} />);
-    expect(container.textContent).toContain("read-only");
-    expect(button(container, "Save as v2")).toBeUndefined();
-    expect(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Instructions"]')!.readOnly).toBe(true);
-    unmount();
-  });
-
   it("opens in the stage and saves through pm_skill_update", async () => {
     const bridge = fakeBridge(() => ok(skill({ version: 2 })));
     const controller = new PmController(bridge, createPmStore({ projectId: "project-1" }));

@@ -98,9 +98,8 @@ impl PmStore {
                 return Err(PmError::Constraint("the run is already closed"));
             }
             if let (Some(skill_id), Some(version)) = (&run.skill_id, run.version) {
-                let record = skill_record(transaction, skill_id)?.ok_or(PmError::NotFound)?;
-                let manifest =
-                    skill_manifest(transaction, skill_id, version, record.builtin.is_some())?;
+                skill_record(transaction, skill_id)?.ok_or(PmError::NotFound)?;
+                let manifest = skill_manifest(transaction, skill_id, version)?;
                 if !watermarks
                     .iter()
                     .all(|watermark| manifest.reads_channel(&watermark.channel_id))

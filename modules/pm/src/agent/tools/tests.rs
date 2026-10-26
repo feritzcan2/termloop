@@ -2,18 +2,20 @@ use std::collections::BTreeSet;
 
 use serde_json::{Value, json};
 
-use super::handlers::EnvironmentsProposeParams;
 use super::*;
 use crate::ChannelWatermark;
 use crate::ProposalChange;
 use crate::agent::{
-    PM_ENVIRONMENTS_PROPOSE, PM_OWNER_EVIDENCE_READ, PM_SKILL_DISCOVERY_READ,
-    PM_SKILL_DRY_RUN_REQUEST, PM_SKILL_TOOL_VERIFY, PM_TICKET_NOTE_ADD, PM_TOOLS,
+    PM_OWNER_EVIDENCE_READ, PM_PLAYBOOK_PROPOSE, PM_SKILL_DISCOVERY_READ, PM_SKILL_DRY_RUN_REQUEST,
+    PM_SKILL_TOOL_VERIFY, PM_TICKET_NOTE_ADD, PM_TOOLS,
+};
+use crate::playbook::{
+    AgentCheck, PlaybookStep, PullRequestStepState, StepCheck, StepEvaluator, StepVerdict,
+    default_steps,
 };
 use crate::skill::{Evidence, NeededTool, SkillChannel, SkillPrefilter, SkillSource, SkillTrigger};
 use crate::{
-    DeliveryStageKind, EnvironmentDeployState, FactRead, FactSource, FactsObservation, NewProbe,
-    NewTicket, ProbeMatcher, ProbeOutcome, ProbeStatus, ProjectEnvironment, PullRequestFact,
+    DeliveryCheckReason, DueCheck, FactRead, FactsObservation, NewTicket, PullRequestFact,
     PullRequestFactChecks, PullRequestFactReview, PullRequestFactState, PullRequestsObservation,
     SprintState, Ticket, TicketAuthor,
 };
@@ -79,7 +81,14 @@ fn assert_schema_matches(schema: &Value, sample: &Value, path: &str) {
             Value::Array(items) => {
                 assert_eq!(property["type"], "array", "{path}.{name}");
                 if let Some(first @ Value::Object(_)) = items.first() {
-                    assert_schema_matches(&property["items"], first, &format!("{path}.{name}[]"));
+                    let mut item = &property["items"];
+                    if let Some(variants) = item["oneOf"].as_array() {
+                        item = variants
+                            .iter()
+                            .find(|variant| variant["properties"]["kind"]["const"] == first["kind"])
+                            .unwrap_or_else(|| panic!("{path}.{name}[]: no variant for {first}"));
+                    }
+                    assert_schema_matches(item, first, &format!("{path}.{name}[]"));
                 }
             }
             Value::String(_) => assert!(
@@ -146,24 +155,9 @@ fn samples() -> Vec<(&'static str, Value)> {
             PM_CHECK_REPORT,
             sample(CheckReportParams {
                 ticket_id: "t1".into(),
-                environments: vec![ReportedEnvironmentParams {
-                    name: "live".into(),
-                    state: EnvironmentDeployState::InProgress,
-                    detail: Some("rolling out".into()),
-                }],
-                blockers: Some("Waiting on QA".into()),
-                notes_markdown: "## Observed".into(),
-                agent_probe: Some(AgentProbeParams {
-                    probe_id: "p".into(),
-                    state: EnvironmentDeployState::NotDeployed,
-                    detail: Some("old build".into()),
-                }),
-                probe_proposals: vec![ProbeProposalParams {
-                    environment: "live".into(),
-                    argv: vec!["curl".into()],
-                    matcher: ProbeMatcher::CommitAncestry,
-                    reason: Some("version endpoint".into()),
-                }],
+                step_id: "on-int".into(),
+                verdict: StepVerdict::Waiting,
+                evidence: "INT still runs build 811.".into(),
             }),
         ),
         (
@@ -222,19 +216,20 @@ fn samples() -> Vec<(&'static str, Value)> {
         (PM_SKILL_DRY_RUN_REQUEST, json!({ "draftId": "d1" })),
         (PM_OWNER_EVIDENCE_READ, json!({ "ticketId": "t1" })),
         (
-            PM_ENVIRONMENTS_PROPOSE,
-            sample(EnvironmentsProposeParams {
-                summary: "Two environments in the deploy workflow".into(),
-                environments: vec![crate::ProposedEnvironment {
-                    name: "staging".into(),
-                    production: false,
-                    evidence: ".github/workflows/deploy.yml".into(),
-                }],
-                probes: vec![ProbeProposalParams {
-                    environment: "staging".into(),
-                    argv: vec!["curl".into(), "https://staging.example/version".into()],
-                    matcher: ProbeMatcher::CommitAncestry,
-                    reason: Some("Prints the deployed commit".into()),
+            PM_PLAYBOOK_PROPOSE,
+            sample(PlaybookProposeParams {
+                summary: "INT deploys from the deploy workflow".into(),
+                steps: vec![PlaybookStep {
+                    id: "on-int".into(),
+                    title: "On INT".into(),
+                    checks: vec![StepCheck::PullRequest {
+                        state: PullRequestStepState::Merged,
+                        base_branch: Some("release".into()),
+                    }],
+                    agent: Some(AgentCheck {
+                        instructions: "Read the INT pipeline's last run".into(),
+                        retry_minutes: 30,
+                    }),
                 }],
             }),
         ),
@@ -369,7 +364,12 @@ fn the_board_read_lists_the_active_sprint_by_default() {
 
     let board = call_pm_tool(&mut store, &assistant("p1"), PM_BOARD_READ, Value::Null).unwrap();
     assert_eq!(board["tier"], "tickets");
-    assert_eq!(board["environments"], json!([]));
+    assert_eq!(
+        board["steps"],
+        json!(["In progress", "In review", "Merged", "Done"])
+    );
+    assert_eq!(board["tickets"][0]["step"], Value::Null);
+    assert_eq!(board["tickets"][0]["nextStep"], "In progress");
     assert_eq!(board["sprints"][0]["goal"], "Ship login");
     let tickets = board["tickets"].as_array().unwrap();
     assert_eq!(tickets.len(), 1);
@@ -512,131 +512,120 @@ fn merged(store: &mut PmStore, ticket_id: &str) {
 }
 
 #[test]
-fn a_check_report_records_facts_notes_probe_readings_and_proposals() {
+fn a_check_report_answers_its_one_step_of_its_one_ticket() {
     let mut store = store();
     let sprint = store
         .create_sprint("p1", "Sprint 1", None, SprintState::Planned)
         .unwrap();
     store.activate_sprint(&sprint.id).unwrap();
     let work = ticket(&mut store, "p1", "Login", Some(&sprint.id));
+    let other = ticket(&mut store, "p1", "Other", Some(&sprint.id));
     merged(&mut store, &work.id);
 
-    // Without deploy tracking there is nothing for a check to report.
-    let report = json!({
-        "ticketId": work.id,
-        "environments": [{ "name": "staging", "state": "deployed", "detail": "v1.4 runs abc1234" }],
-        "notesMarkdown": "## Observed\nstaging runs abc1234",
-        "probeProposals": [{
-            "environment": "live",
-            "argv": ["curl", "-s", "https://pay.example/version"],
-            "matcher": "commitAncestry",
-            "reason": "The live version endpoint names the commit"
-        }]
-    });
+    let report = |ticket_id: &str, step_id: &str| {
+        json!({
+            "ticketId": ticket_id,
+            "stepId": step_id,
+            "verdict": "waiting",
+            "evidence": "The last INT run (#811) deployed main at 9f8e7d6, before the merge."
+        })
+    };
+    // Without an agent step there is nothing for a check to answer.
     let error = call_pm_tool(
         &mut store,
         &delivery_check("p1", &work.id),
         PM_CHECK_REPORT,
-        report.clone(),
+        report(&work.id, "merged"),
     )
     .unwrap_err();
-    assert_eq!(error.code(), "denied");
+    assert_eq!(error.code(), "refused");
 
+    let mut steps = default_steps();
+    steps.insert(
+        3,
+        PlaybookStep {
+            id: "on-int".into(),
+            title: "On INT".into(),
+            checks: vec![],
+            agent: Some(AgentCheck {
+                instructions: "Read the INT pipeline's last run with az.".into(),
+                retry_minutes: 30,
+            }),
+        },
+    );
+    store.save_playbook("p1", 0, steps).unwrap();
     store
-        .set_project_environments(
-            "p1",
-            &[
-                ProjectEnvironment {
-                    name: "staging".into(),
-                    production: false,
-                },
-                ProjectEnvironment {
-                    name: "live".into(),
-                    production: true,
-                },
-            ],
-        )
+        .start_check(DueCheck {
+            ticket_id: work.id.clone(),
+            step_id: "on-int".into(),
+            reason: DeliveryCheckReason::Due,
+        })
         .unwrap();
     let result = call_pm_tool(
         &mut store,
         &delivery_check("p1", &work.id),
         PM_CHECK_REPORT,
-        report,
+        report(&work.id, "on-int"),
     )
     .unwrap();
     assert_eq!(result["accepted"], true);
-    assert_eq!(result["stage"]["kind"], "deployed");
-    assert_eq!(result["stage"]["environment"], "staging");
-    let facts = store.ticket_facts(&work.id).unwrap().unwrap();
-    let staging = &facts.environments[0];
-    assert_eq!(staging.state, EnvironmentDeployState::Deployed);
-    assert_eq!(staging.source, FactSource::Check);
-    assert!(facts.check_notes.unwrap().markdown.contains("abc1234"));
-    let probes = store.project_probes("p1").unwrap();
-    assert_eq!(probes.len(), 1);
-    assert_eq!(probes[0].status, ProbeStatus::Proposed);
-    assert_eq!(result["proposedProbeIds"][0], probes[0].id);
+    assert!(result["nextAttemptAtEpochMs"].is_u64());
+    let delivery = store.board("p1").unwrap().deliveries[0].clone();
+    assert!(!delivery.checking);
+    let state = &delivery.playbook.steps[3];
+    assert_eq!(state.verdict, Some(StepVerdict::Waiting));
+    assert_eq!(state.evaluator, Some(StepEvaluator::Agent));
 
-    // An approved agent-matcher probe's reading lands as a probe fact.
-    let agent_probe = store
-        .create_probe(NewProbe {
-            project_id: "p1".into(),
-            environment: "live".into(),
-            argv: vec!["kubectl".into(), "get".into(), "deploy".into()],
-            matcher: ProbeMatcher::Agent,
-            reason: None,
-        })
-        .unwrap();
-    store
-        .record_probe_run(
-            &agent_probe.id,
-            &agent_probe.argv,
-            &ProbeOutcome::Output {
-                output_hash: "a".repeat(64),
-                deployed_commit: None,
-            },
-            &[],
-        )
-        .unwrap();
-    let result = call_pm_tool(
-        &mut store,
-        &delivery_check("p1", &work.id),
-        PM_CHECK_REPORT,
-        json!({
-            "ticketId": work.id,
-            "environments": [],
-            "notesMarkdown": "## Observed\nlive image tag names abc1234",
-            "agentProbe": { "probeId": agent_probe.id, "state": "deployed" }
-        }),
-    )
-    .unwrap();
-    assert_eq!(result["stage"]["kind"], "live");
-    let board = store.board("p1").unwrap();
-    assert_eq!(board.deliveries[0].stage.kind, DeliveryStageKind::Live);
-    let live = store
-        .ticket_facts(&work.id)
-        .unwrap()
-        .unwrap()
-        .environments
-        .into_iter()
-        .find(|environment| environment.name == "live")
-        .unwrap();
-    assert_eq!(live.source, FactSource::Probe);
-
-    // A proposed (unapproved) probe cannot carry a reading.
+    // A check stays on its own ticket, and an unknown verdict is refused.
     let error = call_pm_tool(
         &mut store,
         &delivery_check("p1", &work.id),
         PM_CHECK_REPORT,
-        json!({
-            "ticketId": work.id,
-            "environments": [],
-            "notesMarkdown": "## Observed",
-            "agentProbe": { "probeId": probes[0].id, "state": "deployed" }
-        }),
+        report(&other.id, "on-int"),
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), "denied");
+    let error = call_pm_tool(
+        &mut store,
+        &delivery_check("p1", &work.id),
+        PM_CHECK_REPORT,
+        json!({ "ticketId": work.id, "stepId": "on-int", "verdict": "deployed", "evidence": "x" }),
     )
     .unwrap_err();
     assert_eq!(error.code(), "invalidArguments");
+}
+
+#[test]
+fn the_playbook_setup_proposes_steps_the_pm_reviews() {
+    let mut store = store();
+    let setup = PmToolContext::new("p1", PmAgentMode::SkillCreator);
+    let result = call_pm_tool(
+        &mut store,
+        &setup,
+        PM_PLAYBOOK_PROPOSE,
+        json!({
+            "summary": "Merged pull requests deploy to INT from deploy.yml.",
+            "steps": [
+                { "id": "merged", "title": "Merged", "checks": [{ "kind": "pullRequest", "state": "merged" }] },
+                { "id": "on-int", "title": "On INT", "agent": { "instructions": "Read the INT run.", "retryMinutes": 30 } }
+            ]
+        }),
+    )
+    .unwrap();
+    assert_eq!(result["applied"], false);
+    assert_eq!(
+        store.playbook_proposal("p1").unwrap().unwrap().steps.len(),
+        2
+    );
+    assert_eq!(store.playbook("p1").unwrap().revision, 0);
+    let error = call_pm_tool(
+        &mut store,
+        &assistant("p1"),
+        PM_PLAYBOOK_PROPOSE,
+        json!({ "summary": "x", "steps": [] }),
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), "denied");
 }
 
 #[test]

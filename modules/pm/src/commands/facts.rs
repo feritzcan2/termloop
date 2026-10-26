@@ -1,12 +1,11 @@
-//! Recording what one read of Jira, the Git host, a probe, a delivery check,
-//! or the PM observed about a ticket's delivery.
+//! Recording what one read of Jira or the Git host observed about a
+//! ticket's delivery.
 
 use rusqlite::{Connection, params};
 
 use super::require_ticket;
 use crate::delivery::facts::{
-    CheckNotes, EnvironmentDeployState, FactSource, JiraStatusCategory, PullRequestFact,
-    TicketDeliveryFacts,
+    FactSource, JiraStatusCategory, PullRequestFact, TicketDeliveryFacts,
 };
 use crate::store::{ticket_facts, to_json};
 use crate::{PmError, PmStore};
@@ -39,28 +38,11 @@ pub struct PullRequestsObservation {
     pub truncated: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EnvironmentObservation {
-    pub name: String,
-    pub state: EnvironmentDeployState,
-    pub detail: Option<String>,
-    pub source: FactSource,
-}
-
-/// What a delivery check wrote; it is recorded at the command's time.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CheckNotesObservation {
-    pub blockers: Option<String>,
-    pub markdown: String,
-}
-
 /// Everything one delivery refresh observed about a ticket.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FactsObservation {
     pub jira: FactRead<JiraObservation>,
     pub pull_requests: FactRead<PullRequestsObservation>,
-    pub environments: Vec<EnvironmentObservation>,
-    pub check_notes: Option<CheckNotesObservation>,
 }
 
 /// Replaces a ticket's facts record after validating it.
@@ -122,22 +104,6 @@ impl PmStore {
                     facts.observe_pull_requests(read.repository, read.items, read.truncated, now)
                 }
                 FactRead::Failed(reason) => facts.fail_read(FactSource::GitHost, reason, now),
-            }
-            for environment in observation.environments {
-                facts.observe_environment(
-                    &environment.name,
-                    environment.state,
-                    environment.detail,
-                    environment.source,
-                    now,
-                );
-            }
-            if let Some(notes) = observation.check_notes {
-                facts.check_notes = Some(CheckNotes {
-                    blockers: notes.blockers,
-                    markdown: notes.markdown,
-                    recorded_at_epoch_ms: now,
-                });
             }
             facts.recorded_at_epoch_ms = now;
             store_facts(transaction, &facts)?;

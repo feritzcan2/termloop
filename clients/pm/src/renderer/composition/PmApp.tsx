@@ -156,7 +156,6 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
       lane={lane}
       laneSprintId={shownSprintId}
       onMoveTicket={(id, sprintId, index) => void controller.moveTicket(id, sprintId, index)}
-      onSetStatus={(id, status) => void controller.setStatus(id, status)}
     >
       <div
         className={`shell ${right.open ? "right-open" : ""}`}
@@ -173,7 +172,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
           sprints={sprints}
           tickets={allTickets}
           tier={tier}
-          environments={board?.environments ?? EMPTY}
+          playbook={board?.playbook}
           versions={state.versions}
           selectedSprintId={state.selectedSprintId}
           selectedTicketId={state.selectedTicketId}
@@ -234,8 +233,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 catalog={state.catalog}
                 sources={state.sources}
                 tracking={board?.tracking}
-                environments={board?.environments ?? EMPTY}
-                probes={board?.probes ?? EMPTY}
+                playbook={board?.playbook}
                 tools={state.tools}
                 now={now}
                 onReadTools={(refresh) => controller.loadTools(refresh)}
@@ -244,11 +242,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 onPickFolder={() => controller.bridge.pickFolder()}
                 onSetFolder={(folder) => void controller.setProjectFolder(folder)}
                 onSaveSettings={(edit) => void controller.saveSettings(edit)}
-                onSetEnvironments={(environments) => void controller.setEnvironments(environments)}
-                onCreateProbe={(environment, argv, matcher) => void controller.createProbe(environment, argv, matcher)}
-                onApproveProbe={(id) => void controller.approveProbe(id)}
-                onRejectProbe={(id) => void controller.rejectProbe(id)}
-                onDeleteProbe={(id) => void controller.deleteProbe(id)}
+                onSavePlaybook={(baseRevision, steps) => controller.savePlaybook(baseRevision, steps)}
               />
             ) : view === "jira" ? (
               <JiraStage
@@ -268,7 +262,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 sprints={sprints}
                 tier={tier}
                 jiraConfigured={jiraConfigured}
-                deployTracking={board?.tracking.deploy ?? false}
+                playbook={board?.playbook}
                 proposals={state.proposals[ticketId] ?? EMPTY}
                 versions={state.versions[ticketId]}
                 now={now}
@@ -294,6 +288,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 }}
                 onWriteToJira={() => void controller.openJiraDialog(ticketId)}
                 onStartCheck={() => void controller.startCheck(ticketId)}
+                onMarkStep={(stepId, passed) => void controller.markStep(ticketId, stepId, passed)}
                 onAskAgent={() => launchAgent(ticketId)}
               />
             ) : (
@@ -302,7 +297,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 sprints={sprints}
                 tickets={tickets}
                 tier={tier}
-                environments={board?.environments ?? EMPTY}
+                playbook={board?.playbook}
                 digest={state.digest?.entries ?? EMPTY}
                 now={now}
                 onOpenTicket={(id) => void controller.selectTicket(id)}
@@ -362,8 +357,8 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 onDiscard={(id) => void controller.discardDraft(id)}
                 onInstall={(id, tools, channels) => controller.installDraft(id, tools, channels.length > 0 ? channels : undefined)}
                 onOpenLink={(url) => void controller.bridge.openExternal(url)}
-                onApplyEnvironments={(environments, probeIds) => controller.applyEnvironmentProposal(environments, probeIds)}
-                onDiscardEnvironments={() => void controller.discardEnvironmentProposal()}
+                onApplyPlaybook={(steps) => controller.applyPlaybookProposal(steps)}
+                onDiscardPlaybook={() => void controller.discardPlaybookProposal()}
               />
             )}
           </RightSidebar>

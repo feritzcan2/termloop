@@ -16,13 +16,12 @@ pub use profile::{
     SlackChannelBrief,
 };
 pub use tools::{
-    AcceptanceCriteriaProposalParams, AgentProbeParams, BoardReadParams, BoardReadResult,
-    BoardScope, BoardSprint, BoardTicket, CheckReportParams, CheckReportResult,
-    DescriptionProposalParams, NoteAddParams, NoteAddResult, PmToolContext, PmToolDefinition,
-    PmToolError, ProbeProposalParams, ProposalResult, ReportedEnvironmentParams, RisksReadParams,
-    RisksReadResult, SkillDraftSubmitParams, SkillRunContext, SkillRunFinishParams, SuggestParams,
-    TicketReadParams, TicketReadResult, TicketRisks, call_pm_tool, pm_tool_access,
-    pm_tool_definitions,
+    AcceptanceCriteriaProposalParams, BoardReadParams, BoardReadResult, BoardScope, BoardSprint,
+    BoardTicket, CheckReportParams, CheckReportResult, DescriptionProposalParams, NoteAddParams,
+    NoteAddResult, PlaybookProposeParams, PmToolContext, PmToolDefinition, PmToolError,
+    ProposalResult, RisksReadParams, RisksReadResult, SkillDraftSubmitParams, SkillRunContext,
+    SkillRunFinishParams, SuggestParams, TicketReadParams, TicketReadResult, TicketRisks,
+    call_pm_tool, pm_tool_access, pm_tool_definitions,
 };
 
 /// What the PM agent is launched for.
@@ -31,8 +30,8 @@ pub use tools::{
 pub enum PmAgentMode {
     /// The PM's interactive agent in a terminal.
     Assistant,
-    /// A short-lived, non-interactive agent that finds out where one
-    /// ticket's change runs, reports once, and stops.
+    /// A short-lived, non-interactive agent that tells whether one ticket
+    /// passed one Playbook step, reports once, and stops.
     DeliveryCheck,
     /// One run of an installed skill, or a draft's dry run: it reads with
     /// the skill's approved tools only and suggests through proposals.
@@ -56,7 +55,7 @@ pub const PM_SKILL_DRAFT_SUBMIT: &str = "pm_skill_draft_submit";
 pub const PM_SKILL_DRY_RUN_REQUEST: &str = "pm_skill_dry_run_request";
 pub const PM_TICKET_NOTE_ADD: &str = "pm_ticket_note_add";
 pub const PM_OWNER_EVIDENCE_READ: &str = "pm_owner_evidence_read";
-pub const PM_ENVIRONMENTS_PROPOSE: &str = "pm_environments_propose";
+pub const PM_PLAYBOOK_PROPOSE: &str = "pm_playbook_propose";
 
 /// The read tools a skill manifest may approve. A run sees exactly the
 /// ones its manifest approved, plus [`SKILL_PROPOSAL_TOOLS`].
@@ -101,7 +100,7 @@ pub const PM_TOOLS: &[&str] = &[
     PM_SKILL_DRY_RUN_REQUEST,
     PM_TICKET_NOTE_ADD,
     PM_OWNER_EVIDENCE_READ,
-    PM_ENVIRONMENTS_PROPOSE,
+    PM_PLAYBOOK_PROPOSE,
 ];
 
 impl PmAgentMode {
@@ -144,7 +143,7 @@ impl PmAgentMode {
                 PM_SKILL_TOOL_VERIFY,
                 PM_SKILL_DRAFT_SUBMIT,
                 PM_SKILL_DRY_RUN_REQUEST,
-                PM_ENVIRONMENTS_PROPOSE,
+                PM_PLAYBOOK_PROPOSE,
             ],
         }
     }

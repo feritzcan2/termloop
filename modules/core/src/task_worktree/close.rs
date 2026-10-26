@@ -7,7 +7,9 @@
 use std::path::Path;
 
 use serde_json::Value;
-use termloop_domain::{SessionKind, TaskArchiveTarget, TaskStatus, TaskSuspensionReason};
+use termloop_domain::{
+    SessionKind, TaskArchiveTarget, TaskBranchBinding, TaskStatus, TaskSuspensionReason,
+};
 
 use super::health::comparison_key;
 use crate::{CoreError, CoreRuntime, required_string, store_error, terminal_error};
@@ -40,11 +42,25 @@ pub struct TaskWorktreeRecreationPlan {
     /// The exact folder to recreate; absent means beside the repository root.
     pub destination_path: Option<String>,
     pub operation_id: String,
+    pub base: TaskWorktreeRecreationBase,
+}
+
+/// Which branch a recreated checkout starts on.
+pub enum TaskWorktreeRecreationBase {
+    /// Check out `branch_name` again.
+    ExistingBranch,
+    /// Release `branch_name` and start a fresh branch derived from it at the
+    /// latest base: the configured Project base when one is set, otherwise the
+    /// observed integration branch.
+    FreshFromBase {
+        released: TaskBranchBinding,
+        configured_base_ref: Option<String>,
+    },
 }
 
 /// Same leaf shape as managed checkouts: `prefix/slug` becomes
 /// `prefix-slug_worktree`, `UKIE-931` becomes `UKIE-931_worktree`.
-fn branch_worktree_leaf(branch_name: &str) -> String {
+pub fn branch_worktree_leaf(branch_name: &str) -> String {
     format!("{}_worktree", branch_name.replace('/', "-"))
 }
 
@@ -83,6 +99,12 @@ impl CoreRuntime {
         if !parked || provisioning {
             return None;
         }
+        let configured_base_ref = self
+            .store
+            .project_task_automation_configurations()
+            .iter()
+            .find(|configuration| configuration.project_id == task.project_id)
+            .and_then(|configuration| configuration.base_ref.clone());
         Some(TaskWorktreeRecreationPlan {
             project_id: task.project_id.clone(),
             task_id: task.id.clone(),
@@ -90,7 +112,56 @@ impl CoreRuntime {
             worktree_leaf: branch_worktree_leaf(&branch.name),
             destination_path: None,
             operation_id: termloop_platform::generate_uuid_v4(),
+            base: TaskWorktreeRecreationBase::FreshFromBase {
+                released: branch.clone(),
+                configured_base_ref,
+            },
         })
+    }
+
+    /// Frees a closed Task's removed-checkout branch so its reopen checkout
+    /// can start a fresh branch from the latest base.
+    pub fn release_task_branch_for_fresh_checkout(
+        &mut self,
+        task_id: &str,
+        expected: &TaskBranchBinding,
+    ) -> Result<(), CoreError> {
+        self.store
+            .release_closed_task_branch(
+                &self.write_authority,
+                task_id,
+                expected,
+                termloop_platform::current_epoch_ms(),
+            )
+            .map_err(store_error)?;
+        Ok(())
+    }
+
+    /// Puts back the branch released for a fresh checkout that could not be
+    /// created, so the Task keeps its original branch.
+    pub fn rebind_task_branch_after_failed_fresh_checkout(
+        &mut self,
+        task_id: &str,
+        binding: TaskBranchBinding,
+    ) -> Result<(), CoreError> {
+        let task = self
+            .store
+            .tasks()
+            .iter()
+            .find(|task| task.id == task_id)
+            .ok_or(CoreError::NotFound)?;
+        if task.branch.is_some() {
+            return Ok(());
+        }
+        self.store
+            .bind_task_branch(
+                &self.write_authority,
+                task_id,
+                binding,
+                termloop_platform::current_epoch_ms(),
+            )
+            .map_err(store_error)?;
+        Ok(())
     }
 
     /// Present only when a deleted Agent's folder is exactly the checkout
@@ -139,6 +210,7 @@ impl CoreRuntime {
             worktree_leaf: branch_worktree_leaf(&branch.name),
             destination_path: Some(session.process.cwd.clone()),
             operation_id: termloop_platform::generate_uuid_v4(),
+            base: TaskWorktreeRecreationBase::ExistingBranch,
         })
     }
 

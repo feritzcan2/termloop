@@ -2,16 +2,15 @@ import { useEffect, useState, type ReactNode } from "react";
 import type {
   PmAgentCatalog,
   PmAgentProvider,
-  PmEnvironment,
-  PmProbe,
-  PmProbeMatcher,
+  PmPlaybook,
+  PmPlaybookStep,
   PmSettings,
   PmSettingsUpdateParams,
   PmSources,
   PmToolsReadResult,
   PmTracking,
 } from "@termloop/pm-contract/pm";
-import { relativeTime } from "./format.js";
+import { PlaybookStepsEditor, stepsProblem, tidySteps } from "./PlaybookEditor.js";
 import { ToolsChecklist } from "./ToolsChecklist.js";
 
 export type JiraSourceDraft = { siteUrl: string; boardId: number | null; accountEmail: string; token: string };
@@ -23,8 +22,8 @@ export type SettingsPageProps = {
   catalog: PmAgentCatalog | undefined;
   sources: PmSources | undefined;
   tracking: PmTracking | undefined;
-  environments: PmEnvironment[];
-  probes: PmProbe[];
+  /** The project's Playbook; absent until the board is read. */
+  playbook: PmPlaybook | undefined;
   tools: PmToolsReadResult | undefined;
   now: number;
   /** Reads the tools checklist; `refresh` checks the machine again. */
@@ -34,11 +33,8 @@ export type SettingsPageProps = {
   onPickFolder?(): Promise<string | null>;
   onSetFolder?(folder: string | null): void;
   onSaveSettings(edit: PmSettingsUpdateParams): void;
-  onSetEnvironments(environments: PmEnvironment[]): void;
-  onCreateProbe(environment: string, argv: string[], matcher: PmProbeMatcher): void;
-  onApproveProbe(probeId: string): void;
-  onRejectProbe(probeId: string): void;
-  onDeleteProbe(probeId: string): void;
+  /** Resolves true once saved over `baseRevision`. */
+  onSavePlaybook(baseRevision: number, steps: PmPlaybookStep[]): Promise<boolean>;
 };
 
 /** The Settings stage, opened from the activity bar: the open project's sources and the app-wide assistant. */
@@ -50,7 +46,7 @@ export function SettingsPage(props: SettingsPageProps) {
         <div className="settings-column">
           <CodeRepositoryCard {...props} />
           <JiraCard {...props} />
-          <DeployCard {...props} />
+          <PlaybookCard playbook={props.playbook} onSave={props.onSavePlaybook} />
           <AgentCard settings={props.settings} catalog={props.catalog} onSave={props.onSaveSettings} />
           <ToolsCard tools={props.tools} now={props.now} onRead={props.onReadTools} />
           <SettingsSection title="Your data" description={<>Everything lives on this computer in the PM daemon's store at <code>&lt;TermLoop state directory&gt;/pm/pm.sqlite</code>. There is no server and no account.</>}>
@@ -196,100 +192,35 @@ function JiraCard(props: SettingsPageProps) {
   );
 }
 
-function DeployCard(props: SettingsPageProps) {
-  const [environments, setEnvironments] = useState<PmEnvironment[]>(props.environments);
-  const [newEnvironment, setNewEnvironment] = useState("");
-  const [probeEnvironment, setProbeEnvironment] = useState("");
-  const [probeCommand, setProbeCommand] = useState("");
-  const [probeMatcher, setProbeMatcher] = useState<PmProbeMatcher>("commitAncestry");
-  useEffect(() => setEnvironments(props.environments), [props.environments]);
-  const dirty = JSON.stringify(environments) !== JSON.stringify(props.environments);
-  const move = (index: number, delta: number) => {
-    const next = [...environments];
-    const [item] = next.splice(index, 1);
-    next.splice(index + delta, 0, item!);
-    setEnvironments(next);
+function PlaybookCard(props: { playbook: PmPlaybook | undefined; onSave(baseRevision: number, steps: PmPlaybookStep[]): Promise<boolean> }) {
+  const saved = props.playbook?.steps;
+  const [steps, setSteps] = useState<PmPlaybookStep[]>(saved ?? []);
+  const [saving, setSaving] = useState(false);
+  // Every board read is a new array; only a new revision replaces an edit in progress.
+  useEffect(() => setSteps(saved ?? []), [props.playbook?.projectId, props.playbook?.revision]);
+  const description = "The steps every ticket walks, in order. Facts from Jira and pull requests pass a step on their own; an agent step is checked by a small agent that reads, never changes, and says what it saw. The Playbook setup in Skills reads the repository and proposes this project's own steps.";
+  if (!props.playbook) return <SettingsSection title="Playbook" description={description}><p className="hint">Loading the Playbook…</p></SettingsSection>;
+  const { revision } = props.playbook;
+  const agentSteps = props.playbook.steps.filter((step) => step.agent).length;
+  const dirty = JSON.stringify(steps) !== JSON.stringify(saved);
+  const problem = stepsProblem(steps);
+  const save = async () => {
+    setSaving(true);
+    await props.onSave(revision, tidySteps(steps));
+    setSaving(false);
   };
-  const on = props.tracking?.deploy ?? false;
-  const unprobed = props.environments.filter((environment) => !props.probes.some((probe) => probe.environment === environment.name && probe.status === "approved")).length;
-  const state = !on
-    ? { tone: "off" as const, text: "OFF" }
-    : { tone: unprobed > 0 ? "warn" as const : "ok" as const, text: `${props.environments.length} ${props.environments.length === 1 ? "ENVIRONMENT" : "ENVIRONMENTS"}${unprobed > 0 ? ` · ${unprobed} WITHOUT A PROBE` : ""}` };
   return (
     <SettingsSection
-      title="Deploy tracking"
-      state={state}
-      description="Deploy tracking is on whenever this project has an environment or an approved probe, and off when it has neither. There is no separate switch."
+      title="Playbook"
+      state={{ tone: revision === 0 ? "off" : "ok", text: revision === 0 ? "DEFAULT STEPS" : `${props.playbook.steps.length} STEPS · ${agentSteps} BY AN AGENT` }}
+      description={description}
     >
-      <div className="sub-label">Environments <span className="muted">in promotion order</span></div>
-      <ol className="env-list">
-        {environments.map((environment, index) => (
-          <li key={`${environment.name}-${index}`}>
-            <b>{environment.name}</b>
-            <label className="check"><input type="checkbox" checked={environment.production} onChange={(event) => setEnvironments(environments.map((item, at) => at === index ? { ...item, production: event.target.checked } : item))} /> production</label>
-            <span className="sp" />
-            <button type="button" className="icb" aria-label="Move up" disabled={index === 0} onClick={() => move(index, -1)}>↑</button>
-            <button type="button" className="icb" aria-label="Move down" disabled={index === environments.length - 1} onClick={() => move(index, 1)}>↓</button>
-            <button type="button" className="icb" aria-label="Remove environment" onClick={() => setEnvironments(environments.filter((_, at) => at !== index))}>×</button>
-          </li>
-        ))}
-        {environments.length === 0 && <li className="muted">No environments.</li>}
-      </ol>
-      <form className="inline-form" onSubmit={(event) => {
-        event.preventDefault();
-        if (!newEnvironment.trim()) return;
-        setEnvironments([...environments, { name: newEnvironment.trim(), production: false }]);
-        setNewEnvironment("");
-      }}>
-        <input placeholder="Add environment (e.g. staging)" aria-label="New environment" value={newEnvironment} onChange={(event) => setNewEnvironment(event.target.value)} />
-        <button type="submit" className="btn">Add environment</button>
-        <button type="button" className="btn pri" disabled={!dirty} onClick={() => props.onSetEnvironments(environments)}>Save environments</button>
-      </form>
-      <div className="sub-label">Probes</div>
-      {props.probes.length === 0 ? <p className="hint">No probes. A probe is a command that tells which commit runs in an environment; the assistant may propose one for your approval.</p> : (
-        <ul className="probe-list">
-          {props.probes.map((probe) => (
-            <li key={probe.id}>
-              <b>{probe.environment}</b>
-              <span className="probe-body">
-                <code>{probe.argv.join(" ")}</code>
-                <span className="muted"> · {probe.matcher} · by {probe.author === "agent" ? "assistant" : "you"}</span>
-                {probe.reason && <span className="hint block">{probe.reason}</span>}
-                {probe.lastRun && <span className="hint block">Last run {relativeTime(probe.lastRun.atEpochMs, props.now)}{probe.lastRun.failure ? `, failed: ${probe.lastRun.failure}` : probe.lastRun.deployedCommit ? `, ${probe.lastRun.deployedCommit.slice(0, 10)}` : ""}</span>}
-              </span>
-              <span className={`chip ${probe.status === "proposed" ? "warn" : ""}`}>{probe.status === "proposed" ? "proposed" : "approved"}</span>
-              <span className="probe-actions">
-                {probe.status === "proposed" ? (
-                  <>
-                    <button type="button" className="btn sm" onClick={() => props.onRejectProbe(probe.id)}>Reject</button>
-                    <button type="button" className="btn sm pri" onClick={() => props.onApproveProbe(probe.id)}>Approve</button>
-                  </>
-                ) : <button type="button" className="btn sm ghost" onClick={() => props.onDeleteProbe(probe.id)}>Delete</button>}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-      {props.environments.length > 0 ? (
-        <form className="inline-form" onSubmit={(event) => {
-          event.preventDefault();
-          const argv = probeCommand.trim().split(/\s+/).filter(Boolean);
-          const environment = probeEnvironment || props.environments[0]!.name;
-          if (argv.length === 0) return;
-          props.onCreateProbe(environment, argv, probeMatcher);
-          setProbeCommand("");
-        }}>
-          <select aria-label="Probe environment" value={probeEnvironment} onChange={(event) => setProbeEnvironment(event.target.value)}>
-            {props.environments.map((environment) => <option key={environment.name} value={environment.name}>{environment.name}</option>)}
-          </select>
-          <input placeholder="Command, e.g. curl -s https://app/version" aria-label="Probe command" value={probeCommand} onChange={(event) => setProbeCommand(event.target.value)} />
-          <select aria-label="Probe matcher" value={probeMatcher} onChange={(event) => setProbeMatcher(event.target.value as PmProbeMatcher)}>
-            <option value="commitAncestry">Commit ancestry</option>
-            <option value="agent">Assistant reads output</option>
-          </select>
-          <button type="submit" className="btn">Add probe</button>
-        </form>
-      ) : <p className="hint">Add an environment to define probes for it.</p>}
+      <PlaybookStepsEditor steps={steps} onChange={setSteps} />
+      {dirty && problem && <p className="hint bad">{problem}</p>}
+      <div className="actions">
+        <button type="button" className="btn pri" disabled={!dirty || problem !== undefined || saving} onClick={() => void save()}>Save Playbook</button>
+        {dirty && <button type="button" className="btn ghost" onClick={() => setSteps(saved ?? [])}>Undo changes</button>}
+      </div>
     </SettingsSection>
   );
 }

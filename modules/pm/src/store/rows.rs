@@ -3,11 +3,11 @@
 
 use std::collections::HashMap;
 
-use rusqlite::{Connection, OptionalExtension, Row, params, types::Type};
+use rusqlite::{Connection, OptionalExtension, Row, types::Type};
 
 use crate::{
-    AcceptanceCriterion, Blocker, PmError, ProjectEnvironment, Sprint, SprintState, Ticket,
-    TicketAuthor, TicketPriority, TicketStatus, TicketVersion, TicketVersionsSummary,
+    AcceptanceCriterion, Blocker, PmError, Sprint, SprintState, Ticket, TicketAuthor,
+    TicketPriority, TicketStatus, TicketVersion, TicketVersionsSummary,
 };
 
 pub(crate) fn parsed<T>(
@@ -231,23 +231,4 @@ pub(crate) fn ticket_versions(
         })?
         .collect::<Result<_, _>>()?;
     Ok(versions)
-}
-
-pub(crate) fn project_environments(
-    connection: &Connection,
-    project_id: &str,
-) -> Result<Vec<ProjectEnvironment>, PmError> {
-    let mut statement = connection.prepare(
-        "SELECT name, production FROM project_environments \
-         WHERE project_id = ?1 ORDER BY position",
-    )?;
-    let environments = statement
-        .query_map(params![project_id], |row| {
-            Ok(ProjectEnvironment {
-                name: row.get(0)?,
-                production: row.get(1)?,
-            })
-        })?
-        .collect::<Result<_, _>>()?;
-    Ok(environments)
 }

@@ -69,8 +69,8 @@ describe("PmController.loadTools", () => {
 function settingsProps() {
   const noop = () => undefined;
   return {
-    projectName: "Shop", settings: undefined, catalog: undefined, sources: undefined, tracking: undefined, environments: [], probes: [],
+    projectName: "Shop", settings: undefined, catalog: undefined, sources: undefined, tracking: undefined, playbook: undefined,
     tools: TOOLS, now: 0, onReadTools: async () => undefined, onSaveSources: async () => true, onClearToken: noop, onSaveSettings: noop,
-    onSetEnvironments: noop, onCreateProbe: noop, onApproveProbe: noop, onRejectProbe: noop, onDeleteProbe: noop,
+    onSavePlaybook: async () => true,
   };
 }

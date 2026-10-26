@@ -1,19 +1,13 @@
 //! The PM daemon's schedules: each check tick abandons overdue delivery
-//! checks, runs due probes, starts the checks that are due, and runs due
-//! skills; the fact refresh reads Jira, follows each project folder's code
+//! checks, starts the Playbook checks that are due, and runs due skills; the fact refresh reads Jira, follows each project folder's code
 //! host, and reads its pull requests for the active sprint's tickets every
 //! ten minutes and after each Jira pull.
 
-use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use sha2::{Digest, Sha256};
-use termloop_platform::{CommandRequest, CommandTermination};
-use termloop_pm::skill::SkillEvent;
 use termloop_pm::{
-    CommitAncestryFact, DeliveryCheck, DeliveryProbe, FactRead, FactsObservation, NewCheck,
-    PmError, ProbeMatcher, ProbeOutcome, ProbeStatus, PullRequestFact, PullRequestsObservation,
-    SprintState, named_commit, read_jira_sprints,
+    DeliveryCheck, DueCheck, FactRead, FactsObservation, PmError, PullRequestFact,
+    PullRequestsObservation, SprintState, read_jira_sprints,
 };
 use termloop_providers::{JiraCloudClient, JiraCredential, ProviderFailure};
 
@@ -26,10 +20,6 @@ const CHECK_TICK: Duration = Duration::from_secs(60);
 /// by the day, so an hourly sweep is enough.
 const EXPIRY_TICKS: u32 = 60;
 const FACT_REFRESH_INTERVAL: Duration = Duration::from_secs(10 * 60);
-/// An approved probe runs again once its last run is this old.
-const PROBE_INTERVAL_MS: u64 = 10 * 60 * 1000;
-const PROBE_TIMEOUT: Duration = Duration::from_secs(30);
-const PROBE_OUTPUT_LIMIT: usize = 64 * 1024;
 /// Tickets whose pull requests one refresh reads per project.
 const PULL_REQUEST_TICKETS_MAX: usize = 50;
 
@@ -40,7 +30,7 @@ pub(crate) type CheckLaunch = fn(&AppState, &DeliveryCheck) -> Result<String, Co
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Refusal {
     NotFound,
-    DeployTrackingOff,
+    NoAgentStep,
     AlreadyRunning,
     ProjectLimitReached,
     AgentUnavailable,
@@ -50,7 +40,7 @@ impl Refusal {
     pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::NotFound => "notFound",
-            Self::DeployTrackingOff => "deployTrackingOff",
+            Self::NoAgentStep => "noAgentStep",
             Self::AlreadyRunning => "alreadyRunning",
             Self::ProjectLimitReached => "projectLimitReached",
             Self::AgentUnavailable => "agentUnavailable",
@@ -63,7 +53,7 @@ impl Refusal {
                 Self::AlreadyRunning
             }
             PmError::Constraint("too many running checks") => Self::ProjectLimitReached,
-            PmError::Constraint(_) | PmError::Invalid(_) => Self::DeployTrackingOff,
+            PmError::Constraint(_) | PmError::Invalid(_) => Self::NoAgentStep,
             PmError::NotFound => Self::NotFound,
             _ => {
                 tracing::warn!(%error, "a delivery check could not be recorded");
@@ -78,7 +68,7 @@ impl Refusal {
 pub(crate) fn start_check(
     state: &AppState,
     project_id: &str,
-    new: NewCheck,
+    new: DueCheck,
     launch: CheckLaunch,
 ) -> Result<DeliveryCheck, Refusal> {
     let check = {
@@ -123,9 +113,8 @@ pub(crate) async fn run_check_scheduler(state: AppState) {
     }
 }
 
-/// One check tick: abandon overdue checks (stopping their agents), run due
-/// probes, start each due check of a project whose Deployment control is
-/// on, then run the skills that are due.
+/// One check tick: abandon overdue checks (stopping their agents), start
+/// each project's due Playbook checks, then run the skills that are due.
 pub(crate) async fn check_tick(state: &AppState, launch: CheckLaunch) {
     let abandoned = state
         .store
@@ -137,17 +126,9 @@ pub(crate) async fn check_tick(state: &AppState, launch: CheckLaunch) {
         }
         agents::publish_check(state, &check);
     }
-    run_due_probes(state).await;
     let projects = state.store.lock().projects().unwrap_or_default();
     for project in projects {
-        let enabled = state
-            .store
-            .lock()
-            .deployment_control_enabled(&project.id)
-            .unwrap_or(false);
-        if enabled {
-            start_due_checks(state, &project.id, launch);
-        }
+        start_due_checks(state, &project.id, launch);
     }
     skills::skill_tick(state);
 }
@@ -163,7 +144,7 @@ pub(crate) fn start_due_checks(state: &AppState, project_id: &str, launch: Check
     let mut started = 0;
     for check in due {
         let ticket_id = check.ticket_id.clone();
-        match start_check(state, project_id, check.into(), launch) {
+        match start_check(state, project_id, check, launch) {
             Ok(_) => started += 1,
             Err(reason) => {
                 tracing::debug!(%ticket_id, reason = reason.as_str(), "a due check did not start");
@@ -171,129 +152,6 @@ pub(crate) fn start_due_checks(state: &AppState, project_id: &str, launch: Check
         }
     }
     started
-}
-
-fn probe_due(probe: &DeliveryProbe, now: u64) -> bool {
-    probe.status == ProbeStatus::Approved
-        && probe
-            .last_run
-            .as_ref()
-            .is_none_or(|run| run.at_epoch_ms.saturating_add(PROBE_INTERVAL_MS) <= now)
-}
-
-async fn run_due_probes(state: &AppState) {
-    let now = termloop_platform::current_epoch_ms();
-    let due: Vec<(Option<String>, DeliveryProbe)> = {
-        let store = state.store.lock();
-        store
-            .projects()
-            .unwrap_or_default()
-            .into_iter()
-            .flat_map(|project| {
-                store
-                    .project_probes(&project.id)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter(|probe| probe_due(probe, now))
-                    .map(move |probe| (project.folder.clone(), probe))
-            })
-            .collect()
-    };
-    for (folder, probe) in due {
-        let folder = folder.map(PathBuf::from);
-        let argv = probe.argv.clone();
-        let run_folder = folder.clone();
-        let Ok(outcome) =
-            tokio::task::spawn_blocking(move || run_probe(&argv, run_folder.as_deref())).await
-        else {
-            continue;
-        };
-        let ancestry = match (&outcome, probe.matcher, folder) {
-            (
-                ProbeOutcome::Output {
-                    deployed_commit: Some(deployed),
-                    ..
-                },
-                ProbeMatcher::CommitAncestry,
-                Some(folder),
-            ) => {
-                let targets = state
-                    .store
-                    .lock()
-                    .commit_ancestry_targets(&probe.project_id)
-                    .unwrap_or_default();
-                let deployed = deployed.clone();
-                tokio::task::spawn_blocking(move || ancestry_facts(&folder, &deployed, targets))
-                    .await
-                    .unwrap_or_default()
-            }
-            _ => Vec::new(),
-        };
-        let recorded =
-            state
-                .store
-                .lock()
-                .record_probe_run(&probe.id, &probe.argv, &outcome, &ancestry);
-        match recorded {
-            Ok(_) => {
-                state.board_changed(&probe.project_id);
-                skills::note_event(state, &probe.project_id, SkillEvent::DeployChanged);
-            }
-            Err(error) => tracing::debug!(%error, "a probe run was not recorded"),
-        }
-    }
-}
-
-/// Runs one probe without a shell in the project folder. Its output is kept
-/// only as a hash and the commit it names.
-fn run_probe(argv: &[String], folder: Option<&Path>) -> ProbeOutcome {
-    let (Some(program), Some(folder)) = (argv.first(), folder) else {
-        return ProbeOutcome::Failed("noFolder".to_owned());
-    };
-    let request = CommandRequest::new(program)
-        .args(&argv[1..])
-        .cwd(folder)
-        .timeout(PROBE_TIMEOUT)
-        .output_limit(PROBE_OUTPUT_LIMIT);
-    match termloop_platform::run_command(request) {
-        Err(_) => ProbeOutcome::Failed("notFound".to_owned()),
-        Ok(outcome) => match outcome.termination {
-            CommandTermination::Exited { code: 0 } => {
-                let output = String::from_utf8_lossy(&outcome.stdout);
-                ProbeOutcome::Output {
-                    output_hash: Sha256::digest(&outcome.stdout)
-                        .iter()
-                        .map(|byte| format!("{byte:02x}"))
-                        .collect(),
-                    deployed_commit: named_commit(&output),
-                }
-            }
-            CommandTermination::Exited { .. } => ProbeOutcome::Failed("exitStatus".to_owned()),
-            CommandTermination::Signaled { .. } => ProbeOutcome::Failed("signaled".to_owned()),
-            CommandTermination::TimedOut => ProbeOutcome::Failed("timedOut".to_owned()),
-        },
-    }
-}
-
-/// Asks Git whether each ticket's merge commit is in the deployed commit.
-fn ancestry_facts(
-    folder: &Path,
-    deployed: &str,
-    targets: Vec<(String, String)>,
-) -> Vec<CommitAncestryFact> {
-    let Ok(git) = termloop_gitio::GitRunner::discover() else {
-        return Vec::new();
-    };
-    targets
-        .into_iter()
-        .map(|(ticket_id, merge_commit)| CommitAncestryFact {
-            ticket_id,
-            contained: git
-                .commit_contains(folder, deployed, &merge_commit)
-                .ok()
-                .flatten(),
-        })
-        .collect()
 }
 
 pub(crate) async fn run_fact_scheduler(state: AppState) {

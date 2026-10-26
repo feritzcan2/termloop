@@ -1,4 +1,4 @@
-//! Skill commands: the built-in skills, drafts from the skill creator and
+//! Skill commands: drafts from the skill creator and
 //! their dry runs, installs with explicit tool approval, runs, feedback,
 //! and the creator's discovery cache.
 
@@ -7,20 +7,20 @@ use rusqlite::{Connection, params};
 use super::check_id;
 use crate::delivery::risks::DAY_MS;
 use crate::skill::{
-    BuiltinSkill, DryRunState, FeedbackOutcome, NewSkillDraft, PROJECT_SKILL_DRAFTS_MAX,
-    PROJECT_SKILLS_MAX, SKILL_DRAFT_SAMPLES_MAX, SKILL_FEEDBACK_KEPT, SKILL_RUN_DEADLINE_MS,
+    DryRunState, FeedbackOutcome, NewSkillDraft, PROJECT_SKILL_DRAFTS_MAX, PROJECT_SKILLS_MAX,
+    SKILL_DRAFT_SAMPLES_MAX, SKILL_FEEDBACK_KEPT, SKILL_RUN_DEADLINE_MS,
     SKILL_RUN_SUMMARY_MAX_CHARS, SKILL_RUNS_KEPT, Skill, SkillDraft, SkillEdit, SkillEvent,
     SkillFeedback, SkillManifest, SkillRun, SkillRunOutcome, SkillRunTrigger, SkillSample,
     bounded_line, evidence_sources, revision_reason, valid_evidence,
 };
 use crate::store::{
-    SkillRecord, ToolApproval, approved_tools_ever, builtin_skill_record, draft_by_id, json_column,
-    last_completed_skill_run, last_skill_run, launched_runs_since, project_checks, project_drafts,
+    SkillRecord, ToolApproval, approved_tools_ever, draft_by_id, json_column,
+    last_completed_skill_run, last_skill_run, launched_runs_since, project_drafts,
     project_skill_records, revision_verdicts, run_by_id, running_skill_runs, skill_feedback,
     skill_is_running, skill_manifest, skill_proposal_count, skill_record, skill_runs, to_json,
 };
 use crate::validation::valid_label;
-use crate::{DeliveryCheckOutcome, PmError, PmStore, ProbeStatus, TicketProposal};
+use crate::{PmError, PmStore, TicketProposal};
 
 /// The bound of the creator's cached discovery report.
 pub const SKILL_DISCOVERY_MAX_BYTES: usize = 64 * 1024;
@@ -53,20 +53,12 @@ fn day_start(now: u64) -> u64 {
     now - now % DAY_MS
 }
 
-/// The skill as the PM sees it: its manifest and derived run state. The
-/// built-in Deployment control reports its delivery checks and proposed
-/// probes, which are its runs and suggestions.
+/// The skill as the PM sees it: its manifest and derived run state.
 fn skill_view(connection: &Connection, record: SkillRecord, now: u64) -> Result<Skill, PmError> {
-    let manifest = skill_manifest(
-        connection,
-        &record.id,
-        record.version,
-        record.builtin.is_some(),
-    )?;
+    let manifest = skill_manifest(connection, &record.id, record.version)?;
     let mut skill = Skill {
         id: record.id,
         project_id: record.project_id,
-        builtin: record.builtin,
         enabled: record.enabled,
         version: record.version,
         manifest,
@@ -81,40 +73,15 @@ fn skill_view(connection: &Connection, record: SkillRecord, now: u64) -> Result<
         revision_reason: None,
         created_at_epoch_ms: record.created_at_epoch_ms,
     };
-    match skill.builtin {
-        Some(BuiltinSkill::DeploymentControl) => {
-            let checks = project_checks(connection, &skill.project_id)?;
-            if let Some(last) = checks.iter().max_by_key(|check| check.started_at_epoch_ms) {
-                skill.last_run_at_epoch_ms = Some(last.started_at_epoch_ms);
-                skill.running = last.is_running();
-                skill.last_outcome = last.outcome.map(|outcome| match outcome {
-                    DeliveryCheckOutcome::Reported => SkillRunOutcome::Reported,
-                    DeliveryCheckOutcome::Failed => SkillRunOutcome::Failed,
-                    DeliveryCheckOutcome::Abandoned => SkillRunOutcome::Abandoned,
-                });
-            }
-            skill.runs_today = checks
-                .iter()
-                .filter(|check| check.started_at_epoch_ms >= day_start(now))
-                .count() as u32;
-            skill.pending_suggestion_count =
-                crate::store::project_probes(connection, &skill.project_id)?
-                    .iter()
-                    .filter(|probe| probe.status == ProbeStatus::Proposed)
-                    .count() as u32;
-        }
-        None => {
-            if let Some(last) = last_skill_run(connection, &skill.id)? {
-                skill.last_run_at_epoch_ms = Some(last.started_at_epoch_ms);
-                skill.last_outcome = last.outcome;
-            }
-            skill.running = skill_is_running(connection, &skill.id)?;
-            skill.runs_today = launched_runs_since(connection, &skill.id, day_start(now))?;
-            skill.pending_suggestion_count = skill_proposal_count(connection, &skill.id)?;
-            skill.revision_reason = revision_verdicts(connection, &skill.id, skill.version)?
-                .and_then(|(judged, rejected)| revision_reason(judged, rejected));
-        }
+    if let Some(last) = last_skill_run(connection, &skill.id)? {
+        skill.last_run_at_epoch_ms = Some(last.started_at_epoch_ms);
+        skill.last_outcome = last.outcome;
     }
+    skill.running = skill_is_running(connection, &skill.id)?;
+    skill.runs_today = launched_runs_since(connection, &skill.id, day_start(now))?;
+    skill.pending_suggestion_count = skill_proposal_count(connection, &skill.id)?;
+    skill.revision_reason = revision_verdicts(connection, &skill.id, skill.version)?
+        .and_then(|(judged, rejected)| revision_reason(judged, rejected));
     Ok(skill)
 }
 
@@ -264,29 +231,8 @@ pub(super) fn close_run(
     Ok(())
 }
 
-/// Adds a built-in skill, off, unless the project has it; either way
-/// returns its id.
-pub(super) fn insert_builtin_skill(
-    connection: &Connection,
-    project_id: &str,
-    builtin: BuiltinSkill,
-    id: String,
-    now: u64,
-) -> Result<String, PmError> {
-    if let Some(record) = builtin_skill_record(connection, project_id, builtin)? {
-        return Ok(record.id);
-    }
-    connection.execute(
-        "INSERT INTO skills (id, project_id, builtin, enabled, version, \
-             created_at_epoch_ms) VALUES (?1, ?2, ?3, 0, 1, ?4)",
-        params![id, project_id, builtin.as_str(), now],
-    )?;
-    insert_version(connection, &id, 1, &builtin.manifest(), &[], None, now)?;
-    Ok(id)
-}
-
 /// Turns a skill on and clears any pause, so it starts over.
-pub(super) fn enable_skill_row(connection: &Connection, skill_id: &str) -> Result<(), PmError> {
+fn enable_skill_row(connection: &Connection, skill_id: &str) -> Result<(), PmError> {
     connection.execute(
         "UPDATE skills SET enabled = 1, paused_reason = NULL, \
              consecutive_failures = 0, next_attempt_at_epoch_ms = NULL WHERE id = ?1",
@@ -303,37 +249,6 @@ fn outcome_words(outcome: SkillRunOutcome) -> &'static str {
 }
 
 impl PmStore {
-    /// Adds the built-in skills a project qualifies for: Deployment control
-    /// once deploy tracking is on, off until the PM sets it up. A skill the
-    /// PM already has keeps the PM's choice.
-    pub fn ensure_builtin_skills(&mut self, project_id: &str) -> Result<(), PmError> {
-        check_id(project_id, "projectId")?;
-        if !self.deploy_tracking_enabled(project_id)? {
-            return Ok(());
-        }
-        let builtin = BuiltinSkill::DeploymentControl;
-        if builtin_skill_record(self.connection(), project_id, builtin)?.is_some() {
-            return Ok(());
-        }
-        let id = self.new_id();
-        let now = self.now();
-        self.write(|transaction| {
-            insert_builtin_skill(transaction, project_id, builtin, id, now).map(drop)
-        })
-    }
-
-    /// Whether the built-in Deployment control may start delivery checks
-    /// on its own: deploy tracking is on and the PM has not turned it off.
-    pub fn deployment_control_enabled(&mut self, project_id: &str) -> Result<bool, PmError> {
-        self.ensure_builtin_skills(project_id)?;
-        Ok(builtin_skill_record(
-            self.connection(),
-            project_id,
-            BuiltinSkill::DeploymentControl,
-        )?
-        .is_some_and(|record| record.enabled))
-    }
-
     pub fn skills(&self, project_id: &str) -> Result<Vec<Skill>, PmError> {
         check_id(project_id, "projectId")?;
         let now = self.now();
@@ -372,10 +287,7 @@ impl PmStore {
         let now = self.now();
         self.write(|transaction| {
             let record = require_skill(transaction, skill_id)?;
-            if record.builtin.is_some() {
-                return Err(PmError::Constraint("a built-in skill is fixed"));
-            }
-            let current = skill_manifest(transaction, skill_id, record.version, false)?;
+            let current = skill_manifest(transaction, skill_id, record.version)?;
             let mut manifest = current.clone();
             if let Some(name) = edit.name {
                 manifest.name = name;
@@ -418,7 +330,7 @@ impl PmStore {
         self.write(|transaction| {
             if let Some(base) = &new.base_skill_id {
                 let record = require_skill(transaction, base)?;
-                if record.project_id != new.project_id || record.builtin.is_some() {
+                if record.project_id != new.project_id {
                     return Err(PmError::Invalid("baseSkillId"));
                 }
             }
@@ -587,11 +499,6 @@ impl PmStore {
         let now = self.now();
         self.write(|transaction| {
             let record = require_skill(transaction, skill_id)?;
-            if record.builtin.is_some() {
-                return Err(PmError::Constraint(
-                    "a built-in skill runs without an agent",
-                ));
-            }
             if !record.enabled && trigger != SkillRunTrigger::Manual {
                 return Err(PmError::Constraint("the skill is off"));
             }
@@ -798,10 +705,10 @@ impl PmStore {
         self.write(|transaction| {
             let mut noted = 0;
             for record in project_skill_records(transaction, project_id)? {
-                if !record.enabled || record.builtin.is_some() {
+                if !record.enabled {
                     continue;
                 }
-                let manifest = skill_manifest(transaction, &record.id, record.version, false)?;
+                let manifest = skill_manifest(transaction, &record.id, record.version)?;
                 if manifest.waits_for(event) && record.event_pending_at_epoch_ms.is_none() {
                     transaction.execute(
                         "UPDATE skills SET event_pending_at_epoch_ms = ?2 WHERE id = ?1",
@@ -827,10 +734,7 @@ impl PmStore {
         let connection = self.connection();
         let mut due = Vec::new();
         for record in project_skill_records(connection, project_id)? {
-            if !record.enabled
-                || record.builtin.is_some()
-                || record.next_attempt_at_epoch_ms.is_some_and(|at| at > now)
-            {
+            if !record.enabled || record.next_attempt_at_epoch_ms.is_some_and(|at| at > now) {
                 continue;
             }
             if skill_is_running(connection, &record.id)? {
@@ -840,7 +744,7 @@ impl PmStore {
                 due.push((record.id, SkillRunTrigger::Event));
                 continue;
             }
-            let manifest = skill_manifest(connection, &record.id, record.version, false)?;
+            let manifest = skill_manifest(connection, &record.id, record.version)?;
             if let Some(minutes) = manifest.schedule_minutes() {
                 let last = last_skill_run(connection, &record.id)?
                     .map_or(record.created_at_epoch_ms, |run| run.started_at_epoch_ms);

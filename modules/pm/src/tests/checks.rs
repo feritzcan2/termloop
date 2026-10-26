@@ -1,16 +1,36 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::{sprint, store, ticket};
+use crate::playbook::{AgentCheck, PlaybookStep, StepEvaluator, StepVerdict, default_steps};
 use crate::{
     CHECK_DEADLINE_MS, CHECK_RETRY_AFTER_MS, CheckReport, DeliveryCheckOutcome,
-    DeliveryCheckReason, FactRead, FactsObservation, NewCheck, NewProbe, PmError, PmStore,
-    ProbeMatcher, ProbeOutcome, ProjectEnvironment, PullRequestFact, PullRequestFactChecks,
-    PullRequestFactReview, PullRequestFactState, PullRequestsObservation,
-    TICKET_FINISHED_CHECKS_MAX,
+    DeliveryCheckReason, DeliveryRiskKind, DueCheck, FactRead, FactsObservation, PmError, PmStore,
+    PullRequestFact, PullRequestFactChecks, PullRequestFactReview, PullRequestFactState,
+    PullRequestsObservation, TICKET_FINISHED_CHECKS_MAX,
 };
 
-/// An active sprint with one merged ticket; environments only when asked.
-fn merged_ticket(store: &mut PmStore, environments: bool) -> String {
+const MINUTE_MS: u64 = 60 * 1_000;
+
+/// The default steps with an agent-checked "On INT" after Merged.
+fn save_int_playbook(store: &mut PmStore) {
+    let mut steps = default_steps();
+    steps.insert(
+        3,
+        PlaybookStep {
+            id: "int".into(),
+            title: "On INT".into(),
+            checks: vec![],
+            agent: Some(AgentCheck {
+                instructions: "Read what INT runs with az pipelines runs list.".into(),
+                retry_minutes: 30,
+            }),
+        },
+    );
+    store.save_playbook("p1", 0, steps).unwrap();
+}
+
+/// An active sprint with one merged ticket; the INT step only when asked.
+fn merged_ticket(store: &mut PmStore, int_step: bool) -> String {
     let active = sprint(store, "p1", "Sprint 1");
     store.activate_sprint(&active.id).unwrap();
     let work = ticket(store, "p1", "Login", Some(&active.id));
@@ -39,48 +59,31 @@ fn merged_ticket(store: &mut PmStore, environments: bool) -> String {
             },
         )
         .unwrap();
-    if environments {
-        store
-            .set_project_environments(
-                "p1",
-                &[
-                    ProjectEnvironment {
-                        name: "staging".into(),
-                        production: false,
-                    },
-                    ProjectEnvironment {
-                        name: "live".into(),
-                        production: true,
-                    },
-                ],
-            )
-            .unwrap();
+    if int_step {
+        save_int_playbook(store);
     }
     work.id
 }
 
-fn requested(ticket_id: &str) -> NewCheck {
-    NewCheck {
+fn requested(ticket_id: &str) -> DueCheck {
+    DueCheck {
         ticket_id: ticket_id.into(),
+        step_id: "int".into(),
         reason: DeliveryCheckReason::Requested,
-        environments: vec!["live".into()],
-        probe_id: None,
     }
 }
 
-fn report(ticket_id: &str) -> CheckReport {
+fn report(ticket_id: &str, verdict: StepVerdict) -> CheckReport {
     CheckReport {
         ticket_id: ticket_id.into(),
-        environments: Vec::new(),
-        blockers: None,
-        notes_markdown: "## Unknown\nNo evidence of either environment".into(),
-        agent_probe: None,
-        probe_proposals: Vec::new(),
+        step_id: "int".into(),
+        verdict,
+        evidence: "The last INT run (#812) deployed main at a1b2c3d.".into(),
     }
 }
 
 #[test]
-fn one_check_runs_per_ticket_and_only_with_deploy_tracking() {
+fn one_check_runs_per_ticket_and_only_for_an_agent_step() {
     let mut store = store();
     let work = merged_ticket(&mut store, false);
     assert!(matches!(
@@ -88,9 +91,14 @@ fn one_check_runs_per_ticket_and_only_with_deploy_tracking() {
         Err(PmError::Constraint(_))
     ));
     assert!(store.checks_due("p1").unwrap().is_empty());
+    assert_eq!(store.requested_check(&work).unwrap(), None);
 
     let mut store = super::store();
     let work = merged_ticket(&mut store, true);
+    assert_eq!(
+        store.requested_check(&work).unwrap(),
+        Some(requested(&work))
+    );
     let check = store.start_check(requested(&work)).unwrap();
     assert!(check.is_running());
     assert!(matches!(
@@ -100,42 +108,97 @@ fn one_check_runs_per_ticket_and_only_with_deploy_tracking() {
     assert!(store.board("p1").unwrap().deliveries[0].checking);
     assert!(store.checks_due("p1").unwrap().is_empty());
 
-    // The report closes the running check.
-    let recorded = store.record_check_report("p1", report(&work)).unwrap();
+    // The report closes the running check and moves the ticket on.
+    let recorded = store
+        .record_check_report("p1", report(&work, StepVerdict::Passed))
+        .unwrap();
     let finished = recorded.finished_check.unwrap();
     assert_eq!(finished.id, check.id);
     assert_eq!(finished.outcome, Some(DeliveryCheckOutcome::Reported));
-    assert!(!store.board("p1").unwrap().deliveries[0].checking);
+    assert_eq!(recorded.verdict.next_attempt_at_epoch_ms, None);
+    let board = store.board("p1").unwrap();
+    assert!(!board.deliveries[0].checking);
+    assert_eq!(board.deliveries[0].playbook.position, Some(3));
     assert!(matches!(
         store.finish_check(&check.id, DeliveryCheckOutcome::Failed),
         Err(PmError::Constraint(_))
     ));
-    // The notes answered the check reasons; nothing is due.
     assert!(store.checks_due("p1").unwrap().is_empty());
 
-    // A probe-changed check names an approved agent probe.
+    // A report for a step without an agent is refused.
     assert!(matches!(
-        store.start_check(NewCheck {
-            reason: DeliveryCheckReason::ProbeChanged,
-            ..requested(&work)
-        }),
-        Err(PmError::Invalid("probeId"))
+        store.record_check_report(
+            "p1",
+            CheckReport {
+                step_id: "merged".into(),
+                ..report(&work, StepVerdict::Passed)
+            }
+        ),
+        Err(PmError::Constraint(_))
     ));
 }
 
 #[test]
-fn check_reasons_are_due_and_retried_after_a_failed_check() {
+fn a_step_not_passed_is_looked_at_again_after_its_retry_time() {
     static NOW: AtomicU64 = AtomicU64::new(1_000);
     let mut store = store();
     store.set_clock(|| NOW.load(Ordering::SeqCst));
     let work = merged_ticket(&mut store, true);
     let due = store.checks_due("p1").unwrap();
-    assert_eq!(due.len(), 1);
-    assert_eq!(due[0].reason, DeliveryCheckReason::CheckReasons);
-    assert_eq!(due[0].environments, ["staging", "live"]);
-    assert_eq!(due[0].details.len(), 2);
+    assert_eq!(
+        due,
+        [DueCheck {
+            reason: DeliveryCheckReason::Due,
+            ..requested(&work)
+        }]
+    );
+    store.start_check(due[0].clone()).unwrap();
+    let recorded = store
+        .record_check_report("p1", report(&work, StepVerdict::Waiting))
+        .unwrap();
+    assert_eq!(recorded.verdict.evaluator, StepEvaluator::Agent);
+    assert_eq!(
+        recorded.verdict.next_attempt_at_epoch_ms,
+        Some(NOW.load(Ordering::SeqCst) + 30 * MINUTE_MS)
+    );
+    assert!(store.checks_due("p1").unwrap().is_empty());
+    NOW.fetch_add(30 * MINUTE_MS, Ordering::SeqCst);
+    assert_eq!(store.checks_due("p1").unwrap().len(), 1);
 
-    let check = store.start_check(due[0].clone().into()).unwrap();
+    // Blocked by the agent is a risk until the step passes.
+    store
+        .record_check_report("p1", report(&work, StepVerdict::Blocked))
+        .unwrap();
+    let delivery = &store.board("p1").unwrap().deliveries[0];
+    assert!(
+        delivery
+            .risks
+            .iter()
+            .any(|risk| risk.kind == DeliveryRiskKind::StepBlocked)
+    );
+    store.mark_step(&work, "int", true).unwrap();
+    let delivery = &store.board("p1").unwrap().deliveries[0];
+    assert!(
+        delivery
+            .risks
+            .iter()
+            .all(|risk| risk.kind != DeliveryRiskKind::StepBlocked)
+    );
+    assert_eq!(
+        delivery.playbook.steps[3].evaluator,
+        Some(StepEvaluator::ProjectManager)
+    );
+}
+
+#[test]
+fn a_failed_check_is_retried_later_and_a_silent_one_abandoned() {
+    static NOW: AtomicU64 = AtomicU64::new(1_000);
+    let mut store = store();
+    store.set_clock(|| NOW.load(Ordering::SeqCst));
+    let work = merged_ticket(&mut store, true);
+    let check = store
+        .start_check(store.checks_due("p1").unwrap()[0].clone())
+        .unwrap();
     store
         .finish_check(&check.id, DeliveryCheckOutcome::Failed)
         .unwrap();
@@ -143,7 +206,6 @@ fn check_reasons_are_due_and_retried_after_a_failed_check() {
     NOW.fetch_add(CHECK_RETRY_AFTER_MS, Ordering::SeqCst);
     assert_eq!(store.checks_due("p1").unwrap().len(), 1);
 
-    // A check that never reports is abandoned at its deadline.
     let check = store.start_check(requested(&work)).unwrap();
     let now = NOW.load(Ordering::SeqCst);
     assert!(
@@ -163,60 +225,6 @@ fn check_reasons_are_due_and_retried_after_a_failed_check() {
             .deliveries
             .iter()
             .all(|d| !d.checking)
-    );
-}
-
-#[test]
-fn a_changed_agent_probe_output_makes_a_check_due() {
-    static NOW: AtomicU64 = AtomicU64::new(1_000);
-    let mut store = store();
-    store.set_clock(|| NOW.load(Ordering::SeqCst));
-    let work = merged_ticket(&mut store, true);
-    // The check reasons are answered by a first report.
-    store.record_check_report("p1", report(&work)).unwrap();
-    assert!(store.checks_due("p1").unwrap().is_empty());
-
-    let probe = store
-        .create_probe(NewProbe {
-            project_id: "p1".into(),
-            environment: "live".into(),
-            argv: vec!["kubectl".into(), "get".into(), "deploy".into()],
-            matcher: ProbeMatcher::Agent,
-            reason: None,
-        })
-        .unwrap();
-    let run = |store: &mut PmStore, hash: char| {
-        NOW.fetch_add(1_000, Ordering::SeqCst);
-        store
-            .record_probe_run(
-                &probe.id,
-                &probe.argv,
-                &ProbeOutcome::Output {
-                    output_hash: hash.to_string().repeat(64),
-                    deployed_commit: None,
-                },
-                &[],
-            )
-            .unwrap();
-    };
-    run(&mut store, 'a');
-    let due = store.checks_due("p1").unwrap();
-    assert_eq!(due.len(), 1);
-    assert_eq!(due[0].reason, DeliveryCheckReason::ProbeChanged);
-    assert_eq!(due[0].probe_id.as_deref(), Some(probe.id.as_str()));
-    assert_eq!(due[0].environments, ["live"]);
-
-    let check = store.start_check(due[0].clone().into()).unwrap();
-    store
-        .finish_check(&check.id, DeliveryCheckOutcome::Failed)
-        .unwrap();
-    // The same output was already in front of that check.
-    run(&mut store, 'a');
-    assert!(store.checks_due("p1").unwrap().is_empty());
-    run(&mut store, 'b');
-    assert_eq!(
-        store.checks_due("p1").unwrap()[0].reason,
-        DeliveryCheckReason::ProbeChanged
     );
 }
 

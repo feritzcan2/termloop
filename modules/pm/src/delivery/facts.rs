@@ -1,6 +1,5 @@
 //! What the PM observes about one ticket's delivery: its Jira status, the
-//! pull requests that name its Jira key, which environments run it, what the
-//! latest delivery check wrote, and why the newest read failed.
+//! pull requests that name its Jira key, and why the newest read failed.
 //!
 //! Each fact carries when it was last observed and last changed. It is one
 //! current record per ticket, replaced in place, never a history. A failed
@@ -9,37 +8,21 @@
 
 use termloop_providers::{CheckState, PullRequestState, PullRequestSummary, ReviewState};
 
-use crate::validation::{valid_label, valid_non_blank_text};
+use crate::validation::valid_label;
 
 pub const TICKET_PULL_REQUEST_FACTS_MAX: usize = 20;
-pub const TICKET_ENVIRONMENT_FACTS_MAX: usize = 12;
-pub const TICKET_CHECK_NOTES_MAX_BYTES: usize = 8_192;
 const FACT_SHORT_MAX_CHARS: usize = 300;
-const FACT_LONG_MAX_CHARS: usize = 2_000;
 const HOUR_MS: u64 = 60 * 60 * 1000;
 /// Facts recorded longer ago than this are stale: still shown, but marked,
 /// and never the basis of a Jira write.
 pub const FACTS_STALE_AFTER_MS: u64 = 6 * HOUR_MS;
 
-/// Where a fact came from.
+/// Which PM read a fact came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum FactSource {
     Jira,
     GitHost,
-    Probe,
-    Check,
-    ProjectManager,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum EnvironmentDeployState {
-    #[default]
-    Unknown,
-    NotDeployed,
-    InProgress,
-    Deployed,
 }
 
 /// Jira's own grouping of an issue status, whatever the status is named.
@@ -202,20 +185,6 @@ pub struct PullRequestsFact {
     pub changed_at_epoch_ms: u64,
 }
 
-/// Whether, and with what evidence, a ticket's change reached one
-/// environment.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct EnvironmentFact {
-    pub name: String,
-    pub state: EnvironmentDeployState,
-    #[serde(default)]
-    pub detail: Option<String>,
-    pub source: FactSource,
-    pub observed_at_epoch_ms: u64,
-    pub changed_at_epoch_ms: u64,
-}
-
 /// The newest failure of one PM read, kept beside the last good facts.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -224,16 +193,6 @@ pub struct FactReadFailure {
     /// A stable reason code such as `unauthorized` or `rateLimited`.
     pub reason: String,
     pub at_epoch_ms: u64,
-}
-
-/// What the latest delivery check wrote about a ticket in its own words.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct CheckNotes {
-    #[serde(default)]
-    pub blockers: Option<String>,
-    pub markdown: String,
-    pub recorded_at_epoch_ms: u64,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -246,10 +205,6 @@ pub struct TicketDeliveryFacts {
     pub jira: Option<JiraFact>,
     #[serde(default)]
     pub pull_requests: Option<PullRequestsFact>,
-    #[serde(default)]
-    pub environments: Vec<EnvironmentFact>,
-    #[serde(default)]
-    pub check_notes: Option<CheckNotes>,
     /// At most one current failure per PM-read source.
     #[serde(default)]
     pub read_failures: Vec<FactReadFailure>,
@@ -282,33 +237,12 @@ impl TicketDeliveryFacts {
                                 .any(|other| other.number == item.number)
                     })
             })
-            && self.environments.len() <= TICKET_ENVIRONMENT_FACTS_MAX
-            && self
-                .environments
-                .iter()
-                .enumerate()
-                .all(|(index, environment)| {
-                    short(&environment.name)
-                        && environment.detail.as_deref().is_none_or(short)
-                        && !self.environments[index + 1..]
-                            .iter()
-                            .any(|other| other.name.eq_ignore_ascii_case(&environment.name))
-                })
-            && self.check_notes.as_ref().is_none_or(|notes| {
-                !notes.markdown.trim().is_empty()
-                    && notes.markdown.len() <= TICKET_CHECK_NOTES_MAX_BYTES
-                    && notes
-                        .blockers
-                        .as_deref()
-                        .is_none_or(|text| valid_non_blank_text(text, FACT_LONG_MAX_CHARS))
-            })
             && self
                 .read_failures
                 .iter()
                 .enumerate()
                 .all(|(index, failure)| {
-                    matches!(failure.source, FactSource::Jira | FactSource::GitHost)
-                        && short(&failure.reason)
+                    short(&failure.reason)
                         && !self.read_failures[index + 1..]
                             .iter()
                             .any(|other| other.source == failure.source)
@@ -318,55 +252,6 @@ impl TicketDeliveryFacts {
     /// Recorded longer ago than [`FACTS_STALE_AFTER_MS`].
     pub fn is_stale(&self, now_epoch_ms: u64) -> bool {
         now_epoch_ms.saturating_sub(self.recorded_at_epoch_ms) > FACTS_STALE_AFTER_MS
-    }
-
-    pub fn environment(&self, name: &str) -> Option<&EnvironmentFact> {
-        self.environments
-            .iter()
-            .find(|environment| environment.name.eq_ignore_ascii_case(name))
-    }
-
-    /// Records one environment observation. An unchanged state keeps its
-    /// change time; a fact the PM stated is only replaced by the PM or by a
-    /// different observation.
-    pub fn observe_environment(
-        &mut self,
-        name: &str,
-        state: EnvironmentDeployState,
-        detail: Option<String>,
-        source: FactSource,
-        now_epoch_ms: u64,
-    ) {
-        match self
-            .environments
-            .iter_mut()
-            .find(|environment| environment.name.eq_ignore_ascii_case(name))
-        {
-            Some(existing) => {
-                if existing.source == FactSource::ProjectManager
-                    && source != FactSource::ProjectManager
-                    && existing.state == state
-                {
-                    existing.observed_at_epoch_ms = now_epoch_ms;
-                    return;
-                }
-                if existing.state != state {
-                    existing.changed_at_epoch_ms = now_epoch_ms;
-                }
-                existing.state = state;
-                existing.detail = detail;
-                existing.source = source;
-                existing.observed_at_epoch_ms = now_epoch_ms;
-            }
-            None => self.environments.push(EnvironmentFact {
-                name: name.to_owned(),
-                state,
-                detail,
-                source,
-                observed_at_epoch_ms: now_epoch_ms,
-                changed_at_epoch_ms: now_epoch_ms,
-            }),
-        }
     }
 
     /// Records a Jira read. The change time moves only when the status, its
@@ -490,19 +375,6 @@ impl TicketDeliveryFacts {
             .map(|fact| fact.items.as_slice())
             .unwrap_or_default()
     }
-
-    /// The merge commit of the one merged pull request, when exactly one is
-    /// merged.
-    pub fn merged_commit(&self) -> Option<&str> {
-        let mut merged = self
-            .pull_request_items()
-            .iter()
-            .filter(|item| item.state == PullRequestFactState::Merged);
-        match (merged.next(), merged.next()) {
-            (Some(only), None) => only.merge_commit.as_deref(),
-            _ => None,
-        }
-    }
 }
 
 fn short(value: &str) -> bool {
@@ -560,7 +432,6 @@ mod tests {
         let fact = facts.pull_requests.as_ref().unwrap();
         assert_eq!(fact.changed_at_epoch_ms, 60);
         assert_eq!(fact.items[0].awaiting_review_since_epoch_ms, None);
-        assert_eq!(facts.merged_commit(), Some("abc1234def"));
         assert!(facts.is_valid());
     }
 
@@ -578,39 +449,7 @@ mod tests {
     }
 
     #[test]
-    fn the_project_manager_statement_survives_an_agreeing_observation() {
-        let mut facts = TicketDeliveryFacts::new("ticket");
-        let deployed = EnvironmentDeployState::Deployed;
-        let pm = FactSource::ProjectManager;
-        facts.observe_environment("Production", deployed, Some("Monday".into()), pm, 1);
-        facts.observe_environment("production", deployed, None, FactSource::Check, 2);
-        let production = facts.environment("PRODUCTION").unwrap();
-        assert_eq!(production.source, pm);
-        assert_eq!(production.detail.as_deref(), Some("Monday"));
-        assert_eq!(production.observed_at_epoch_ms, 2);
-        let rolled_back = EnvironmentDeployState::NotDeployed;
-        facts.observe_environment("Production", rolled_back, None, FactSource::Check, 3);
-        let production = facts.environment("production").unwrap();
-        assert_eq!(production.source, FactSource::Check);
-        assert_eq!(production.changed_at_epoch_ms, 3);
-    }
-
-    #[test]
-    fn duplicate_environments_bad_commits_and_age_are_checked() {
-        let mut facts = TicketDeliveryFacts::new("ticket");
-        facts.observe_environment(
-            "Staging",
-            EnvironmentDeployState::Deployed,
-            None,
-            FactSource::Probe,
-            1,
-        );
-        assert!(facts.is_valid());
-        let mut duplicate = facts.environments[0].clone();
-        duplicate.name = "STAGING".into();
-        facts.environments.push(duplicate);
-        assert!(!facts.is_valid());
-
+    fn bad_commits_and_age_are_checked() {
         let mut facts = TicketDeliveryFacts::new("ticket");
         let mut merged = pull_request(1, PullRequestFactState::Merged);
         merged.merge_commit = Some("not-a-sha".into());

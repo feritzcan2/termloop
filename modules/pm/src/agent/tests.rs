@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use super::*;
-use crate::{NewTicket, PmError, PmStore, ProjectEnvironment, SprintState};
+use crate::playbook::{AgentCheck, PlaybookStep, default_steps};
+use crate::{DeliveryCheckReason, DueCheck, NewTicket, PmError, PmStore, SprintState};
 
 const ENDPOINT: &str = "http://127.0.0.1:45123/mcp/pm";
 const TOKEN: &str = "pm-secret-token-0123456789";
@@ -23,15 +24,29 @@ fn project_store() -> (PmStore, String) {
     (store, ticket.id)
 }
 
-fn with_environments(store: &mut PmStore) {
+/// Adds an agent-checked "In production" step and starts its check for the
+/// ticket.
+fn with_agent_step(store: &mut PmStore, ticket_id: &str) {
+    let mut steps = default_steps();
+    steps.insert(
+        3,
+        PlaybookStep {
+            id: "live".into(),
+            title: "In production".into(),
+            checks: vec![],
+            agent: Some(AgentCheck {
+                instructions: "Read the production release with az pipelines.".into(),
+                retry_minutes: 60,
+            }),
+        },
+    );
+    store.save_playbook("p1", 0, steps).unwrap();
     store
-        .set_project_environments(
-            "p1",
-            &[ProjectEnvironment {
-                name: "live".into(),
-                production: true,
-            }],
-        )
+        .start_check(DueCheck {
+            ticket_id: ticket_id.into(),
+            step_id: "live".into(),
+            reason: DeliveryCheckReason::Requested,
+        })
         .unwrap();
 }
 
@@ -67,9 +82,9 @@ fn the_prompt_names_only_the_data_the_project_has() {
     assert!(profile.system_prompt.contains("Let users log in"));
     assert!(profile.system_prompt.contains("tickets only"));
     assert!(
-        !profile
+        profile
             .system_prompt
-            .contains("Environments in delivery order")
+            .contains("Playbook:\n- In progress: not answered")
     );
     assert!(
         profile
@@ -88,7 +103,7 @@ fn the_prompt_names_only_the_data_the_project_has() {
     assert!(!kickoff.contains("delivery check"));
     assert_eq!(profile.tools, PmAgentMode::Assistant.tools());
 
-    // A delivery check needs a ticket and deploy tracking.
+    // A delivery check needs a ticket with a running check of an agent step.
     assert!(matches!(
         PmAgentProfile::build(&store, "p1", PmAgentMode::DeliveryCheck, None),
         Err(PmError::Invalid("ticketId"))
@@ -102,23 +117,29 @@ fn the_prompt_names_only_the_data_the_project_has() {
         Err(PmError::NotFound)
     ));
 
-    with_environments(&mut store);
+    with_agent_step(&mut store, &ticket_id);
     let check =
         PmAgentProfile::build(&store, "p1", PmAgentMode::DeliveryCheck, Some(&ticket_id)).unwrap();
     assert!(check.system_prompt.contains("Mode: delivery check"));
     assert!(
         check
             .system_prompt
-            .contains("Environments in delivery order: live")
+            .contains("Step to check: In production (stepId live)")
     );
-    assert!(check.first_message.unwrap().contains(&ticket_id));
+    assert!(
+        check
+            .system_prompt
+            .contains("Read the production release with az pipelines.")
+    );
+    let first = check.first_message.unwrap();
+    assert!(first.contains(&ticket_id) && first.contains("stepId live"));
     assert!(check.tools.contains(&PM_CHECK_REPORT));
 }
 
 #[test]
 fn the_launch_registers_the_pm_server_and_keeps_the_token_out_of_argv() {
     let (mut store, ticket_id) = project_store();
-    with_environments(&mut store);
+    with_agent_step(&mut store, &ticket_id);
     let directory = cli_directory();
     for (agent, mode) in [
         ("claude", PmAgentMode::Assistant),
@@ -188,7 +209,7 @@ fn offers(kickoff: &str) -> Vec<&str> {
 #[test]
 fn a_code_folder_launch_reads_the_code_but_never_edits_it() {
     let (mut store, ticket_id) = project_store();
-    with_environments(&mut store);
+    with_agent_step(&mut store, &ticket_id);
     let directory = cli_directory();
     for agent in ["claude", "codex"] {
         let profile =
@@ -241,7 +262,7 @@ fn the_assistant_kickoff_fits_the_focus_and_the_tier() {
             .all(|offer| !offer.contains("in focus"))
     );
     assert!((3..=6).contains(&sprint_offers.len()), "{sprint_offers:?}");
-    assert!(!sprint.contains("delivery check"));
+    assert!(!sprint.contains("Playbook"));
     assert!(sprint.contains("draft the project manager confirms"));
     assert!(sprint.contains("Do not call pm_ticket_propose_description"));
 
@@ -250,20 +271,20 @@ fn the_assistant_kickoff_fits_the_focus_and_the_tier() {
     assert!(focused_offers[0].contains("description for the ticket in focus"));
     assert!(focused_offers[1].contains("acceptance criteria for the ticket in focus"));
     assert!(focused.contains(&format!("The ticket in focus is {ticket_id}.")));
-    assert!(!focused.contains("delivery check"));
+    assert!(!focused.contains("Playbook"));
 
-    with_environments(&mut store);
+    with_agent_step(&mut store, &ticket_id);
     let deploy = kickoff(&store, None);
     assert!(
         offers(&deploy)
             .iter()
-            .any(|offer| offer.contains("delivery check"))
+            .any(|offer| offer.contains("stuck at a Playbook step"))
     );
     let deploy_focused = kickoff(&store, Some(&ticket_id));
     assert!(
         offers(&deploy_focused)
             .iter()
-            .any(|offer| offer.contains("ticket in focus needs a delivery check"))
+            .any(|offer| offer.contains("ticket in focus stands on the Playbook"))
     );
     assert!(deploy_focused.len() < 2_048);
 }
@@ -277,7 +298,7 @@ fn only_a_fresh_assistant_conversation_gets_the_kickoff() {
     assert_eq!(launch::first_message(&profile, false), None);
 
     // A delivery check still refuses anything but a fresh conversation.
-    with_environments(&mut store);
+    with_agent_step(&mut store, &ticket_id);
     let check =
         PmAgentProfile::build(&store, "p1", PmAgentMode::DeliveryCheck, Some(&ticket_id)).unwrap();
     let directory = cli_directory();

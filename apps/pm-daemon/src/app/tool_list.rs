@@ -82,18 +82,21 @@ pub(crate) fn code_folder(set: bool) -> Verdict {
     }
 }
 
-pub(crate) fn environments(listed: usize, approved_probes: u64) -> Verdict {
-    if listed == 0 {
-        verdict(
-            PmToolState::Missing,
-            "None listed; Deployment control setup finds them.",
-        )
-    } else {
-        verdict(
-            PmToolState::Ready,
-            format!("{listed} listed, {approved_probes} approved check(s)."),
-        )
+/// The project's Playbook: its own once saved, the default steps before.
+pub(crate) fn playbook(playbook: &Value) -> Verdict {
+    if playbook["saved"] != true {
+        return verdict(
+            PmToolState::NeedsSetup,
+            "The default steps; the Playbook setup reads the repository and proposes the \
+             project's own.",
+        );
     }
+    let steps = playbook["steps"].as_u64().unwrap_or_default();
+    let agent_steps = playbook["agentSteps"].as_u64().unwrap_or_default();
+    verdict(
+        PmToolState::Ready,
+        format!("{steps} step(s), {agent_steps} checked by an agent."),
+    )
 }
 
 /// One allowlisted CLI from its redacted status.
@@ -131,13 +134,7 @@ pub(crate) fn checklist(report: &Value) -> Vec<PmTool> {
         ("Jira", jira(&pm["jira"])),
         ("GitHub", github(pm["github"].is_object(), gh_logged_in)),
         ("Code folder", code_folder(pm["checkoutFolder"] == true)),
-        (
-            "Environments",
-            environments(
-                array(&pm["environments"]).len(),
-                pm["approvedProbes"].as_u64().unwrap_or_default(),
-            ),
-        ),
+        ("Playbook", playbook(&pm["playbook"])),
     ]
     .into_iter()
     .map(|(name, verdict)| (PmToolKind::Source, name.to_owned(), verdict));
@@ -197,8 +194,7 @@ mod tests {
             "pm": {
                 "jira": { "site": "acme.atlassian.net", "boardConfigured": true, "credentialStored": false },
                 "github": { "repository": "acme/app" },
-                "environments": ["dev", "prd"],
-                "approvedProbes": 2,
+                "playbook": { "saved": true, "steps": 5, "agentSteps": 2 },
                 "checkoutFolder": true,
             },
             "clis": [
@@ -217,7 +213,7 @@ mod tests {
                 ("Jira", PmToolState::NeedsSetup),
                 ("GitHub", PmToolState::NeedsSetup),
                 ("Code folder", PmToolState::Ready),
-                ("Environments", PmToolState::Ready),
+                ("Playbook", PmToolState::Ready),
                 ("gh", PmToolState::NeedsSetup),
                 ("az", PmToolState::Ready),
                 ("aws", PmToolState::Missing),
@@ -225,7 +221,7 @@ mod tests {
                 ("Slack", PmToolState::Unknown),
             ]
         );
-        assert_eq!(tools[3].detail, "2 listed, 2 approved check(s).");
+        assert_eq!(tools[3].detail, "5 step(s), 2 checked by an agent.");
         assert_eq!(tools[5].detail, "Installed 2.70.0 and logged in.");
         assert_eq!(
             tools[7].detail,
@@ -243,7 +239,7 @@ mod tests {
                 ("Jira", PmToolState::Missing),
                 ("GitHub", PmToolState::Missing),
                 ("Code folder", PmToolState::Missing),
-                ("Environments", PmToolState::Missing),
+                ("Playbook", PmToolState::NeedsSetup),
             ]
         );
     }

@@ -1,4 +1,4 @@
-import type { PmBoardTicket, PmJiraDiff, PmProposal, PmSkill, PmSkillDraft, PmSkillManifest, PmSprint, PmTicket } from "@termloop/pm-contract/pm";
+import type { PmBoardTicket, PmJiraDiff, PmPlaybook, PmProposal, PmSkill, PmSkillDraft, PmSkillManifest, PmSprint, PmStepState, PmTicket } from "@termloop/pm-contract/pm";
 import type { PmApi, PmCallOutcome, RendererMethod } from "../src/pm-api.js";
 
 export function sprint(overrides: Partial<PmSprint> = {}): PmSprint {
@@ -24,11 +24,30 @@ export function boardTicket(overrides: Partial<PmTicket> = {}, delivery: Partial
   return {
     ticket: value,
     delivery: {
-      ticketId: value.id, stage: { kind: "merged", environment: null, sinceEpochMs: null }, risks: [],
-      checkReasons: [], facts: null, checking: false, ...delivery,
+      ticketId: value.id, playbook: { position: 2, steps: [] }, risks: [],
+      facts: null, checking: false, ...delivery,
     },
     pendingProposalCount: 0,
   };
+}
+
+/** The default steps, as a project that never saved a Playbook reads them, plus one agent step. */
+export function playbook(overrides: Partial<PmPlaybook> = {}): PmPlaybook {
+  return {
+    projectId: "project-1", revision: 0, updatedAtEpochMs: 0,
+    steps: [
+      { id: "started", title: "In progress", checks: [{ kind: "status", names: [], category: "started" }], agent: null },
+      { id: "review", title: "In review", checks: [{ kind: "pullRequest", state: "open", baseBranch: null }], agent: null },
+      { id: "merged", title: "Merged", checks: [{ kind: "pullRequest", state: "merged", baseBranch: null }], agent: null },
+      { id: "live", title: "Live", checks: [], agent: { instructions: "Read the deploy log.", retryMinutes: 30 } },
+      { id: "done", title: "Done", checks: [{ kind: "status", names: [], category: "done" }], agent: null },
+    ],
+    ...overrides,
+  };
+}
+
+export function stepState(stepId: string, overrides: Partial<PmStepState> = {}): PmStepState {
+  return { stepId, verdict: null, evidence: null, evaluator: null, decidedAtEpochMs: null, implied: false, nextAttemptAtEpochMs: null, ...overrides };
 }
 
 export function jiraDiff(overrides: Partial<PmJiraDiff> = {}): PmJiraDiff {
@@ -81,7 +100,7 @@ export function manifest(overrides: Partial<PmSkillManifest> = {}): PmSkillManif
 
 export function skill(overrides: Partial<PmSkill> = {}): PmSkill {
   return {
-    id: "skill-1", projectId: "project-1", builtin: null, enabled: true, version: 1, manifest: manifest(),
+    id: "skill-1", projectId: "project-1", enabled: true, version: 1, manifest: manifest(),
     lastRunAtEpochMs: null, lastOutcome: null, running: false, pendingSuggestionCount: 0, runsToday: 0,
     consecutiveFailures: 0, pausedReason: null, nextAttemptAtEpochMs: null, revisionReason: null, createdAtEpochMs: 0, ...overrides,
   };
