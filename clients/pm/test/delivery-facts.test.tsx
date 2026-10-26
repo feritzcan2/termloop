@@ -43,15 +43,15 @@ describe("playbook steps", () => {
     expect(pill.title).toBe("Not in the prod deploy log yet");
   });
 
-  it("list tickets waiting at a step in the overview at the deploy tier", () => {
+  it("pill a board card whose next step an agent found waiting", () => {
     const view = render(
       <SprintOverview sprint={sprint()} sprints={[sprint()]} tickets={[waitingLive()]} tier="deploy" playbook={playbook()} digest={[]} now={0}
         onOpenTicket={noop} onActivate={noop} onClose={noop} onDelete={noop} jiraBoardId={null} />,
     );
     cleanup = view.unmount;
-    const section = view.container.querySelector<HTMLElement>('[aria-label="Waiting at a step"]')!;
-    expect(section.textContent).toContain("Live");
-    expect(section.textContent).toContain("Not in the prod deploy log yet");
+    const pill = view.container.querySelector<HTMLElement>('[aria-label="Merged"] .board-card .step-pill')!;
+    expect(pill.textContent).toBe("waiting · live");
+    expect(pill.title).toBe("Not in the prod deploy log yet");
   });
 });
 

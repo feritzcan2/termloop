@@ -104,8 +104,8 @@ export function nextStep(playbook: PmPlaybook, delivery: PmTicketDelivery): { st
 
 export const NOT_STARTED = "Not started";
 
-/** A lane split by Playbook position, "Not started" first; empty steps left out, lane order kept within each. */
-export function stepSections(lane: PmBoardTicket[], playbook: PmPlaybook): { key: string; title: string; tickets: PmBoardTicket[] }[] {
+/** A lane split by Playbook position, "Not started" first, one column per step; lane order kept within each. */
+export function stepColumns(lane: PmBoardTicket[], playbook: PmPlaybook): { key: string; title: string; tickets: PmBoardTicket[] }[] {
   return [
     { key: "none", title: NOT_STARTED, tickets: lane.filter((entry) => entry.delivery.playbook.position === null) },
     ...playbook.steps.map((step, index) => ({
@@ -113,17 +113,12 @@ export function stepSections(lane: PmBoardTicket[], playbook: PmPlaybook): { key
       title: step.title,
       tickets: lane.filter((entry) => entry.delivery.playbook.position === index),
     })),
-  ].filter((section) => section.tickets.length > 0);
+  ];
 }
 
-/** Tickets an agent looked at and found waiting or blocked at their next step. */
-export function waitingAtStep(tickets: PmBoardTicket[], playbook: PmPlaybook): { entry: PmBoardTicket; step: PmPlaybookStep; state: PmStepState }[] {
-  return tickets.flatMap((entry) => {
-    const next = nextStep(playbook, entry.delivery);
-    return next?.state?.verdict === "waiting" || next?.state?.verdict === "blocked"
-      ? [{ entry, step: next.step, state: next.state }]
-      : [];
-  });
+/** {@link stepColumns} with empty steps left out. */
+export function stepSections(lane: PmBoardTicket[], playbook: PmPlaybook): { key: string; title: string; tickets: PmBoardTicket[] }[] {
+  return stepColumns(lane, playbook).filter((section) => section.tickets.length > 0);
 }
 
 export function relativeTime(epochMs: number, now: number): string {
@@ -182,38 +177,6 @@ export function riskTone(kind: PmDeliveryRiskKind): "bad" | "warn" {
   return SEVERE_RISKS.has(kind) ? "bad" : "warn";
 }
 
-export type AttentionRow = {
-  ticketId: string;
-  label: string;
-  status: PmTicketStatus;
-  /** The risk labels, worst first. */
-  title: string;
-  detail: string;
-  tone: "bad" | "warn";
-};
-
-/** One row per ticket with at least one delivery risk, severe ones first, in rank order. */
-export function attentionRows(tickets: PmBoardTicket[]): AttentionRow[] {
-  const rows = tickets
-    .filter((entry) => entry.delivery.risks.length > 0)
-    .map((entry) => {
-      const risks = [...entry.delivery.risks].sort((left, right) => Number(SEVERE_RISKS.has(right.kind)) - Number(SEVERE_RISKS.has(left.kind)));
-      const tone = riskTone(risks[0]!.kind);
-      return {
-        ticketId: entry.ticket.id,
-        label: ticketLabel(entry.ticket),
-        status: entry.ticket.status,
-        title: risks.map((risk) => RISK_LABEL[risk.kind]).join(", "),
-        // A detail that only repeats its label adds nothing.
-        detail: risks.map((risk) => risk.detail).filter((detail, index) => detail && detail.toLowerCase() !== RISK_LABEL[risks[index]!.kind].toLowerCase()).join("; "),
-        tone,
-        rank: entry.ticket.rank,
-      };
-    });
-  rows.sort((left, right) => Number(right.tone === "bad") - Number(left.tone === "bad") || left.rank - right.rank);
-  return rows.map(({ rank: _rank, ...row }) => row);
-}
-
 export type RulerDay = { epochMs: number; label: string; kind: "past" | "today" | "future"; weekend: boolean };
 
 /** A sprint ruler longer than this is not drawn day by day. */
@@ -257,25 +220,6 @@ export function sprintDay(sprint: PmSprint, now: number): { day: number; of: num
   const today = days.findIndex((day) => day.kind === "today");
   const day = today >= 0 ? today + 1 : days[0]!.kind === "future" ? 0 : days.length;
   return { day, of: days.length };
-}
-
-export type RibbonSegment = { key: string; className: string; label: string; count: number };
-
-/**
- * Sprint tickets by Playbook position for the overview ribbon: not started,
- * then one segment per step, the last one "done".
- */
-export function stepRibbon(tickets: PmBoardTicket[], playbook: PmPlaybook): RibbonSegment[] {
-  const at = (position: number | null) => tickets.filter((entry) => entry.delivery.playbook.position === position).length;
-  return [
-    { key: "none", className: "todo", label: NOT_STARTED.toLowerCase(), count: at(null) },
-    ...playbook.steps.map((step, index) => ({
-      key: step.id,
-      className: index === playbook.steps.length - 1 ? "done" : `step-${Math.min(index, 3)}`,
-      label: step.title.toLowerCase(),
-      count: at(index),
-    })),
-  ];
 }
 
 /** The newest Jira pull time recorded on any sprint or ticket. */

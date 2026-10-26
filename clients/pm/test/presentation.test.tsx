@@ -2,7 +2,7 @@
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { ProjectSwitcher } from "../src/renderer/ui/ProjectSwitcher.js";
-import { STATUS_DOT, agentTone, attentionRows, dayRuler, lastJiraPull, nextStep, sprintDay, stepRibbon, stepSections, ticketStep, waitingAtStep } from "../src/renderer/ui/format.js";
+import { STATUS_DOT, agentTone, dayRuler, lastJiraPull, nextStep, sprintDay, stepColumns, stepSections, ticketStep } from "../src/renderer/ui/format.js";
 import { boardTicket, playbook, sprint, stepState } from "./fixtures.js";
 import { render } from "./render.js";
 
@@ -45,27 +45,11 @@ describe("sidebar tones", () => {
     expect(agentTone("exited", "deliveryCheck")).toBe("exited");
   });
 
-  it("lists at-risk tickets once, blocked ones first, then by rank", () => {
-    const rows = attentionRows([
-      boardTicket({ id: "calm", rank: 0 }),
-      boardTicket({ id: "late", rank: 1 }, { risks: [{ kind: "reviewWaiting", detail: "Waiting 2 days", sinceEpochMs: null }] }),
-      boardTicket({ id: "stuck", rank: 2, jiraUrl: null }, {
-        risks: [
-          { kind: "unassigned", detail: "", sinceEpochMs: null },
-          { kind: "blocked", detail: "Sandbox is down", sinceEpochMs: null },
-        ],
-      }),
-    ]);
-    expect(rows.map((row) => row.ticketId)).toEqual(["stuck", "late"]);
-    expect(rows[0]).toMatchObject({ label: "#stuck", title: "Blocked, Unassigned", detail: "Sandbox is down", tone: "bad" });
-    expect(rows[1]).toMatchObject({ label: "SHOP-7", title: "Waiting for review", tone: "warn" });
-  });
-
-  it("counts the ribbon by the step each ticket passed, the last step as done", () => {
+  it("gives the board one column per step, Not started first, empty ones kept", () => {
     const standing = (position: number | null) => ({ playbook: { position, steps: [] } });
-    const tickets = [boardTicket({ id: "a" }, standing(null)), boardTicket({ id: "b" }, standing(2)), boardTicket({ id: "c" }, standing(2)), boardTicket({ id: "d" }, standing(4))];
-    expect(stepRibbon(tickets, playbook()).map((segment) => [segment.className, segment.count]))
-      .toEqual([["todo", 1], ["step-0", 0], ["step-1", 0], ["step-2", 2], ["step-3", 0], ["done", 1]]);
+    const lane = [boardTicket({ id: "a" }, standing(2)), boardTicket({ id: "b" }, standing(null)), boardTicket({ id: "c" }, standing(4))];
+    expect(stepColumns(lane, playbook()).map((column) => [column.title, column.tickets.map((entry) => entry.ticket.id)]))
+      .toEqual([["Not started", ["b"]], ["In progress", []], ["In review", []], ["Merged", ["a"]], ["Live", []], ["Done", ["c"]]]);
   });
 
   it("splits a lane into Playbook sections, Not started first, skipping empty steps", () => {
@@ -79,8 +63,6 @@ describe("sidebar tones", () => {
     const merged = boardTicket({}, { playbook: { position: 2, steps: [stepState("started"), stepState("review"), stepState("merged"), stepState("live", { verdict: "blocked", evaluator: "agent", evidence: "Deploy failed" })] } });
     expect(ticketStep(playbook(), merged.delivery)?.title).toBe("Merged");
     expect(nextStep(playbook(), merged.delivery)?.step.id).toBe("live");
-    expect(waitingAtStep([merged, boardTicket({ id: "x" })], playbook()).map((row) => [row.entry.ticket.id, row.step.id, row.state.verdict]))
-      .toEqual([["ticket-1", "live", "blocked"]]);
     const finished = boardTicket({}, { playbook: { position: 4, steps: [] } });
     expect(nextStep(playbook(), finished.delivery)).toBeUndefined();
   });

@@ -1,14 +1,14 @@
 import { useState } from "react";
 import type { PmBoardTicket, PmDataTier, PmDigestEntry, PmPlaybook, PmSprint } from "@termloop/pm-contract/pm";
 import { Icon } from "./icons.js";
-import { RISK_LABEL, attentionRows, dayRuler, sprintDay, stepRibbon, ticketLabel, waitingAtStep } from "./format.js";
+import { PRIORITY_LABEL, RISK_LABEL, dayRuler, nextStep, riskTone, sprintDay, stepColumns, tierAtLeast, ticketLabel } from "./format.js";
 
 export type SprintOverviewProps = {
   sprint: PmSprint | undefined;
   sprints: PmSprint[];
   tickets: PmBoardTicket[];
   tier: PmDataTier;
-  /** The project's Playbook: the ribbon counts tickets per step. */
+  /** The project's Playbook: the board has one column per step. */
   playbook: PmPlaybook | undefined;
   digest: PmDigestEntry[];
   /** The Jira board the project's sprints come from, if any. */
@@ -21,7 +21,6 @@ export type SprintOverviewProps = {
 };
 
 const ENDS = new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short" });
-const CLOCK = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 const DAY = new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short" });
 
 export function SprintOverview(props: SprintOverviewProps) {
@@ -29,6 +28,8 @@ export function SprintOverview(props: SprintOverviewProps) {
   const [deleting, setDeleting] = useState(false);
   const [carryOverTo, setCarryOverTo] = useState("");
   const [standup, setStandup] = useState<string | undefined>(undefined);
+  const [query, setQuery] = useState("");
+  const [assignee, setAssignee] = useState<string | undefined>(undefined);
   const sprint = props.sprint;
   if (!sprint) {
     return (
@@ -41,15 +42,14 @@ export function SprintOverview(props: SprintOverviewProps) {
     );
   }
   const tickets = props.tickets;
-  const attention = attentionRows(tickets);
   const ruler = dayRuler(sprint, props.now);
   const position = sprintDay(sprint, props.now);
-  const ribbon = props.playbook ? stepRibbon(tickets, props.playbook) : [];
-  const waiting = props.tier === "deploy" && props.playbook ? waitingAtStep(tickets, props.playbook) : [];
+  const people = assignees(tickets);
+  const shown = boardFilter(tickets, query, assignee);
+  const columns = props.playbook ? stepColumns(shown, props.playbook) : [];
   const targets = props.sprints.filter((candidate) => candidate.id !== sprint.id && (candidate.state === "planned" || candidate.state === "backlog"));
   // Jira owns an open sprint of the project's board: a pull would bring it back.
   const jiraOwned = sprint.jiraSprintId !== null && sprint.state !== "closed" && sprint.jiraBoardId === props.jiraBoardId;
-  const known = (ticketId: string | null) => ticketId !== null && tickets.some((entry) => entry.ticket.id === ticketId);
   const meta = [
     sprint.state !== "active" ? sprint.state : undefined,
     position && sprint.state === "active" ? `day ${position.day} of ${position.of}` : undefined,
@@ -74,7 +74,7 @@ export function SprintOverview(props: SprintOverviewProps) {
         {sprint.state === "active" && <button type="button" className="btn sm" onClick={() => setClosing(true)}>Close sprint</button>}
         {!jiraOwned && <button type="button" className="btn sm ghost" onClick={() => setDeleting(true)}>Delete sprint</button>}
       </div>
-      <div className="body">
+      <div className="board-top">
         <p className="lead">{sprint.goal ?? <span className="muted">No goal set.</span>}</p>
         {closing && (
           <div className="card" role="dialog" aria-label="Close sprint">
@@ -117,75 +117,105 @@ export function SprintOverview(props: SprintOverviewProps) {
             ))}
           </div>
         )}
-        <div className="ribbon" aria-hidden="true">
-          {ribbon.filter((segment) => segment.count > 0).map((segment) => <i key={segment.key} className={segment.className} style={{ flex: segment.count }} />)}
-          {tickets.length === 0 && <i className="empty" style={{ flex: 1 }} />}
-        </div>
-        <div className="legend">
-          {ribbon.map((segment) => <span key={segment.key}><b>{segment.count}</b> {segment.label}</span>)}
-        </div>
-
-        <h3 className="s">Needs your attention <small>{attention.length} {attention.length === 1 ? "ticket" : "tickets"}</small></h3>
-        {attention.length === 0 ? <p className="hint">No risks on this sprint.</p> : (
-          <div className="ruled" aria-label="Needs attention">
-            {attention.map((row) => {
-              const entry = tickets.find((candidate) => candidate.ticket.id === row.ticketId)!;
-              return (
-                <div key={row.ticketId} className="ruled-row attn-row">
-                  <span className="k">{row.label}</span>
-                  <span>
-                    <div className="ruled-title">{entry.ticket.title}</div>
-                    <div className="ruled-detail">
-                      <span className={row.tone}>{row.title}.</span> {row.detail}
-                    </div>
-                  </span>
-                  <button type="button" className="link" onClick={() => props.onOpenTicket(row.ticketId)}>Open</button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        <h3 className="s">Since yesterday <small>from Jira, pull requests and this app</small></h3>
-        {props.digest.length === 0 ? <p className="hint">Nothing changed in the last day.</p> : (
-          <div className="digest">
-            {props.digest.map((entry, index) => (
-              <div key={index} className="digest-row">
-                <time dateTime={new Date(entry.atEpochMs).toISOString()}>{CLOCK.format(entry.atEpochMs)}</time>
-                {known(entry.ticketId) ? (
-                  <button type="button" className="link plain" onClick={() => props.onOpenTicket(entry.ticketId!)}>{entry.summary}</button>
-                ) : <span>{entry.summary}</span>}
-              </div>
+        <div className="board-filters">
+          <label className="board-search">
+            <Icon name="search" />
+            <input type="search" placeholder="Search board" aria-label="Search board" value={query} onChange={(event) => setQuery(event.target.value)} />
+          </label>
+          <div className="board-people" role="group" aria-label="Filter by assignee">
+            {people.map((name) => (
+              <button
+                key={name}
+                type="button"
+                className={`avatar ${assignee === name ? "on" : ""}`}
+                title={name}
+                aria-pressed={assignee === name}
+                onClick={() => setAssignee(assignee === name ? undefined : name)}
+              >
+                {initials(name)}
+              </button>
             ))}
           </div>
-        )}
-
-        {props.tier === "deploy" && (
-          <section aria-label="Waiting at a step">
-            <h3 className="s">Waiting at a step <small>{waiting.length} {waiting.length === 1 ? "ticket" : "tickets"}</small></h3>
-            {waiting.length === 0 ? <p className="hint">No ticket is waiting at a step an agent checks.</p> : (
-              <div className="ruled">
-                {waiting.map(({ entry, step, state }) => (
-                  <div key={entry.ticket.id} className="ruled-row">
-                    <span className="k">{ticketLabel(entry.ticket)}</span>
-                    <span>
-                      <div className="ruled-title">{entry.ticket.title}</div>
-                      <div className="ruled-detail">
-                        <span className={state.verdict === "blocked" ? "bad" : "warn"}>{step.title}: {state.verdict}.</span> {state.evidence}
-                      </div>
-                    </span>
-                    {entry.delivery.checking
-                      ? <span className="chip">checking</span>
-                      : <button type="button" className="btn sm" onClick={() => props.onOpenTicket(entry.ticket.id)}>Open</button>}
-                  </div>
-                ))}
-              </div>
-            )}
+          {(query || assignee !== undefined) && (
+            <button type="button" className="btn sm ghost" onClick={() => { setQuery(""); setAssignee(undefined); }}>Clear filters</button>
+          )}
+        </div>
+      </div>
+      <div className="board" aria-label="Sprint board">
+        {columns.map((column) => (
+          <section key={column.key} className="board-col" aria-label={column.title}>
+            <header className="board-col-head">{column.title}<small>{column.tickets.length}</small></header>
+            <ul className="board-cards">
+              {column.tickets.map((entry) => (
+                <li key={entry.ticket.id}>
+                  <BoardCard entry={entry} tier={props.tier} playbook={props.playbook} onOpen={() => props.onOpenTicket(entry.ticket.id)} />
+                </li>
+              ))}
+            </ul>
           </section>
-        )}
+        ))}
       </div>
     </section>
   );
+}
+
+function BoardCard(props: { entry: PmBoardTicket; tier: PmDataTier; playbook: PmPlaybook | undefined; onOpen(): void }) {
+  const { ticket, delivery, pendingProposalCount } = props.entry;
+  const pullRequests = tierAtLeast(props.tier, "code") ? delivery.facts?.pullRequests ?? 0 : 0;
+  // What an agent found at the step the ticket works toward.
+  const next = props.playbook ? nextStep(props.playbook, delivery) : undefined;
+  const held = next?.state && (next.state.verdict === "waiting" || next.state.verdict === "blocked") ? { step: next.step, state: next.state } : undefined;
+  const risks = delivery.risks.filter((risk) => risk.kind !== "unassigned");
+  return (
+    <button type="button" className="board-card" onClick={props.onOpen}>
+      <span className="board-card-title">{ticket.title}</span>
+      {(risks.length > 0 || held || pendingProposalCount > 0 || delivery.checking) && (
+        <span className="board-card-tags">
+          {held && (
+            <span className={`step-pill ${held.state.verdict === "blocked" ? "bad" : ""}`} title={held.state.evidence ?? undefined}>
+              {held.state.verdict} · {held.step.title.toLowerCase()}
+            </span>
+          )}
+          {risks.map((risk, index) => (
+            <span key={index} className={`risk ${riskTone(risk.kind)}`} title={risk.detail}>{RISK_LABEL[risk.kind].toLowerCase()}</span>
+          ))}
+          {pendingProposalCount > 0 && (
+            <span className="draft-pill" title="Assistant drafts waiting for your review">
+              {pendingProposalCount === 1 ? "draft" : `${pendingProposalCount} drafts`}
+            </span>
+          )}
+          {delivery.checking && <span className="risk warn">checking…</span>}
+        </span>
+      )}
+      <span className="board-card-foot">
+        <span className="k">{ticketLabel(ticket)}</span>
+        <span className={`prio ${ticket.priority}`} title={`${PRIORITY_LABEL[ticket.priority]} priority`} aria-label={`${PRIORITY_LABEL[ticket.priority]} priority`} />
+        {pullRequests > 0 && <span className="pr-chip" title="Linked pull requests">PR·{pullRequests}</span>}
+        <span className="sp" />
+        {ticket.assignee
+          ? <span className="avatar" title={ticket.assignee}>{initials(ticket.assignee)}</span>
+          : <span className="avatar none" title="Unassigned">?</span>}
+      </span>
+    </button>
+  );
+}
+
+/** The sprint's assignees, by name. */
+function assignees(tickets: PmBoardTicket[]): string[] {
+  return [...new Set(tickets.flatMap((entry) => (entry.ticket.assignee ? [entry.ticket.assignee] : [])))].sort((left, right) => left.localeCompare(right));
+}
+
+/** Tickets whose key or title holds the query, assigned to `assignee` when one is chosen. */
+export function boardFilter(tickets: PmBoardTicket[], query: string, assignee: string | undefined): PmBoardTicket[] {
+  const needle = query.trim().toLowerCase();
+  return tickets.filter((entry) =>
+    (assignee === undefined || entry.ticket.assignee === assignee)
+    && (!needle || entry.ticket.title.toLowerCase().includes(needle) || ticketLabel(entry.ticket).toLowerCase().includes(needle)));
+}
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] ?? "") + (parts.length > 1 ? parts[parts.length - 1]![0] : "")).toUpperCase();
 }
 
 const UNASSIGNED = "Unassigned";

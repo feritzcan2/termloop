@@ -1,28 +1,47 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { SprintOverview, standupNote } from "../src/renderer/ui/SprintOverview.js";
+import { SprintOverview, boardFilter, standupNote } from "../src/renderer/ui/SprintOverview.js";
 import { boardTicket, playbook, sprint } from "./fixtures.js";
 import { render } from "./render.js";
 
 const noop = () => undefined;
 
 describe("sprint overview", () => {
-  it("lists a ticket with several risks once and counts tickets, not risks", () => {
-    const risky = boardTicket({ id: "t1" }, {
+  it("places each ticket in its step's column as a card with its risks", () => {
+    const risky = boardTicket({ id: "t1", title: "Risky" }, {
       risks: [
         { kind: "stepBlocked", detail: "Merged 3 days ago", sinceEpochMs: null },
         { kind: "stuckInStatus", detail: "No change for 5 days", sinceEpochMs: null },
       ],
     });
+    const fresh = boardTicket({ id: "t2", title: "Fresh", jiraUrl: null }, { playbook: { position: null, steps: [] } });
     const { container, unmount } = render(
-      <SprintOverview sprint={sprint()} sprints={[sprint()]} tickets={[risky, boardTicket({ id: "t2" })]} tier="tickets"
+      <SprintOverview sprint={sprint()} sprints={[sprint()]} tickets={[risky, fresh]} tier="tickets"
         playbook={playbook()} digest={[]} now={0} onOpenTicket={noop} onActivate={noop} onClose={noop} onDelete={noop} jiraBoardId={null} />,
     );
-    const rows = container.querySelectorAll(".attn-row");
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.textContent).toContain("Merged 3 days ago; No change for 5 days");
-    const heading = [...container.querySelectorAll("h3")].find((element) => element.textContent?.startsWith("Needs your attention"));
-    expect(heading?.querySelector("small")?.textContent).toBe("1 ticket");
+    const columns = [...container.querySelectorAll(".board-col")];
+    expect(columns.map((column) => column.querySelector(".board-col-head")!.textContent)).toEqual(["Not started1", "In progress0", "In review0", "Merged1", "Live0", "Done0"]);
+    expect(columns[0]!.querySelector(".board-card-title")?.textContent).toBe("Fresh");
+    const card = columns[3]!.querySelector(".board-card")!;
+    expect(card.querySelector(".board-card-title")?.textContent).toBe("Risky");
+    expect([...card.querySelectorAll(".risk")].map((element) => element.textContent)).toEqual(["step blocked", "stuck in status"]);
+    expect(card.querySelector(".k")?.textContent).toBe("SHOP-7");
+    unmount();
+  });
+
+  it("filters the board by text and by assignee", () => {
+    const tickets = [
+      boardTicket({ id: "a1", title: "Login", assignee: "Ada Lovelace", jiraUrl: null }),
+      boardTicket({ id: "b1", title: "Cart", assignee: "bob", jiraUrl: null }),
+    ];
+    expect(boardFilter(tickets, "log", undefined).map((entry) => entry.ticket.id)).toEqual(["a1"]);
+    expect(boardFilter(tickets, "#b1", undefined).map((entry) => entry.ticket.id)).toEqual(["b1"]);
+    expect(boardFilter(tickets, "", "bob").map((entry) => entry.ticket.id)).toEqual(["b1"]);
+    const { container, unmount } = render(
+      <SprintOverview sprint={sprint()} sprints={[sprint()]} tickets={tickets} tier="tickets"
+        playbook={playbook()} digest={[]} now={0} onOpenTicket={noop} onActivate={noop} onClose={noop} onDelete={noop} jiraBoardId={null} />,
+    );
+    expect([...container.querySelectorAll(".board-people .avatar")].map((element) => element.textContent)).toEqual(["AL", "B"]);
     unmount();
   });
 

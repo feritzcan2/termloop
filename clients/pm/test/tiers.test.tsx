@@ -35,7 +35,7 @@ function overview(tier: PmDataTier) {
     <SprintOverview
       sprint={sprint()}
       sprints={[sprint()]}
-      tickets={[boardTicket({}, { risks: [{ kind: "stepBlocked", detail: "Merged 3 days ago", sinceEpochMs: null }] })]}
+      tickets={[boardTicket({}, { facts: { recordedAtEpochMs: 0, stale: false, jiraStatus: null, jiraAssignee: null, pullRequests: 2, failedReads: [] } })]}
       tier={tier}
       playbook={playbook()}
       digest={[]}
@@ -64,8 +64,8 @@ describe("data tiers", () => {
     expect([...sidebar("tickets").querySelectorAll(".pm-status-head")].map((element) => element.firstChild?.textContent)).toEqual(["Merged"]);
   });
 
-  it("lists tickets waiting at a step only at the deploy tier", () => {
-    expect(overview("tickets").textContent).not.toContain("Waiting at a step");
-    expect(overview("code").textContent).toContain("Needs your attention");
+  it("shows linked pull requests on board cards from the code tier", () => {
+    expect(overview("tickets").querySelector(".board-card .pr-chip")).toBeNull();
+    expect(overview("code").querySelector(".board-card .pr-chip")?.textContent).toBe("PR·2");
   });
 });
