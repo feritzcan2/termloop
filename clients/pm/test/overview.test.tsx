@@ -29,6 +29,18 @@ describe("sprint overview", () => {
     unmount();
   });
 
+  it("marks a card blocked only for a severe risk", () => {
+    const blocked = boardTicket({ id: "b1", title: "Blocked", jiraUrl: null }, { risks: [{ kind: "blocked", detail: "Waiting on API", sinceEpochMs: null }] });
+    const stale = boardTicket({ id: "s1", title: "Stale", jiraUrl: null }, { risks: [{ kind: "stuckInStatus", detail: "No change for 5 days", sinceEpochMs: null }] });
+    const { container, unmount } = render(
+      <SprintOverview sprint={sprint()} sprints={[sprint()]} tickets={[blocked, stale]} tier="tickets"
+        playbook={undefined} digest={[]} now={0} onOpenTicket={noop} onActivate={noop} onClose={noop} onDelete={noop} jiraBoardId={null} />,
+    );
+    const marked = [...container.querySelectorAll(".board-card.blocked .board-card-title")].map((element) => element.textContent);
+    expect(marked).toEqual(["Blocked"]);
+    unmount();
+  });
+
   it("falls back to status columns without a Playbook", () => {
     const { container, unmount } = render(
       <SprintOverview sprint={sprint()} sprints={[sprint()]} tickets={[boardTicket({ status: "inReview" })]} tier="tickets"

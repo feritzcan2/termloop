@@ -113,7 +113,7 @@ export function SprintOverview(props: SprintOverviewProps) {
         {ruler.length > 0 && (
           <div className="ruler" style={{ gridTemplateColumns: `repeat(${ruler.length}, minmax(0, 1fr))` }} aria-label="Sprint days">
             {ruler.map((day) => (
-              <div key={day.epochMs} className={`ruler-day ${day.kind} ${day.weekend ? "weekend" : ""}`} title={DAY.format(day.epochMs)}>{day.label}</div>
+              <div key={day.epochMs} className={`ruler-day ${day.kind} ${day.weekend ? "weekend" : ""}`} title={DAY.format(day.epochMs)}><span>{day.label}</span></div>
             ))}
           </div>
         )}
@@ -144,7 +144,7 @@ export function SprintOverview(props: SprintOverviewProps) {
       <div className="board" aria-label="Sprint board">
         {columns.map((column) => (
           <section key={column.key} className="board-col" aria-label={column.title}>
-            <header className="board-col-head">{column.title}<small>{column.tickets.length}</small></header>
+            <header className="board-col-head"><span className="board-col-title">{column.title}</span><small>{column.tickets.length}</small></header>
             <ul className="board-cards">
               {column.tickets.map((entry) => (
                 <li key={entry.ticket.id}>
@@ -166,8 +166,9 @@ function BoardCard(props: { entry: PmBoardTicket; tier: PmDataTier; playbook: Pm
   const next = props.playbook ? nextStep(props.playbook, delivery) : undefined;
   const held = next?.state && (next.state.verdict === "waiting" || next.state.verdict === "blocked") ? { step: next.step, state: next.state } : undefined;
   const risks = delivery.risks.filter((risk) => risk.kind !== "unassigned");
+  const blocked = held?.state.verdict === "blocked" || risks.some((risk) => riskTone(risk.kind) === "bad");
   return (
-    <button type="button" className="board-card" onClick={props.onOpen}>
+    <button type="button" className={`board-card ${blocked ? "blocked" : ""}`} onClick={props.onOpen}>
       <span className="board-card-title">{ticket.title}</span>
       {(risks.length > 0 || held || pendingProposalCount > 0 || delivery.checking) && (
         <span className="board-card-tags">
