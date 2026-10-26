@@ -25,14 +25,13 @@ const MARKS: Record<PmToolState, { mark: string; label: string }> = {
  * What the project and this machine have for skills and agents to read
  * through, as a checklist: the PM's sources, the allowlisted CLIs, the
  * configured MCP servers, and the Claude account's connectors. It reads
- * on first open; Check again reads the machine anew.
+ * the cached checklist when first shown; Check again reads the machine anew.
  */
 export function ToolsChecklist(props: {
   tools: PmToolsReadResult | undefined;
   now: number;
   onRead(refresh: boolean): Promise<void>;
 }) {
-  const [open, setOpen] = useState(false);
   const [reading, setReading] = useState(false);
   const read = async (refresh: boolean) => {
     setReading(true);
@@ -40,42 +39,31 @@ export function ToolsChecklist(props: {
     setReading(false);
   };
   useEffect(() => {
-    if (open && props.tools === undefined) void read(false);
-  }, [open, props.tools === undefined]);
-  const tools = props.tools?.tools ?? [];
-  const ready = tools.filter((tool) => tool.state === "ready").length;
+    if (props.tools === undefined) void read(false);
+  }, [props.tools === undefined]);
+  if (props.tools === undefined) return <p className="hint">{reading ? "Checking this machine…" : "Not checked yet."}</p>;
+  const tools = props.tools.tools;
   return (
-    <details className="tools-checklist" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
-      <summary>
-        <Icon name={open ? "down" : "right"} />
-        <span className="sec-label">Tools</span>
-        {props.tools && <span className="meta">{ready} of {tools.length} ready</span>}
-      </summary>
-      {props.tools === undefined ? (
-        <p className="hint pad">{reading ? "Checking this machine…" : "Not checked yet."}</p>
-      ) : (
-        <>
-          {GROUPS.map((group) => {
-            const items = tools.filter((tool) => tool.kind === group.kind);
-            if (items.length === 0) return null;
-            return (
-              <section key={group.kind} className="tool-group" aria-label={group.label}>
-                <span className="sec-label">{group.label}</span>
-                {group.note && <p className="hint">{group.note}</p>}
-                <ul>{items.map((tool) => <ToolRow key={`${tool.kind}:${tool.name}`} tool={tool} />)}</ul>
-              </section>
-            );
-          })}
-          <div className="tools-foot">
-            <span className="meta">Checked {relativeTime(props.tools.readAtEpochMs, props.now)}</span>
-            <span className="sp" />
-            <button type="button" className="btn sm ghost" disabled={reading} onClick={() => void read(true)}>
-              <Icon name="refresh" />{reading ? "Checking…" : "Check again"}
-            </button>
-          </div>
-        </>
-      )}
-    </details>
+    <div className="tools-checklist">
+      {GROUPS.map((group) => {
+        const items = tools.filter((tool) => tool.kind === group.kind);
+        if (items.length === 0) return null;
+        return (
+          <section key={group.kind} className="tool-group" aria-label={group.label}>
+            <span className="sec-label">{group.label}</span>
+            {group.note && <p className="hint">{group.note}</p>}
+            <ul>{items.map((tool) => <ToolRow key={`${tool.kind}:${tool.name}`} tool={tool} />)}</ul>
+          </section>
+        );
+      })}
+      <div className="tools-foot">
+        <span className="meta">Checked {relativeTime(props.tools.readAtEpochMs, props.now)}</span>
+        <span className="sp" />
+        <button type="button" className="btn sm ghost" disabled={reading} onClick={() => void read(true)}>
+          <Icon name="refresh" />{reading ? "Checking…" : "Check again"}
+        </button>
+      </div>
+    </div>
   );
 }
 

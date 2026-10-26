@@ -14,8 +14,6 @@ const BOARD = { projectId: "project-1", sprints: [], tickets: [], environments: 
 function panel(overrides: Partial<SkillsPanelProps> = {}): SkillsPanelProps {
   return {
     skills: { projectId: "project-1", environmentProposal: null, skills: [skill()], drafts: [] },
-    tools: undefined,
-    onReadTools: async () => undefined,
     tier: "deploy",
     tickets: [ticket()],
     now: 0,

@@ -236,7 +236,9 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 tracking={board?.tracking}
                 environments={board?.environments ?? EMPTY}
                 probes={board?.probes ?? EMPTY}
+                tools={state.tools}
                 now={now}
+                onReadTools={(refresh) => controller.loadTools(refresh)}
                 onSaveSources={(jira) => controller.saveSources(jira)}
                 onClearToken={() => void controller.clearJiraToken()}
                 onPickFolder={() => controller.bridge.pickFolder()}
@@ -345,8 +347,6 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
             ) : (
               <SkillsPanel
                 skills={state.skills}
-                tools={state.tools}
-                onReadTools={(refresh) => controller.loadTools(refresh)}
                 tier={tier}
                 tickets={ticketsOnly}
                 now={now}

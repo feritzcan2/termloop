@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { PmToolsReadResult } from "@termloop/pm-contract/pm";
 import { PmController } from "../src/renderer/composition/pm-controller.js";
 import { createPmStore } from "../src/renderer/state/presentation-store.js";
+import { SettingsPage } from "../src/renderer/ui/SettingsPage.js";
 import { ToolsChecklist } from "../src/renderer/ui/ToolsChecklist.js";
 import { fakeBridge, ok } from "./fixtures.js";
 import { render } from "./render.js";
@@ -19,23 +20,16 @@ const TOOLS: PmToolsReadResult = {
   ],
 };
 
-const open = (container: HTMLElement) => act(() => {
-  const details = container.querySelector<HTMLDetailsElement>("details.tools-checklist")!;
-  details.open = true;
-  details.dispatchEvent(new Event("toggle"));
-});
-
 describe("ToolsChecklist", () => {
-  it("reads the cached checklist on first open and groups it by kind", async () => {
+  it("reads the cached checklist when shown and groups it by kind", async () => {
     const onRead = vi.fn(async () => undefined);
-    const closed = render(<ToolsChecklist tools={undefined} now={0} onRead={onRead} />);
-    expect(onRead).not.toHaveBeenCalled();
-    open(closed.container);
+    const unread = render(<ToolsChecklist tools={undefined} now={0} onRead={onRead} />);
     expect(onRead).toHaveBeenCalledWith(false);
-    closed.unmount();
+    unread.unmount();
 
+    onRead.mockClear();
     const { container, unmount } = render(<ToolsChecklist tools={TOOLS} now={0} onRead={onRead} />);
-    expect(container.textContent).toContain("1 of 4 ready");
+    expect(onRead).not.toHaveBeenCalled();
     const groups = [...container.querySelectorAll("section.tool-group")].map((group) => group.getAttribute("aria-label"));
     expect(groups).toEqual(["Project sources", "Command-line tools", "Claude account connectors"]);
     const marks = [...container.querySelectorAll(".tool-mark")].map((mark) => mark.getAttribute("aria-label"));
@@ -46,9 +40,18 @@ describe("ToolsChecklist", () => {
   it("checks the machine again on Check again", async () => {
     const onRead = vi.fn(async () => undefined);
     const { container, unmount } = render(<ToolsChecklist tools={TOOLS} now={0} onRead={onRead} />);
-    open(container);
     await act(async () => [...container.querySelectorAll("button")].find((button) => button.textContent === "Check again")!.click());
     expect(onRead).toHaveBeenCalledWith(true);
+    unmount();
+  });
+});
+
+describe("Settings Tools section", () => {
+  it("shows the checklist with its ready count in Settings", () => {
+    const { container, unmount } = render(<SettingsPage {...settingsProps()} />);
+    const section = container.querySelector('section.settings-section[aria-label="Tools"]')!;
+    expect(section.textContent).toContain("1 OF 4 READY");
+    expect(section.querySelectorAll(".tool-row")).toHaveLength(4);
     unmount();
   });
 });
@@ -62,3 +65,12 @@ describe("PmController.loadTools", () => {
     expect(store.getState().tools).toEqual(TOOLS);
   });
 });
+
+function settingsProps() {
+  const noop = () => undefined;
+  return {
+    projectName: "Shop", settings: undefined, catalog: undefined, sources: undefined, tracking: undefined, environments: [], probes: [],
+    tools: TOOLS, now: 0, onReadTools: async () => undefined, onSaveSources: async () => true, onClearToken: noop, onSaveSettings: noop,
+    onSetEnvironments: noop, onCreateProbe: noop, onApproveProbe: noop, onRejectProbe: noop, onDeleteProbe: noop,
+  };
+}

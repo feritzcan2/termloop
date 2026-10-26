@@ -1,19 +1,15 @@
 import { useState } from "react";
 import type {
-  PmDataTier, PmSkill, PmSkillDraft, PmSkillManifest, PmSkillSetup, PmSkillsReadResult, PmTicket, PmToolsReadResult,
+  PmDataTier, PmSkill, PmSkillDraft, PmSkillManifest, PmSkillSetup, PmSkillsReadResult, PmTicket,
 } from "@termloop/pm-contract/pm";
 import { Icon } from "./icons.js";
 import { relativeTime, timeUntil } from "./format.js";
 import { EvidenceList, LineDiff } from "./ProposalCard.js";
 import { proposalKindLabel } from "./proposal-change.js";
 import { EnvironmentSetupDialog } from "./EnvironmentSetupDialog.js";
-import { ToolsChecklist } from "./ToolsChecklist.js";
 
 export type SkillsPanelProps = {
   skills: PmSkillsReadResult | undefined;
-  tools: PmToolsReadResult | undefined;
-  /** Reads the tools checklist; `refresh` checks the machine again. */
-  onReadTools(refresh: boolean): Promise<void>;
   tier: PmDataTier;
   tickets: PmTicket[];
   now: number;
@@ -131,7 +127,6 @@ export function SkillsPanel(props: SkillsPanelProps) {
         </ul>
       )}
       {props.tier === "tickets" && <p className="hint pad">Skills that read GitHub pull requests appear once a repository is connected.</p>}
-      <ToolsChecklist tools={props.tools} now={props.now} onRead={props.onReadTools} />
       {proposal && reviewing && (
         <EnvironmentSetupDialog
           key={proposal.createdAtEpochMs}

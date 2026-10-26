@@ -16,7 +16,7 @@ function props(overrides: Partial<SettingsPageProps> = {}): SettingsPageProps {
   const noop = () => undefined;
   return {
     projectName: "Shop", settings: undefined, catalog: undefined, sources, tracking: { jira: true, code: false, deploy: false, tier: "tickets" },
-    environments: [], probes: [], now: 0, onSaveSources: vi.fn(async () => true), onClearToken: noop, onSaveSettings: noop,
+    environments: [], probes: [], tools: undefined, now: 0, onReadTools: async () => undefined, onSaveSources: vi.fn(async () => true), onClearToken: noop, onSaveSettings: noop,
     onSetEnvironments: noop, onCreateProbe: noop, onApproveProbe: noop, onRejectProbe: noop, onDeleteProbe: noop, ...overrides,
   };
 }

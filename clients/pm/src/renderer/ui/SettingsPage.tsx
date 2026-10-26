@@ -8,9 +8,11 @@ import type {
   PmSettings,
   PmSettingsUpdateParams,
   PmSources,
+  PmToolsReadResult,
   PmTracking,
 } from "@termloop/pm-contract/pm";
 import { relativeTime } from "./format.js";
+import { ToolsChecklist } from "./ToolsChecklist.js";
 
 export type JiraSourceDraft = { siteUrl: string; boardId: number | null; accountEmail: string; token: string };
 
@@ -23,7 +25,10 @@ export type SettingsPageProps = {
   tracking: PmTracking | undefined;
   environments: PmEnvironment[];
   probes: PmProbe[];
+  tools: PmToolsReadResult | undefined;
   now: number;
+  /** Reads the tools checklist; `refresh` checks the machine again. */
+  onReadTools(refresh: boolean): Promise<void>;
   onSaveSources(jira: JiraSourceDraft | null): Promise<boolean>;
   onClearToken(): void;
   onPickFolder?(): Promise<string | null>;
@@ -47,6 +52,7 @@ export function SettingsPage(props: SettingsPageProps) {
           <JiraCard {...props} />
           <DeployCard {...props} />
           <AgentCard settings={props.settings} catalog={props.catalog} onSave={props.onSaveSettings} />
+          <ToolsCard tools={props.tools} now={props.now} onRead={props.onReadTools} />
           <SettingsSection title="Your data" description={<>Everything lives on this computer in the PM daemon's store at <code>&lt;TermLoop state directory&gt;/pm/pm.sqlite</code>. There is no server and no account.</>}>
             <p className="hint">Jira API tokens are kept in the operating system's secure credential store, never in that file or in this window.</p>
           </SettingsSection>
@@ -56,7 +62,7 @@ export function SettingsPage(props: SettingsPageProps) {
   );
 }
 
-function SettingsSection(props: { title: string; state?: { tone: "ok" | "warn" | "off"; text: string }; description: ReactNode; children: ReactNode }) {
+function SettingsSection(props: { title: string; state?: { tone: "ok" | "warn" | "off"; text: string } | undefined; description: ReactNode; children: ReactNode }) {
   return (
     <section className="settings-section" aria-label={props.title}>
       <div className="settings-title">
@@ -66,6 +72,17 @@ function SettingsSection(props: { title: string; state?: { tone: "ok" | "warn" |
       <p className="settings-desc">{props.description}</p>
       {props.children}
     </section>
+  );
+}
+
+function ToolsCard(props: { tools: PmToolsReadResult | undefined; now: number; onRead(refresh: boolean): Promise<void> }) {
+  const tools = props.tools?.tools ?? [];
+  const ready = tools.filter((tool) => tool.state === "ready").length;
+  const state = props.tools && { tone: ready === tools.length ? "ok" as const : "warn" as const, text: `${ready} OF ${tools.length} READY` };
+  return (
+    <SettingsSection title="Tools" state={state} description="What skills and agents can read through: this project's sources, the command-line tools on this machine, MCP servers, and your Claude account's connectors.">
+      <ToolsChecklist tools={props.tools} now={props.now} onRead={props.onRead} />
+    </SettingsSection>
   );
 }
 
