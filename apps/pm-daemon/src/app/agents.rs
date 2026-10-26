@@ -26,6 +26,10 @@ const EXITED_SESSIONS_KEPT: usize = 16;
 /// A skill run is unattended and calls only its approved PM tools; any
 /// other tool would wait for a person, so nothing else is pre-approved.
 const SKILL_RUN_PERMISSION: &str = "default";
+/// Every Claude the PM starts opens in Claude's auto mode, whatever its mode
+/// or the saved permissions: the catalog's `acceptEdits` launches as
+/// `--permission-mode auto`.
+const CLAUDE_PERMISSION: &str = "acceptEdits";
 /// How long a description update keeps running after its draft, so its
 /// closing reply reaches the terminal.
 const STOP_AFTER_DRAFT: Duration = Duration::from_secs(20);
@@ -297,6 +301,20 @@ fn check_model(settings: &PmSettings) -> &str {
     }
 }
 
+/// The permission mode an agent launches with.
+fn launch_permission(settings: &PmSettings, mode: PmAgentMode) -> &str {
+    if settings.agent_provider == "claude" {
+        return CLAUDE_PERMISSION;
+    }
+    match mode {
+        PmAgentMode::Assistant | PmAgentMode::SkillCreator => {
+            settings.assistant_permission.as_str()
+        }
+        PmAgentMode::DeliveryCheck => settings.check_permission.as_str(),
+        PmAgentMode::SkillRun => SKILL_RUN_PERMISSION,
+    }
+}
+
 /// Launches an agent with a built profile; a skill-run agent is bound to
 /// its run and the tools that run may call.
 pub(crate) fn launch_profile(
@@ -333,13 +351,7 @@ fn launch_profile_with(
         let project = store.project(project_id)?.ok_or_else(not_found)?;
         (store.settings()?, project.folder)
     };
-    let permission = match mode {
-        PmAgentMode::Assistant | PmAgentMode::SkillCreator => {
-            settings.assistant_permission.as_str()
-        }
-        PmAgentMode::DeliveryCheck => settings.check_permission.as_str(),
-        PmAgentMode::SkillRun => SKILL_RUN_PERMISSION,
-    };
+    let permission = launch_permission(&settings, mode);
     // A project's own folder is its team's code: agents read it, never edit it.
     let read_only_workspace = folder.is_some();
     let cwd = match folder {
@@ -520,5 +532,30 @@ mod tests {
         );
         agents.mark_exited("update");
         assert_eq!(agents.draft_session("token-update"), None);
+    }
+
+    #[test]
+    fn every_claude_launches_in_auto_mode() {
+        let modes = [
+            PmAgentMode::Assistant,
+            PmAgentMode::SkillCreator,
+            PmAgentMode::DeliveryCheck,
+            PmAgentMode::SkillRun,
+        ];
+        let claude = PmSettings::default();
+        for mode in modes {
+            assert_eq!(launch_permission(&claude, mode), "acceptEdits");
+        }
+        let codex = PmSettings {
+            agent_provider: "codex".to_owned(),
+            assistant_permission: "plan".to_owned(),
+            ..PmSettings::default()
+        };
+        assert_eq!(launch_permission(&codex, PmAgentMode::Assistant), "plan");
+        assert_eq!(
+            launch_permission(&codex, PmAgentMode::DeliveryCheck),
+            "bypassPermissions"
+        );
+        assert_eq!(launch_permission(&codex, PmAgentMode::SkillRun), "default");
     }
 }
