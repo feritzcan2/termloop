@@ -358,6 +358,7 @@ h3.s .r { margin-left: auto; color: var(--dimmer); font: 400 10px/1 var(--font-m
 .tools-checklist { margin: 10px 0 0; border-top: 1px solid var(--border); }
 .tools-checklist > summary { display: flex; align-items: center; gap: 6px; padding: 9px 13px; cursor: pointer; list-style: none; }
 .tools-checklist > summary::-webkit-details-marker { display: none; }
+.tools-checklist > summary svg { width: 11px; height: 11px; flex: none; color: var(--dimmer); }
 .tools-checklist > summary .meta { margin-left: auto; }
 .tool-group { padding: 4px 13px 6px; }
 .tool-group > .sec-label { display: block; margin: 4px 0; }

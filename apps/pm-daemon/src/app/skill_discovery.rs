@@ -104,7 +104,10 @@ pub(crate) fn version_number(output: &str) -> Option<String> {
         .map(|token| token.chars().take(VERSION_MAX_BYTES).collect())
 }
 
-fn run_fixed(program: &Path, args: &[&str]) -> Option<(bool, Vec<u8>)> {
+/// Runs an allowlisted CLI by name, looked up on PATH like a probe, so a
+/// script wrapper (Homebrew's `az`, `gcloud`) counts as installed. `None`
+/// when it could not start.
+fn run_fixed(program: &str, args: &[&str]) -> Option<(bool, Vec<u8>)> {
     let request = CommandRequest::new(program)
         .args(args)
         .timeout(CLI_TIMEOUT)
@@ -121,14 +124,13 @@ pub(crate) fn cli_status(name: &str) -> Option<Value> {
         .iter()
         .copied()
         .find(|(allowed, _)| *allowed == name)?;
-    let Ok(executable) = termloop_platform::resolve_executable(name) else {
+    let Some((_, stdout)) = run_fixed(name, &["--version"]) else {
         return Some(
             json!({ "name": name, "installed": false, "version": null, "loggedIn": false }),
         );
     };
-    let version = run_fixed(executable.path(), &["--version"])
-        .and_then(|(_, stdout)| version_number(&String::from_utf8_lossy(&stdout)));
-    let logged_in = run_fixed(executable.path(), login).is_some_and(|(succeeded, stdout)| {
+    let version = version_number(&String::from_utf8_lossy(&stdout));
+    let logged_in = run_fixed(name, login).is_some_and(|(succeeded, stdout)| {
         succeeded && (name != "gcloud" || stdout.iter().any(|byte| !byte.is_ascii_whitespace()))
     });
     Some(json!({
@@ -481,6 +483,27 @@ mod tests {
             Some("acme.atlassian.net")
         );
         assert_eq!(host("not a url"), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_script_wrapper_runs_like_a_native_cli() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("pm-cli-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let script = root.join("az");
+        std::fs::write(&script, "#!/bin/sh\necho \"azure-cli 2.87.0\"\n").unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let ran = run_fixed(script.to_str().unwrap(), &["--version"]);
+        let missing = run_fixed(root.join("missing").to_str().unwrap(), &["--version"]);
+        let _ = std::fs::remove_dir_all(&root);
+        let (succeeded, stdout) = ran.expect("a script wrapper starts");
+        assert!(succeeded);
+        assert_eq!(
+            version_number(&String::from_utf8_lossy(&stdout)).as_deref(),
+            Some("2.87.0")
+        );
+        assert!(missing.is_none());
     }
 
     #[test]
