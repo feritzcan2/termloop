@@ -42,8 +42,17 @@ pub(crate) const CLI_ALLOWLIST: &[(&str, &[&str])] = &[
 ];
 const CLI_TIMEOUT: Duration = Duration::from_secs(5);
 const CLI_OUTPUT_LIMIT: usize = 4 * 1024;
-/// A cached report is used for this long unless the sources changed.
+/// A cached report is used for this long unless the sources changed or
+/// the daemon restarted since.
 pub(crate) const DISCOVERY_FRESH_MS: u64 = 60 * 60 * 1000;
+/// When this daemon process first read discovery: a report cached before
+/// it came from an earlier run, which may have checked the machine
+/// differently, so it is read again.
+static PROCESS_STARTED_MS: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+
+fn cache_fresh(cached_at: u64, now: u64, started: u64) -> bool {
+    cached_at >= started && cached_at.saturating_add(DISCOVERY_FRESH_MS) > now
+}
 const CONFIG_MAX_BYTES: usize = 1024 * 1024;
 const MCP_SERVERS_MAX: usize = 32;
 const MCP_NAME_MAX_BYTES: usize = 64;
@@ -306,10 +315,11 @@ pub(crate) async fn discovery(
     let pm = pm_sources(&state.store.lock(), project_id)?;
     let key = sources_key(&pm);
     let now = termloop_platform::current_epoch_ms();
+    let started = *PROCESS_STARTED_MS.get_or_init(|| now);
     if !refresh
         && let Some((cached, cached_key, at)) = state.store.lock().skill_discovery(project_id)?
         && cached_key == key
-        && at.saturating_add(DISCOVERY_FRESH_MS) > now
+        && cache_fresh(at, now, started)
     {
         return Ok(cached);
     }
@@ -504,6 +514,14 @@ mod tests {
             Some("2.87.0")
         );
         assert!(missing.is_none());
+    }
+
+    #[test]
+    fn a_report_cached_before_the_daemon_started_is_read_again() {
+        let started = 1_000;
+        assert!(cache_fresh(started, started + 5, started));
+        assert!(!cache_fresh(started - 1, started + 5, started));
+        assert!(!cache_fresh(started, started + DISCOVERY_FRESH_MS, started));
     }
 
     #[test]
