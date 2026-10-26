@@ -344,28 +344,7 @@ fn read_task_branch_pull_requests(
             GitRunner::discover_with_timeout(remaining.min(Duration::from_millis(2_500)))
                 .map_err(|error| local_fallback(map_git_error(&error)))
         })
-        .and_then(|runner| {
-            // Only the durable Task branch counts. Other branches seen in the
-            // worktree are display aliases, not the branch this gate is about.
-            let remaining = remaining()?;
-            runner
-                .observe_branch_remotes_including_missing_with_timeout(
-                    repository_root,
-                    &[branch.as_bytes().to_vec()],
-                    remaining,
-                )
-                .map_err(|error| local_fallback(map_git_error(&error)))
-        })
-        .map(|branches| {
-            normalize_candidate_sets(
-                task,
-                &worktree_branches::ObservedBranchFacts {
-                    branches,
-                    pushed: Vec::new(),
-                    candidate_truncated: false,
-                },
-            )
-        });
+        .and_then(|runner| gate_candidates(task, branch, repository_root, &runner, &remaining));
     let local: LocalObservation = match local {
         Ok(local) => local,
         Err(reason) => return PullRequestRead::Unavailable(reason),
@@ -435,6 +414,51 @@ fn read_task_branch_pull_requests(
         pull_requests,
         truncated,
     }
+}
+
+/// The pull request candidates a gate reads: the durable Task branch and the
+/// remote branches holding commits the Task worktree made. Other branches the
+/// worktree only checked out are display aliases, not the work this gate is
+/// about.
+fn gate_candidates(
+    task: &TaskSnapshot,
+    branch: &str,
+    repository_root: &std::path::Path,
+    runner: &GitRunner,
+    remaining: &dyn Fn() -> Result<Duration, Fallback>,
+) -> Result<LocalObservation, Fallback> {
+    let branches = runner
+        .observe_branch_remotes_including_missing_with_timeout(
+            repository_root,
+            &[branch.as_bytes().to_vec()],
+            remaining()?,
+        )
+        .map_err(|error| local_fallback(map_git_error(&error)))?;
+    let pushed = match &task.worktree_path {
+        Some(worktree_path) => {
+            let pushed = runner
+                .observe_worktree_pushed_remote_refs_with_timeout(
+                    repository_root,
+                    worktree_path,
+                    remaining()?,
+                )
+                .map_err(|error| local_fallback(map_git_error(&error)))?;
+            // A partial list could hide another pull request.
+            if pushed.truncated {
+                return Err(Fallback::UnsupportedRepository);
+            }
+            pushed.references
+        }
+        None => Vec::new(),
+    };
+    Ok(normalize_candidate_sets(
+        task,
+        &worktree_branches::ObservedBranchFacts {
+            branches,
+            pushed,
+            candidate_truncated: false,
+        },
+    ))
 }
 
 fn identity(summary: &PullRequestSummary) -> (String, String, String, Option<String>, String, u64) {

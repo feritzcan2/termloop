@@ -791,3 +791,97 @@ fn stored_documents_and_answers_written_before_deterministic_checks_still_load()
         checked
     );
 }
+
+fn git(cwd: &std::path::Path, args: &[&str]) -> String {
+    let output = std::process::Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_AUTHOR_NAME", "TermLoop Test")
+        .env("GIT_AUTHOR_EMAIL", "test@termloop.invalid")
+        .env("GIT_COMMITTER_NAME", "TermLoop Test")
+        .env("GIT_COMMITTER_EMAIL", "test@termloop.invalid")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "git {args:?} failed");
+    String::from_utf8(output.stdout).unwrap().trim().to_owned()
+}
+
+/// A Task branch pushed under another name has no upstream, so its pull
+/// request is found only through the commits the worktree made. A branch the
+/// worktree merely checked out, such as another Task's for review, is never
+/// part of the gate.
+#[test]
+fn a_gate_reads_branches_the_worktree_pushed_but_not_branches_it_only_visited() {
+    let root = std::env::temp_dir().join(format!(
+        "termloop-gate-candidates-{}-{}",
+        std::process::id(),
+        termloop_platform::current_epoch_ms()
+    ));
+    let repository = root.join("repository");
+    let worktree = root.join("worktree");
+    std::fs::create_dir_all(&repository).unwrap();
+    git(&repository, &["init", "--initial-branch=main"]);
+    git(
+        &repository,
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/acme/widgets.git",
+        ],
+    );
+    git(&repository, &["commit", "--allow-empty", "-m", "base"]);
+    git(&repository, &["branch", "termloop/task"]);
+    git(
+        &repository,
+        &[
+            "worktree",
+            "add",
+            worktree.to_str().unwrap(),
+            "termloop/task",
+        ],
+    );
+    git(&worktree, &["commit", "--allow-empty", "-m", "KEY-1: fix"]);
+    let own = git(&worktree, &["rev-parse", "HEAD"]);
+    git(
+        &repository,
+        &["update-ref", "refs/remotes/origin/feature/KEY-1-fix", &own],
+    );
+    git(
+        &repository,
+        &["commit", "--allow-empty", "-m", "KEY-2: other"],
+    );
+    let other = git(&repository, &["rev-parse", "HEAD"]);
+    git(
+        &repository,
+        &["update-ref", "refs/remotes/origin/KEY-2", &other],
+    );
+    git(&worktree, &["checkout", "--detach", &other]);
+    git(&worktree, &["checkout", "termloop/task"]);
+
+    let task = TaskSnapshot {
+        task_id: "task-1".into(),
+        project_id: "project-1".into(),
+        branch_name: Some("termloop/task".into()),
+        repository_root: Some(repository.clone()),
+        worktree_path: Some(worktree.clone()),
+        worktree_generation: 1,
+        force_refresh: false,
+    };
+    let runner = GitRunner::discover().unwrap();
+    let remaining = || Ok(std::time::Duration::from_secs(5));
+    let local =
+        super::gate_candidates(&task, "termloop/task", &repository, &runner, &remaining).unwrap();
+    let heads = local
+        .candidates
+        .iter()
+        .map(|candidate| match candidate {
+            ProviderQuery::Github(query) => query.head_branch.as_str(),
+            ProviderQuery::Azure(query) => query.head_branch.as_str(),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(heads, vec!["termloop/task", "feature/KEY-1-fix"]);
+    assert!(!local.candidate_truncated);
+    let _ = std::fs::remove_dir_all(root);
+}
