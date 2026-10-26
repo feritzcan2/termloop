@@ -113,7 +113,7 @@ pub use secure_credentials::{
 };
 pub use shared_entries::{
     SharedEntryKind, SharedEntryOutcome, copy_shared_file, link_shared_directory, list_entry_names,
-    shared_entry_kind, write_shared_file,
+    remove_dangling_link, shared_entry_kind, write_shared_file,
 };
 pub use skill_manager::{
     SkillAgent, SkillAgentState, SkillAvailability, SkillCatalog, SkillCatalogItem,

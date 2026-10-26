@@ -86,6 +86,21 @@ pub fn link_shared_directory(
     Ok(SharedEntryOutcome::Linked)
 }
 
+/// Removes `path` when it is a link whose target no longer exists, so an
+/// entry shared earlier disappears once its source is deleted. Anything else
+/// is left alone; the result says whether a link was removed.
+pub fn remove_dangling_link(path: &Path) -> Result<bool, PlatformError> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() && fs::metadata(path).is_err() => {
+            remove_link(path)?;
+            Ok(true)
+        }
+        Ok(_) => Ok(false),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.into()),
+    }
+}
+
 fn remove_link(path: &Path) -> io::Result<()> {
     // A Windows directory link is removed as a directory, a Unix one as a file.
     fs::remove_file(path).or_else(|_| fs::remove_dir(path))
@@ -184,6 +199,26 @@ mod tests {
                 .unwrap(),
             SharedEntryOutcome::Absent
         );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn removes_only_a_link_whose_target_is_gone() {
+        let root = scratch();
+        let source = root.join("source/skill");
+        fs::create_dir(&source).unwrap();
+        let link = root.join("target/skill");
+        link_shared_directory(&source, &link).unwrap();
+        assert!(!remove_dangling_link(&link).unwrap());
+        fs::remove_dir(&source).unwrap();
+        assert!(remove_dangling_link(&link).unwrap());
+        assert!(fs::symlink_metadata(&link).is_err());
+        let own = root.join("target/own");
+        fs::create_dir(&own).unwrap();
+        assert!(!remove_dangling_link(&own).unwrap());
+        assert!(!remove_dangling_link(&root.join("target/absent")).unwrap());
+        assert!(own.is_dir());
         fs::remove_dir_all(root).unwrap();
     }
 

@@ -7,8 +7,9 @@ use std::path::Path;
 
 use serde_json::{Map, Value};
 use termloop_platform::{
-    SharedEntryKind, copy_shared_file, create_private_file, link_shared_directory,
-    list_entry_names, read_bounded_file_if_present, shared_entry_kind, write_shared_file,
+    SharedEntryKind, copy_shared_file, create_private_file, ensure_private_directory,
+    link_shared_directory, list_entry_names, read_bounded_file_if_present, remove_dangling_link,
+    shared_entry_kind, write_shared_file,
 };
 
 /// What Claude itself leaves out when it seeds a fresh config folder from
@@ -95,6 +96,10 @@ const FILE_LIMIT: usize = 4 * 1024 * 1024;
 const STATE_LIMIT: usize = 32 * 1024 * 1024;
 const ENTRY_LIMIT: usize = 512;
 const MEMORY_IMPORT: &[u8] = b"@~/.claude/CLAUDE.md\n";
+/// Claude fills an account's `skills` folder with the organisation's skills
+/// for that login, so the user's skills are shared one by one beside them.
+const SKILLS: &str = "skills";
+const ACCOUNT_SKILLS: &str = "synced";
 
 fn shared_entry(name: &str) -> bool {
     !name.starts_with('.')
@@ -123,6 +128,10 @@ pub(crate) fn share_user_setup(home: &Path, profile: &Path) {
         }
         let (source, target) = (personal.join(&name), profile.join(&name));
         let _ = match shared_entry_kind(&source) {
+            Some(SharedEntryKind::Directory) if name == SKILLS => {
+                share_skills(&source, &target);
+                continue;
+            }
             Some(SharedEntryKind::Directory) => link_shared_directory(&source, &target),
             // Claude also loads `~/.claude/CLAUDE.md` for projects under home,
             // so the account imports it rather than holding a second copy.
@@ -134,6 +143,26 @@ pub(crate) fn share_user_setup(home: &Path, profile: &Path) {
         };
     }
     seed_state(&home.join(".claude.json"), &profile.join(".claude.json"));
+}
+
+/// Links each of the user's skills into the account's own `skills` folder and
+/// drops links to skills the user has since removed. A folder an older launch
+/// linked whole already shows every skill and is left as it is.
+fn share_skills(personal: &Path, profile: &Path) {
+    if ensure_private_directory(profile).is_err() {
+        return;
+    }
+    let names = list_entry_names(personal, ENTRY_LIMIT).unwrap_or_default();
+    for name in &names {
+        if !name.starts_with('.') && name != ACCOUNT_SKILLS {
+            let _ = link_shared_directory(&personal.join(name), &profile.join(name));
+        }
+    }
+    for name in list_entry_names(profile, ENTRY_LIMIT).unwrap_or_default() {
+        if !names.contains(&name) {
+            let _ = remove_dangling_link(&profile.join(name));
+        }
+    }
 }
 
 /// Seeds only an absent file: once Claude owns the account's state, its own
@@ -248,6 +277,44 @@ mod tests {
             fs::read_to_string(profile.join(".claude.json")).unwrap(),
             r#"{"theme":"dark","oauthAccount":{}}"#
         );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn each_user_skill_joins_the_skills_claude_synced_for_the_account() {
+        let (root, home, profile) = scratch();
+        let personal = home.join(".claude/skills");
+        for skill in ["investigate", "timelogging", "synced/org/docs"] {
+            fs::create_dir_all(personal.join(skill)).unwrap();
+        }
+        fs::create_dir_all(profile.join("skills/synced/account/morning")).unwrap();
+
+        share_user_setup(&home, &profile);
+
+        let skills = profile.join("skills");
+        assert!(
+            !fs::symlink_metadata(&skills)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        for skill in ["investigate", "timelogging"] {
+            assert!(
+                fs::symlink_metadata(skills.join(skill))
+                    .unwrap()
+                    .file_type()
+                    .is_symlink(),
+                "{skill}"
+            );
+        }
+        assert!(skills.join("synced/account/morning").is_dir());
+        assert!(!skills.join("synced/org").exists());
+
+        fs::remove_dir(personal.join("timelogging")).unwrap();
+        share_user_setup(&home, &profile);
+        assert!(fs::symlink_metadata(skills.join("timelogging")).is_err());
+        assert!(skills.join("investigate").is_dir());
         fs::remove_dir_all(root).unwrap();
     }
 
