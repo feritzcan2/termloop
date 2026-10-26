@@ -4,6 +4,7 @@ import type { RightSidebarView } from "./types.js";
 type Item = { view: RightSidebarView; label: string; short: string; icon: IconName };
 
 const ITEMS: readonly Item[] = [
+  { view: "steward", label: "Steward", short: "Steward", icon: "agent" },
   { view: "sprints", label: "Sprints", short: "Sprints", icon: "flag" },
   { view: "epics", label: "Epics", short: "Epics", icon: "epic" },
   { view: "playbook", label: "Playbook", short: "Playbook", icon: "playbook" },

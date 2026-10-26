@@ -603,17 +603,18 @@ export class PmController {
     const result = await this.call("pm_agent_list", { projectId });
     if (!result || this.state.projectId !== projectId) return;
     const live = result.sessions.filter((session) => session.state !== "exited");
-    const active = live.some((session) => session.sessionId === this.state.activeAgentSessionId)
+    const staged = live.filter((session) => session.mode !== "assistant");
+    const active = staged.some((session) => session.sessionId === this.state.activeAgentSessionId)
       ? this.state.activeAgentSessionId
-      : live[0]?.sessionId;
+      : staged[0]?.sessionId;
     // With no agent left to show, the stage returns to the ticket or overview.
     const view = this.state.view === "agent" && !active ? (this.state.selectedTicketId ? "ticket" : "overview") : this.state.view;
     this.#set({ agents: live, assistantResumable: result.resumable, activeAgentSessionId: active, view });
   }
 
   /**
-   * Opens the project's one assistant and shows it in the stage unless
-   * `open` is false; resolves its session id. A running assistant gets the
+   * Opens the project's one assistant, Steward, and shows it in the right
+   * sidebar unless `open` is false; resolves its session id. A running assistant gets the
    * task as its next message; otherwise it resumes its earlier conversation.
    * `fresh` starts a new conversation instead.
    */
@@ -633,7 +634,7 @@ export class PmController {
       ...(options.fresh ? { fresh: true } : {}),
     });
     if (!session) return undefined;
-    this.#set(open ? { activeAgentSessionId: session.sessionId, view: "agent" } : { activeAgentSessionId: session.sessionId });
+    if (open) this.showSteward();
     await this.refreshAgents();
     return session.sessionId;
   }
@@ -653,9 +654,17 @@ export class PmController {
     await this.refreshAgents();
   }
 
-  /** Shows an agent's terminal in place of the stage's current content. */
+  /** Shows an agent's terminal: Steward in the right sidebar, any other in place of the stage's content. */
   selectAgent(sessionId: string): void {
+    if (this.state.agents.some((session) => session.sessionId === sessionId && session.mode === "assistant")) {
+      this.showSteward();
+      return;
+    }
     this.#set({ activeAgentSessionId: sessionId, view: "agent" });
+  }
+
+  showSteward(): void {
+    this.#set({ stewardRequest: this.state.stewardRequest + 1 });
   }
 
   // Skills -----------------------------------------------------------------

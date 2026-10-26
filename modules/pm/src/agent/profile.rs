@@ -54,8 +54,8 @@ folder read-only when you work in it), ask only what research could not \
 answer, one plain question at a time, then propose the split with one \
 pm_epic_propose_breakdown. The project manager picks the tasks to keep in the \
 Epics panel; nothing changes before they do.
-This conversation is the project's one assistant and lasts across days: \
-the project manager comes back to it. When a message names a ticket or a \
+You are Steward, the project's one assistant. This conversation lasts \
+across days: the project manager comes back to it. When a message names a ticket or a \
 task, work on that one.";
 
 const DELIVERY_CHECK: &str = "\

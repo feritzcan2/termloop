@@ -109,7 +109,7 @@ export function Sidebar(props: SidebarProps) {
           <button type="button" className="icb" title="Pull from Jira" aria-label="Pull from Jira" disabled={!props.jira.configured || props.pulling || !props.hasProject} onClick={props.onPull}>
             <Icon name="refresh" />
           </button>
-          <button type="button" className="icb claude" title="Open the assistant" aria-label="Open the assistant" disabled={!props.hasProject} onClick={props.onStartAssistant}>
+          <button type="button" className="icb claude" title="Open Steward" aria-label="Open Steward" disabled={!props.hasProject} onClick={props.onStartAssistant}>
             <Icon name="agent" />
           </button>
         </div>

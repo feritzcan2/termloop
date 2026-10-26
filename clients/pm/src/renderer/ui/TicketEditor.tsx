@@ -142,7 +142,7 @@ export function TicketEditor(props: TicketEditorProps) {
           now={props.now}
           onUpdate={props.onUpdate}
           onMoveSprint={props.onMoveSprint}
-          actions={<button type="button" className="btn sm ghost" onClick={props.onAskAgent}>Ask assistant</button>}
+          actions={<button type="button" className="btn sm ghost" onClick={props.onAskAgent}>Ask Steward</button>}
         />
         {(delivery.risks.length > 0 || scope) && (
           <ul className="risk-list">

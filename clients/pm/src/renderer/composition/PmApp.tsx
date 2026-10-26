@@ -35,6 +35,7 @@ import { CaptureToast, QuickCapture } from "../ui/QuickCapture.js";
 import type { WidthBounds } from "../ui/ResizeHandle.js";
 import { RightActivityBar } from "../ui/RightActivityBar.js";
 import { RightSidebar } from "../ui/RightSidebar.js";
+import { StewardPanel } from "../ui/StewardPanel.js";
 import { SettingsPage } from "../ui/SettingsPage.js";
 import { EpicsPanel } from "../ui/EpicsPanel.js";
 import { PlaybookPanel } from "../ui/PlaybookPanel.js";
@@ -92,7 +93,6 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
     sessionId: session.sessionId,
     state: session.state,
     assistant: session.mode === "assistant" || session.mode === "skillCreator",
-    keepsConversation: session.mode === "assistant",
     provider: session.provider,
     label: agentLabel(session, allTickets, state.skills?.skills ?? EMPTY),
     detail: session.mode === "assistant"
@@ -101,6 +101,8 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
     focusTicketId: session.focusTicketId,
   }));
   const activeAgent = agents.find((agent) => agent.sessionId === state.activeAgentSessionId);
+  const stewardSessionId = state.agents.find((session) => session.mode === "assistant")?.sessionId;
+  const steward = agents.find((agent) => agent.sessionId === stewardSessionId);
   const ticketsOnly = useMemo(() => allTickets.map((candidate) => candidate.ticket), [allTickets]);
   const ticketId = entry?.ticket.id;
   const openSkill = state.skills?.skills.find((skill) => skill.id === state.openSkillId);
@@ -108,6 +110,9 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
   const shownSprintId = leftSprint(sprints, state.selectedSprintId)?.id;
   const lane = useMemo(() => (shownSprintId ? sprintTickets(allTickets, shownSprintId) : EMPTY), [allTickets, shownSprintId]);
   const [right, updateRight] = useRightSidebar();
+  useEffect(() => {
+    if (state.stewardRequest > 0) updateRight((current) => ({ ...current, open: true, view: "steward" }));
+  }, [state.stewardRequest, updateRight]);
   const openSettings = useCallback(() => controller.setView("settings"), [controller]);
   const loadJiraSprints = useCallback((chooseBoard?: boolean) => void controller.loadJiraSprints(chooseBoard), [controller]);
   const [leftWidth, setLeftWidth] = useLeftSidebarWidth();
@@ -142,7 +147,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
     { kind: "action", label: "Add note…", run: () => setNoteDialog({ ticketId: id, kind: "fact" }) },
     { kind: "action", label: "Follow a link…", run: () => setNoteDialog({ ticketId: id, kind: "source" }) },
     { kind: "action", label: "Update description from notes", disabled: !project, run: () => void controller.updateDescription(id) },
-    { kind: "action", label: "Ask assistant", disabled: !project, run: () => launchAgent(id) },
+    { kind: "action", label: "Ask Steward", disabled: !project, run: () => launchAgent(id) },
   ];
   const stageTabs: StageTab[] = [
     { view: "overview", label: sprint ? `${sprint.name} overview` : "Overview" },
@@ -225,13 +230,8 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
               <AgentPanel
                 tabs={agents}
                 activeSessionId={state.activeAgentSessionId}
-                canStart={Boolean(project)}
-                resumable={state.assistantResumable}
-                focusLabel={entry ? ticketLabel(entry.ticket) : undefined}
                 mountTerminal={mountTerminal}
                 onStop={(id) => void controller.stopAgent(id)}
-                onStart={() => launchAgent(ticketId)}
-                onNewConversation={() => void controller.newConversation(ticketId)}
               />
             ) : view === "settings" ? (
               <SettingsPage
@@ -328,7 +328,18 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
             onResize={(width) => updateRight((current) => ({ ...current, width: clampRightSidebarWidth(width) }))}
             onClose={() => updateRight((current) => ({ ...current, open: false }))}
           >
-            {right.view === "sprints" ? (
+            {right.view === "steward" ? (
+              <StewardPanel
+                session={steward}
+                canStart={Boolean(project)}
+                resumable={state.assistantResumable}
+                focusLabel={view === "ticket" && entry ? ticketLabel(entry.ticket) : undefined}
+                mountTerminal={mountTerminal}
+                onStart={() => launchAgent(view === "ticket" ? ticketId : undefined)}
+                onStop={(id) => void controller.stopAgent(id)}
+                onNewConversation={() => void controller.newConversation(view === "ticket" ? ticketId : undefined)}
+              />
+            ) : right.view === "sprints" ? (
               <SprintsPanel
                 sprints={sprints}
                 tickets={allTickets}
@@ -551,7 +562,7 @@ function jiraStatus(state: PmState): string {
 
 function agentLabel(session: PmAgentSession, tickets: PmBoardTicket[], skills: PmSkill[]): string {
   switch (session.mode) {
-    case "assistant": return "Assistant";
+    case "assistant": return "Steward";
     case "deliveryCheck": return `Check ${checkLabel(tickets, session.focusTicketId)}`;
     case "skillCreator": return "Skill creator";
     case "skillRun": return skills.find((skill) => skill.id === session.skillId)?.manifest.name ?? "Skill run";

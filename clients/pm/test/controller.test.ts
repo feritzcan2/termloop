@@ -183,22 +183,28 @@ describe("PmController", () => {
     ]);
   });
 
-  it("shows a launched or picked agent in the stage and leaves it when the agent exits", async () => {
-    const session = { sessionId: "agent-1", projectId: "project-1", mode: "assistant", provider: "claude", focusTicketId: "ticket-1", checkId: null, skillId: null, state: "running", startedAtEpochMs: 0, exitedAtEpochMs: null };
-    let sessions = [session];
+  it("shows Steward in the right sidebar and any other agent in the stage until it exits", async () => {
+    const steward = { sessionId: "agent-1", projectId: "project-1", mode: "assistant", provider: "claude", focusTicketId: "ticket-1", checkId: null, skillId: null, state: "running", startedAtEpochMs: 0, exitedAtEpochMs: null };
+    const creator = { ...steward, sessionId: "agent-2", mode: "skillCreator" };
+    let sessions = [steward];
     const bridge = fakeBridge((method) => {
-      if (method === "pm_agent_launch") return ok(session);
+      if (method === "pm_agent_launch") return ok(steward);
+      if (method === "pm_skill_creator_launch") return ok(creator);
       if (method === "pm_agent_list") return ok({ sessions });
       return ok({});
     });
     const store = createPmStore({ projectId: "project-1", view: "ticket", selectedTicketId: "ticket-1" });
     const controller = new PmController(bridge, store);
     await controller.launchAgent("ticket-1");
-    expect(store.getState()).toMatchObject({ view: "agent", activeAgentSessionId: "agent-1" });
-    controller.setView("ticket");
+    // Steward never takes the stage: the ticket stays and the right sidebar is asked to show it.
+    expect(store.getState()).toMatchObject({ view: "ticket", activeAgentSessionId: undefined, stewardRequest: 1 });
     controller.selectAgent("agent-1");
-    expect(store.getState().view).toBe("agent");
-    sessions = [];
+    expect(store.getState()).toMatchObject({ view: "ticket", stewardRequest: 2 });
+
+    sessions = [steward, creator];
+    await controller.launchSkillCreator();
+    expect(store.getState()).toMatchObject({ view: "agent", activeAgentSessionId: "agent-2" });
+    sessions = [steward];
     await controller.refreshAgents();
     expect(store.getState()).toMatchObject({ view: "ticket", activeAgentSessionId: undefined });
   });
@@ -275,10 +281,10 @@ describe("PmController", () => {
     // A second note goes to the same conversation; nothing is stopped.
     await controller.addNote("ticket-1", { kind: "fact", text: "PDF too", url: null });
     expect(bridge.calls.map((call) => call.method)).not.toContain("pm_agent_stop");
-    expect(store.getState()).toMatchObject({ activeAgentSessionId: "agent-1", assistantResumable: true });
+    expect(store.getState()).toMatchObject({ stewardRequest: 0, assistantResumable: true });
 
     await controller.updateDescription("ticket-1");
-    expect(store.getState()).toMatchObject({ view: "agent", activeAgentSessionId: "agent-1" });
+    expect(store.getState()).toMatchObject({ view: "ticket", stewardRequest: 1 });
     const methods = bridge.calls.map((call) => call.method);
     expect(methods).not.toContain("pm_ticket_description_save");
     expect(methods).not.toContain("pm_ticket_update");

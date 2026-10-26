@@ -12,7 +12,7 @@ export type EpicsPanelProps = {
   onCreate(title: string, description: string): void;
   onRename(epicId: string, title: string): void;
   onDelete(epicId: string): void;
-  /** Asks the assistant to split a goal (or this epic) into tasks. */
+  /** Asks Steward to split a goal (or this epic) into tasks. */
   onPlan(epicId?: string): void;
   onOpenTicket(ticketId: string): void;
   /** Resolves true once the kept tasks are tickets. */
@@ -32,8 +32,8 @@ export function EpicsPanel(props: EpicsPanelProps) {
       <div className="right-sidebar-tools">
         <span className="count-badge" title="Epics">{props.epics.length}</span>
         <span className="sp" />
-        <button type="button" className="btn sm" disabled={!props.canCreate} title="The assistant splits a goal into tasks for you to review" onClick={() => props.onPlan()}>
-          Plan with the assistant
+        <button type="button" className="btn sm" disabled={!props.canCreate} title="Steward splits a goal into tasks for you to review" onClick={() => props.onPlan()}>
+          Plan with Steward
         </button>
         <button type="button" className="view-action" disabled={!props.canCreate} onClick={() => setComposing(!composing)}>
           <Icon name="plus" />New epic
@@ -56,7 +56,7 @@ export function EpicsPanel(props: EpicsPanelProps) {
         </>
       )}
       {props.epics.length === 0
-        ? <p className="rail-empty">No epics yet. Create one, or ask the assistant to plan a goal into tasks.</p>
+        ? <p className="rail-empty">No epics yet. Create one, or ask Steward to plan a goal into tasks.</p>
         : (
           <ul className="epic-list" aria-label="Epics">
             {props.epics.map((epic) => (

@@ -43,7 +43,10 @@ export type PmState = {
   agents: PmAgentSession[];
   /** Whether the project's assistant resumes an earlier conversation. */
   assistantResumable: boolean;
+  /** The agent the stage shows; never Steward, which has the right sidebar. */
   activeAgentSessionId: string | undefined;
+  /** Bumped when Steward should show in the right sidebar. */
+  stewardRequest: number;
   /** The skill whose SKILL.md is open in the stage. */
   openSkillId: string | undefined;
   settings: PmSettings | undefined;
@@ -77,6 +80,7 @@ export const initialPmState: PmState = {
   agents: [],
   assistantResumable: false,
   activeAgentSessionId: undefined,
+  stewardRequest: 0,
   openSkillId: undefined,
   settings: undefined,
   catalog: undefined,

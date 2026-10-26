@@ -109,14 +109,14 @@ export function QuickCapture(props: {
               {props.assignees.map((assignee) => <option key={assignee} value={assignee} />)}
             </datalist>
           </label>
-          <label className="capture-check" title={props.canAskAssistant ? undefined : "Select a project to start an assistant"}>
+          <label className="capture-check" title={props.canAskAssistant ? undefined : "Select a project to start Steward"}>
             <input
               type="checkbox"
               checked={draft.askAssistant && props.canAskAssistant}
               disabled={!props.canAskAssistant}
               onChange={(event) => update({ askAssistant: event.target.checked })}
             />
-            Ask assistant to draft the description
+            Ask Steward to draft the description
           </label>
         </div>
         <div className="capture-hint">
