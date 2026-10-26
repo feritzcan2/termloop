@@ -31,10 +31,10 @@ export function boardTicket(overrides: Partial<PmTicket> = {}, delivery: Partial
   };
 }
 
-/** The default steps, as a project that never saved a Playbook reads them, plus one agent step. */
+/** An agent-created Playbook: the usual steps plus one agent step. */
 export function playbook(overrides: Partial<PmPlaybook> = {}): PmPlaybook {
   return {
-    projectId: "project-1", revision: 0, updatedAtEpochMs: 0,
+    projectId: "project-1", revision: 1, updatedAtEpochMs: 0,
     steps: [
       { id: "started", title: "In progress", checks: [{ kind: "status", names: [], category: "started" }], agent: null },
       { id: "review", title: "In review", checks: [{ kind: "pullRequest", state: "open", baseBranch: null }], agent: null },

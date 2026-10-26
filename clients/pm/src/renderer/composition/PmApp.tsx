@@ -36,6 +36,7 @@ import type { WidthBounds } from "../ui/ResizeHandle.js";
 import { RightActivityBar } from "../ui/RightActivityBar.js";
 import { RightSidebar } from "../ui/RightSidebar.js";
 import { SettingsPage } from "../ui/SettingsPage.js";
+import { PlaybookPanel } from "../ui/PlaybookPanel.js";
 import { SkillsPanel } from "../ui/SkillsPanel.js";
 import { SuggestionsPanel } from "../ui/SuggestionsPanel.js";
 import { Sidebar } from "../ui/Sidebar.js";
@@ -75,6 +76,8 @@ export function PmApp({ controller, terminal }: { controller: PmController; term
 
 function Workspace({ controller, state, now, mountTerminal }: { controller: PmController; state: PmState; now: number; mountTerminal: MountTerminal }) {
   const board = state.board;
+  // Revision 0 is the daemon's placeholder: a project has a Playbook only once an agent created it.
+  const playbook = board?.playbook && board.playbook.revision > 0 ? board.playbook : undefined;
   const tier = board?.tracking.tier ?? "tickets";
   const sprints = board?.sprints ?? EMPTY;
   const allTickets = board?.tickets ?? EMPTY;
@@ -172,7 +175,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
           sprints={sprints}
           tickets={allTickets}
           tier={tier}
-          playbook={board?.playbook}
+          playbook={playbook}
           versions={state.versions}
           selectedSprintId={state.selectedSprintId}
           selectedTicketId={state.selectedTicketId}
@@ -243,6 +246,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 onSetFolder={(folder) => void controller.setProjectFolder(folder)}
                 onSaveSettings={(edit) => void controller.saveSettings(edit)}
                 onSavePlaybook={(baseRevision, steps) => controller.savePlaybook(baseRevision, steps)}
+                onCreatePlaybook={() => void controller.setUpSkill("playbook")}
               />
             ) : view === "jira" ? (
               <JiraStage
@@ -262,7 +266,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 sprints={sprints}
                 tier={tier}
                 jiraConfigured={jiraConfigured}
-                playbook={board?.playbook}
+                playbook={playbook}
                 proposals={state.proposals[ticketId] ?? EMPTY}
                 versions={state.versions[ticketId]}
                 now={now}
@@ -297,7 +301,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 sprints={sprints}
                 tickets={tickets}
                 tier={tier}
-                playbook={board?.playbook}
+                playbook={playbook}
                 digest={state.digest?.entries ?? EMPTY}
                 now={now}
                 onOpenTicket={(id) => void controller.selectTicket(id)}
@@ -325,6 +329,19 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 onSelectSprint={(id) => controller.selectSprint(id)}
                 onActivateSprint={(id) => void controller.activateSprint(id)}
                 onCreateSprint={(name, goal) => void controller.createSprint(name, goal)}
+              />
+            ) : right.view === "playbook" ? (
+              <PlaybookPanel
+                playbook={board?.playbook}
+                proposal={state.skills?.playbookProposal ?? null}
+                tickets={tickets}
+                now={now}
+                repository={project?.folder ?? null}
+                onOpenTicket={(id) => void controller.selectTicket(id)}
+                onEdit={openSettings}
+                onSetUp={() => void controller.setUpSkill("playbook")}
+                onApplyProposal={(steps) => controller.applyPlaybookProposal(steps)}
+                onDiscardProposal={() => void controller.discardPlaybookProposal()}
               />
             ) : right.view === "suggestions" ? (
               <SuggestionsPanel

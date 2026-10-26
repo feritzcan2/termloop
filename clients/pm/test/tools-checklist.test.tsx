@@ -72,5 +72,6 @@ function settingsProps() {
     projectName: "Shop", settings: undefined, catalog: undefined, sources: undefined, tracking: undefined, playbook: undefined,
     tools: TOOLS, now: 0, onReadTools: async () => undefined, onSaveSources: async () => true, onClearToken: noop, onSaveSettings: noop,
     onSavePlaybook: async () => true,
+    onCreatePlaybook: () => undefined,
   };
 }

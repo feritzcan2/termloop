@@ -13,7 +13,8 @@ function newStepId(steps: PmPlaybookStep[]): string {
   return id;
 }
 
-function describeCheck(check: PmStepCheck): string {
+/** One fact check in a line, as the PM would say it. */
+export function describeCheck(check: PmStepCheck): string {
   if (check.kind === "pullRequest") return `Pull request ${check.state}${check.baseBranch ? ` into ${check.baseBranch}` : ""}`;
   const names = check.names.length > 0 ? check.names.join(", ") : null;
   const category = check.category === "started" ? "any started status" : check.category === "done" ? "any done status" : null;

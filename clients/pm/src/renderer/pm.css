@@ -319,6 +319,23 @@ h3.s .r { margin-left: auto; color: var(--dimmer); font: 400 10px/1 var(--font-m
 .sprints-panel { flex: 1; min-height: 0; overflow-y: auto; }
 .right-sidebar-tools { display: flex; align-items: center; gap: 6px; padding: 8px 10px 2px 13px; }
 .right-sidebar-tools .view-action { margin-left: 0; }
+.playbook-panel { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 16px; }
+.playbook-panel .pad { margin: 8px 13px; }
+.playbook-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin: 16px 13px; font-size: 12.5px; }
+.playbook-empty .hint { margin: 0; }
+.playbook-rail { margin: 10px 13px 0; padding: 0; list-style: none; }
+.playbook-rail-step { position: relative; margin-left: 5px; padding: 0 0 14px 16px; border-left: 1px solid var(--border-strong); font-size: 12.5px; }
+.playbook-rail-step:last-child { border-left-color: transparent; padding-bottom: 0; }
+.playbook-rail-step::before { position: absolute; top: 4px; left: -5px; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); content: ""; }
+.playbook-rail-step.start::before { background: var(--dimmer); }
+.playbook-rail-step.agent::before { background: var(--warning); }
+.playbook-rail-head { display: flex; align-items: center; gap: 6px; }
+.playbook-rail-head .n { color: var(--dimmer); font: 600 11px var(--font-mono); }
+.playbook-rail-how { margin: 2px 0 0; color: var(--text-secondary); font-size: 11.5px; line-height: 1.45; }
+.playbook-rail-waiting { margin: 4px 0 0; padding: 0; list-style: none; }
+.playbook-rail-waiting .link { text-align: left; font-size: 11.5px; }
+.playbook-rail-waiting .warn { color: var(--warning); }
+.playbook-rail-waiting .bad { color: var(--danger); }
 .skills-panel, .suggestions-panel { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 16px; }
 .skills-panel .pad, .suggestions-panel .pad { margin: 8px 13px; }
 .skills-panel .empty-state, .suggestions-panel .empty-state { padding-top: 24px; }

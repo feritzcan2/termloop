@@ -19,6 +19,7 @@ const PATHS = {
   external: <><path d="M9 2.5h4.5V7M13.5 2.5L7.5 8.5" /><path d="M12 9.5v3a1 1 0 0 1-1 1H3.5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3" /></>,
   list: <path d="M5.5 4h8M5.5 8h8M5.5 12h8M2.5 4h.01M2.5 8h.01M2.5 12h.01" />,
   board: <><rect x="2" y="2.5" width="3.2" height="11" rx="1" /><rect x="6.4" y="2.5" width="3.2" height="7.5" rx="1" /><rect x="10.8" y="2.5" width="3.2" height="9.5" rx="1" /></>,
+  playbook: <><circle cx="4" cy="3.5" r="1.5" /><circle cx="4" cy="12.5" r="1.5" /><path d="M4 5v6M7.5 3.5h6M7.5 8h6M7.5 12.5h6" /></>,
   skill: <><path d="M2.5 4.5l1.5 1.5 3-3" /><path d="M2.5 11l1.5 1.5 3-3" /><path d="M9 4.5h4.5M9 11h4.5" /></>,
   inbox: <><path d="M2 9.5l2-6.5h8l2 6.5V13H2z" /><path d="M2 9.5h3.5l1 1.5h3l1-1.5H14" /></>,
   more: <path d="M4 8h.01M8 8h.01M12 8h.01" strokeWidth={2.4} />,

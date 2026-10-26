@@ -35,6 +35,8 @@ export type SettingsPageProps = {
   onSaveSettings(edit: PmSettingsUpdateParams): void;
   /** Resolves true once saved over `baseRevision`. */
   onSavePlaybook(baseRevision: number, steps: PmPlaybookStep[]): Promise<boolean>;
+  /** Starts the agent that reads the repository and proposes the Playbook. */
+  onCreatePlaybook(): void;
 };
 
 /** The Settings stage, opened from the activity bar: the open project's sources and the app-wide assistant. */
@@ -46,7 +48,7 @@ export function SettingsPage(props: SettingsPageProps) {
         <div className="settings-column">
           <CodeRepositoryCard {...props} />
           <JiraCard {...props} />
-          <PlaybookCard playbook={props.playbook} onSave={props.onSavePlaybook} />
+          <PlaybookCard playbook={props.playbook} onSave={props.onSavePlaybook} onCreate={props.onCreatePlaybook} />
           <AgentCard settings={props.settings} catalog={props.catalog} onSave={props.onSaveSettings} />
           <ToolsCard tools={props.tools} now={props.now} onRead={props.onReadTools} />
           <SettingsSection title="Your data" description={<>Everything lives on this computer in the PM daemon's store at <code>&lt;TermLoop state directory&gt;/pm/pm.sqlite</code>. There is no server and no account.</>}>
@@ -192,15 +194,24 @@ function JiraCard(props: SettingsPageProps) {
   );
 }
 
-function PlaybookCard(props: { playbook: PmPlaybook | undefined; onSave(baseRevision: number, steps: PmPlaybookStep[]): Promise<boolean> }) {
+function PlaybookCard(props: { playbook: PmPlaybook | undefined; onSave(baseRevision: number, steps: PmPlaybookStep[]): Promise<boolean>; onCreate(): void }) {
   const saved = props.playbook?.steps;
   const [steps, setSteps] = useState<PmPlaybookStep[]>(saved ?? []);
   const [saving, setSaving] = useState(false);
   // Every board read is a new array; only a new revision replaces an edit in progress.
   useEffect(() => setSteps(saved ?? []), [props.playbook?.projectId, props.playbook?.revision]);
-  const description = "The steps every ticket walks, in order. Facts from Jira and pull requests pass a step on their own; an agent step is checked by a small agent that reads, never changes, and says what it saw. The Playbook setup in Skills reads the repository and proposes this project's own steps.";
+  const description = "The steps every ticket walks, in order. Facts from Jira and pull requests pass a step on their own; an agent step is checked by a small agent that reads, never changes, and says what it saw. An agent creates it from the project's repository; after that you can edit it here.";
   if (!props.playbook) return <SettingsSection title="Playbook" description={description}><p className="hint">Loading the Playbook…</p></SettingsSection>;
   const { revision } = props.playbook;
+  if (revision === 0) {
+    return (
+      <SettingsSection title="Playbook" state={{ tone: "off", text: "NOT CREATED" }} description={description}>
+        <div className="actions">
+          <button type="button" className="btn pri" onClick={props.onCreate}>Create with the agent</button>
+        </div>
+      </SettingsSection>
+    );
+  }
   const agentSteps = props.playbook.steps.filter((step) => step.agent).length;
   const dirty = JSON.stringify(steps) !== JSON.stringify(saved);
   const problem = stepsProblem(steps);
@@ -212,7 +223,7 @@ function PlaybookCard(props: { playbook: PmPlaybook | undefined; onSave(baseRevi
   return (
     <SettingsSection
       title="Playbook"
-      state={{ tone: revision === 0 ? "off" : "ok", text: revision === 0 ? "DEFAULT STEPS" : `${props.playbook.steps.length} STEPS · ${agentSteps} BY AN AGENT` }}
+      state={{ tone: "ok", text: `${props.playbook.steps.length} STEPS · ${agentSteps} BY AN AGENT` }}
       description={description}
     >
       <PlaybookStepsEditor steps={steps} onChange={setSteps} />

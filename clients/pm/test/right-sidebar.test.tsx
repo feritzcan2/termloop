@@ -39,6 +39,8 @@ describe("right sidebar preference", () => {
     const storage = { getItem: (key: string) => store.get(key) ?? null, setItem: (key: string, value: string) => void store.set(key, value) };
     writeRightSidebarPreference({ open: false, view: "skills", width: 999 }, storage);
     expect(readRightSidebarPreference(storage)).toEqual({ open: false, view: "skills", width: 640 });
+    writeRightSidebarPreference({ open: true, view: "playbook", width: 300 }, storage);
+    expect(readRightSidebarPreference(storage)).toEqual({ open: true, view: "playbook", width: 300 });
     // The assistant moved into the stage; a remembered assistant panel opens Sprints.
     store.set([...store.keys()][0]!, JSON.stringify({ open: true, view: "assistant", width: 320 }));
     expect(readRightSidebarPreference(storage)).toEqual({ open: true, view: "sprints", width: 320 });
@@ -59,16 +61,18 @@ describe("right activity bar", () => {
     const view = render(<RightActivityBar open view="sprints" onSelect={onSelect} settings={{ active: true, onToggle: onToggleSettings }} />);
     cleanup = view.unmount;
     const buttons = [...view.container.querySelectorAll<HTMLButtonElement>(".activity-bar button")];
-    expect(buttons.map((button) => [button.textContent, button.getAttribute("aria-pressed")])).toEqual([["Sprints", "true"], ["Inbox", "false"], ["Skills", "false"], ["Settings", "true"]]);
-    expect(buttons[3]!.classList.contains("bottom")).toBe(true);
+    expect(buttons.map((button) => [button.textContent, button.getAttribute("aria-pressed")])).toEqual([["Sprints", "true"], ["Playbook", "false"], ["Inbox", "false"], ["Skills", "false"], ["Settings", "true"]]);
+    expect(buttons[4]!.classList.contains("bottom")).toBe(true);
     act(() => buttons[1]!.click());
-    expect(onSelect).toHaveBeenLastCalledWith("suggestions");
+    expect(onSelect).toHaveBeenLastCalledWith("playbook");
     act(() => buttons[2]!.click());
+    expect(onSelect).toHaveBeenLastCalledWith("suggestions");
+    act(() => buttons[3]!.click());
     expect(onSelect).toHaveBeenLastCalledWith("skills");
     // Settings switches the stage, not the right panel.
-    act(() => buttons[3]!.click());
+    act(() => buttons[4]!.click());
     expect(onToggleSettings).toHaveBeenCalled();
-    expect(onSelect).toHaveBeenCalledTimes(2);
+    expect(onSelect).toHaveBeenCalledTimes(3);
   });
 });
 

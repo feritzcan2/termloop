@@ -18,7 +18,7 @@ function props(overrides: Partial<SettingsPageProps> = {}): SettingsPageProps {
   return {
     projectName: "Shop", settings: undefined, catalog: undefined, sources, tracking: { jira: true, code: false, deploy: false, tier: "tickets" },
     playbook: playbook(), tools: undefined, now: 0, onReadTools: async () => undefined, onSaveSources: vi.fn(async () => true), onClearToken: noop, onSaveSettings: noop,
-    onSavePlaybook: vi.fn(async () => true), ...overrides,
+    onSavePlaybook: vi.fn(async () => true), onCreatePlaybook: noop, ...overrides,
   };
 }
 
@@ -97,6 +97,17 @@ describe("SettingsPage", () => {
     expect(title().value).toBe("On prod");
     rerender(root, <SettingsPage {...props({ playbook: playbook({ revision: 4 }) })} />);
     expect(title().value).toBe("Live");
+    unmount();
+  });
+
+  it("offers only the agent until a Playbook was created", () => {
+    const onCreatePlaybook = vi.fn();
+    const { container, unmount } = render(<SettingsPage {...props({ playbook: playbook({ revision: 0 }), onCreatePlaybook })} />);
+    const section = container.querySelector<HTMLElement>('section.settings-section[aria-label="Playbook"]')!;
+    expect(section.textContent).toContain("NOT CREATED");
+    expect(section.querySelector('input[aria-label="Step 1 title"]')).toBeNull();
+    act(() => [...section.querySelectorAll("button")].find((button) => button.textContent === "Create with the agent")!.click());
+    expect(onCreatePlaybook).toHaveBeenCalledOnce();
     unmount();
   });
 

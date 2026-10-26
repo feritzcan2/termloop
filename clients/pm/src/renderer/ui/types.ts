@@ -10,7 +10,7 @@ import type { PmAgentProvider, PmAgentState, PmJiraApplyResult, PmJiraDiff, PmTi
 export type PmView = "overview" | "ticket" | "jira" | "agent" | "skill" | "settings";
 
 /** What the right activity bar opens in the right sidebar. */
-export type RightSidebarView = "sprints" | "suggestions" | "skills";
+export type RightSidebarView = "sprints" | "playbook" | "suggestions" | "skills";
 
 export type JiraDialogView = {
   ticketId: string;
