@@ -17,7 +17,6 @@ import {
   writeSavedFilters,
 } from "../src/renderer/state/jira-browser-preference.js";
 import { createPmStore } from "../src/renderer/state/presentation-store.js";
-import { RightActivityBar } from "../src/renderer/ui/RightActivityBar.js";
 import { JiraBrowser, type JiraBrowserActions } from "../src/renderer/ui/jira/JiraBrowser.js";
 import { JiraIssueList, type JiraIssueActions } from "../src/renderer/ui/jira/JiraIssueList.js";
 import {
@@ -295,48 +294,5 @@ describe("JiraBrowser states", () => {
     expect(actions.onText).not.toHaveBeenCalledWith("project = ABC");
     act(() => { input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); });
     expect(actions.onRunJql).toHaveBeenCalledWith("project = ABC");
-  });
-});
-
-describe("Jira stage navigation", () => {
-  it("shows the Jira item disabled without a source and toggles the stage with one", () => {
-    const onToggle = vi.fn();
-    const disabled = render(<RightActivityBar open view="sprints" onSelect={vi.fn()} jira={{ available: false, active: false, onToggle }} />);
-    cleanup = disabled.unmount;
-    const item = disabled.container.querySelector<HTMLButtonElement>('[aria-label="Jira issues"]')!;
-    expect(item.disabled).toBe(true);
-    expect(item.title).toBe("Connect Jira in Settings");
-    disabled.unmount();
-
-    const enabled = render(<RightActivityBar open view="sprints" onSelect={vi.fn()} jira={{ available: true, active: true, onToggle }} />);
-    cleanup = enabled.unmount;
-    const active = enabled.container.querySelector<HTMLButtonElement>('[aria-label="Jira issues"]')!;
-    expect(active.getAttribute("aria-pressed")).toBe("true");
-    act(() => active.click());
-    expect(onToggle).toHaveBeenCalled();
-  });
-
-  it("returns the stage to what Jira replaced", () => {
-    const store = createPmStore({ view: "ticket" });
-    const controller = new PmController(fakeBridge(() => ok({})), store);
-    controller.toggleStage("jira");
-    expect(store.getState().view).toBe("jira");
-    controller.toggleStage("jira");
-    expect(store.getState().view).toBe("ticket");
-    controller.setView("overview");
-    controller.toggleStage("jira");
-    controller.setView("jira");
-    controller.toggleStage("jira");
-    expect(store.getState().view).toBe("overview");
-  });
-
-  it("returns from Settings to the view Jira replaced, not to Jira", () => {
-    const store = createPmStore({ view: "ticket" });
-    const controller = new PmController(fakeBridge(() => ok({})), store);
-    controller.toggleStage("jira");
-    controller.toggleStage("settings");
-    expect(store.getState().view).toBe("settings");
-    controller.toggleStage("settings");
-    expect(store.getState().view).toBe("ticket");
   });
 });

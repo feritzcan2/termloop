@@ -22,8 +22,10 @@ export type SprintSidebarProps = {
   playbook: PmPlaybook | undefined;
   /** Description versions loaded so far, by ticket; they drive the `scope` tag. */
   versions?: Readonly<Record<string, readonly ScopeVersion[]>>;
-  /** The focused sprint; the rail shows it only when no sprint is active. */
+  /** The focused sprint; the rail shows it only when no sprint is active, unless `showFocused`. */
   selectedSprintId: string | undefined;
+  /** Shows the focused sprint even while another one is active, as the Sprints page does. */
+  showFocused?: boolean;
   selectedTicketId: string | undefined;
   now?: number;
   /** Collapsed rails show only their header. */
@@ -59,7 +61,8 @@ export function SprintSidebar(props: SprintSidebarProps) {
   const [localComposer, setLocalComposer] = useState<SprintComposer>(undefined);
   const composer = props.onComposer ? props.composer : localComposer;
   const setComposer = props.onComposer ?? setLocalComposer;
-  const shown = leftSprint(props.sprints, props.selectedSprintId);
+  const shown = (props.showFocused ? props.sprints.find((sprint) => sprint.id === props.selectedSprintId) : undefined)
+    ?? leftSprint(props.sprints, props.selectedSprintId);
   const lane = shown ? sprintTickets(props.tickets, shown.id) : [];
   const others = props.sprints.length - (shown ? 1 : 0);
   const createTicket = (title: string) => props.onCreateTicket(title, shown?.id);
@@ -107,7 +110,7 @@ export function SprintSidebar(props: SprintSidebarProps) {
               onMoveTicket={props.onMoveTicket}
             />
           )}
-          {others > 0 && (
+          {others > 0 && props.onShowSprints && (
             <button type="button" className="rail-subhead pm-other-sprints" title="Show all sprints" onClick={props.onShowSprints}>
               Other sprints<span className="n">{others}</span>
             </button>

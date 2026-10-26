@@ -5,16 +5,16 @@ import type { RightSidebarView } from "../ui/types.js";
 
 export type { RightSidebarView } from "../ui/types.js";
 
-const KEY = "termloop.pm.rightSidebar.v1";
+const KEY = "termloop.pm.rightSidebar.v2";
 
 export const RIGHT_SIDEBAR_MIN_WIDTH = 280;
 export const RIGHT_SIDEBAR_MAX_WIDTH = 640;
-export const RIGHT_SIDEBAR_DEFAULT_WIDTH = 320;
+export const RIGHT_SIDEBAR_DEFAULT_WIDTH = 380;
 
-const RIGHT_SIDEBAR_VIEWS: readonly RightSidebarView[] = ["steward", "sprints", "epics", "playbook", "suggestions", "skills"];
+const RIGHT_SIDEBAR_VIEWS: readonly RightSidebarView[] = ["steward", "suggestions"];
 export type RightSidebarPreference = { open: boolean; view: RightSidebarView; width: number };
 
-export const DEFAULT_RIGHT_SIDEBAR: RightSidebarPreference = { open: true, view: "sprints", width: RIGHT_SIDEBAR_DEFAULT_WIDTH };
+export const DEFAULT_RIGHT_SIDEBAR: RightSidebarPreference = { open: true, view: "steward", width: RIGHT_SIDEBAR_DEFAULT_WIDTH };
 
 export function clampRightSidebarWidth(width: number): number {
   return Math.max(RIGHT_SIDEBAR_MIN_WIDTH, Math.min(RIGHT_SIDEBAR_MAX_WIDTH, Math.round(width)));

@@ -35,6 +35,7 @@ import { CaptureToast, QuickCapture } from "../ui/QuickCapture.js";
 import type { WidthBounds } from "../ui/ResizeHandle.js";
 import { RightActivityBar } from "../ui/RightActivityBar.js";
 import { RightSidebar } from "../ui/RightSidebar.js";
+import { PageFrame } from "../ui/PageFrame.js";
 import { StewardPanel } from "../ui/StewardPanel.js";
 import { SettingsPage } from "../ui/SettingsPage.js";
 import { EpicsPanel } from "../ui/EpicsPanel.js";
@@ -43,13 +44,14 @@ import { SkillsPanel } from "../ui/SkillsPanel.js";
 import { SuggestionsPanel } from "../ui/SuggestionsPanel.js";
 import { Sidebar } from "../ui/Sidebar.js";
 import { SprintOverview } from "../ui/SprintOverview.js";
+import { SprintSidebar } from "../ui/SprintSidebar.js";
 import { SprintsPanel } from "../ui/SprintsPanel.js";
 import { SprintDnd } from "../ui/sprint-dnd.js";
 import { StageTabs, type StageTab } from "../ui/StageTabs.js";
 import { SkillFile } from "../ui/SkillFile.js";
 import { TicketEditor } from "../ui/TicketEditor.js";
-import { lastJiraPull, leftSprint, sprintTickets, ticketLabel } from "../ui/format.js";
-import type { AgentTab, MountTerminal, TicketCapture } from "../ui/types.js";
+import { lastJiraPull, sprintTickets, ticketLabel } from "../ui/format.js";
+import type { AgentTab, MountTerminal, NavPage, PmView, TicketCapture } from "../ui/types.js";
 import { DoubleShiftDetector, isNewTicketShortcut } from "./capture-shortcut.js";
 import { JiraStage } from "./JiraStage.js";
 import type { PmController } from "./pm-controller.js";
@@ -58,6 +60,15 @@ const EMPTY: never[] = [];
 const LEFT_BOUNDS: WidthBounds = { min: LEFT_SIDEBAR_MIN_WIDTH, max: LEFT_SIDEBAR_MAX_WIDTH, defaultWidth: LEFT_SIDEBAR_DEFAULT_WIDTH };
 const RIGHT_BOUNDS: WidthBounds = { min: RIGHT_SIDEBAR_MIN_WIDTH, max: RIGHT_SIDEBAR_MAX_WIDTH, defaultWidth: RIGHT_SIDEBAR_DEFAULT_WIDTH };
 const CAPTURE_TOAST_MS = 6000;
+const PAGE_TITLE: Record<NavPage, string> = {
+  sprints: "Sprints",
+  epics: "Epics",
+  jira: "Jira issues",
+  playbook: "Playbook",
+  skills: "Skills",
+  settings: "Settings",
+};
+const isPage = (view: PmView): view is NavPage => view in PAGE_TITLE;
 
 export function PmApp({ controller, terminal }: { controller: PmController; terminal: PmApi["terminal"] | undefined }) {
   const store = controller.store;
@@ -103,11 +114,13 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
   const activeAgent = agents.find((agent) => agent.sessionId === state.activeAgentSessionId);
   const stewardSessionId = state.agents.find((session) => session.mode === "assistant")?.sessionId;
   const steward = agents.find((agent) => agent.sessionId === stewardSessionId);
+  const stagedAgents = agents.filter((agent) => agent.sessionId !== stewardSessionId);
   const ticketsOnly = useMemo(() => allTickets.map((candidate) => candidate.ticket), [allTickets]);
   const ticketId = entry?.ticket.id;
   const openSkill = state.skills?.skills.find((skill) => skill.id === state.openSkillId);
   const view = (state.view === "ticket" && !entry) || (state.view === "agent" && !activeAgent) || (state.view === "skill" && !openSkill) ? "overview" : state.view;
-  const shownSprintId = leftSprint(sprints, state.selectedSprintId)?.id;
+  // The Sprints page lists the focused sprint's tickets; a drag reorders them or drops one on a sprint row.
+  const shownSprintId = sprint?.id;
   const lane = useMemo(() => (shownSprintId ? sprintTickets(allTickets, shownSprintId) : EMPTY), [allTickets, shownSprintId]);
   const [right, updateRight] = useRightSidebar();
   useEffect(() => {
@@ -150,16 +163,15 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
     { kind: "action", label: "Ask Steward", disabled: !project, run: () => launchAgent(id) },
   ];
   const stageTabs: StageTab[] = [
-    { view: "overview", label: sprint ? `${sprint.name} overview` : "Overview" },
+    { view: "overview", label: sprint ? `Board · ${sprint.name}` : "Board" },
+    ...(isPage(view) ? [{ view, label: PAGE_TITLE[view] }] : []),
     ...(entry ? [{
       view: "ticket" as const,
       label: `${ticketLabel(entry.ticket)} · ${entry.ticket.title}`,
       draft: entry.pendingProposalCount > 0 || (state.proposals[entry.ticket.id]?.length ?? 0) > 0,
     }] : []),
     ...(openSkill ? [{ view: "skill" as const, label: `SKILL.md · ${openSkill.manifest.name}` }] : []),
-    ...(activeAgent ? [{ view: "agent" as const, label: `${activeAgent.label} · ${activeAgent.detail}` }] : []),
-    ...(jiraConnection === "connected" || view === "jira" ? [{ view: "jira" as const, label: "Jira issues" }] : []),
-    ...(view === "settings" ? [{ view: "settings" as const, label: "Settings" }] : []),
+    ...(activeAgent && activeAgent.sessionId !== stewardSessionId ? [{ view: "agent" as const, label: `${activeAgent.label} · ${activeAgent.detail}` }] : []),
   ];
 
   return (
@@ -175,33 +187,24 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
         <Sidebar
           projects={state.projects}
           projectId={state.projectId}
-          hasProject={Boolean(project)}
-          view={view}
-          jira={{ configured: jiraConfigured, status: jiraStatus(state), lastPullEpochMs: lastJiraPull(sprints, allTickets) }}
-          pulling={state.pulling}
-          now={now}
-          sprints={sprints}
-          tickets={allTickets}
-          tier={tier}
-          playbook={playbook}
-          versions={state.versions}
-          selectedSprintId={state.selectedSprintId}
-          selectedTicketId={state.selectedTicketId}
-          agents={agents}
-          activeAgentSessionId={state.activeAgentSessionId}
           onSelectProject={(id) => void controller.selectProject(id)}
           onCreateProject={(name) => void controller.createProject(name)}
+          hasProject={Boolean(project)}
+          view={view}
+          boardSprint={sprint?.name}
+          counts={{ sprints: sprints.filter((candidate) => candidate.state !== "closed").length, epics: board?.epics.length ?? 0, skills: state.skills?.skills.length ?? 0 }}
+          jira={{ configured: jiraConfigured, connected: jiraConnection === "connected", status: jiraStatus(state), lastPullEpochMs: lastJiraPull(sprints, allTickets) }}
+          pulling={state.pulling}
+          now={now}
+          steward={steward}
+          agents={stagedAgents}
+          activeAgentSessionId={state.activeAgentSessionId}
+          onNavigate={(next) => controller.setView(next)}
+          onNewTicket={() => setCapturing(true)}
           onPull={() => void controller.pullJira()}
-          onStartAssistant={() => launchAgent(view === "ticket" ? ticketId : undefined)}
+          onOpenSteward={() => updateRight((current) => ({ ...current, open: true, view: "steward" }))}
           onSelectAgent={(id) => controller.selectAgent(id)}
           onStopAgent={(id) => void controller.stopAgent(id)}
-          ticketActions={ticketActions}
-          onSelectSprint={(id) => controller.selectSprint(id)}
-          onSelectTicket={(id) => void controller.selectTicket(id)}
-          onCreateSprint={(name, goal) => void controller.createSprint(name, goal)}
-          onCreateTicket={(title, sprintId) => void controller.createTicket(title, sprintId)}
-          onMoveTicket={(id, sprintId, index) => void controller.moveTicket(id, sprintId, index)}
-          onShowSprints={() => updateRight((current) => ({ ...current, open: true, view: "sprints" }))}
           width={fitted.left}
           widthBounds={LEFT_BOUNDS}
           onResize={(width) => setLeftWidth(clampLeftSidebarWidth(width))}
@@ -233,6 +236,105 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 mountTerminal={mountTerminal}
                 onStop={(id) => void controller.stopAgent(id)}
               />
+            ) : view === "sprints" ? (
+              <PageFrame title="Sprints" meta={sprint ? `${sprint.name} · drag tickets onto a sprint to move them` : undefined} className="sprints-page">
+                <SprintsPanel
+                  sprints={sprints}
+                  tickets={allTickets}
+                  selectedSprintId={state.selectedSprintId}
+                  now={now}
+                  canCreate={Boolean(project)}
+                  onSelectSprint={(id) => controller.selectSprint(id)}
+                  onActivateSprint={(id) => void controller.activateSprint(id)}
+                  onCreateSprint={(name, goal) => void controller.createSprint(name, goal)}
+                  jira={{
+                    connected: Boolean(state.sources?.jira),
+                    boardId: state.sources?.jira?.boardId ?? null,
+                    view: state.jiraSprints,
+                    onLoad: loadJiraSprints,
+                    onSetBoard: (boardId) => void controller.setJiraBoard(boardId),
+                    onImport: (jiraSprintId) => void controller.importJiraSprint(jiraSprintId),
+                    onOpenSettings: openSettings,
+                  }}
+                />
+                <div className="sprints-page-lane">
+                  <SprintSidebar
+                    sprints={sprints}
+                    tickets={allTickets}
+                    tier={tier}
+                    playbook={playbook}
+                    versions={state.versions}
+                    selectedSprintId={state.selectedSprintId}
+                    showFocused
+                    selectedTicketId={state.selectedTicketId}
+                    now={now}
+                    agents={stagedAgents}
+                    onSelectAgent={(id) => controller.selectAgent(id)}
+                    onStopAgent={(id) => void controller.stopAgent(id)}
+                    ticketActions={ticketActions}
+                    onSelectSprint={() => controller.setView("overview")}
+                    onSelectTicket={(id) => void controller.selectTicket(id)}
+                    onCreateSprint={(name, goal) => void controller.createSprint(name, goal)}
+                    onCreateTicket={(title, sprintId) => void controller.createTicket(title, sprintId)}
+                    onMoveTicket={(id, sprintId, index) => void controller.moveTicket(id, sprintId, index)}
+                  />
+                </div>
+              </PageFrame>
+            ) : view === "epics" ? (
+              <PageFrame title="Epics" className="list-page">
+                <EpicsPanel
+                  epics={board?.epics ?? EMPTY}
+                  breakdowns={board?.epicBreakdowns ?? EMPTY}
+                  tickets={allTickets}
+                  sprints={sprints}
+                  canCreate={Boolean(project)}
+                  onCreate={(title, description) => void controller.createEpic(title, description)}
+                  onRename={(epicId, title) => void controller.updateEpic(epicId, { title })}
+                  onDelete={(epicId) => void controller.deleteEpic(epicId)}
+                  onPlan={(epicId) => void controller.planEpic(epicId)}
+                  onOpenTicket={(id) => void controller.selectTicket(id)}
+                  onAccept={(breakdownId, indices, sprintId) => controller.acceptBreakdown(breakdownId, indices, sprintId)}
+                  onReject={(breakdownId) => void controller.rejectBreakdown(breakdownId)}
+                />
+              </PageFrame>
+            ) : view === "playbook" ? (
+              <PageFrame title="Playbook" className="list-page">
+                <PlaybookPanel
+                  playbook={board?.playbook}
+                  proposal={state.skills?.playbookProposal ?? null}
+                  tickets={tickets}
+                  now={now}
+                  repository={project?.folder ?? null}
+                  onOpenTicket={(id) => void controller.selectTicket(id)}
+                  onEdit={openSettings}
+                  onSetUp={() => void controller.setUpSkill("playbook")}
+                  onApplyProposal={(steps) => controller.applyPlaybookProposal(steps)}
+                  onDiscardProposal={() => void controller.discardPlaybookProposal()}
+                />
+              </PageFrame>
+            ) : view === "skills" ? (
+              <PageFrame title="Skills" className="list-page">
+                <SkillsPanel
+                  skills={state.skills}
+                  tier={tier}
+                  tickets={ticketsOnly}
+                  now={now}
+                  canCreate={Boolean(project)}
+                  repository={project?.folder ?? null}
+                  onSetEnabled={(id, enabled) => void controller.setSkillEnabled(id, enabled)}
+                  onRun={(id) => void controller.runSkill(id)}
+                  onOpenFile={(id) => controller.openSkill(id)}
+                  onCreate={() => void controller.launchSkillCreator()}
+                  onRevise={(skillId) => void controller.launchSkillCreator({ skillId })}
+                  onSetUp={(kind) => void controller.setUpSkill(kind)}
+                  onDryRun={(id) => void controller.dryRunDraft(id)}
+                  onDiscard={(id) => void controller.discardDraft(id)}
+                  onInstall={(id, tools, channels) => controller.installDraft(id, tools, channels.length > 0 ? channels : undefined)}
+                  onOpenLink={(url) => void controller.bridge.openExternal(url)}
+                  onApplyPlaybook={(steps) => controller.applyPlaybookProposal(steps)}
+                  onDiscardPlaybook={() => void controller.discardPlaybookProposal()}
+                />
+              </PageFrame>
             ) : view === "settings" ? (
               <SettingsPage
                 projectName={project.name}
@@ -315,6 +417,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 onActivate={(id) => void controller.activateSprint(id)}
                 onClose={(id, carryOverTo) => void controller.closeSprint(id, carryOverTo)}
                 onDelete={(id) => void controller.deleteSprint(id)}
+                onSelectSprint={(id) => controller.selectSprint(id)}
                 jiraBoardId={state.sources?.jira?.boardId ?? null}
               />
             )}
@@ -339,55 +442,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 onStop={(id) => void controller.stopAgent(id)}
                 onNewConversation={() => void controller.newConversation(view === "ticket" ? ticketId : undefined)}
               />
-            ) : right.view === "sprints" ? (
-              <SprintsPanel
-                sprints={sprints}
-                tickets={allTickets}
-                selectedSprintId={state.selectedSprintId}
-                now={now}
-                canCreate={Boolean(project)}
-                onSelectSprint={(id) => controller.selectSprint(id)}
-                onActivateSprint={(id) => void controller.activateSprint(id)}
-                onCreateSprint={(name, goal) => void controller.createSprint(name, goal)}
-                jira={{
-                  connected: Boolean(state.sources?.jira),
-                  boardId: state.sources?.jira?.boardId ?? null,
-                  view: state.jiraSprints,
-                  onLoad: loadJiraSprints,
-                  onSetBoard: (boardId) => void controller.setJiraBoard(boardId),
-                  onImport: (jiraSprintId) => void controller.importJiraSprint(jiraSprintId),
-                  onOpenSettings: openSettings,
-                }}
-              />
-            ) : right.view === "epics" ? (
-              <EpicsPanel
-                epics={board?.epics ?? EMPTY}
-                breakdowns={board?.epicBreakdowns ?? EMPTY}
-                tickets={allTickets}
-                sprints={sprints}
-                canCreate={Boolean(project)}
-                onCreate={(title, description) => void controller.createEpic(title, description)}
-                onRename={(epicId, title) => void controller.updateEpic(epicId, { title })}
-                onDelete={(epicId) => void controller.deleteEpic(epicId)}
-                onPlan={(epicId) => void controller.planEpic(epicId)}
-                onOpenTicket={(id) => void controller.selectTicket(id)}
-                onAccept={(breakdownId, indices, sprintId) => controller.acceptBreakdown(breakdownId, indices, sprintId)}
-                onReject={(breakdownId) => void controller.rejectBreakdown(breakdownId)}
-              />
-            ) : right.view === "playbook" ? (
-              <PlaybookPanel
-                playbook={board?.playbook}
-                proposal={state.skills?.playbookProposal ?? null}
-                tickets={tickets}
-                now={now}
-                repository={project?.folder ?? null}
-                onOpenTicket={(id) => void controller.selectTicket(id)}
-                onEdit={openSettings}
-                onSetUp={() => void controller.setUpSkill("playbook")}
-                onApplyProposal={(steps) => controller.applyPlaybookProposal(steps)}
-                onDiscardProposal={() => void controller.discardPlaybookProposal()}
-              />
-            ) : right.view === "suggestions" ? (
+            ) : (
               <SuggestionsPanel
                 suggestions={state.suggestions}
                 tickets={allTickets}
@@ -400,36 +455,14 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 onOpenTicket={(id) => void controller.selectTicket(id)}
                 onOpenLink={(url) => void controller.bridge.openExternal(url)}
               />
-            ) : (
-              <SkillsPanel
-                skills={state.skills}
-                tier={tier}
-                tickets={ticketsOnly}
-                now={now}
-                canCreate={Boolean(project)}
-                repository={project?.folder ?? null}
-                onSetEnabled={(id, enabled) => void controller.setSkillEnabled(id, enabled)}
-                onRun={(id) => void controller.runSkill(id)}
-                onOpenFile={(id) => controller.openSkill(id)}
-                onCreate={() => void controller.launchSkillCreator()}
-                onRevise={(skillId) => void controller.launchSkillCreator({ skillId })}
-                onSetUp={(kind) => void controller.setUpSkill(kind)}
-                onDryRun={(id) => void controller.dryRunDraft(id)}
-                onDiscard={(id) => void controller.discardDraft(id)}
-                onInstall={(id, tools, channels) => controller.installDraft(id, tools, channels.length > 0 ? channels : undefined)}
-                onOpenLink={(url) => void controller.bridge.openExternal(url)}
-                onApplyPlaybook={(steps) => controller.applyPlaybookProposal(steps)}
-                onDiscardPlaybook={() => void controller.discardPlaybookProposal()}
-              />
             )}
           </RightSidebar>
         )}
         <RightActivityBar
           open={right.open}
           view={right.view}
+          badges={{ suggestions: state.suggestions?.length ?? 0 }}
           onSelect={(next) => updateRight((current) => toggleRightSidebar(current, next))}
-          jira={{ available: Boolean(project) && jiraConnection === "connected", active: view === "jira", onToggle: () => controller.toggleStage("jira") }}
-          settings={{ active: view === "settings", onToggle: () => controller.toggleStage("settings") }}
         />
         {capturing && (
           <QuickCapture

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { PmBoardTicket, PmDataTier, PmDigestEntry, PmPlaybook, PmSprint } from "@termloop/pm-contract/pm";
 import { Icon } from "./icons.js";
-import { PRIORITY_LABEL, RISK_LABEL, dayRuler, nextStep, riskTone, sprintDay, statusColumns, stepColumns, tierAtLeast, ticketLabel } from "./format.js";
+import { PRIORITY_LABEL, RISK_LABEL, dayRuler, nextStep, riskTone, sprintDay, sprintPanelOrder, statusColumns, stepColumns, tierAtLeast, ticketLabel } from "./format.js";
 
 export type SprintOverviewProps = {
   sprint: PmSprint | undefined;
@@ -18,6 +18,8 @@ export type SprintOverviewProps = {
   onActivate(sprintId: string): void;
   onClose(sprintId: string, carryOverTo: string | undefined): void;
   onDelete(sprintId: string): void;
+  /** Switches the board to another sprint. */
+  onSelectSprint?(sprintId: string): void;
 };
 
 const ENDS = new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short" });
@@ -36,7 +38,7 @@ export function SprintOverview(props: SprintOverviewProps) {
       <section className="pane" aria-label="Sprint overview">
         <div className="pane-head"><b>No sprint selected</b></div>
         <div className="body empty-state">
-          <p className="lead">Create a sprint with New sprint in the sidebar, or connect Jira in Settings and pull.</p>
+          <p className="lead">Create a sprint on the Sprints page, or connect Jira in Settings and pull.</p>
         </div>
       </section>
     );
@@ -59,7 +61,13 @@ export function SprintOverview(props: SprintOverviewProps) {
   return (
     <section className="pane overview-pane" aria-label="Sprint overview">
       <div className="pane-head">
-        <b>{sprint.name}</b>
+        {props.onSelectSprint && props.sprints.length > 1 ? (
+          <select className="sprint-pick" aria-label="Sprint" value={sprint.id} onChange={(event) => props.onSelectSprint?.(event.target.value)}>
+            {sprintPanelOrder(props.sprints).map((candidate) => (
+              <option key={candidate.id} value={candidate.id}>{candidate.name}{candidate.state === "active" ? " · active" : candidate.state === "closed" ? " · closed" : ""}</option>
+            ))}
+          </select>
+        ) : <b>{sprint.name}</b>}
         <span className="meta">{meta}</span>
         {sprint.jiraSprintId !== null && (
           <span className="chip" title={jiraOwned ? "Synced from Jira: Jira owns its name, dates, and state" : "Imported from Jira"}>

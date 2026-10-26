@@ -11,10 +11,10 @@ import { clampRightSidebarWidth } from "../src/renderer/state/right-sidebar-pref
 import { DOUBLE_SHIFT_WINDOW_MS } from "../src/pm-api.js";
 
 describe("left sidebar preference", () => {
-  it("defaults to 340px and clamps to 240-520", () => {
-    expect(DEFAULT_LEFT_SIDEBAR.width).toBe(340);
-    expect(clampLeftSidebarWidth(100)).toBe(240);
-    expect(clampLeftSidebarWidth(900)).toBe(520);
+  it("defaults to a 232px navigation column and clamps to 200-360", () => {
+    expect(DEFAULT_LEFT_SIDEBAR.width).toBe(232);
+    expect(clampLeftSidebarWidth(100)).toBe(200);
+    expect(clampLeftSidebarWidth(900)).toBe(360);
     expect(clampRightSidebarWidth(900)).toBe(640);
     expect(clampRightSidebarWidth(100)).toBe(280);
   });
@@ -22,12 +22,12 @@ describe("left sidebar preference", () => {
   it("round-trips under its own key and falls back on bad or blocked storage", () => {
     const store = new Map<string, string>();
     const storage = { getItem: (key: string) => store.get(key) ?? null, setItem: (key: string, value: string) => void store.set(key, value) };
-    writeLeftSidebarPreference({ width: 400 }, storage);
-    expect([...store.keys()]).toEqual(["termloop.pm.leftSidebar.v1"]);
-    expect(readLeftSidebarPreference(storage)).toEqual({ width: 400 });
-    store.set("termloop.pm.leftSidebar.v1", JSON.stringify({ width: 9999 }));
-    expect(readLeftSidebarPreference(storage)).toEqual({ width: 520 });
-    store.set("termloop.pm.leftSidebar.v1", "{oops");
+    writeLeftSidebarPreference({ width: 300 }, storage);
+    expect([...store.keys()]).toEqual(["termloop.pm.leftSidebar.v2"]);
+    expect(readLeftSidebarPreference(storage)).toEqual({ width: 300 });
+    store.set("termloop.pm.leftSidebar.v2", JSON.stringify({ width: 9999 }));
+    expect(readLeftSidebarPreference(storage)).toEqual({ width: 360 });
+    store.set("termloop.pm.leftSidebar.v2", "{oops");
     expect(readLeftSidebarPreference(storage)).toEqual(DEFAULT_LEFT_SIDEBAR);
     const blocked = { getItem: () => { throw new Error("denied"); }, setItem: () => { throw new Error("denied"); } };
     expect(readLeftSidebarPreference(blocked)).toEqual(DEFAULT_LEFT_SIDEBAR);
@@ -37,17 +37,17 @@ describe("left sidebar preference", () => {
 
 describe("sidebar fit", () => {
   it("leaves the preferences alone when the stage keeps its minimum", () => {
-    expect(fitSidebarWidths(340, 320, 1280)).toEqual({ left: 340, right: 320 });
-    expect(fitSidebarWidths(520, undefined, 1280)).toEqual({ left: 520, right: undefined });
+    expect(fitSidebarWidths(232, 380, 1280)).toEqual({ left: 232, right: 380 });
+    expect(fitSidebarWidths(360, undefined, 1280)).toEqual({ left: 360, right: undefined });
   });
 
   it("shrinks the right panel first, then the left, never below their minimums", () => {
     // 1280 - 44 activity - 420 stage = 816 for both sidebars.
-    expect(fitSidebarWidths(400, 640, 1280)).toEqual({ left: 400, right: 416 });
-    expect(fitSidebarWidths(520, 640, 1280)).toEqual({ left: 520, right: 296 });
-    expect(fitSidebarWidths(520, 640, 1100)).toEqual({ left: 356, right: 280 });
-    expect(fitSidebarWidths(520, 640, 600)).toEqual({ left: 240, right: 280 });
-    const fitted = fitSidebarWidths(520, 640, 1280);
+    expect(fitSidebarWidths(300, 640, 1280)).toEqual({ left: 300, right: 516 });
+    expect(fitSidebarWidths(360, 640, 1100)).toEqual({ left: 356, right: 280 });
+    expect(fitSidebarWidths(360, 640, 1000)).toEqual({ left: 256, right: 280 });
+    expect(fitSidebarWidths(360, 640, 600)).toEqual({ left: 200, right: 280 });
+    const fitted = fitSidebarWidths(360, 640, 1280);
     expect(fitted.left + fitted.right! + 44 + 420).toBeLessThanOrEqual(1280);
   });
 });

@@ -11,14 +11,17 @@ import type {
 } from "@termloop/pm-contract/pm";
 
 /**
- * The stage's content; `jira` (the Jira issue browser) and `settings` are
- * the ones the activity bar toggles, `agent` the selected agent's terminal at
- * full stage size.
+ * The stage's content: the sprint board (`overview`), a page the left
+ * navigation opens, or something opened from it: a ticket, a skill's file,
+ * or `agent`, the selected agent's terminal at full stage size.
  */
-export type PmView = "overview" | "ticket" | "jira" | "agent" | "skill" | "settings";
+export type PmView = "overview" | NavPage | "ticket" | "agent" | "skill";
 
-/** What the right activity bar opens in the right sidebar. */
-export type RightSidebarView = "steward" | "sprints" | "epics" | "playbook" | "suggestions" | "skills";
+/** The pages the left navigation opens in the stage, besides the board. */
+export type NavPage = "sprints" | "epics" | "jira" | "playbook" | "skills" | "settings";
+
+/** What the right activity bar opens in the right sidebar: helpers beside the stage. */
+export type RightSidebarView = "steward" | "suggestions";
 
 export type JiraDialogView = {
   ticketId: string;

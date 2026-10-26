@@ -28,25 +28,26 @@ const newer = sprint({ id: "newer", name: "Sprint 11", state: "closed", activate
 
 describe("right sidebar preference", () => {
   it("closes the open view and opens any other one", () => {
-    const sprints = { ...DEFAULT_RIGHT_SIDEBAR, open: true, view: "sprints" as const };
-    expect(toggleRightSidebar(sprints, "sprints")).toMatchObject({ open: false, view: "sprints" });
-    expect(toggleRightSidebar(sprints, "skills")).toMatchObject({ open: true, view: "skills" });
-    expect(toggleRightSidebar({ ...sprints, open: false }, "sprints")).toMatchObject({ open: true, view: "sprints" });
-    expect(toggleRightSidebar(sprints, "skills").width).toBe(sprints.width);
+    const steward = { ...DEFAULT_RIGHT_SIDEBAR, open: true, view: "steward" as const };
+    expect(toggleRightSidebar(steward, "steward")).toMatchObject({ open: false, view: "steward" });
+    expect(toggleRightSidebar(steward, "suggestions")).toMatchObject({ open: true, view: "suggestions" });
+    expect(toggleRightSidebar({ ...steward, open: false }, "steward")).toMatchObject({ open: true, view: "steward" });
+    expect(toggleRightSidebar(steward, "suggestions").width).toBe(steward.width);
   });
 
   it("round-trips through storage, clamps the width, and falls back on bad or blocked storage", () => {
     const store = new Map<string, string>();
     const storage = { getItem: (key: string) => store.get(key) ?? null, setItem: (key: string, value: string) => void store.set(key, value) };
-    writeRightSidebarPreference({ open: false, view: "skills", width: 999 }, storage);
-    expect(readRightSidebarPreference(storage)).toEqual({ open: false, view: "skills", width: 640 });
-    writeRightSidebarPreference({ open: true, view: "playbook", width: 300 }, storage);
-    expect(readRightSidebarPreference(storage)).toEqual({ open: true, view: "playbook", width: 300 });
-    // The assistant moved into the stage; a remembered assistant panel opens Sprints.
-    store.set([...store.keys()][0]!, JSON.stringify({ open: true, view: "assistant", width: 320 }));
-    expect(readRightSidebarPreference(storage)).toEqual({ open: true, view: "sprints", width: 320 });
+    writeRightSidebarPreference({ open: false, view: "suggestions", width: 999 }, storage);
+    expect([...store.keys()]).toEqual(["termloop.pm.rightSidebar.v2"]);
+    expect(readRightSidebarPreference(storage)).toEqual({ open: false, view: "suggestions", width: 640 });
+    writeRightSidebarPreference({ open: true, view: "steward", width: 300 }, storage);
+    expect(readRightSidebarPreference(storage)).toEqual({ open: true, view: "steward", width: 300 });
+    // Sprints moved to a page of the left navigation; a remembered Sprints panel opens Steward.
+    store.set([...store.keys()][0]!, JSON.stringify({ open: true, view: "sprints", width: 320 }));
+    expect(readRightSidebarPreference(storage)).toEqual({ open: true, view: "steward", width: 320 });
     store.set([...store.keys()][0]!, JSON.stringify({ open: "yes", view: "files", width: 10 }));
-    expect(readRightSidebarPreference(storage)).toEqual({ open: DEFAULT_RIGHT_SIDEBAR.open, view: "sprints", width: 280 });
+    expect(readRightSidebarPreference(storage)).toEqual({ open: DEFAULT_RIGHT_SIDEBAR.open, view: "steward", width: 280 });
     store.set([...store.keys()][0]!, "{not json");
     expect(readRightSidebarPreference(storage)).toEqual(DEFAULT_RIGHT_SIDEBAR);
     const blocked = { getItem: () => { throw new Error("denied"); }, setItem: () => { throw new Error("denied"); } };
@@ -56,28 +57,16 @@ describe("right sidebar preference", () => {
 });
 
 describe("right activity bar", () => {
-  it("marks only the open view pressed and reports every choice", () => {
+  it("holds only the helpers, marks the open one pressed, badges a waiting inbox, and reports every choice", () => {
     const onSelect = vi.fn();
-    const onToggleSettings = vi.fn();
-    const view = render(<RightActivityBar open view="sprints" onSelect={onSelect} settings={{ active: true, onToggle: onToggleSettings }} />);
+    const view = render(<RightActivityBar open view="steward" badges={{ suggestions: 3 }} onSelect={onSelect} />);
     cleanup = view.unmount;
     const buttons = [...view.container.querySelectorAll<HTMLButtonElement>(".activity-bar button")];
-    expect(buttons.map((button) => [button.textContent, button.getAttribute("aria-pressed")])).toEqual([["Steward", "false"], ["Sprints", "true"], ["Epics", "false"], ["Playbook", "false"], ["Inbox", "false"], ["Skills", "false"], ["Settings", "true"]]);
-    expect(buttons[6]!.classList.contains("bottom")).toBe(true);
+    expect(buttons.map((button) => [button.textContent, button.getAttribute("aria-pressed")])).toEqual([["Steward", "true"], ["Inbox3", "false"]]);
+    act(() => buttons[1]!.click());
+    expect(onSelect).toHaveBeenLastCalledWith("suggestions");
     act(() => buttons[0]!.click());
     expect(onSelect).toHaveBeenLastCalledWith("steward");
-    act(() => buttons[2]!.click());
-    expect(onSelect).toHaveBeenLastCalledWith("epics");
-    act(() => buttons[3]!.click());
-    expect(onSelect).toHaveBeenLastCalledWith("playbook");
-    act(() => buttons[4]!.click());
-    expect(onSelect).toHaveBeenLastCalledWith("suggestions");
-    act(() => buttons[5]!.click());
-    expect(onSelect).toHaveBeenLastCalledWith("skills");
-    // Settings switches the stage, not the right panel.
-    act(() => buttons[6]!.click());
-    expect(onToggleSettings).toHaveBeenCalled();
-    expect(onSelect).toHaveBeenCalledTimes(5);
   });
 });
 
@@ -101,6 +90,7 @@ describe("left sprint rail", () => {
         onCreateSprint={noop}
         onCreateTicket={onCreateTicket}
         onMoveTicket={noop}
+        onShowSprints={noop}
       />,
     );
     cleanup = view.unmount;

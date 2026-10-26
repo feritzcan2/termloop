@@ -8,11 +8,11 @@ import {
   type PreferenceTarget,
 } from "./right-sidebar-preference.js";
 
-const KEY = "termloop.pm.leftSidebar.v1";
+const KEY = "termloop.pm.leftSidebar.v2";
 
-export const LEFT_SIDEBAR_MIN_WIDTH = 240;
-export const LEFT_SIDEBAR_MAX_WIDTH = 520;
-export const LEFT_SIDEBAR_DEFAULT_WIDTH = 340;
+export const LEFT_SIDEBAR_MIN_WIDTH = 200;
+export const LEFT_SIDEBAR_MAX_WIDTH = 360;
+export const LEFT_SIDEBAR_DEFAULT_WIDTH = 232;
 /** The narrowest the stage gets before the sidebars give way. */
 export const STAGE_MIN_WIDTH = 420;
 /** The right activity bar (`--activity-width`). */

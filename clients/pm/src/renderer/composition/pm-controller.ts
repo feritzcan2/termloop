@@ -31,18 +31,12 @@ const CHECK_REFUSAL: Record<PmCheckRefusalReason, string> = {
   agentUnavailable: "no agent is available",
 };
 
-/** Stage views the right activity bar toggles, as opposed to ones opened from the board. */
-export type BarStage = "jira" | "settings";
-const isBarStage = (view: PmView): view is BarStage => view === "jira" || view === "settings";
-
 export type JiraSourceInput = { siteUrl: string; boardId: number | null; accountEmail: string; token: string };
 
 export class PmController {
   #unsubscribers: (() => void)[] = [];
   #boardRead: Promise<void> | undefined;
   #boardStale = false;
-  /** The stage content Jira or Settings replaced; toggling either off returns to it. */
-  #beforeStage: PmView = "overview";
 
   constructor(readonly bridge: PmApi, readonly store: PmStore, readonly now: () => number = Date.now) {}
 
@@ -84,14 +78,8 @@ export class PmController {
   }
 
   setView(view: PmView): void {
-    if (isBarStage(view) && !isBarStage(this.state.view)) this.#beforeStage = this.state.view;
     this.#set({ view });
     if (view === "settings") void this.loadSettings();
-  }
-
-  /** An activity bar stage item: shows Jira or Settings in the stage, or returns to what it replaced. */
-  toggleStage(view: BarStage): void {
-    this.setView(this.state.view === view ? this.#beforeStage : view);
   }
 
   handleEvent(event: PmEvent): void {
@@ -225,8 +213,9 @@ export class PmController {
 
   // Sprints ----------------------------------------------------------------
 
+  /** Focuses a sprint: the Sprints page keeps showing; anywhere else, the board shows it. */
   selectSprint(sprintId: string): void {
-    this.#set({ selectedSprintId: sprintId, view: "overview", selectedTicketId: undefined });
+    this.#set({ selectedSprintId: sprintId, view: this.state.view === "sprints" ? "sprints" : "overview", selectedTicketId: undefined });
   }
 
   async createSprint(name: string, goal: string): Promise<void> {
