@@ -1,15 +1,15 @@
 //! Method handlers for skills and the suggestions they make: the skills
-//! list, enabling, installing a reviewed draft, runs, the skill creator,
-//! feedback, accepting or rejecting a suggestion, and applying what the
+//! list, enabling, the PM's own edits, installing a reviewed draft, runs,
+//! the skill creator, feedback, accepting or rejecting a suggestion, and applying what the
 //! Deployment control setup found.
 
 use serde_json::{Value, json};
 use termloop_pm::agent::SkillSetup;
-use termloop_pm::skill::SkillRunTrigger;
+use termloop_pm::skill::{SkillEdit, SkillRunTrigger};
 use termloop_pm_contract::pm::{
     PmEnvironmentProposalApplyParams, PmProjectRef, PmProposalAcceptParams, PmProposalRejectParams,
     PmSkillCreatorLaunchParams, PmSkillDraftRef, PmSkillInstallParams, PmSkillRef,
-    PmSkillSetEnabledParams, PmSkillSetup,
+    PmSkillSetEnabledParams, PmSkillSetup, PmSkillUpdateParams,
 };
 
 use super::dispatch::{parse, require_project, require_ticket, to_value};
@@ -40,6 +40,20 @@ pub(super) fn set_enabled(state: &AppState, params: &Value) -> Result<Value, Con
         .store
         .lock()
         .set_skill_enabled(&params.skill_id, params.enabled)?;
+    skills::publish(state, &skill.project_id);
+    to_value(&skill)
+}
+
+pub(super) fn update(state: &AppState, params: &Value) -> Result<Value, ControlError> {
+    let params: PmSkillUpdateParams = parse(params)?;
+    let skill = state.store.lock().update_skill(
+        &params.skill_id,
+        SkillEdit {
+            name: params.name,
+            description: params.description,
+            instructions: params.instructions,
+        },
+    )?;
     skills::publish(state, &skill.project_id);
     to_value(&skill)
 }

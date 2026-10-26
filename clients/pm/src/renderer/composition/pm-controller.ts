@@ -139,10 +139,11 @@ export class PmController {
       notes: {},
       agents: [],
       activeAgentSessionId: undefined,
+      openSkillId: undefined,
       sources: undefined,
       skills: undefined,
       suggestions: undefined,
-      view: this.state.view === "ticket" || this.state.view === "agent" ? "overview" : this.state.view,
+      view: this.state.view === "ticket" || this.state.view === "agent" || this.state.view === "skill" ? "overview" : this.state.view,
     });
     await this.refreshProject();
   }
@@ -515,6 +516,19 @@ export class PmController {
 
   async setSkillEnabled(skillId: string, enabled: boolean): Promise<void> {
     await this.call("pm_skill_set_enabled", { skillId, enabled });
+  }
+
+  /** Opens a skill's SKILL.md in the stage. */
+  openSkill(skillId: string): void {
+    this.#set({ openSkillId: skillId, view: "skill" });
+  }
+
+  /** Saves the PM's edit of a skill; it is live at once as the next version. Resolves true once saved. */
+  async updateSkill(skillId: string, edit: { name?: string; description?: string; instructions?: string }): Promise<boolean> {
+    const skill = await this.call("pm_skill_update", { skillId, ...edit });
+    if (!skill) return false;
+    this.#set({ notice: { tone: "info", text: `${skill.manifest.name} saved as v${skill.version}.` } });
+    return true;
   }
 
   /**

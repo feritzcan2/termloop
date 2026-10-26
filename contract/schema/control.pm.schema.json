@@ -61,6 +61,7 @@
       "pm_skills_read",
       "pm_skill_suggestions_read",
       "pm_skill_set_enabled",
+      "pm_skill_update",
       "pm_skill_install",
       "pm_skill_run",
       "pm_skill_creator_launch",
@@ -539,6 +540,14 @@
         "$ref": "#/$defs/pmSkill"
       }
     },
+    "pm_skill_update": {
+      "params": {
+        "$ref": "#/$defs/pmSkillUpdateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmSkill"
+      }
+    },
     "pm_skill_install": {
       "params": {
         "$ref": "#/$defs/pmSkillInstallParams"
@@ -782,6 +791,7 @@
         "pm_skills_read",
         "pm_skill_suggestions_read",
         "pm_skill_set_enabled",
+        "pm_skill_update",
         "pm_skill_install",
         "pm_skill_run",
         "pm_skill_creator_launch",
@@ -5729,6 +5739,37 @@
         },
         "enabled": {
           "type": "boolean"
+        }
+      }
+    },
+    "pmSkillUpdateParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "skillId"
+      ],
+      "properties": {
+        "skillId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "instructions": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8000
         }
       }
     },

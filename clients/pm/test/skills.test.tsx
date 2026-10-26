@@ -20,6 +20,7 @@ function panel(overrides: Partial<SkillsPanelProps> = {}): SkillsPanelProps {
     canCreate: true,
     onSetEnabled: () => undefined,
     onRun: () => undefined,
+    onOpenFile: () => undefined,
     onCreate: () => undefined,
     onRevise: () => undefined,
     onSetUp: () => undefined,
@@ -52,6 +53,14 @@ describe("SkillsPanel", () => {
     expect(onRun).toHaveBeenCalledWith("skill-1");
     act(() => button(container, "Create a skill").click());
     expect(onCreate).toHaveBeenCalled();
+    unmount();
+  });
+
+  it("opens a skill's SKILL.md from its row", () => {
+    const onOpenFile = vi.fn();
+    const { container, unmount } = render(<SkillsPanel {...panel({ onOpenFile })} />);
+    act(() => container.querySelector<HTMLButtonElement>('button[aria-label="Bug owner finder SKILL.md"]')!.click());
+    expect(onOpenFile).toHaveBeenCalledWith("skill-1");
     unmount();
   });
 

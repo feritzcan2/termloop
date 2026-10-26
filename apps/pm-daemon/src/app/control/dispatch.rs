@@ -61,6 +61,7 @@ pub(crate) async fn dispatch(
         "pm_skills_read" => skill_methods::skills_read(state, params),
         "pm_skill_suggestions_read" => skill_methods::suggestions_read(state, params),
         "pm_skill_set_enabled" => skill_methods::set_enabled(state, params),
+        "pm_skill_update" => skill_methods::update(state, params),
         "pm_skill_install" => skill_methods::install(state, params),
         "pm_skill_run" => skill_methods::run(state, params),
         "pm_skill_creator_launch" => skill_methods::creator_launch(state, params),

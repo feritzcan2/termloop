@@ -9,9 +9,9 @@ use crate::delivery::risks::DAY_MS;
 use crate::skill::{
     BuiltinSkill, DryRunState, FeedbackOutcome, NewSkillDraft, PROJECT_SKILL_DRAFTS_MAX,
     PROJECT_SKILLS_MAX, SKILL_DRAFT_SAMPLES_MAX, SKILL_FEEDBACK_KEPT, SKILL_RUN_DEADLINE_MS,
-    SKILL_RUN_SUMMARY_MAX_CHARS, SKILL_RUNS_KEPT, Skill, SkillDraft, SkillEvent, SkillFeedback,
-    SkillManifest, SkillRun, SkillRunOutcome, SkillRunTrigger, SkillSample, bounded_line,
-    evidence_sources, revision_reason, valid_evidence,
+    SKILL_RUN_SUMMARY_MAX_CHARS, SKILL_RUNS_KEPT, Skill, SkillDraft, SkillEdit, SkillEvent,
+    SkillFeedback, SkillManifest, SkillRun, SkillRunOutcome, SkillRunTrigger, SkillSample,
+    bounded_line, evidence_sources, revision_reason, valid_evidence,
 };
 use crate::store::{
     SkillRecord, ToolApproval, approved_tools_ever, builtin_skill_record, draft_by_id, json_column,
@@ -360,6 +360,50 @@ impl PmStore {
                 enable_skill_row(transaction, skill_id)?;
             } else {
                 transaction.execute("UPDATE skills SET enabled = 0 WHERE id = ?1", [skill_id])?;
+            }
+            skill_view(transaction, require_skill(transaction, skill_id)?, now)
+        })
+    }
+
+    /// Saves the PM's edit of a skill as its next version, live at once.
+    /// A built-in skill is fixed; an edit that changes nothing keeps the
+    /// version.
+    pub fn update_skill(&mut self, skill_id: &str, edit: SkillEdit) -> Result<Skill, PmError> {
+        let now = self.now();
+        self.write(|transaction| {
+            let record = require_skill(transaction, skill_id)?;
+            if record.builtin.is_some() {
+                return Err(PmError::Constraint("a built-in skill is fixed"));
+            }
+            let current = skill_manifest(transaction, skill_id, record.version, false)?;
+            let mut manifest = current.clone();
+            if let Some(name) = edit.name {
+                manifest.name = name;
+            }
+            if let Some(description) = edit.description {
+                manifest.description = description;
+            }
+            if let Some(instructions) = edit.instructions {
+                manifest.instructions = instructions;
+            }
+            if let Some(field) = manifest.invalid_field() {
+                return Err(PmError::Invalid(field));
+            }
+            if manifest != current {
+                let version = record.version + 1;
+                insert_version(
+                    transaction,
+                    skill_id,
+                    version,
+                    &manifest,
+                    &[],
+                    Some("Edited by the PM"),
+                    now,
+                )?;
+                transaction.execute(
+                    "UPDATE skills SET version = ?2 WHERE id = ?1",
+                    params![skill_id, version],
+                )?;
             }
             skill_view(transaction, require_skill(transaction, skill_id)?, now)
         })

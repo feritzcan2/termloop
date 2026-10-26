@@ -6,7 +6,7 @@ import type { PmAgentProvider, PmAgentState, PmJiraApplyResult, PmJiraDiff, PmTi
  * The stage's content; `jira` is the Jira issue browser the activity bar
  * toggles, `agent` the selected agent's terminal at full stage size.
  */
-export type PmView = "overview" | "ticket" | "settings" | "jira" | "agent";
+export type PmView = "overview" | "ticket" | "settings" | "jira" | "agent" | "skill";
 
 /** What the right activity bar opens in the right sidebar. */
 export type RightSidebarView = "sprints" | "suggestions" | "skills";

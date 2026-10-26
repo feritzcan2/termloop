@@ -5,7 +5,7 @@ use crate::agent::{PM_BOARD_READ, PM_RISKS_READ, PM_TICKET_READ, PM_TICKET_SUGGE
 use crate::agent::{PmAgentMode, PmAgentProfile, PmToolContext, SkillRunContext, SkillSetup};
 use crate::skill::{
     BuiltinSkill, DryRunState, Evidence, FeedbackOutcome, NeededTool, NewSkillDraft,
-    SKILL_RUN_DEADLINE_MS, SkillChannel, SkillDraftOrigin, SkillEvent, SkillManifest,
+    SKILL_RUN_DEADLINE_MS, SkillChannel, SkillDraftOrigin, SkillEdit, SkillEvent, SkillManifest,
     SkillPrefilter, SkillRunOutcome, SkillRunTrigger, SkillSample, SkillSource, SkillTrigger,
     evidence_sources, revision_reason,
 };
@@ -218,6 +218,64 @@ fn deployment_control_appears_off_with_environments_and_runs_once_set_up() {
     // It runs without an agent.
     assert!(matches!(
         store.start_skill_run(&skills[0].id, SkillRunTrigger::Manual, 1),
+        Err(PmError::Constraint(_))
+    ));
+}
+
+#[test]
+fn the_pm_edits_a_skill_live_as_its_next_version_keeping_its_tools() {
+    let mut store = store();
+    let skill = installed(&mut store, manifest());
+    let approved = store.skill_approved_tools(&skill.id).unwrap();
+    let edited = store
+        .update_skill(
+            &skill.id,
+            SkillEdit {
+                instructions: Some("Look for tickets blocked over a day.".into()),
+                ..SkillEdit::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(edited.version, skill.version + 1);
+    assert_eq!(
+        edited.manifest.instructions,
+        "Look for tickets blocked over a day."
+    );
+    assert_eq!(edited.manifest.name, skill.manifest.name);
+    assert_eq!(
+        edited.manifest.approved_tools,
+        skill.manifest.approved_tools
+    );
+    assert_eq!(store.skill_approved_tools(&skill.id).unwrap(), approved);
+    // The same text again changes nothing.
+    let same = SkillEdit {
+        instructions: Some(edited.manifest.instructions.clone()),
+        ..SkillEdit::default()
+    };
+    assert_eq!(
+        store.update_skill(&skill.id, same).unwrap().version,
+        edited.version
+    );
+    let blank = SkillEdit {
+        name: Some("  ".into()),
+        ..SkillEdit::default()
+    };
+    assert!(matches!(
+        store.update_skill(&skill.id, blank),
+        Err(PmError::Invalid("name"))
+    ));
+    assert_eq!(store.skill(&skill.id).unwrap().unwrap(), edited);
+
+    with_environments(&mut store);
+    store.ensure_builtin_skills("p1").unwrap();
+    let builtin = store
+        .skills("p1")
+        .unwrap()
+        .into_iter()
+        .find(|skill| skill.builtin.is_some())
+        .unwrap();
+    assert!(matches!(
+        store.update_skill(&builtin.id, SkillEdit::default()),
         Err(PmError::Constraint(_))
     ));
 }

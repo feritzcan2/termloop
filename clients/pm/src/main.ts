@@ -16,6 +16,7 @@ import {
   createSmokeDirectories,
   daemonBinaryExists,
   resolveDaemonBinary,
+  signDevDaemon,
 } from "./platform/daemon-process.js";
 import { loadGhosttyHostAddon } from "./platform/ghostty-host.js";
 
@@ -100,6 +101,7 @@ async function connectDaemon(): Promise<PmDiscovery> {
   if (!daemonBinaryExists(binary)) {
     throw new Error(`The PM daemon binary was not found at ${binary}. Run \`cargo build -p termloop-pm-daemon\` or set TERMLOOP_PM_DAEMON.`);
   }
+  await signDevDaemon(binary, app.isPackaged);
   supervisor = new PmDaemonSupervisor(createDaemonDeps(binary, smokeDirectories?.env), (code) => {
     if (quitting) return;
     terminals?.stop();

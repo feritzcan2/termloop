@@ -43,6 +43,7 @@ import { SprintOverview } from "../ui/SprintOverview.js";
 import { SprintsPanel } from "../ui/SprintsPanel.js";
 import { SprintDnd } from "../ui/sprint-dnd.js";
 import { StageTabs, type StageTab } from "../ui/StageTabs.js";
+import { SkillFile } from "../ui/SkillFile.js";
 import { TicketEditor } from "../ui/TicketEditor.js";
 import { lastJiraPull, leftSprint, sprintTickets, ticketLabel } from "../ui/format.js";
 import type { AgentTab, MountTerminal, TicketCapture } from "../ui/types.js";
@@ -97,7 +98,8 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
   const activeAgent = agents.find((agent) => agent.sessionId === state.activeAgentSessionId);
   const ticketsOnly = useMemo(() => allTickets.map((candidate) => candidate.ticket), [allTickets]);
   const ticketId = entry?.ticket.id;
-  const view = (state.view === "ticket" && !entry) || (state.view === "agent" && !activeAgent) ? "overview" : state.view;
+  const openSkill = state.skills?.skills.find((skill) => skill.id === state.openSkillId);
+  const view = (state.view === "ticket" && !entry) || (state.view === "agent" && !activeAgent) || (state.view === "skill" && !openSkill) ? "overview" : state.view;
   const shownSprintId = leftSprint(sprints, state.selectedSprintId)?.id;
   const lane = useMemo(() => (shownSprintId ? sprintTickets(allTickets, shownSprintId) : EMPTY), [allTickets, shownSprintId]);
   const [right, updateRight] = useRightSidebar();
@@ -142,6 +144,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
       label: `${ticketLabel(entry.ticket)} · ${entry.ticket.title}`,
       draft: entry.pendingProposalCount > 0 || (state.proposals[entry.ticket.id]?.length ?? 0) > 0,
     }] : []),
+    ...(openSkill ? [{ view: "skill" as const, label: `SKILL.md · ${openSkill.manifest.name}` }] : []),
     ...(activeAgent ? [{ view: "agent" as const, label: `${activeAgent.label} · ${activeAgent.detail}` }] : []),
     ...(jiraConnection === "connected" || view === "jira" ? [{ view: "jira" as const, label: "Jira issues" }] : []),
     { view: "settings", label: "Settings" },
@@ -228,6 +231,12 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 onApproveProbe={(id) => void controller.approveProbe(id)}
                 onRejectProbe={(id) => void controller.rejectProbe(id)}
                 onDeleteProbe={(id) => void controller.deleteProbe(id)}
+              />
+            ) : view === "skill" && openSkill ? (
+              <SkillFile
+                key={`${openSkill.id}:${openSkill.version}`}
+                skill={openSkill}
+                onSave={(edit) => controller.updateSkill(openSkill.id, edit)}
               />
             ) : view === "agent" ? (
               <AgentPanel
@@ -341,6 +350,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 canCreate={Boolean(project)}
                 onSetEnabled={(id, enabled) => void controller.setSkillEnabled(id, enabled)}
                 onRun={(id) => void controller.runSkill(id)}
+                onOpenFile={(id) => controller.openSkill(id)}
                 onCreate={() => void controller.launchSkillCreator()}
                 onRevise={(skillId) => void controller.launchSkillCreator({ skillId })}
                 onSetUp={(kind) => void controller.setUpSkill(kind)}

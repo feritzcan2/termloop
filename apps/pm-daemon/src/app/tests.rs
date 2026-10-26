@@ -829,6 +829,17 @@ async fn deployment_control_gates_automatic_checks_and_can_be_turned_off() {
         .unwrap();
     assert_eq!(skill["enabled"], enabled);
 
+    // Its file opens read-only: the PM's edit is refused.
+    assert_eq!(
+        call(
+            state,
+            "pm_skill_update",
+            json!({ "skillId": skill_id, "instructions": "Do more." }),
+        )
+        .await,
+        Err(ErrorCode::Constraint)
+    );
+
     let turned_off = call(
         state,
         "pm_skill_set_enabled",

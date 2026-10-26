@@ -1,11 +1,12 @@
 // Privileged process and filesystem primitives for the PM daemon child. The
 // supervision logic lives in `src/main/daemon-lifecycle.ts`.
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
+import { promisify } from "node:util";
 import type { PmDaemonChild, PmDaemonDeps } from "../main/daemon-lifecycle.js";
 
 const executableName = process.platform === "win32" ? "termloop-pm-daemon.exe" : "termloop-pm-daemon";
@@ -25,6 +26,37 @@ export function resolveDaemonBinary(input: { isPackaged: boolean; resourcesPath:
 
 export function daemonBinaryExists(binary: string): boolean {
   return existsSync(binary);
+}
+
+const DEV_DAEMON_IDENTIFIER = "dev.termloop.pm.daemon";
+const run = promisify(execFile);
+
+/**
+ * Re-signs an unpackaged macOS daemon with an Apple Development certificate.
+ * The linker's ad-hoc signature designates the binary by cdhash, so Keychain
+ * treats every rebuild as a new application and asks again for the Jira
+ * token; a certificate-backed signature keeps the designated requirement
+ * stable. `TERMLOOP_DEV_CODE_SIGN_IDENTITY` picks the identity. Without one
+ * the binary keeps its ad-hoc signature.
+ */
+export async function signDevDaemon(binary: string, isPackaged: boolean): Promise<void> {
+  if (isPackaged || process.platform !== "darwin") return;
+  try {
+    const { stderr } = await run("codesign", ["-dv", binary]);
+    if (stderr.includes(`Identifier=${DEV_DAEMON_IDENTIFIER}\n`) && stderr.includes("Authority=Apple Development: ")) return;
+    let identity = process.env["TERMLOOP_DEV_CODE_SIGN_IDENTITY"];
+    if (!identity) {
+      const { stdout } = await run("security", ["find-identity", "-v", "-p", "codesigning"]);
+      identity = /^\s*\d+\) ([0-9A-F]{40}) "Apple Development: /m.exec(stdout)?.[1];
+    }
+    if (!identity) {
+      console.warn("[pm-daemon] no Apple Development signing identity; macOS may ask for Keychain access after each rebuild");
+      return;
+    }
+    await run("codesign", ["--force", "--sign", identity, "--identifier", DEV_DAEMON_IDENTIFIER, "--timestamp=none", binary]);
+  } catch (error) {
+    console.warn(`[pm-daemon] could not sign the development daemon: ${(error as Error).message}`);
+  }
 }
 
 export function createDaemonDeps(binary: string, extraEnv: Record<string, string> = {}): PmDaemonDeps {

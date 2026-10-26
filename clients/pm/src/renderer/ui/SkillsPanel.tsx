@@ -16,6 +16,8 @@ export type SkillsPanelProps = {
   canCreate: boolean;
   onSetEnabled(skillId: string, enabled: boolean): void;
   onRun(skillId: string): void;
+  /** Opens the skill's SKILL.md in the stage. */
+  onOpenFile(skillId: string): void;
   onCreate(): void;
   /** Starts the skill creator to propose a revision of an installed skill. */
   onRevise(skillId: string): void;
@@ -38,7 +40,7 @@ const OUTCOMES: Record<NonNullable<PmSkill["lastOutcome"]>, string> = {
   skipped: "nothing new",
 };
 
-function triggerText(skill: PmSkillManifest): string {
+export function triggerText(skill: PmSkillManifest): string {
   switch (skill.trigger.kind) {
     case "manual": return "Manual";
     case "schedule": return `Every ${skill.trigger.everyMinutes} min`;
@@ -85,7 +87,7 @@ export function SkillsPanel(props: SkillsPanelProps) {
   // The built-in Deployment control shows as a Set up row until it is on.
   const shown = skills.filter((skill) => skill.builtin === null || skill.enabled);
   const row = (skill: PmSkill) => (
-    <SkillRow key={skill.id} skill={skill} now={props.now} onSetEnabled={props.onSetEnabled} onRun={props.onRun} onRevise={props.onRevise} />
+    <SkillRow key={skill.id} skill={skill} now={props.now} onSetEnabled={props.onSetEnabled} onRun={props.onRun} onRevise={props.onRevise} onOpenFile={props.onOpenFile} />
   );
   return (
     <div className="skills-panel">
@@ -164,12 +166,13 @@ function SetupRow(props: { name: string; description: string; onReview: (() => v
   );
 }
 
-function SkillRow({ skill, now, onSetEnabled, onRun, onRevise }: {
+function SkillRow({ skill, now, onSetEnabled, onRun, onRevise, onOpenFile }: {
   skill: PmSkill;
   now: number;
   onSetEnabled(id: string, enabled: boolean): void;
   onRun(id: string): void;
   onRevise(id: string): void;
+  onOpenFile(id: string): void;
 }) {
   const last = skill.lastRunAtEpochMs === null
     ? "Never run"
@@ -187,6 +190,7 @@ function SkillRow({ skill, now, onSetEnabled, onRun, onRevise }: {
         {skill.pendingSuggestionCount > 0 && <span className="chip warn">{skill.pendingSuggestionCount} pending</span>}
         <span title="Runs today">{skill.runsToday} today</span>
         <span className="sp" />
+        <button type="button" className="link skill-file-link" aria-label={`${skill.manifest.name} SKILL.md`} onClick={() => onOpenFile(skill.id)}>SKILL.md</button>
         {skill.builtin === null && !skill.revisionReason && (
           <button type="button" className="btn sm ghost" onClick={() => onRevise(skill.id)}>Revise</button>
         )}

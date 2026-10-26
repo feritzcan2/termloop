@@ -779,3 +779,20 @@ li:hover > .icb.remove, .icb.remove:focus-visible { opacity: 1; }
 .jira-card-title { margin: 6px 0 0; color: var(--text); font-size: 12px; line-height: 1.4; }
 .jira-card-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; height: 0; overflow: hidden; }
 .jira-card:hover .jira-card-actions, .jira-card-actions:focus-within { height: 24px; margin-top: 6px; }
+
+/* SKILL.md in the stage */
+.skill-file-link { font: 10px/1.6 var(--font-mono); }
+.skill-file-body { display: flex; flex-direction: column; gap: 10px; max-width: 920px; }
+.skill-frontmatter { display: flex; flex-direction: column; gap: 4px; font: 12px/1.5 var(--font-mono); color: var(--dim); }
+.skill-frontmatter .fm-rule { color: var(--dimmer); }
+.skill-frontmatter .fm-row { display: grid; grid-template-columns: 110px minmax(0, 1fr); align-items: baseline; gap: 8px; }
+.skill-frontmatter .fm-key { color: var(--accent); }
+.skill-frontmatter .fm-row.fixed span:last-child { color: var(--dimmer); overflow-wrap: anywhere; }
+.skill-frontmatter input, .skill-frontmatter textarea { width: 100%; font: 12px/1.5 var(--font-mono); color: var(--text); }
+.skill-frontmatter textarea { height: auto; padding: 4px 10px; resize: vertical; }
+.skill-instructions {
+  flex: 1; min-height: 320px; width: 100%; padding: 12px 14px; resize: vertical;
+  font: 12.5px/1.6 var(--font-mono); color: var(--text); background: var(--bg-terminal);
+}
+.skill-frontmatter input[readonly], .skill-frontmatter textarea[readonly], .skill-instructions[readonly] { color: var(--dim); }
+.skill-frontmatter input[readonly], .skill-frontmatter textarea[readonly] { border-color: transparent; background: transparent; padding-left: 0; resize: none; }

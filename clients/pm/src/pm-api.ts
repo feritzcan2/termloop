@@ -61,6 +61,7 @@ export const RENDERER_METHODS = [
   "pm_skills_read",
   "pm_skill_suggestions_read",
   "pm_skill_set_enabled",
+  "pm_skill_update",
   "pm_skill_install",
   "pm_skill_run",
   "pm_skill_creator_launch",

@@ -252,6 +252,16 @@ pub fn revision_reason(judged: u32, rejected: u32) -> Option<String> {
         .then(|| format!("You rejected {rejected} of its last {judged} suggestions."))
 }
 
+/// The PM's own edit of an installed skill, saved as its next version;
+/// an absent field is kept. The trigger, sources, and tools change only
+/// through a reviewed revision.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SkillEdit {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub instructions: Option<String>,
+}
+
 /// Where a draft came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]

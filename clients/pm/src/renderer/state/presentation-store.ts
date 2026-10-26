@@ -39,6 +39,8 @@ export type PmState = {
   notes: Record<string, PmTicketNote[]>;
   agents: PmAgentSession[];
   activeAgentSessionId: string | undefined;
+  /** The skill whose SKILL.md is open in the stage. */
+  openSkillId: string | undefined;
   settings: PmSettings | undefined;
   catalog: PmAgentCatalog | undefined;
   sources: PmSources | undefined;
@@ -66,6 +68,7 @@ export const initialPmState: PmState = {
   notes: {},
   agents: [],
   activeAgentSessionId: undefined,
+  openSkillId: undefined,
   settings: undefined,
   catalog: undefined,
   sources: undefined,

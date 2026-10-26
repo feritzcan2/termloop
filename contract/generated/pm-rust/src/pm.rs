@@ -126,7 +126,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:4d1475cc6464abec4c3257a9d07d0a00e8d36793f83ea19ee4017c64451fad4d";
+    "sha256:e8f23d4b0f680f29983403d5affa372a8326296b0d4163af583a0d6d2946eaeb";
 pub const CAPABILITY_SCOPE: &str = "pm.full";
 pub const METHODS: &[&str] = &[
     "pm_system_version",
@@ -184,6 +184,7 @@ pub const METHODS: &[&str] = &[
     "pm_skills_read",
     "pm_skill_suggestions_read",
     "pm_skill_set_enabled",
+    "pm_skill_update",
     "pm_skill_install",
     "pm_skill_run",
     "pm_skill_creator_launch",
@@ -2214,6 +2215,19 @@ pub struct PmSkillSetEnabledParams {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
+pub struct PmSkillUpdateParams {
+    #[serde(rename = "skillId")]
+    pub skill_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct PmSkillInstallParams {
     #[serde(rename = "draftId")]
     pub draft_id: String,
@@ -2385,6 +2399,7 @@ pub type PmSettingsUpdateResult = PmSettings;
 pub type PmSkillsReadParams = PmProjectRef;
 pub type PmSkillSuggestionsReadParams = PmProjectRef;
 pub type PmSkillSetEnabledResult = PmSkill;
+pub type PmSkillUpdateResult = PmSkill;
 pub type PmSkillInstallResult = PmSkill;
 pub type PmSkillRunParams = PmSkillRef;
 pub type PmSkillCreatorLaunchResult = PmAgentSession;
@@ -2594,6 +2609,7 @@ fn validate_method(value: &Value) -> bool {
             "pm_skills_read",
             "pm_skill_suggestions_read",
             "pm_skill_set_enabled",
+            "pm_skill_update",
             "pm_skill_install",
             "pm_skill_run",
             "pm_skill_creator_launch",
@@ -7846,6 +7862,41 @@ fn validate_pm_skill_set_enabled_params(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_pm_skill_update_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("skillId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("name").is_none_or(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)
+        }) && object.get("description").is_none_or(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 500)
+        }) && object.get("instructions").is_none_or(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 8000)
+        }) && object
+            .keys()
+            .all(|key| ["skillId", "name", "description", "instructions"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_pm_skill_install_params(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object.get("draftId").is_some_and(|field| {
@@ -8460,6 +8511,10 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<PmSkillSetEnabledParams>(params.clone()).is_ok()
                 && validate_pm_skill_set_enabled_params(params)
         }
+        "pm_skill_update" => {
+            serde_json::from_value::<PmSkillUpdateParams>(params.clone()).is_ok()
+                && validate_pm_skill_update_params(params)
+        }
         "pm_skill_install" => {
             serde_json::from_value::<PmSkillInstallParams>(params.clone()).is_ok()
                 && validate_pm_skill_install_params(params)
@@ -8721,6 +8776,10 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         }
         "pm_skill_set_enabled" => {
             serde_json::from_value::<PmSkillSetEnabledResult>(result.clone()).is_ok()
+                && validate_pm_skill(result)
+        }
+        "pm_skill_update" => {
+            serde_json::from_value::<PmSkillUpdateResult>(result.clone()).is_ok()
                 && validate_pm_skill(result)
         }
         "pm_skill_install" => {
