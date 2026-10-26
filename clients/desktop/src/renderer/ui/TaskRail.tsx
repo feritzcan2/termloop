@@ -262,6 +262,11 @@ export type TaskRailProps = {
   /// the Shell owns which surface the stage is showing.
   openTaskDetail(taskId: string): void;
   detailTaskId: string | undefined;
+  /// Pointing at or clicking a Task card lets the Shell highlight that Task
+  /// wherever else it is shown, such as the Steward's Playbook. Both must be
+  /// stable callbacks: Task cards are memoized.
+  taskHovered?: ((taskId: string | undefined) => void) | undefined;
+  taskClicked?: ((taskId: string) => void) | undefined;
   agentCapabilities: readonly AgentCapabilityDto[];
   launchTaskTerminal(taskId: string): Promise<string | undefined>;
   launchTaskAgent(taskId: string, agentId: string, model?: string, permission?: AgentCapabilityDto["permissions"][number], reasoning?: AgentCapabilityDto["reasoning"][number], kickoffMessage?: string): Promise<string | undefined>;
@@ -443,6 +448,8 @@ export function TaskRail(props: TaskRailProps) {
       overlayVisibilityChanged={props.overlayVisibilityChanged}
       openChanges={props.openTaskChanges}
       openDetail={props.openTaskDetail}
+      taskHovered={props.taskHovered}
+      taskClicked={props.taskClicked}
       detailOpen={props.detailTaskId === task.id}
       deleting={props.deletingTaskIds.has(task.id)}
       provisioning={props.provisioningTaskIds?.has(task.id) ?? false}
@@ -832,6 +839,8 @@ type TaskGroupProps = {
   overlayVisibilityChanged(visible: boolean): void;
   openChanges(taskId: string, source: ChangesOpenSource): void;
   openDetail(taskId: string): void;
+  taskHovered: ((taskId: string | undefined) => void) | undefined;
+  taskClicked: ((taskId: string) => void) | undefined;
   detailOpen: boolean;
   deleting: boolean;
   provisioning: boolean;
@@ -927,6 +936,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
   /// detail page. Growing and folding stays on the chevron alone, so the click
   /// never changes meaning based on hidden state.
   const rowClick = () => {
+    props.taskClicked?.(task.id);
     if (primarySession) {
       props.selectSession(primarySession.id);
       return;
@@ -1082,6 +1092,8 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
       data-status-tone={cardStatus?.tone}
       data-disclosed={!collapsed && !props.deleting ? "true" : undefined}
       data-session-drop-target={task.status === "open" && task.archived_at_epoch_ms === null && !props.deleting ? task.id : undefined}
+      onMouseEnter={props.taskHovered ? () => props.taskHovered?.(task.id) : undefined}
+      onMouseLeave={props.taskHovered ? () => props.taskHovered?.(undefined) : undefined}
       /* The whole card is the click target — pointing at the title is never
          required. Clicks that land on a real control (or inside the Session
          list, whose rows have their own targets) keep their own meaning. */

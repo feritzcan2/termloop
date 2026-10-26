@@ -2294,6 +2294,7 @@ button.folder-crumb:hover { background: light-dark(rgba(15,23,42,.07), rgba(255,
 .assistant-task-row:hover { border-color: rgba(102,179,255,.25); background: var(--hover); }
 .assistant-task-row[draggable="true"] { cursor: grab; }
 .assistant-task-row.dragging { opacity: .42; cursor: grabbing; }
+.assistant-task-row.highlighted { border-color: var(--accent); background: rgba(102,179,255,.14); box-shadow: 0 0 0 1px rgba(102,179,255,.35); }
 .assistant-task-icon { display: grid; place-items: center; width: 17px; height: 17px; border-radius: 4px; background: rgba(102,179,255,.1); color: var(--accent-strong); }
 .assistant-task-icon svg { width: 10px; height: 10px; }
 .assistant-task-copy { display: grid; min-width: 0; gap: 1px; }

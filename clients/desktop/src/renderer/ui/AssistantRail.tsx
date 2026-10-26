@@ -395,6 +395,8 @@ type Props = {
   openImproverTerminal(sessionId: string): void;
   dismissImproverSession(sessionId: string): void;
   openTask(taskId: string): void;
+  /** The Task pointed at or clicked in the Task rail, marked on the Playbook. */
+  highlightedTaskId?: string | undefined;
   saveTaskNotes?: SavePlaybookTaskNotes | undefined;
   /** The Steward's open proposal or suggestion is answerable from its Task row. */
   taskDecisionActions?: PlaybookTaskDecisionActions | undefined;
@@ -451,6 +453,13 @@ export function AssistantRail(props: Props) {
   // every inline edit re-reads before writing.
   const [playbookDoc, setPlaybookDoc] = useState<PlaybookDto | null>(null);
   const snapshotsByProject = useRef(new Map<string, AssistantRailSnapshot>());
+  /// The Task highlighted from the Task rail scrolls into view wherever the
+  /// Playbook places it.
+  const railRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!props.highlightedTaskId) return;
+    railRef.current?.querySelector('.assistant-task-row[data-highlighted="true"]')?.scrollIntoView?.({ block: "nearest" });
+  }, [props.highlightedTaskId]);
   const [snapshotProjectId, setSnapshotProjectId] = useState(props.projectId);
   const applySnapshot = useCallback((projectId: string, snapshot: AssistantRailSnapshot) => {
     setSnapshotProjectId(projectId);
@@ -992,6 +1001,7 @@ export function AssistantRail(props: Props) {
           saveTaskNotes={props.saveTaskNotes}
           notesDisabled={props.disabled}
           dragging={draggedTaskId === task.id}
+          highlighted={props.highlightedTaskId === task.id}
           beginDrag={taskDragEnabled ? beginTaskDrag : undefined}
           endDrag={endTaskDrag}
           decision={taskDecision}
@@ -1029,7 +1039,7 @@ export function AssistantRail(props: Props) {
     playbookBuilder !== undefined,
   );
 
-  return <section className="assistant-rail" aria-label="Project assistants">
+  return <section ref={railRef} className="assistant-rail" aria-label="Project assistants">
     <div className="ar-head">
       <span>Project assistant</span>
       <i className="ar-rule" aria-hidden="true" />
@@ -1140,6 +1150,7 @@ export function AssistantRail(props: Props) {
           saveTaskNotes={props.saveTaskNotes}
           notesDisabled={props.disabled}
           draggingTaskId={draggedTaskId}
+          highlightedTaskId={props.highlightedTaskId}
           beginDrag={!props.disabled && mutatingKey === undefined ? beginTaskDrag : undefined}
           endDrag={endTaskDrag}
           decision={taskDecision}

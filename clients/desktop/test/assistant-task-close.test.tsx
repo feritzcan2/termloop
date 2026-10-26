@@ -84,3 +84,14 @@ it("releases the lease when the row unmounts with the dialog open", async () => 
   await act(async () => root.render(<></>));
   expect(overlayVisibilityChanged.mock.calls).toEqual([[true], [false]]);
 });
+
+it("marks the Task highlighted from the Task rail", async () => {
+  await act(async () => root.render(<AssistantTaskTail
+    placement={{ byRoutineId: new Map(), completed: [plain, isolated], unplaced: [], closed: [] }}
+    processingTaskIds={[]}
+    openTask={() => undefined}
+    highlightedTaskId="isolated"
+  />));
+  const highlighted = [...host.querySelectorAll(".assistant-task-row.highlighted")];
+  expect(highlighted.map((row) => row.getAttribute("aria-label"))).toEqual(["Isolated fix"]);
+});

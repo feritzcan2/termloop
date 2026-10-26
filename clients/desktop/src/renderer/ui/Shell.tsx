@@ -623,6 +623,7 @@ export function Shell(props: ShellProps) {
   // view; the remembered choice falls back to Files without being overwritten.
   const filesSidebar = storedFilesSidebar.view === "pullRequests" && !props.pullRequestsAvailable
     ? { ...storedFilesSidebar, view: "files" as const } : storedFilesSidebar;
+  const stewardSidebarOpen = filesSidebar.open && filesSidebar.view === "steward";
   const updateFilesSidebar = useCallback((update: Partial<FilesSidebarPreference>) => {
     setFilesSidebarState((current) => {
       const next = { ...current, ...update };
@@ -694,6 +695,13 @@ export function Shell(props: ShellProps) {
   /// so the page follows the live projection instead of a snapshot taken at the
   /// click, and drops itself when the Task leaves the Project.
   const [detailTaskId, setDetailTaskId] = useState<string>();
+  /// The Task last pointed at or clicked in the Task rail; while the Steward
+  /// sidebar is open its Playbook highlights it, the pointed one first.
+  const [hoveredRailTaskId, setHoveredRailTaskId] = useState<string>();
+  const [clickedRailTaskId, setClickedRailTaskId] = useState<string>();
+  useEffect(() => {
+    if (!stewardSidebarOpen) setHoveredRailTaskId(undefined);
+  }, [stewardSidebarOpen]);
   const [taskRailOverlayOpen, setTaskRailOverlayOpen] = useOverlayLeaseCount();
   const [projectWorkflowOverlayOpen, setProjectWorkflowOverlayOpen] = useOverlayLeaseCount();
   /// Tab-bar state for the two rails that lost their title rows: the Agents
@@ -1701,6 +1709,8 @@ export function Shell(props: ShellProps) {
             openTaskChanges={(taskId, source) => setChangesPresentation({ kind: "task", taskId, source })}
             openTaskDetail={openTaskDetail}
             detailTaskId={detailTask?.id}
+            taskHovered={stewardSidebarOpen ? setHoveredRailTaskId : undefined}
+            taskClicked={setClickedRailTaskId}
             agentCapabilities={props.agentCapabilities}
             launchTaskTerminal={props.launchTaskTerminal}
             launchTaskAgent={props.launchTaskAgent}
@@ -2203,6 +2213,7 @@ export function Shell(props: ShellProps) {
             openImproverTerminal={openImproverTerminal}
             dismissImproverSession={dismissSession}
             openTask={openTaskDetail}
+            highlightedTaskId={hoveredRailTaskId ?? clickedRailTaskId}
             saveTaskNotes={props.updateTaskDeveloperNotes}
             taskDecisionActions={props.assistantActions}
             closeTask={{

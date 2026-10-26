@@ -99,6 +99,8 @@ export function AssistantTaskRow(props: {
   saveTaskNotes?: SavePlaybookTaskNotes | undefined;
   notesDisabled?: boolean | undefined;
   dragging?: boolean;
+  /** The Task pointed at or clicked in the Task rail. */
+  highlighted?: boolean | undefined;
   beginDrag?: ((task: Task, event: DragEvent<HTMLButtonElement>) => void) | undefined;
   endDrag?: (() => void) | undefined;
   decision?: PlaybookTaskDecisionHandle | null | undefined;
@@ -112,7 +114,8 @@ export function AssistantTaskRow(props: {
   const draggable = props.task.status === "open" && props.beginDrag !== undefined;
   return <div className="assistant-task-item" role="listitem"><button
     type="button"
-    className={`assistant-task-row${processing ? " processing" : ""}${props.dragging ? " dragging" : ""}`}
+    className={`assistant-task-row${processing ? " processing" : ""}${props.dragging ? " dragging" : ""}${props.highlighted ? " highlighted" : ""}`}
+    data-highlighted={props.highlighted ? "true" : undefined}
     draggable={draggable}
     data-playbook-task-id={draggable ? props.task.id : undefined}
     data-playbook-processing={processing ? "true" : undefined}
@@ -154,6 +157,7 @@ export function AssistantTaskTail(props: {
   saveTaskNotes?: SavePlaybookTaskNotes | undefined;
   notesDisabled?: boolean | undefined;
   draggingTaskId?: string | undefined;
+  highlightedTaskId?: string | undefined;
   beginDrag?: ((task: Task, event: DragEvent<HTMLButtonElement>) => void) | undefined;
   endDrag?: (() => void) | undefined;
   decision?: PlaybookTaskDecisionHandle | null | undefined;
@@ -180,6 +184,7 @@ export function AssistantTaskTail(props: {
       saveTaskNotes={props.saveTaskNotes}
       notesDisabled={props.notesDisabled}
       dragging={props.draggingTaskId === task.id}
+      highlighted={props.highlightedTaskId === task.id}
       beginDrag={props.beginDrag}
       endDrag={props.endDrag}
       decision={props.decision}

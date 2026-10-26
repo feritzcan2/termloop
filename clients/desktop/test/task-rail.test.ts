@@ -609,6 +609,24 @@ describe("Task rail row anatomy", () => {
     expect(markup).not.toContain('class="workflow-execution-state">Completed');
   });
 
+  it("reports the pointed and clicked Task so the Playbook can highlight it", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const task = launchableTask();
+    const props = { ...railProps({ task }), taskHovered: vi.fn(), taskClicked: vi.fn() };
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(createElement(TaskRail, props)));
+      const card = container.querySelector<HTMLElement>('.task-group')!;
+      await act(async () => card.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, relatedTarget: document.body })));
+      expect(props.taskHovered).toHaveBeenLastCalledWith(task.id);
+      await act(async () => card.dispatchEvent(new MouseEvent("mouseout", { bubbles: true, relatedTarget: document.body })));
+      expect(props.taskHovered).toHaveBeenLastCalledWith(undefined);
+      await act(async () => card.click());
+      expect(props.taskClicked).toHaveBeenCalledExactlyOnceWith(task.id);
+    } finally { await act(async () => root.unmount()); container.remove(); }
+  });
+
   it("keeps activity visible on a folded Task, opens the exact agent, and clears it when work stops", async () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     const session = agentSession("workflow-lead");
