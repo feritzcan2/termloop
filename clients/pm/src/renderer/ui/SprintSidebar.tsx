@@ -333,7 +333,15 @@ function TicketRow(props: {
         >
           <span className={`dot ${STATUS_DOT[ticket.status]}`} aria-hidden="true" />
           <span className="copy">
-            <span className="row-title">{key && <span className="key">{key}</span>}{ticket.title}</span>
+            <span className="row-line">
+              <span className="row-title">{key && <span className="key">{key}</span>}{ticket.title}</span>
+              {/* On the title line, so the row's facts never push it out of view. */}
+              {pendingProposalCount > 0 && (
+                <span className="draft-pill" title="Assistant drafts waiting for your review">
+                  {pendingProposalCount === 1 ? "draft" : `${pendingProposalCount} drafts`}
+                </span>
+              )}
+            </span>
             <span className="row-sub">
               {ticket.assignee ? <span className="who">{ticket.assignee}</span> : <span className="warn">unassigned</span>}
               <span>{STATUS_LABEL[ticket.status].toLowerCase()}</span>
@@ -349,11 +357,6 @@ function TicketRow(props: {
               {risks.map((risk, index) => (
                 <span key={index} className={riskTone(risk.kind)} title={risk.detail}>{RISK_LABEL[risk.kind].toLowerCase()}</span>
               ))}
-              {pendingProposalCount > 0 && (
-                <span className="draft" title="Suggestions waiting for review">
-                  {pendingProposalCount} {pendingProposalCount === 1 ? "suggestion" : "suggestions"}
-                </span>
-              )}
               {delivery.checking && <span className="warn">checking…</span>}
             </span>
           </span>

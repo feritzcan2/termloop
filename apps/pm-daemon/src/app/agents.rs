@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex, MutexGuard, PoisonError};
+use std::time::Duration;
 
 use serde_json::{Value, json};
 use termloop_pm::agent::{
@@ -25,6 +26,9 @@ const EXITED_SESSIONS_KEPT: usize = 16;
 /// A skill run is unattended and calls only its approved PM tools; any
 /// other tool would wait for a person, so nothing else is pre-approved.
 const SKILL_RUN_PERMISSION: &str = "default";
+/// How long a description update keeps running after its draft, so its
+/// closing reply reaches the terminal.
+const STOP_AFTER_DRAFT: Duration = Duration::from_secs(20);
 
 #[derive(Clone)]
 pub(crate) struct AgentRecord {
@@ -36,6 +40,8 @@ pub(crate) struct AgentRecord {
     pub(crate) check_id: Option<String>,
     /// The skill run a skill-run agent works for.
     pub(crate) skill: Option<SkillRunContext>,
+    /// A description update: its work ends with the draft it proposes.
+    ends_with_draft: bool,
     pub(crate) started_at_epoch_ms: u64,
     pub(crate) exited_at_epoch_ms: Option<u64>,
     /// The bearer the agent's MCP client sends; never logged or returned.
@@ -61,6 +67,7 @@ impl AgentRecord {
             focus_ticket_id,
             check_id,
             skill: None,
+            ends_with_draft: false,
             started_at_epoch_ms: termloop_platform::current_epoch_ms(),
             exited_at_epoch_ms: None,
             mcp_token,
@@ -134,6 +141,18 @@ impl AgentRegistry {
                 };
                 (context, record.check_id.clone())
             })
+    }
+
+    /// The running description update holding this MCP bearer.
+    fn draft_session(&self, bearer: &str) -> Option<String> {
+        self.lock()
+            .values()
+            .find(|record| {
+                record.running()
+                    && record.ends_with_draft
+                    && constant_time_equal(record.mcp_token.as_bytes(), bearer.as_bytes())
+            })
+            .map(|record| record.session_id.clone())
     }
 
     /// The running agent session of a skill run, when it has one.
@@ -242,7 +261,28 @@ pub(crate) fn launch_assistant(
             task,
         )?
     };
-    launch_profile(state, project_id, &profile, focus_ticket_id, None, None)
+    launch_profile_with(
+        state,
+        project_id,
+        &profile,
+        focus_ticket_id,
+        None,
+        None,
+        task == AssistantTask::UpdateDescription,
+    )
+}
+
+/// Stops a description update once the draft it proposed has landed; the
+/// draft waits on the ticket, so the session has nothing left to do.
+pub(crate) fn stop_after_draft(state: &AppState, bearer: &str) {
+    let Some(session) = state.agents.draft_session(bearer) else {
+        return;
+    };
+    let state = state.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(STOP_AFTER_DRAFT).await;
+        let _ = stop(&state, &session);
+    });
 }
 
 /// The model a delivery check launches with. One the provider does not
@@ -266,6 +306,26 @@ pub(crate) fn launch_profile(
     focus_ticket_id: Option<&str>,
     check_id: Option<&str>,
     skill: Option<SkillRunContext>,
+) -> Result<AgentRecord, ControlError> {
+    launch_profile_with(
+        state,
+        project_id,
+        profile,
+        focus_ticket_id,
+        check_id,
+        skill,
+        false,
+    )
+}
+
+fn launch_profile_with(
+    state: &AppState,
+    project_id: &str,
+    profile: &PmAgentProfile,
+    focus_ticket_id: Option<&str>,
+    check_id: Option<&str>,
+    skill: Option<SkillRunContext>,
+    ends_with_draft: bool,
 ) -> Result<AgentRecord, ControlError> {
     let mode = profile.mode;
     let (settings, folder) = {
@@ -333,6 +393,7 @@ pub(crate) fn launch_profile(
     );
     record.mcp_config = Some(config_path.clone());
     record.skill = skill;
+    record.ends_with_draft = ends_with_draft;
     // Registered before the spawn, so the agent's first MCP call is known.
     state.agents.insert(record.clone());
     if let Err(error) = termloop_agent_runtime::spawn_agent_terminal(
@@ -426,5 +487,38 @@ pub(crate) fn publish_check(state: &AppState, check: &DeliveryCheck) {
 pub(crate) fn remove_agent_files(state: &AppState) {
     for path in state.agents.config_files() {
         let _ = termloop_platform::remove_file_if_present(&path);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn record(session_id: &str, token: &str, ends_with_draft: bool) -> AgentRecord {
+        let mut record = AgentRecord::new(
+            session_id.to_owned(),
+            "p1".to_owned(),
+            PmAgentMode::Assistant,
+            "claude".to_owned(),
+            Some("t1".to_owned()),
+            None,
+            token.to_owned(),
+        );
+        record.ends_with_draft = ends_with_draft;
+        record
+    }
+
+    #[test]
+    fn only_a_running_description_update_ends_with_its_draft() {
+        let agents = AgentRegistry::default();
+        agents.insert(record("brief", "token-brief", false));
+        agents.insert(record("update", "token-update", true));
+        assert_eq!(agents.draft_session("token-brief"), None);
+        assert_eq!(
+            agents.draft_session("token-update").as_deref(),
+            Some("update")
+        );
+        agents.mark_exited("update");
+        assert_eq!(agents.draft_session("token-update"), None);
     }
 }

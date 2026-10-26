@@ -93,7 +93,7 @@ describe("left sprint rail", () => {
     expect(head.querySelector(".meta")!.textContent).toBe("1/2");
     expect(view.container.querySelector(".pm-other-sprints")!.textContent).toBe("Other sprints2");
     expect(view.container.textContent).not.toContain("Sprint 13");
-    expect(view.container.querySelector(".row-sub .draft")!.textContent).toBe("2 suggestions");
+    expect(view.container.querySelector(".row-line .draft-pill")!.textContent).toBe("2 drafts");
   });
 });
 

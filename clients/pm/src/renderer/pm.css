@@ -193,7 +193,9 @@ code { font: 11px var(--font-mono); background: var(--bg-raised); padding: 1px 5
 .row-sub .codex { color: var(--codex); }
 .row-sub .warn { color: var(--warning); }
 .row-sub .bad { color: var(--danger); }
-.row-sub .draft { color: var(--success); }
+.row-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.row-line .row-title { min-width: 0; }
+.draft-pill { flex: none; padding: 0 5px; border: 1px solid rgba(92, 201, 149, .45); border-radius: 3px; background: rgba(92, 201, 149, .1); color: var(--success); font: 600 9px/13px var(--font-mono); }
 
 .group { margin: 0 4px; padding: 2px 3px 4px; border: 1px solid var(--rule); border-radius: 9px; background: rgba(255, 255, 255, .016); }
 .group.focused { box-shadow: inset 2px 0 0 var(--st-working); }
