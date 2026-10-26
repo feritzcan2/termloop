@@ -9,8 +9,9 @@ use termloop_providers::{
 
 use super::{sprint, store, ticket};
 use crate::{
-    JiraChange, JiraPullOutcome, JiraSource, JiraSprintRead, JiraWriteOutcome, NewTicket, PmError,
-    PmStore, ProjectSources, SprintState, TicketStatus, apply_jira_write, read_jira_issue_state,
+    JiraChange, JiraPullOutcome, JiraSource, JiraSprintImportOutcome, JiraSprintImportRead,
+    JiraSprintRead, JiraWriteOutcome, NewTicket, PmError, PmStore, ProjectSources, SprintState,
+    TicketStatus, apply_jira_write, read_jira_issue_state, read_jira_sprint_import,
     read_jira_sprints,
 };
 
@@ -267,6 +268,158 @@ fn a_failed_stale_or_unsupported_pull_changes_nothing() {
         JiraPullOutcome::Stale
     );
     assert_eq!(store.board("p1").unwrap().sprints, after.sprints);
+}
+
+fn import(
+    store: &mut PmStore,
+    jira_sprint_id: u64,
+    sprints: Vec<JiraSprint>,
+    issues: Option<Vec<JiraIssueSnapshot>>,
+) -> Result<JiraSprintImportOutcome, PmError> {
+    let plan = store.plan_jira_sprint_pull("p1").unwrap().unwrap();
+    let read = JiraSprintImportRead {
+        sprints: JiraSprintListResult::Sprints {
+            sprints,
+            truncated: false,
+        },
+        issues: issues.map(|issues| JiraSearchResult {
+            issues,
+            truncated: false,
+        }),
+    };
+    store.apply_jira_sprint_import(&plan, jira_sprint_id, Ok(read))
+}
+
+#[test]
+fn an_imported_future_sprint_takes_its_issues_and_syncs_again() {
+    let mut store = store();
+    connect(&mut store, Some(7));
+    let future = jira_sprint(12, "Sprint 12", JiraSprintState::Future);
+    let JiraSprintImportOutcome::Applied { sprint_id, changes } = import(
+        &mut store,
+        12,
+        vec![future.clone()],
+        Some(vec![issue("PAY-1", "One"), issue("PAY-2", "Two")]),
+    )
+    .unwrap() else {
+        panic!("applied");
+    };
+    assert_eq!(changes.sprints_created, vec![sprint_id.clone()]);
+    assert_eq!(changes.tickets_created.len(), 2);
+    let board = store.board("p1").unwrap();
+    let mirror = board.sprints.iter().find(|s| s.id == sprint_id).unwrap();
+    assert_eq!(
+        (
+            mirror.state,
+            mirror.jira_sprint_id,
+            mirror.activated_at_epoch_ms
+        ),
+        (SprintState::Planned, Some(12), None)
+    );
+    assert!(
+        board
+            .tickets
+            .iter()
+            .all(|ticket| ticket.sprint_id.as_deref() == Some(sprint_id.as_str()))
+    );
+
+    // PAY-2 left the sprint in Jira; a sync returns it to the backlog.
+    let JiraSprintImportOutcome::Applied {
+        sprint_id: synced,
+        changes,
+    } = import(
+        &mut store,
+        12,
+        vec![future.clone()],
+        Some(vec![issue("PAY-1", "One")]),
+    )
+    .unwrap()
+    else {
+        panic!("applied");
+    };
+    assert_eq!(synced, sprint_id);
+    assert!(changes.sprints_created.is_empty() && changes.tickets_created.is_empty());
+    assert_eq!(changes.tickets_moved.len(), 1);
+    let board = store.board("p1").unwrap();
+    let pay_2 = board
+        .tickets
+        .iter()
+        .find(|ticket| ticket.jira_issue_key().as_deref() == Some("PAY-2"))
+        .unwrap();
+    assert_eq!(pay_2.sprint_id, None);
+
+    // A sprint the board does not list as open changes nothing.
+    let before = store.board("p1").unwrap();
+    assert_eq!(
+        import(
+            &mut store,
+            13,
+            vec![future, jira_sprint(13, "Old", JiraSprintState::Closed)],
+            None
+        )
+        .unwrap(),
+        JiraSprintImportOutcome::NotListed
+    );
+    assert_eq!(store.board("p1").unwrap(), before);
+}
+
+#[test]
+fn an_imported_active_sprint_starts_when_jira_says_and_is_the_only_active_one() {
+    let mut store = store();
+    connect(&mut store, Some(7));
+    let local = sprint(&mut store, "p1", "Local");
+    store.activate_sprint(&local.id).unwrap();
+    let active = JiraSprint {
+        start_epoch_ms: Some(500),
+        ..jira_sprint(11, "Sprint 11", JiraSprintState::Active)
+    };
+    let JiraSprintImportOutcome::Applied { sprint_id, .. } =
+        import(&mut store, 11, vec![active.clone()], Some(vec![])).unwrap()
+    else {
+        panic!("applied");
+    };
+    let board = store.board("p1").unwrap();
+    let state = |id: &str| board.sprints.iter().find(|s| s.id == id).unwrap().clone();
+    assert_eq!(state(&local.id).state, SprintState::Planned);
+    let mirror = state(&sprint_id);
+    assert_eq!(
+        (mirror.state, mirror.activated_at_epoch_ms),
+        (SprintState::Active, Some(500))
+    );
+
+    // A pull keeps Jira's start, and an earlier mirror takes it too.
+    let moved = JiraSprint {
+        start_epoch_ms: Some(700),
+        ..active
+    };
+    pull(&mut store, read(vec![moved], Some(vec![])));
+    let board = store.board("p1").unwrap();
+    let mirror = board.sprints.iter().find(|s| s.id == sprint_id).unwrap();
+    assert_eq!(mirror.activated_at_epoch_ms, Some(700));
+
+    // A mirror closed in the PM is not imported again.
+    store.close_sprint(&sprint_id, None).unwrap();
+    let moved = JiraSprint {
+        start_epoch_ms: Some(700),
+        ..jira_sprint(11, "Sprint 11", JiraSprintState::Active)
+    };
+    assert!(matches!(
+        import(&mut store, 11, vec![moved], Some(vec![])),
+        Err(PmError::Constraint(_))
+    ));
+}
+
+#[test]
+fn an_import_reads_only_an_open_listed_sprints_issues() {
+    let jira = FakeJira::new();
+    let mut store = store();
+    connect(&mut store, Some(7));
+    let plan = store.plan_jira_sprint_pull("p1").unwrap().unwrap();
+    let read = read_jira_sprint_import(&jira, &plan, 99, CREDENTIAL).unwrap();
+    assert_eq!(read.issues, None);
+    let read = read_jira_sprint_import(&jira, &plan, 11, CREDENTIAL).unwrap();
+    assert_eq!(read.issues.unwrap().issues.len(), 1);
+    assert_eq!(jira.calls(), vec!["sprints 7", "sprints 7", "issues 11"]);
 }
 
 /// A Jira double that records every call.

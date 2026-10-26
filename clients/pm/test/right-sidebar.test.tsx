@@ -15,6 +15,7 @@ import { boardTicket, sprint } from "./fixtures.js";
 import { render } from "./render.js";
 
 const noop = () => undefined;
+const NO_JIRA = { connected: false, boardId: null, view: undefined, onLoad: noop, onSetBoard: noop, onImport: noop, onOpenSettings: noop };
 let cleanup: (() => void) | undefined;
 afterEach(() => { cleanup?.(); cleanup = undefined; });
 
@@ -166,6 +167,7 @@ describe("sprints panel", () => {
         onSelectSprint={onSelectSprint}
         onActivateSprint={onActivateSprint}
         onCreateSprint={noop}
+        jira={NO_JIRA}
       />,
     );
     cleanup = view.unmount;

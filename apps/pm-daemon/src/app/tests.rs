@@ -729,7 +729,7 @@ fn jira_reason(error: &ProtocolError) -> PmJiraFailure {
 
 type ParamsFor = fn(&str) -> Value;
 
-const JIRA_BROWSE_READS: [(&str, ParamsFor); 4] = [
+const JIRA_BROWSE_READS: [(&str, ParamsFor); 6] = [
     (
         "pm_jira_projects_read",
         |project| json!({ "projectId": project }),
@@ -746,7 +746,75 @@ const JIRA_BROWSE_READS: [(&str, ParamsFor); 4] = [
         "pm_jira_search",
         |project| json!({ "projectId": project, "preset": "assigned", "jiraProjectKey": null }),
     ),
+    (
+        "pm_jira_boards_read",
+        |project| json!({ "projectId": project }),
+    ),
+    (
+        "pm_jira_sprints_read",
+        |project| json!({ "projectId": project }),
+    ),
 ];
+
+#[tokio::test]
+async fn a_jira_sprint_import_needs_a_board_and_a_stored_token() {
+    let fixture = fixture();
+    let state = &fixture.state;
+    let project_id = project(state).await;
+    let import = || {
+        call(
+            state,
+            "pm_jira_sprint_import",
+            json!({ "projectId": project_id, "jiraSprintId": 7919 }),
+        )
+    };
+    assert_eq!(
+        call(
+            state,
+            "pm_jira_sprint_import",
+            json!({ "projectId": "no-such-project", "jiraSprintId": 7919 }),
+        )
+        .await,
+        Err(ErrorCode::NotFound)
+    );
+    assert_eq!(
+        import().await.unwrap()["outcome"],
+        json!({ "kind": "failed", "reason": "notConfigured" })
+    );
+
+    let source = |board: Value| {
+        json!({ "projectId": project_id, "jira": {
+            "siteUrl": "https://acme.atlassian.net", "boardId": board,
+            "accountEmail": "ada@acme.example", "credentialHandle": "pm-jira-missing",
+        }})
+    };
+    call(state, "pm_sources_set", source(Value::Null))
+        .await
+        .unwrap();
+    // Without a board there are no sprints to list or import.
+    let error = call_error(
+        state,
+        "pm_jira_sprints_read",
+        json!({ "projectId": project_id }),
+    )
+    .await;
+    assert_eq!(jira_reason(&error), PmJiraFailure::NotConfigured);
+    assert_eq!(
+        import().await.unwrap()["outcome"],
+        json!({ "kind": "failed", "reason": "notConfigured" })
+    );
+
+    call(state, "pm_sources_set", source(json!(84)))
+        .await
+        .unwrap();
+    let mut events = state.events.subscribe();
+    assert_eq!(
+        import().await.unwrap()["outcome"],
+        json!({ "kind": "failed", "reason": "credentialMissing" })
+    );
+    // A failed import changes nothing, so no board event is published.
+    assert!(events.try_recv().is_err());
+}
 
 #[tokio::test]
 async fn jira_browse_reads_need_a_source_and_a_stored_token() {

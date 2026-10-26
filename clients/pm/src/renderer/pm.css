@@ -411,6 +411,16 @@ h3.s .r { margin-left: auto; color: var(--dimmer); font: 400 10px/1 var(--font-m
 .sprint-row .done { color: var(--dim); font: 600 10px/1 var(--font-mono); }
 .pm-activate { position: absolute; top: 50%; right: 8px; transform: translateY(-50%); opacity: 0; background: var(--bg-sidebar); }
 .pm-sprint-item:hover .pm-activate, .pm-activate:focus-visible { opacity: 1; }
+.chip svg { width: 10px; height: 10px; }
+.jira-tag { display: inline-flex; flex: none; align-items: center; gap: 3px; color: var(--accent); }
+.jira-tag svg { width: 9px; height: 9px; }
+.jira-subhead-actions { display: inline-flex; align-items: center; gap: 2px; order: 2; text-transform: none; letter-spacing: 0; }
+.jira-subhead-actions .icb { width: 20px; height: 20px; }
+.jira-sprint-item { position: relative; }
+.jira-sprint-row:disabled { opacity: 1; cursor: default; }
+.jira-sprint-row:disabled .row-title { color: var(--text-secondary); }
+.jira-sprint-action { position: absolute; top: 50%; right: 8px; transform: translateY(-50%); }
+.jira-error { color: var(--danger); }
 .pm-other-sprints { width: 100%; margin-top: 4px; border: 0; background: none; cursor: pointer; }
 .pm-other-sprints:hover { color: var(--text-secondary); }
 

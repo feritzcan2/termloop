@@ -79,6 +79,58 @@ describe("PmController", () => {
     expect(store.getState().jiraDialog).toMatchObject({ diff: fresh, staleNotice: true, result: undefined, loading: false });
   });
 
+  it("reads the board's Jira sprints, or the boards to choose from when none is chosen", async () => {
+    const jira = { siteUrl: "https://acme.atlassian.net", boardId: null, accountEmail: "pm@acme.test", credentialHandle: "handle-1" };
+    const sprints = { projectId: "project-1", boardId: 310, sprintsSupported: true, truncated: false, sprints: [] };
+    const boards = { projectId: "project-1", truncated: false, boards: [{ id: 310, name: "UK", kind: "scrum", location: null }] };
+    const bridge = fakeBridge((method, params) => {
+      if (method === "pm_jira_boards_read") return ok(boards);
+      if (method === "pm_jira_sprints_read") return ok(sprints);
+      if (method === "pm_sources_set") return ok({ projectId: "project-1", jira: (params as { jira: unknown }).jira, github: null, azureDevOps: null });
+      return { ok: false, error: { code: "unavailable", message: "offline" } };
+    });
+    const store = createPmStore({ projectId: "project-1", sources: { projectId: "project-1", jira, github: null, azureDevOps: null } });
+    const controller = new PmController(bridge, store);
+    await controller.loadJiraSprints();
+    expect(store.getState().jiraSprints).toMatchObject({ loading: false, boards, sprints: undefined });
+    await controller.setJiraBoard(310);
+    // Only the board changes; the token stays a handle.
+    expect(bridge.calls.find((call) => call.method === "pm_sources_set")?.params).toEqual({ projectId: "project-1", jira: { ...jira, boardId: 310 } });
+    expect(store.getState().jiraSprints).toMatchObject({ loading: false, sprints, boards: undefined });
+    await controller.loadJiraSprints(true);
+    expect(store.getState().jiraSprints).toMatchObject({ boards, sprints });
+    expect(bridge.calls.map((call) => call.method).filter((method) => method.startsWith("pm_jira"))).toEqual([
+      "pm_jira_boards_read", "pm_jira_sprints_read", "pm_jira_boards_read",
+    ]);
+  });
+
+  it("shows a failed Jira sprint read in the panel, not as a notice", async () => {
+    const jira = { siteUrl: "https://acme.atlassian.net", boardId: 310, accountEmail: "pm@acme.test", credentialHandle: "handle-1" };
+    const bridge = fakeBridge(() => ({ ok: false, error: { code: "operationFailed", message: "Jira refused the token." } }));
+    const store = createPmStore({ projectId: "project-1", sources: { projectId: "project-1", jira, github: null, azureDevOps: null } });
+    await new PmController(bridge, store).loadJiraSprints();
+    expect(store.getState()).toMatchObject({ notice: undefined, jiraSprints: { loading: false, error: "Jira refused the token." } });
+  });
+
+  it("imports a Jira sprint, opens it, and rereads the board and the Jira sprints", async () => {
+    const jira = { siteUrl: "https://acme.atlassian.net", boardId: 310, accountEmail: "pm@acme.test", credentialHandle: "handle-1" };
+    const bridge = fakeBridge((method) => {
+      if (method === "pm_jira_sprint_import") {
+        return ok({ projectId: "project-1", outcome: { kind: "applied", sprintId: "sprint-9", ticketsCreated: ["t1", "t2"], ticketsMoved: [], skipped: 0 } });
+      }
+      return { ok: false, error: { code: "unavailable", message: "offline" } };
+    });
+    const store = createPmStore({ projectId: "project-1", sources: { projectId: "project-1", jira, github: null, azureDevOps: null } });
+    const notices: string[] = [];
+    store.subscribe((state) => { if (state.notice) notices.push(state.notice.text); });
+    await new PmController(bridge, store).importJiraSprint(7919);
+    expect(bridge.calls[0]).toEqual({ method: "pm_jira_sprint_import", params: { projectId: "project-1", jiraSprintId: 7919 } });
+    expect(store.getState().selectedSprintId).toBe("sprint-9");
+    expect(notices).toContain("Jira sprint imported: 2 new, 0 moved.");
+    expect(store.getState().jiraSprints?.importing).toBeUndefined();
+    expect(bridge.calls.map((call) => call.method)).toEqual(expect.arrayContaining(["pm_board_read", "pm_jira_sprints_read"]));
+  });
+
   it("stores a typed Jira token in the credential store and sends only its handle with the sources", async () => {
     const bridge = fakeBridge((method) => {
       if (method === "pm_credential_store") return ok({ credentialHandle: "handle-1" });

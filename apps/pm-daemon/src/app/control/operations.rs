@@ -9,8 +9,9 @@ use termloop_pm::{PM_AGENT_PROVIDERS, PmError, PmSettings, SettingsEdit, valid_s
 use termloop_pm_contract::pm::{
     PmAgentCatalog, PmAgentCatalogPermissions, PmAgentCatalogProvider, PmAgentLaunchParams,
     PmAgentStopParams, PmAssistantTask, PmCheckStartParams, PmChecksReadParams,
-    PmCredentialClearParams, PmCredentialStoreParams, PmJiraApplyParams, PmProjectCreateParams,
-    PmProjectRef, PmProjectUpdateParams, PmSettingsUpdateParams, PmTicketRef,
+    PmCredentialClearParams, PmCredentialStoreParams, PmJiraApplyParams, PmJiraSprintImportParams,
+    PmProjectCreateParams, PmProjectRef, PmProjectUpdateParams, PmSettingsUpdateParams,
+    PmTicketRef,
 };
 
 use super::dispatch::{check_value, convert, nullable_string, parse, require_project, to_value};
@@ -112,6 +113,15 @@ pub(super) async fn jira_pull(state: &AppState, params: &Value) -> Result<Value,
     let params: PmProjectRef = parse(params)?;
     require_project(&state.store.lock(), &params.project_id)?;
     jira::pull(state, &params.project_id).await
+}
+
+pub(super) async fn jira_sprint_import(
+    state: &AppState,
+    params: &Value,
+) -> Result<Value, ControlError> {
+    let params: PmJiraSprintImportParams = parse(params)?;
+    require_project(&state.store.lock(), &params.project_id)?;
+    jira::import_sprint(state, &params.project_id, params.jira_sprint_id).await
 }
 
 pub(super) async fn jira_diff_read(

@@ -127,7 +127,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:d80c53767b4b4ecb89a376db1f1a43fcf6572234c23b9e0563d715089bcc897a";
+    "sha256:5edd96025c8e84822eadc611d75213cb59a5b23cd54f5f46daa972ef18e10b26";
 pub const CAPABILITY_SCOPE: &str = "pm.full";
 pub const METHODS: &[&str] = &[
     "pm_system_version",
@@ -177,6 +177,9 @@ pub const METHODS: &[&str] = &[
     "pm_jira_statuses_read",
     "pm_jira_favourite_filters_read",
     "pm_jira_search",
+    "pm_jira_boards_read",
+    "pm_jira_sprints_read",
+    "pm_jira_sprint_import",
     "pm_agent_launch",
     "pm_agent_list",
     "pm_agent_stop",
@@ -2376,6 +2379,110 @@ pub struct PmPlaybookStepMarkParams {
     pub passed: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmJiraBoard {
+    pub id: u64,
+    pub name: String,
+    pub kind: String,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub location: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmJiraBoardsReadResult {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    pub boards: Vec<PmJiraBoard>,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PmJiraSprintState {
+    #[serde(rename = "active")]
+    Active,
+    #[serde(rename = "future")]
+    Future,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmJiraBoardSprint {
+    #[serde(rename = "jiraSprintId")]
+    pub jira_sprint_id: u64,
+    pub name: String,
+    pub state: PmJiraSprintState,
+    #[serde(
+        rename = "startEpochMs",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub start_epoch_ms: Option<u64>,
+    #[serde(
+        rename = "endEpochMs",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub end_epoch_ms: Option<u64>,
+    #[serde(
+        rename = "sprintId",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub sprint_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmJiraSprintsReadResult {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    #[serde(rename = "boardId")]
+    pub board_id: u64,
+    #[serde(rename = "sprintsSupported")]
+    pub sprints_supported: bool,
+    pub sprints: Vec<PmJiraBoardSprint>,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmJiraSprintImportParams {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    #[serde(rename = "jiraSprintId")]
+    pub jira_sprint_id: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind", deny_unknown_fields)]
+pub enum PmJiraSprintImportOutcome {
+    #[serde(rename = "applied")]
+    Applied {
+        #[serde(rename = "sprintId")]
+        sprint_id: String,
+        #[serde(rename = "ticketsCreated")]
+        tickets_created: Vec<String>,
+        #[serde(rename = "ticketsMoved")]
+        tickets_moved: Vec<String>,
+        skipped: u64,
+    },
+    #[serde(rename = "stale")]
+    Stale {},
+    #[serde(rename = "sprintsUnsupported")]
+    SprintsUnsupported {},
+    #[serde(rename = "notListed")]
+    NotListed {},
+    #[serde(rename = "failed")]
+    Failed { reason: PmJiraFailure },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmJiraSprintImportResult {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    pub outcome: PmJiraSprintImportOutcome,
+}
+
 pub type PmSystemVersionParams = EmptyParams;
 pub type PmProjectListParams = EmptyParams;
 pub type PmProjectCreateResult = PmProject;
@@ -2420,6 +2527,8 @@ pub type PmJiraDiffReadParams = PmTicketRef;
 pub type PmJiraDiffReadResult = PmJiraDiff;
 pub type PmJiraProjectsReadParams = PmProjectRef;
 pub type PmJiraFavouriteFiltersReadParams = PmProjectRef;
+pub type PmJiraBoardsReadParams = PmProjectRef;
+pub type PmJiraSprintsReadParams = PmProjectRef;
 pub type PmAgentLaunchResult = PmAgentSession;
 pub type PmAgentListParams = PmProjectRef;
 pub type PmAgentCatalogReadParams = EmptyParams;
@@ -2630,6 +2739,9 @@ fn validate_method(value: &Value) -> bool {
             "pm_jira_statuses_read",
             "pm_jira_favourite_filters_read",
             "pm_jira_search",
+            "pm_jira_boards_read",
+            "pm_jira_sprints_read",
+            "pm_jira_sprint_import",
             "pm_agent_launch",
             "pm_agent_list",
             "pm_agent_stop",
@@ -8377,6 +8489,336 @@ fn validate_pm_playbook_step_mark_params(value: &Value) -> bool {
 }
 
 #[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_jira_board(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("id").is_some_and(|field| {
+            field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 1_u64))
+            })
+        }) && object.get("name").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 256)
+        }) && object.get("kind").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+        }) && object.get("location").is_some_and(|field| {
+            (field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 256)
+                || field.is_null())
+        }) && object
+            .keys()
+            .all(|key| ["id", "name", "kind", "location"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_jira_boards_read_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("projectId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("boards").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() <= 500 && items.iter().all(|item| validate_pm_jira_board(item))
+            })
+        }) && object
+            .get("truncated")
+            .is_some_and(|field| field.is_boolean())
+            && object
+                .keys()
+                .all(|key| ["projectId", "boards", "truncated"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_jira_sprint_state(value: &Value) -> bool {
+    value
+        .as_str()
+        .is_some_and(|text| ["active", "future"].contains(&text))
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_jira_board_sprint(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("jiraSprintId").is_some_and(|field| {
+            field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 1_u64))
+            })
+        }) && object.get("name").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 256)
+        }) && object
+            .get("state")
+            .is_some_and(|field| validate_pm_jira_sprint_state(field))
+            && object.get("startEpochMs").is_some_and(|field| {
+                (field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                }) || field.is_null())
+            })
+            && object.get("endEpochMs").is_some_and(|field| {
+                (field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                }) || field.is_null())
+            })
+            && object.get("sprintId").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 1
+                        && text.chars().count() <= 128
+                        && contract_pattern_matches("^[!-~]+$", text)
+                }) || field.is_null())
+            })
+            && object.keys().all(|key| {
+                [
+                    "jiraSprintId",
+                    "name",
+                    "state",
+                    "startEpochMs",
+                    "endEpochMs",
+                    "sprintId",
+                ]
+                .contains(&key.as_str())
+            })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_jira_sprints_read_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("projectId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("boardId").is_some_and(|field| {
+            field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 1_u64))
+            })
+        }) && object
+            .get("sprintsSupported")
+            .is_some_and(|field| field.is_boolean())
+            && object.get("sprints").is_some_and(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() <= 100
+                        && items.iter().all(|item| validate_pm_jira_board_sprint(item))
+                })
+            })
+            && object
+                .get("truncated")
+                .is_some_and(|field| field.is_boolean())
+            && object.keys().all(|key| {
+                [
+                    "projectId",
+                    "boardId",
+                    "sprintsSupported",
+                    "sprints",
+                    "truncated",
+                ]
+                .contains(&key.as_str())
+            })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_jira_sprint_import_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("projectId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("jiraSprintId").is_some_and(|field| {
+            field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 1_u64))
+            })
+        }) && object
+            .keys()
+            .all(|key| ["projectId", "jiraSprintId"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_jira_sprint_import_outcome(value: &Value) -> bool {
+    (value.as_object().is_some_and(|object| {
+        object
+            .get("kind")
+            .is_some_and(|field| field == &serde_json::json!("applied"))
+            && object.get("sprintId").is_some_and(|field| {
+                field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 1
+                        && text.chars().count() <= 128
+                        && contract_pattern_matches("^[!-~]+$", text)
+                })
+            })
+            && object.get("ticketsCreated").is_some_and(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() >= 0
+                        && items.len() <= 100
+                        && json_array_unique(items)
+                        && items.iter().all(|item| {
+                            item.as_str().is_some_and(|text| {
+                                text.chars().count() >= 1
+                                    && text.chars().count() <= 128
+                                    && contract_pattern_matches("^[!-~]+$", text)
+                            })
+                        })
+                })
+            })
+            && object.get("ticketsMoved").is_some_and(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() >= 0
+                        && items.len() <= 10000
+                        && json_array_unique(items)
+                        && items.iter().all(|item| {
+                            item.as_str().is_some_and(|text| {
+                                text.chars().count() >= 1
+                                    && text.chars().count() <= 128
+                                    && contract_pattern_matches("^[!-~]+$", text)
+                            })
+                        })
+                })
+            })
+            && object.get("skipped").is_some_and(|field| {
+                field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                })
+            })
+            && object.keys().all(|key| {
+                [
+                    "kind",
+                    "sprintId",
+                    "ticketsCreated",
+                    "ticketsMoved",
+                    "skipped",
+                ]
+                .contains(&key.as_str())
+            })
+    }) || value.as_object().is_some_and(|object| {
+        object
+            .get("kind")
+            .is_some_and(|field| field == &serde_json::json!("stale"))
+            && object.keys().all(|key| ["kind"].contains(&key.as_str()))
+    }) || value.as_object().is_some_and(|object| {
+        object
+            .get("kind")
+            .is_some_and(|field| field == &serde_json::json!("sprintsUnsupported"))
+            && object.keys().all(|key| ["kind"].contains(&key.as_str()))
+    }) || value.as_object().is_some_and(|object| {
+        object
+            .get("kind")
+            .is_some_and(|field| field == &serde_json::json!("notListed"))
+            && object.keys().all(|key| ["kind"].contains(&key.as_str()))
+    }) || value.as_object().is_some_and(|object| {
+        object
+            .get("kind")
+            .is_some_and(|field| field == &serde_json::json!("failed"))
+            && object
+                .get("reason")
+                .is_some_and(|field| validate_pm_jira_failure(field))
+            && object
+                .keys()
+                .all(|key| ["kind", "reason"].contains(&key.as_str()))
+    }))
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_jira_sprint_import_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("projectId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object
+            .get("outcome")
+            .is_some_and(|field| validate_pm_jira_sprint_import_outcome(field))
+            && object
+                .keys()
+                .all(|key| ["projectId", "outcome"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
     clippy::absurd_extreme_comparisons,
     clippy::len_zero,
     clippy::redundant_closure
@@ -8570,6 +9012,18 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
         "pm_jira_search" => {
             serde_json::from_value::<PmJiraSearchParams>(params.clone()).is_ok()
                 && validate_pm_jira_search_params(params)
+        }
+        "pm_jira_boards_read" => {
+            serde_json::from_value::<PmJiraBoardsReadParams>(params.clone()).is_ok()
+                && validate_pm_project_ref(params)
+        }
+        "pm_jira_sprints_read" => {
+            serde_json::from_value::<PmJiraSprintsReadParams>(params.clone()).is_ok()
+                && validate_pm_project_ref(params)
+        }
+        "pm_jira_sprint_import" => {
+            serde_json::from_value::<PmJiraSprintImportParams>(params.clone()).is_ok()
+                && validate_pm_jira_sprint_import_params(params)
         }
         "pm_agent_launch" => {
             serde_json::from_value::<PmAgentLaunchParams>(params.clone()).is_ok()
@@ -8837,6 +9291,18 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         "pm_jira_search" => {
             serde_json::from_value::<PmJiraSearchResult>(result.clone()).is_ok()
                 && validate_pm_jira_search_result(result)
+        }
+        "pm_jira_boards_read" => {
+            serde_json::from_value::<PmJiraBoardsReadResult>(result.clone()).is_ok()
+                && validate_pm_jira_boards_read_result(result)
+        }
+        "pm_jira_sprints_read" => {
+            serde_json::from_value::<PmJiraSprintsReadResult>(result.clone()).is_ok()
+                && validate_pm_jira_sprints_read_result(result)
+        }
+        "pm_jira_sprint_import" => {
+            serde_json::from_value::<PmJiraSprintImportResult>(result.clone()).is_ok()
+                && validate_pm_jira_sprint_import_result(result)
         }
         "pm_agent_launch" => {
             serde_json::from_value::<PmAgentLaunchResult>(result.clone()).is_ok()

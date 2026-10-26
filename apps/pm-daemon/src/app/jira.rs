@@ -4,8 +4,9 @@
 
 use serde_json::{Value, json};
 use termloop_pm::{
-    FactRead, FactsObservation, JiraObservation, JiraPullOutcome, JiraStatusCategory,
-    JiraWriteOutcome, PmStore, apply_jira_write, read_jira_issue_state, read_jira_sprints,
+    FactRead, FactsObservation, JiraObservation, JiraPullOutcome, JiraSprintImportOutcome,
+    JiraStatusCategory, JiraWriteOutcome, PmStore, apply_jira_write, read_jira_issue_state,
+    read_jira_sprint_import, read_jira_sprints,
 };
 use termloop_pm_contract::pm::{EventName, PmJiraFailure};
 use termloop_providers::{JiraCloudClient, JiraCredential, JiraSearchResult};
@@ -93,6 +94,64 @@ pub(crate) async fn pull(state: &AppState, project_id: &str) -> Result<Value, Co
             project_id,
             termloop_pm::skill::SkillEvent::JiraPulled,
         );
+    }
+    Ok(json!({ "projectId": project_id, "outcome": outcome }))
+}
+
+fn import_outcome(outcome: &JiraSprintImportOutcome) -> Value {
+    match outcome {
+        JiraSprintImportOutcome::Failed(error) => failed_outcome(&search_failure(error)),
+        JiraSprintImportOutcome::Stale => json!({ "kind": "stale" }),
+        JiraSprintImportOutcome::SprintsUnsupported => json!({ "kind": "sprintsUnsupported" }),
+        JiraSprintImportOutcome::NotListed => json!({ "kind": "notListed" }),
+        JiraSprintImportOutcome::Applied { sprint_id, changes } => json!({
+            "kind": "applied",
+            "sprintId": sprint_id,
+            "ticketsCreated": changes.tickets_created,
+            "ticketsMoved": changes.tickets_moved,
+            "skipped": changes.skipped,
+        }),
+    }
+}
+
+/// Imports one open sprint of the project's board with its issues, or syncs
+/// its mirror again, then records those issues' facts.
+pub(crate) async fn import_sprint(
+    state: &AppState,
+    project_id: &str,
+    jira_sprint_id: u64,
+) -> Result<Value, ControlError> {
+    let plan = state.store.lock().plan_jira_sprint_pull(project_id)?;
+    let outcome = match plan {
+        None => failed_outcome(&PmJiraFailure::NotConfigured),
+        Some(pull) => match credentials::resolve(&*state.credentials, &pull.credential_handle) {
+            Err(reason) => failed_outcome(&reason),
+            Ok(token) => {
+                let request = pull.clone();
+                let read = blocking(move || {
+                    let client = JiraCloudClient::new()?;
+                    let credential = JiraCredential {
+                        email: &request.account_email,
+                        api_token: token.expose(),
+                    };
+                    read_jira_sprint_import(&client, &request, jira_sprint_id, credential)
+                })
+                .await?;
+                let issues = read.as_ref().ok().and_then(|read| read.issues.clone());
+                let mut store = state.store.lock();
+                let outcome = store.apply_jira_sprint_import(&pull, jira_sprint_id, read)?;
+                if matches!(outcome, JiraSprintImportOutcome::Applied { .. })
+                    && let Some(issues) = issues
+                {
+                    record_issue_facts(&mut store, project_id, &issues);
+                }
+                import_outcome(&outcome)
+            }
+        },
+    };
+    if outcome["kind"] == "applied" {
+        state.board_changed(project_id);
+        state.fact_refresh.notify_one();
     }
     Ok(json!({ "projectId": project_id, "outcome": outcome }))
 }

@@ -29,11 +29,12 @@ pub use board::Board;
 pub use commands::{
     ChannelWatermark, CheckReport, ClosedSprint, DeletedSprint, FactRead, FactsObservation,
     JIRA_PULL_NEW_TICKETS_MAX, JiraChange, JiraIssueState, JiraObservation, JiraPullChanges,
-    JiraPullOutcome, JiraSprintPull, JiraSprintRead, JiraWriteDiff, JiraWriteOutcome,
-    JiraWriteTarget, MARKED_PASSED_EVIDENCE, NewTicket, ProposalOrigin, PullRequestsObservation,
-    RecordedCheckReport, SKILL_DISCOVERY_MAX_BYTES, SKILL_PAUSE_AFTER_FAILURES,
-    SKILL_RETRY_AFTER_MS, SKILL_SLACK_RETENTION_MS, TicketEdit, apply_jira_write,
-    read_jira_issue_state, read_jira_sprints, slack_ts_at, slack_ts_key,
+    JiraPullOutcome, JiraSprintImportOutcome, JiraSprintImportRead, JiraSprintPull, JiraSprintRead,
+    JiraWriteDiff, JiraWriteOutcome, JiraWriteTarget, MARKED_PASSED_EVIDENCE, NewTicket,
+    ProposalOrigin, PullRequestsObservation, RecordedCheckReport, SKILL_DISCOVERY_MAX_BYTES,
+    SKILL_PAUSE_AFTER_FAILURES, SKILL_RETRY_AFTER_MS, SKILL_SLACK_RETENTION_MS, TicketEdit,
+    apply_jira_write, read_jira_issue_state, read_jira_sprint_import, read_jira_sprints,
+    slack_ts_at, slack_ts_key,
 };
 pub use delivery::checks::{
     CHECK_DEADLINE_MS, CHECK_RETRY_AFTER_MS, DeliveryCheck, DeliveryCheckOutcome,

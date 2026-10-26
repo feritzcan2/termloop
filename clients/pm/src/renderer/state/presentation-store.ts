@@ -21,9 +21,11 @@ import type {
 import type { PmConnectionState } from "../../pm-api.js";
 
 export type { PmView } from "../ui/types.js";
-import type { JiraDialogView, PmView } from "../ui/types.js";
+import type { JiraDialogView, JiraSprintsView, PmView } from "../ui/types.js";
 
 export type JiraDialogState = JiraDialogView;
+
+export type JiraSprintsState = JiraSprintsView;
 
 export type PmState = {
   connection: PmConnectionState;
@@ -53,6 +55,7 @@ export type PmState = {
   suggestions: PmProposal[] | undefined;
   lastPull: PmJiraPullResult | undefined;
   pulling: boolean;
+  jiraSprints: JiraSprintsState | undefined;
   jiraDialog: JiraDialogState | undefined;
   notice: { tone: "error" | "info"; text: string } | undefined;
 };
@@ -80,6 +83,7 @@ export const initialPmState: PmState = {
   suggestions: undefined,
   lastPull: undefined,
   pulling: false,
+  jiraSprints: undefined,
   jiraDialog: undefined,
   notice: undefined,
 };

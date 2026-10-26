@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { PmBoardTicket, PmSprint } from "@termloop/pm-contract/pm";
 import { Icon } from "./icons.js";
+import { JiraSprintsSection, type JiraSprintsSectionProps } from "./JiraSprintsSection.js";
 import { SprintForm } from "./SprintSidebar.js";
 import { sprintDay, sprintPanelOrder, sprintStart, sprintTickets } from "./format.js";
 import { useLaneDrop } from "./sprint-dnd.js";
@@ -15,6 +16,8 @@ export type SprintsPanelProps = {
   onSelectSprint(sprintId: string): void;
   onActivateSprint(sprintId: string): void;
   onCreateSprint(name: string, goal: string): void;
+  /** The project's Jira board and its sprints. */
+  jira: Omit<JiraSprintsSectionProps, "sprints" | "onSelectSprint">;
 };
 
 const DATE = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" });
@@ -60,18 +63,19 @@ export function SprintsPanel(props: SprintsPanelProps) {
         </button>
       </div>
       {composing && <SprintForm onCreate={(name, goal) => { props.onCreateSprint(name, goal); setComposing(false); }} onCancel={() => setComposing(false)} />}
-      {props.sprints.length === 0 ? <p className="rail-empty">No sprints yet. Create one, or pull from Jira.</p> : (
+      {props.sprints.length === 0 ? <p className="rail-empty">No sprints yet. Create one, or import one from Jira below.</p> : (
         <>
           <div className="list sprint-rows" aria-label="Open sprints">
             {open.map(rowOf)}
             <NoSprintTarget count={sprintTickets(props.tickets, undefined).length} />
           </div>
-          {closed.length > 0 && (
-            <>
-              <div className="rail-subhead">Closed</div>
-              <div className="list" aria-label="Closed sprints">{closed.map(rowOf)}</div>
-            </>
-          )}
+        </>
+      )}
+      <JiraSprintsSection {...props.jira} sprints={props.sprints} onSelectSprint={props.onSelectSprint} />
+      {closed.length > 0 && (
+        <>
+          <div className="rail-subhead">Closed</div>
+          <div className="list" aria-label="Closed sprints">{closed.map(rowOf)}</div>
         </>
       )}
     </div>
@@ -94,7 +98,10 @@ function SprintRow(props: { sprint: PmSprint; dates: string; done: string; selec
         <span className="sq" />
         <span className="copy">
           <span className="row-title">{sprint.name}</span>
-          <span className="row-sub"><span>{props.dates}</span></span>
+          <span className="row-sub">
+            {sprint.jiraSprintId !== null && <span className="jira-tag" title="Imported from Jira"><Icon name="jira" />Jira</span>}
+            <span>{props.dates}</span>
+          </span>
         </span>
         <span className="done">{props.done}</span>
       </button>

@@ -73,6 +73,30 @@ pub struct JiraPullChanges {
     pub skipped: usize,
 }
 
+/// What one read of a single board sprint returned.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JiraSprintImportRead {
+    pub sprints: JiraSprintListResult,
+    /// The sprint's issues, when the board lists it as open.
+    pub issues: Option<JiraSearchResult>,
+}
+
+/// What importing one Jira sprint did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JiraSprintImportOutcome {
+    Failed(JiraSearchError),
+    /// The project's sources changed since the import was planned, or the
+    /// sprint was pulled since; nothing changed.
+    Stale,
+    SprintsUnsupported,
+    /// The board lists no open sprint with that id; nothing changed.
+    NotListed,
+    Applied {
+        sprint_id: String,
+        changes: JiraPullChanges,
+    },
+}
+
 /// Reads one planned pull through a provider. The credential is the one the
 /// caller resolved from the pull's handle; it is used for this read only.
 pub fn read_jira_sprints(
@@ -96,6 +120,30 @@ pub fn read_jira_sprints(
         sprints,
         active_issues,
     })
+}
+
+/// Reads one open board sprint and its issues for an import.
+pub fn read_jira_sprint_import(
+    source: &impl JiraSprintSource,
+    pull: &JiraSprintPull,
+    jira_sprint_id: u64,
+    credential: JiraCredential<'_>,
+) -> Result<JiraSprintImportRead, JiraSearchError> {
+    let sprints = source.list_sprints(&pull.site_url, credential, pull.board_id)?;
+    let listed = matches!(&sprints, JiraSprintListResult::Sprints { sprints, .. }
+        if open_listed(sprints, jira_sprint_id).is_some());
+    let issues = if listed {
+        Some(source.sprint_issues(&pull.site_url, credential, jira_sprint_id)?)
+    } else {
+        None
+    };
+    Ok(JiraSprintImportRead { sprints, issues })
+}
+
+fn open_listed(sprints: &[JiraSprint], jira_sprint_id: u64) -> Option<&JiraSprint> {
+    sprints
+        .iter()
+        .find(|sprint| sprint.id == jira_sprint_id && sprint.state != JiraSprintState::Closed)
 }
 
 /// A Jira sprint name as a PM sprint name.
@@ -202,7 +250,7 @@ impl PmStore {
             )?;
             if let (Some((sprint_id, jira_sprint_id)), Some(issues)) = (active, &read.active_issues)
             {
-                mirror_active_issues(
+                mirror_sprint_issues(
                     transaction,
                     pull,
                     &sprint_id,
@@ -214,6 +262,82 @@ impl PmStore {
                 )?;
             }
             Ok(JiraPullOutcome::Applied(changes))
+        })
+    }
+
+    /// Imports one open sprint of the project's board with its issues, or
+    /// syncs its mirror again. Refused when the project holds the most open
+    /// sprints it can, or when the sprint's mirror is closed.
+    pub fn apply_jira_sprint_import(
+        &mut self,
+        pull: &JiraSprintPull,
+        jira_sprint_id: u64,
+        read: Result<JiraSprintImportRead, JiraSearchError>,
+    ) -> Result<JiraSprintImportOutcome, PmError> {
+        check_id(&pull.project_id, "projectId")?;
+        let read = match read {
+            Ok(read) => read,
+            Err(error) => return Ok(JiraSprintImportOutcome::Failed(error)),
+        };
+        let now = self.now();
+        let ids = self.id_source();
+        self.write(|transaction| {
+            let current = project_sources(transaction, &pull.project_id)?.jira;
+            let unchanged = current.is_some_and(|jira| {
+                jira.site_url == pull.site_url && jira.board_id == Some(pull.board_id)
+            });
+            let sprints = project_sprints(transaction, &pull.project_id)?;
+            let mirror = mirrored_sprint(&sprints, jira_sprint_id);
+            let newer_applied = mirror
+                .and_then(|sprint| sprint.jira_pulled_at_epoch_ms)
+                .is_some_and(|pulled_at| pulled_at > pull.planned_at_epoch_ms);
+            if !unchanged || newer_applied {
+                return Ok(JiraSprintImportOutcome::Stale);
+            }
+            let JiraSprintListResult::Sprints {
+                sprints: listed, ..
+            } = &read.sprints
+            else {
+                return Ok(JiraSprintImportOutcome::SprintsUnsupported);
+            };
+            let (Some(jira), Some(issues)) = (open_listed(listed, jira_sprint_id), &read.issues)
+            else {
+                return Ok(JiraSprintImportOutcome::NotListed);
+            };
+            if mirror.is_some_and(|sprint| sprint.state == SprintState::Closed) {
+                return Err(PmError::Constraint("this sprint is closed in the PM"));
+            }
+            let mut changes = JiraPullChanges::default();
+            let mut open = open_sprints(transaction, &pull.project_id)?;
+            if jira.state == JiraSprintState::Active {
+                demote_other_active(transaction, &pull.project_id, jira.id)?;
+            }
+            let Some(sprint_id) = upsert_mirror(
+                transaction,
+                pull,
+                &sprints,
+                jira,
+                &mut open,
+                now,
+                ids,
+                &mut changes,
+            )?
+            else {
+                return Err(PmError::Constraint(
+                    "the project holds the most open sprints it can",
+                ));
+            };
+            mirror_sprint_issues(
+                transaction,
+                pull,
+                &sprint_id,
+                jira.id,
+                issues,
+                now,
+                ids,
+                &mut changes,
+            )?;
+            Ok(JiraSprintImportOutcome::Applied { sprint_id, changes })
         })
     }
 }
@@ -255,8 +379,112 @@ fn mirror_sprints(
         changes.sprints_closed.push(sprint.id.clone());
     }
     // Jira's active sprint is the project's only active one.
-    if let Some(jira_active) = jira_active
-        && let Some(local) = active_sprint(connection, &pull.project_id)?
+    if let Some(jira_active) = jira_active {
+        demote_other_active(connection, &pull.project_id, jira_active)?;
+    }
+    let mut open = open_sprints(connection, &pull.project_id)?;
+    let mut active = None;
+    for jira in observed {
+        let Some(sprint_id) = upsert_mirror(
+            connection, pull, existing, jira, &mut open, now, ids, changes,
+        )?
+        else {
+            continue;
+        };
+        if jira.state == JiraSprintState::Active {
+            active = Some((sprint_id, jira.id));
+        }
+    }
+    Ok(active)
+}
+
+fn open_sprints(connection: &Connection, project_id: &str) -> Result<usize, PmError> {
+    Ok(connection.query_row(
+        "SELECT COUNT(*) FROM sprints WHERE project_id = ?1 AND state != 'closed'",
+        [project_id],
+        |row| row.get(0),
+    )?)
+}
+
+/// Creates or updates the PM sprint mirroring one open Jira sprint. Returns
+/// its id, or nothing when its mirror is closed or no open sprint is left.
+/// An active mirror starts when Jira says it started.
+#[allow(clippy::too_many_arguments)]
+fn upsert_mirror(
+    connection: &Connection,
+    pull: &JiraSprintPull,
+    existing: &[Sprint],
+    jira: &JiraSprint,
+    open: &mut usize,
+    now: u64,
+    ids: fn() -> String,
+    changes: &mut JiraPullChanges,
+) -> Result<Option<String>, PmError> {
+    let name = sprint_name(jira);
+    let state = if jira.state == JiraSprintState::Active {
+        SprintState::Active
+    } else {
+        SprintState::Planned
+    };
+    match mirrored_sprint(existing, jira.id) {
+        // A closed sprint stays frozen even if Jira lists it again.
+        Some(sprint) if sprint.state == SprintState::Closed => Ok(None),
+        Some(sprint) => {
+            connection.execute(
+                "UPDATE sprints SET name = ?2, ends_at_epoch_ms = ?3, state = ?4, \
+                     activated_at_epoch_ms = CASE WHEN ?4 = 'active' \
+                         THEN COALESCE(?6, activated_at_epoch_ms, ?5) \
+                         ELSE activated_at_epoch_ms END, \
+                     jira_pulled_at_epoch_ms = ?5 \
+                 WHERE id = ?1",
+                params![
+                    sprint.id,
+                    name,
+                    jira.end_epoch_ms,
+                    state.as_str(),
+                    now,
+                    jira.start_epoch_ms
+                ],
+            )?;
+            Ok(Some(sprint.id.clone()))
+        }
+        None if *open >= PROJECT_OPEN_SPRINTS_MAX => {
+            changes.skipped += 1;
+            Ok(None)
+        }
+        None => {
+            let id = ids();
+            connection.execute(
+                "INSERT INTO sprints (id, project_id, name, state, created_at_epoch_ms, \
+                     activated_at_epoch_ms, ends_at_epoch_ms, jira_sprint_id, \
+                     jira_board_id, jira_pulled_at_epoch_ms) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?5)",
+                params![
+                    id,
+                    pull.project_id,
+                    name,
+                    state.as_str(),
+                    now,
+                    (state == SprintState::Active).then(|| jira.start_epoch_ms.unwrap_or(now)),
+                    jira.end_epoch_ms,
+                    jira.id,
+                    jira.board_id
+                ],
+            )?;
+            *open += 1;
+            changes.sprints_created.push(id.clone());
+            Ok(Some(id))
+        }
+    }
+}
+
+/// Makes a mirror of Jira's active sprint the project's only active one.
+fn demote_other_active(
+    connection: &Connection,
+    project_id: &str,
+    jira_active: u64,
+) -> Result<(), PmError> {
+    if let Some(local) = active_sprint(connection, project_id)?
         && local.jira_sprint_id != Some(jira_active)
     {
         connection.execute(
@@ -264,74 +492,14 @@ fn mirror_sprints(
             [&local.id],
         )?;
     }
-    let mut open: usize = connection.query_row(
-        "SELECT COUNT(*) FROM sprints WHERE project_id = ?1 AND state != 'closed'",
-        [&pull.project_id],
-        |row| row.get(0),
-    )?;
-    let mut active = None;
-    for jira in observed {
-        let name = sprint_name(jira);
-        let state = if jira.state == JiraSprintState::Active {
-            SprintState::Active
-        } else {
-            SprintState::Planned
-        };
-        let sprint_id = match mirrored_sprint(existing, jira.id) {
-            // A closed sprint stays frozen even if Jira lists it again.
-            Some(sprint) if sprint.state == SprintState::Closed => continue,
-            Some(sprint) => {
-                connection.execute(
-                    "UPDATE sprints SET name = ?2, ends_at_epoch_ms = ?3, state = ?4, \
-                         activated_at_epoch_ms = CASE WHEN ?4 = 'active' \
-                             THEN COALESCE(activated_at_epoch_ms, ?5) \
-                             ELSE activated_at_epoch_ms END, \
-                         jira_pulled_at_epoch_ms = ?5 \
-                     WHERE id = ?1",
-                    params![sprint.id, name, jira.end_epoch_ms, state.as_str(), now],
-                )?;
-                sprint.id.clone()
-            }
-            None if open >= PROJECT_OPEN_SPRINTS_MAX => {
-                changes.skipped += 1;
-                continue;
-            }
-            None => {
-                let id = ids();
-                connection.execute(
-                    "INSERT INTO sprints (id, project_id, name, state, created_at_epoch_ms, \
-                         activated_at_epoch_ms, ends_at_epoch_ms, jira_sprint_id, \
-                         jira_board_id, jira_pulled_at_epoch_ms) \
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?5)",
-                    params![
-                        id,
-                        pull.project_id,
-                        name,
-                        state.as_str(),
-                        now,
-                        (state == SprintState::Active).then_some(now),
-                        jira.end_epoch_ms,
-                        jira.id,
-                        jira.board_id
-                    ],
-                )?;
-                open += 1;
-                changes.sprints_created.push(id.clone());
-                id
-            }
-        };
-        if state == SprintState::Active {
-            active = Some((sprint_id, jira.id));
-        }
-    }
-    Ok(active)
+    Ok(())
 }
 
-/// Puts the linked tickets of Jira's active sprint into its mirror, copies
-/// issues no ticket links yet into new tickets, and, when Jira listed the
-/// whole sprint, returns linked tickets that left it to the backlog.
+/// Puts the linked tickets of a Jira sprint into its mirror, copies issues
+/// no ticket links yet into new tickets, and, when Jira listed the whole
+/// sprint, returns linked tickets that left it to the backlog.
 #[allow(clippy::too_many_arguments)]
-fn mirror_active_issues(
+fn mirror_sprint_issues(
     connection: &Connection,
     pull: &JiraSprintPull,
     sprint_id: &str,

@@ -1,6 +1,14 @@
 // UI-local types. The UI imports contract types only; it never imports the
 // bridge, a transport, or the terminal adapter.
-import type { PmAgentProvider, PmAgentState, PmJiraApplyResult, PmJiraDiff, PmTicketPriority } from "@termloop/pm-contract/pm";
+import type {
+  PmAgentProvider,
+  PmAgentState,
+  PmJiraApplyResult,
+  PmJiraBoardsReadResult,
+  PmJiraDiff,
+  PmJiraSprintsReadResult,
+  PmTicketPriority,
+} from "@termloop/pm-contract/pm";
 
 /**
  * The stage's content; `jira` (the Jira issue browser) and `settings` are
@@ -20,6 +28,18 @@ export type JiraDialogView = {
   staleNotice: boolean;
   result: Exclude<PmJiraApplyResult, { kind: "stale" }> | undefined;
   error: string | undefined;
+};
+
+/** The Sprints panel's view of the project's Jira board. */
+export type JiraSprintsView = {
+  loading: boolean;
+  /** The board's open sprints; read when a board is chosen. */
+  sprints: PmJiraSprintsReadResult | undefined;
+  /** The boards to choose from; read when no board is chosen, or on request. */
+  boards: PmJiraBoardsReadResult | undefined;
+  error: string | undefined;
+  /** The Jira sprint being imported. */
+  importing: number | undefined;
 };
 
 /** Mounts a live terminal for a session into `host`; returns its disposer. */

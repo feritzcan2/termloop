@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { PmBoardTicket, PmDataTier, PmDigestEntry, PmPlaybook, PmSprint } from "@termloop/pm-contract/pm";
+import { Icon } from "./icons.js";
 import { RISK_LABEL, attentionRows, dayRuler, sprintDay, stepRibbon, ticketLabel, waitingAtStep } from "./format.js";
 
 export type SprintOverviewProps = {
@@ -10,6 +11,8 @@ export type SprintOverviewProps = {
   /** The project's Playbook: the ribbon counts tickets per step. */
   playbook: PmPlaybook | undefined;
   digest: PmDigestEntry[];
+  /** The Jira board the project's sprints come from, if any. */
+  jiraBoardId: number | null;
   now: number;
   onOpenTicket(ticketId: string): void;
   onActivate(sprintId: string): void;
@@ -44,6 +47,8 @@ export function SprintOverview(props: SprintOverviewProps) {
   const ribbon = props.playbook ? stepRibbon(tickets, props.playbook) : [];
   const waiting = props.tier === "deploy" && props.playbook ? waitingAtStep(tickets, props.playbook) : [];
   const targets = props.sprints.filter((candidate) => candidate.id !== sprint.id && (candidate.state === "planned" || candidate.state === "backlog"));
+  // Jira owns an open sprint of the project's board: a pull would bring it back.
+  const jiraOwned = sprint.jiraSprintId !== null && sprint.state !== "closed" && sprint.jiraBoardId === props.jiraBoardId;
   const known = (ticketId: string | null) => ticketId !== null && tickets.some((entry) => entry.ticket.id === ticketId);
   const meta = [
     sprint.state !== "active" ? sprint.state : undefined,
@@ -56,13 +61,18 @@ export function SprintOverview(props: SprintOverviewProps) {
       <div className="pane-head">
         <b>{sprint.name}</b>
         <span className="meta">{meta}</span>
+        {sprint.jiraSprintId !== null && (
+          <span className="chip" title={jiraOwned ? "Synced from Jira: Jira owns its name, dates, and state" : "Imported from Jira"}>
+            <Icon name="jira" />Jira
+          </span>
+        )}
         <span className="sp" />
         <button type="button" className="btn sm" onClick={() => setStandup(standupNote(sprint, tickets, props.digest))}>Standup note</button>
         {(sprint.state === "planned" || sprint.state === "backlog") && (
           <button type="button" className="btn sm" onClick={() => props.onActivate(sprint.id)}>Activate sprint</button>
         )}
         {sprint.state === "active" && <button type="button" className="btn sm" onClick={() => setClosing(true)}>Close sprint</button>}
-        <button type="button" className="btn sm ghost" onClick={() => setDeleting(true)}>Delete sprint</button>
+        {!jiraOwned && <button type="button" className="btn sm ghost" onClick={() => setDeleting(true)}>Delete sprint</button>}
       </div>
       <div className="body">
         <p className="lead">{sprint.goal ?? <span className="muted">No goal set.</span>}</p>

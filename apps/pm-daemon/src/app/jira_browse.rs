@@ -1,5 +1,6 @@
 //! Jira reads for the PM's Orca-style issue browser: projects, statuses,
-//! favourite filters, and issue searches. They read Jira only, never write
+//! favourite filters, and issue searches, and for its sprint picker: boards
+//! and a board's open sprints. They read Jira only, never write
 //! the store, and use the project's Jira source and stored token exactly
 //! as `pm_jira_pull` does: the token is resolved for one call on a blocking
 //! task, and the store lock is never held while Jira is called.
@@ -11,14 +12,17 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 use termloop_pm::{JiraSource, PmStore};
 use termloop_pm_contract::pm::{
-    PmJiraBoardColumn, PmJiraFailure, PmJiraFavouriteFilter, PmJiraFavouriteFiltersReadResult,
-    PmJiraIssue, PmJiraIssueStatus, PmJiraIssueUser, PmJiraProject, PmJiraProjectsReadResult,
-    PmJiraSearchOrder, PmJiraSearchParams, PmJiraSearchPreset, PmJiraSearchResult, PmJiraStatus,
-    PmJiraStatusCategory, PmJiraStatusesReadParams, PmJiraStatusesReadResult, PmProjectRef,
+    PmJiraBoard, PmJiraBoardColumn, PmJiraBoardSprint, PmJiraBoardsReadResult, PmJiraFailure,
+    PmJiraFavouriteFilter, PmJiraFavouriteFiltersReadResult, PmJiraIssue, PmJiraIssueStatus,
+    PmJiraIssueUser, PmJiraProject, PmJiraProjectsReadResult, PmJiraSearchOrder,
+    PmJiraSearchParams, PmJiraSearchPreset, PmJiraSearchResult, PmJiraSprintState,
+    PmJiraSprintsReadResult, PmJiraStatus, PmJiraStatusCategory, PmJiraStatusesReadParams,
+    PmJiraStatusesReadResult, PmProjectRef,
 };
 use termloop_providers::{
-    JiraCloudClient, JiraCredential, JiraIssueListing, JiraIssueOrder, JiraIssuePreset,
-    JiraIssueQuery, JiraListedIssue, JiraSearchError, JiraStatusCategory, build_jira_issue_jql,
+    JiraBoardSource, JiraCloudClient, JiraCredential, JiraIssueListing, JiraIssueOrder,
+    JiraIssuePreset, JiraIssueQuery, JiraListedIssue, JiraSearchError, JiraSprintListResult,
+    JiraSprintSource, JiraSprintState, JiraStatusCategory, build_jira_issue_jql,
     normalize_jira_issue_url, valid_project_key,
 };
 
@@ -156,6 +160,111 @@ pub(crate) async fn favourite_filters_read(
             .collect(),
         truncated: list.truncated,
     })
+}
+
+/// The boards the account can see, to pick the one sprints come from.
+pub(crate) async fn boards_read(
+    state: &AppState,
+    params: PmProjectRef,
+) -> Result<Value, ControlError> {
+    let source = jira_source(state, &params.project_id)?;
+    let list = read(state, source, |client, credential, source| {
+        client.list_boards(&source.site_url, credential, None)
+    })
+    .await?;
+    let mut truncated = list.truncated;
+    let boards = list
+        .boards
+        .into_iter()
+        .filter_map(|board| {
+            let id = board.id.parse().ok().filter(|id| *id > 0);
+            truncated |= id.is_none();
+            let id = id?;
+            Some(PmJiraBoard {
+                id,
+                name: label(&board.name, LABEL_MAX_CHARS).unwrap_or_else(|| format!("Board {id}")),
+                kind: label(&board.kind, BOARD_KIND_MAX_CHARS).unwrap_or_else(|| "board".into()),
+                location: board
+                    .location_name
+                    .and_then(|location| label(&location, LABEL_MAX_CHARS)),
+            })
+        })
+        .collect();
+    to_value(&PmJiraBoardsReadResult {
+        project_id: params.project_id,
+        boards,
+        truncated,
+    })
+}
+
+/// The open sprints of the project's board, each with the PM sprint that
+/// mirrors it.
+pub(crate) async fn sprints_read(
+    state: &AppState,
+    params: PmProjectRef,
+) -> Result<Value, ControlError> {
+    let source = jira_source(state, &params.project_id)?;
+    let board_id = source
+        .board_id
+        .ok_or_else(|| jira_failed(PmJiraFailure::NotConfigured))?;
+    let list = read(state, source, move |client, credential, source| {
+        client.list_sprints(&source.site_url, credential, board_id)
+    })
+    .await?;
+    let mirrors = state.store.lock().board(&params.project_id)?.sprints;
+    let (sprints, truncated, sprints_supported) = match list {
+        JiraSprintListResult::Sprints { sprints, truncated } => (sprints, truncated, true),
+        JiraSprintListResult::SprintsUnsupported => (Vec::new(), false, false),
+    };
+    let sprints = sprints
+        .into_iter()
+        .filter_map(|sprint| {
+            let state = match sprint.state {
+                JiraSprintState::Active => PmJiraSprintState::Active,
+                JiraSprintState::Future => PmJiraSprintState::Future,
+                JiraSprintState::Closed => return None,
+            };
+            let mirror = mirrors.iter().find(|mirror| {
+                mirror.jira_sprint_id == Some(sprint.id) && mirror.jira_board_id == Some(board_id)
+            });
+            Some(PmJiraBoardSprint {
+                jira_sprint_id: sprint.id,
+                name: label(&sprint.name, LABEL_MAX_CHARS)
+                    .unwrap_or_else(|| format!("Sprint {}", sprint.id)),
+                state,
+                start_epoch_ms: sprint.start_epoch_ms,
+                end_epoch_ms: sprint.end_epoch_ms,
+                sprint_id: mirror.map(|mirror| mirror.id.clone()),
+            })
+        })
+        .collect();
+    to_value(&PmJiraSprintsReadResult {
+        project_id: params.project_id,
+        board_id,
+        sprints_supported,
+        sprints,
+        truncated,
+    })
+}
+
+const LABEL_MAX_CHARS: usize = 256;
+const BOARD_KIND_MAX_CHARS: usize = 64;
+
+/// Jira text as a trimmed, bounded single-line label.
+fn label(text: &str, max_chars: usize) -> Option<String> {
+    let line = text
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect::<String>();
+    let bounded = line.trim().chars().take(max_chars).collect::<String>();
+    let bounded = bounded.trim();
+    (!bounded.is_empty()).then(|| bounded.to_owned())
 }
 
 /// The provider query a search request stands for. `jql` is read only for

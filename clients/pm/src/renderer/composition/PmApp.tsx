@@ -107,6 +107,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
   const lane = useMemo(() => (shownSprintId ? sprintTickets(allTickets, shownSprintId) : EMPTY), [allTickets, shownSprintId]);
   const [right, updateRight] = useRightSidebar();
   const openSettings = useCallback(() => controller.setView("settings"), [controller]);
+  const loadJiraSprints = useCallback((chooseBoard?: boolean) => void controller.loadJiraSprints(chooseBoard), [controller]);
   const [leftWidth, setLeftWidth] = useLeftSidebarWidth();
   const viewport = useViewportWidth();
   const fitted = fitSidebarWidths(leftWidth, right.open ? right.width : undefined, viewport);
@@ -309,6 +310,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 onActivate={(id) => void controller.activateSprint(id)}
                 onClose={(id, carryOverTo) => void controller.closeSprint(id, carryOverTo)}
                 onDelete={(id) => void controller.deleteSprint(id)}
+                jiraBoardId={state.sources?.jira?.boardId ?? null}
               />
             )}
           </div>
@@ -331,6 +333,15 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 onSelectSprint={(id) => controller.selectSprint(id)}
                 onActivateSprint={(id) => void controller.activateSprint(id)}
                 onCreateSprint={(name, goal) => void controller.createSprint(name, goal)}
+                jira={{
+                  connected: Boolean(state.sources?.jira),
+                  boardId: state.sources?.jira?.boardId ?? null,
+                  view: state.jiraSprints,
+                  onLoad: loadJiraSprints,
+                  onSetBoard: (boardId) => void controller.setJiraBoard(boardId),
+                  onImport: (jiraSprintId) => void controller.importJiraSprint(jiraSprintId),
+                  onOpenSettings: openSettings,
+                }}
               />
             ) : right.view === "playbook" ? (
               <PlaybookPanel

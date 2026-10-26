@@ -16,7 +16,7 @@ import type {
   PmTicketUpdateParams,
 } from "@termloop/pm-contract/pm";
 import type { PmApi, PmEvent, RendererMethod } from "../../pm-api.js";
-import type { PmState, PmStore, PmView } from "../state/presentation-store.js";
+import type { JiraSprintsState, PmState, PmStore, PmView } from "../state/presentation-store.js";
 import { touchesJira } from "../ui/proposal-change.js";
 import type { NoteDraft } from "../ui/NoteDialog.js";
 import type { DescriptionSaveOutcome, TicketCapture } from "../ui/types.js";
@@ -174,6 +174,7 @@ export class PmController {
       activeAgentSessionId: undefined,
       openSkillId: undefined,
       sources: undefined,
+      jiraSprints: undefined,
       skills: undefined,
       tools: undefined,
       suggestions: undefined,
@@ -464,10 +465,72 @@ export class PmController {
     try {
       const result = await this.call("pm_jira_pull", { projectId });
       if (result) this.#set({ lastPull: result, notice: pullNotice(result.outcome) });
-      await this.refreshBoard();
+      await Promise.all([this.refreshBoard(), this.state.jiraSprints ? this.loadJiraSprints() : undefined]);
     } finally {
       this.#set({ pulling: false });
     }
+  }
+
+  /**
+   * Reads the project's Jira board for the Sprints panel: its open sprints,
+   * or the boards to choose from when none is chosen yet. A failed read is
+   * shown in the panel, not as a notice.
+   */
+  async loadJiraSprints(chooseBoard = false): Promise<void> {
+    const projectId = this.state.projectId;
+    const jira = this.state.sources?.jira;
+    if (!projectId || !jira) {
+      this.#set({ jiraSprints: undefined });
+      return;
+    }
+    this.#set({ jiraSprints: { ...(this.state.jiraSprints ?? EMPTY_JIRA_SPRINTS), loading: true, error: undefined } });
+    const read = jira.boardId !== null && !chooseBoard
+      ? this.bridge.call("pm_jira_sprints_read", { projectId }).then((outcome) =>
+        outcome.ok ? { sprints: outcome.result, boards: undefined } : outcome.error.message)
+      : this.bridge.call("pm_jira_boards_read", { projectId }).then((outcome) =>
+        outcome.ok ? { boards: outcome.result } : outcome.error.message);
+    const result = await read;
+    if (this.state.projectId !== projectId) return;
+    const current = this.state.jiraSprints ?? EMPTY_JIRA_SPRINTS;
+    this.#set({
+      jiraSprints: typeof result === "string"
+        ? { ...current, loading: false, error: result }
+        : { ...current, ...result, loading: false, error: undefined },
+    });
+  }
+
+  /** Chooses the board sprints come from, keeping the rest of the Jira source. */
+  async setJiraBoard(boardId: number): Promise<void> {
+    const projectId = this.state.projectId;
+    const jira = this.state.sources?.jira;
+    if (!projectId || !jira) return;
+    const sources = await this.call("pm_sources_set", { projectId, jira: { ...jira, boardId } });
+    if (!sources || this.state.projectId !== projectId) return;
+    this.#set({ sources, jiraSprints: undefined, notice: { tone: "info", text: `Sprints now come from Jira board ${boardId}.` } });
+    await this.loadJiraSprints();
+  }
+
+  /** Imports one Jira sprint with its issues, or syncs its PM sprint again. */
+  async importJiraSprint(jiraSprintId: number): Promise<void> {
+    const projectId = this.state.projectId;
+    const panel = this.state.jiraSprints;
+    if (!projectId || panel?.importing !== undefined) return;
+    const synced = Boolean(panel?.sprints?.sprints.find((sprint) => sprint.jiraSprintId === jiraSprintId)?.sprintId);
+    this.#set({ jiraSprints: { ...(panel ?? EMPTY_JIRA_SPRINTS), importing: jiraSprintId } });
+    try {
+      const result = await this.call("pm_jira_sprint_import", { projectId, jiraSprintId });
+      if (result && this.state.projectId === projectId) {
+        const outcome = result.outcome;
+        this.#set({
+          notice: importNotice(outcome, synced),
+          ...(outcome.kind === "applied" ? { selectedSprintId: outcome.sprintId, view: "overview" as const, selectedTicketId: undefined } : {}),
+        });
+      }
+    } finally {
+      const current = this.state.jiraSprints;
+      if (current && this.state.projectId === projectId) this.#set({ jiraSprints: { ...current, importing: undefined } });
+    }
+    await Promise.all([this.refreshBoard(), this.loadJiraSprints()]);
   }
 
   async openJiraDialog(ticketId: string): Promise<void> {
@@ -713,7 +776,7 @@ export class PmController {
     }
     const sources = await this.call("pm_sources_set", { projectId, jira: jiraSource });
     if (!sources) return false;
-    this.#set({ sources, notice: { tone: "info", text: "Sources saved." } });
+    this.#set({ sources, jiraSprints: undefined, notice: { tone: "info", text: "Sources saved." } });
     await this.refreshBoard();
     return true;
   }
@@ -724,6 +787,23 @@ export class PmController {
     if (await this.call("pm_credential_clear", { credentialHandle: handle })) {
       this.#set({ notice: { tone: "info", text: "Jira token removed from the credential store." } });
     }
+  }
+}
+
+const EMPTY_JIRA_SPRINTS: JiraSprintsState = { loading: false, sprints: undefined, boards: undefined, error: undefined, importing: undefined };
+
+function importNotice(outcome: MethodResults["pm_jira_sprint_import"]["outcome"], synced: boolean): PmState["notice"] {
+  switch (outcome.kind) {
+    case "applied":
+      return { tone: "info", text: `Jira sprint ${synced ? "synced" : "imported"}: ${outcome.ticketsCreated.length} new, ${outcome.ticketsMoved.length} moved${outcome.skipped ? `, ${outcome.skipped} skipped` : ""}.` };
+    case "stale":
+      return { tone: "info", text: "Jira changed during the import; import again." };
+    case "sprintsUnsupported":
+      return { tone: "error", text: "This Jira board has no sprints." };
+    case "notListed":
+      return { tone: "error", text: "Jira no longer lists this sprint as open." };
+    case "failed":
+      return { tone: "error", text: `Jira import failed: ${outcome.reason}.` };
   }
 }
 

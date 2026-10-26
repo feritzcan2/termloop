@@ -15,7 +15,7 @@ describe("deleting", () => {
     const onDelete = vi.fn();
     const { container, unmount } = render(
       <SprintOverview sprint={sprint()} sprints={[sprint()]} tickets={[boardTicket({ id: "t1" }), boardTicket({ id: "t2" })]} tier="tickets"
-        playbook={playbook()} digest={[]} now={0} onOpenTicket={noop} onActivate={noop} onClose={noop} onDelete={onDelete} />,
+        playbook={playbook()} digest={[]} now={0} onOpenTicket={noop} onActivate={noop} onClose={noop} onDelete={onDelete} jiraBoardId={null} />,
     );
     act(() => button(container, "Delete sprint")!.click());
     const dialog = container.querySelector<HTMLElement>('[role="dialog"][aria-label="Delete sprint"]')!;

@@ -54,6 +54,9 @@ pub(crate) async fn dispatch(
             jira_browse::favourite_filters_read(state, parse(params)?).await
         }
         "pm_jira_search" => jira_browse::search(state, parse(params)?).await,
+        "pm_jira_boards_read" => jira_browse::boards_read(state, parse(params)?).await,
+        "pm_jira_sprints_read" => jira_browse::sprints_read(state, parse(params)?).await,
+        "pm_jira_sprint_import" => operations::jira_sprint_import(state, params).await,
         "pm_agent_launch" => operations::agent_launch(state, params),
         "pm_agent_list" => operations::agent_list(state, params),
         "pm_agent_stop" => operations::agent_stop(state, params),

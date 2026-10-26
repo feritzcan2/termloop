@@ -22,7 +22,8 @@ use rusqlite::{Connection, OptionalExtension, params};
 pub use check_report::{CheckReport, RecordedCheckReport};
 pub use facts::{FactRead, FactsObservation, JiraObservation, PullRequestsObservation};
 pub use jira_mirror::{
-    JIRA_PULL_NEW_TICKETS_MAX, JiraPullChanges, JiraPullOutcome, JiraSprintPull, JiraSprintRead,
+    JIRA_PULL_NEW_TICKETS_MAX, JiraPullChanges, JiraPullOutcome, JiraSprintImportOutcome,
+    JiraSprintImportRead, JiraSprintPull, JiraSprintRead, read_jira_sprint_import,
     read_jira_sprints,
 };
 pub use jira_write::{

@@ -44,6 +44,7 @@ function overview(tier: PmDataTier) {
       onActivate={noop}
       onClose={noop}
       onDelete={noop}
+      jiraBoardId={null}
     />,
   );
   cleanup = view.unmount;
