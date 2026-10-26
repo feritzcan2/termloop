@@ -343,7 +343,7 @@
     },
     "pm_sources_set": {
       "params": {
-        "$ref": "#/$defs/pmSources"
+        "$ref": "#/$defs/pmSourcesSetParams"
       },
       "result": {
         "$ref": "#/$defs/pmSources"
@@ -2318,6 +2318,34 @@
           "anyOf": [
             {
               "$ref": "#/$defs/pmAzureDevOpsSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "pmSourcesSetParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Sets the project's Jira source. The code host is found from the project folder's git remote, never set by hand.",
+      "required": [
+        "projectId",
+        "jira"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "jira": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/pmJiraSource"
             },
             {
               "type": "null"

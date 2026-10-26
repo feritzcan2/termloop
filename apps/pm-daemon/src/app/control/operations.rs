@@ -1,5 +1,7 @@
-//! Method handlers that reach past the store: credentials, Jira, agents,
-//! delivery checks, and settings.
+//! Method handlers that reach past the store: project folders, credentials,
+//! Jira, agents, delivery checks, and settings.
+
+use std::path::Path;
 
 use serde_json::{Value, json};
 use termloop_pm::agent::AssistantTask;
@@ -10,16 +12,60 @@ use termloop_pm::{
 use termloop_pm_contract::pm::{
     PmAgentCatalog, PmAgentCatalogPermissions, PmAgentCatalogProvider, PmAgentLaunchParams,
     PmAgentStopParams, PmAssistantTask, PmCheckStartParams, PmChecksReadParams,
-    PmCredentialClearParams, PmCredentialStoreParams, PmJiraApplyParams, PmProjectRef,
-    PmSettingsUpdateParams, PmTicketRef,
+    PmCredentialClearParams, PmCredentialStoreParams, PmJiraApplyParams, PmProjectCreateParams,
+    PmProjectRef, PmProjectUpdateParams, PmSettingsUpdateParams, PmTicketRef,
 };
 
 use super::dispatch::{check_value, convert, nullable_string, parse, require_project, to_value};
 use super::errors::{ControlError, invalid_parameter};
-use crate::app::{AppState, agents, credentials, jira, scheduler};
+use crate::app::{AppState, agents, code_host, credentials, jira, scheduler};
 
 /// The one permission under which a delivery check runs unattended.
 const NON_INTERACTIVE_PERMISSION: &str = "bypassPermissions";
+
+pub(super) async fn project_create(
+    state: &AppState,
+    params: &Value,
+) -> Result<Value, ControlError> {
+    let params: PmProjectCreateParams = parse(params)?;
+    let detected = code_host::detect_in(params.folder.as_deref()).await;
+    let mut store = state.store.lock();
+    let project = store.create_project(&params.name, params.folder.as_deref())?;
+    code_host::store(&mut store, &project.id, detected)?;
+    to_value(&project)
+}
+
+/// Sets the folder agents start in, and the code host its remote names.
+pub(super) async fn project_update(
+    state: &AppState,
+    params: &Value,
+) -> Result<Value, ControlError> {
+    let params: PmProjectUpdateParams = parse(params)?;
+    // Agents start in this folder, so it must be a directory now.
+    if params
+        .folder
+        .as_deref()
+        .is_some_and(|folder| !Path::new(folder).is_dir())
+    {
+        return Err(invalid_parameter("folder"));
+    }
+    let detected = code_host::detect_in(params.folder.as_deref()).await;
+    let (project, changed) = {
+        let mut store = state.store.lock();
+        let project = store.set_project_folder(&params.project_id, params.folder.as_deref())?;
+        let changed = code_host::store(&mut store, &project.id, detected)?;
+        (project, changed)
+    };
+    if changed {
+        state.board_changed(&project.id);
+        // Only this project's pull requests are read again, not every source.
+        let (state, project_id) = (state.clone(), project.id.clone());
+        tokio::spawn(
+            async move { scheduler::refresh_pull_request_facts(&state, &project_id).await },
+        );
+    }
+    to_value(&project)
+}
 
 pub(super) fn credential_store(state: &AppState, params: &Value) -> Result<Value, ControlError> {
     let params: PmCredentialStoreParams = parse(params)?;

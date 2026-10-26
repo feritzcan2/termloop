@@ -240,6 +240,10 @@ fn non_repository_and_missing_git_are_typed() {
         Err(GitError::NotRepository)
     ));
     assert!(matches!(
+        runner.observe_remotes_with_timeout(directory.path(), Duration::from_secs(2)),
+        Err(GitError::NotRepository)
+    ));
+    assert!(matches!(
         GitRunner::discover_program(directory.path().join("missing-git")),
         Err(GitError::GitUnavailable)
     ));

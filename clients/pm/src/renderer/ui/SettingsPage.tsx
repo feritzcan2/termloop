@@ -11,13 +11,11 @@ import type {
   PmTracking,
 } from "@termloop/pm-contract/pm";
 import { relativeTime } from "./format.js";
-import type { CodeHostInput } from "./types.js";
 
 export type JiraSourceDraft = { siteUrl: string; boardId: number | null; accountEmail: string; token: string };
-type CodeHostKind = "github" | "azureDevOps";
 
 export type SettingsPageProps = {
-  projectName: string | undefined;
+  projectName: string;
   projectFolder?: string | null;
   settings: PmSettings | undefined;
   catalog: PmAgentCatalog | undefined;
@@ -26,7 +24,7 @@ export type SettingsPageProps = {
   environments: PmEnvironment[];
   probes: PmProbe[];
   now: number;
-  onSaveSources(jira: JiraSourceDraft | null, code: CodeHostInput): Promise<boolean>;
+  onSaveSources(jira: JiraSourceDraft | null): Promise<boolean>;
   onClearToken(): void;
   onPickFolder?(): Promise<string | null>;
   onSetFolder?(folder: string | null): void;
@@ -38,22 +36,23 @@ export type SettingsPageProps = {
   onDeleteProbe(probeId: string): void;
 };
 
-/** The right sidebar's Settings view: the open project's sources and the app-wide assistant. */
+/** The Settings stage, opened from the activity bar: the open project's sources and the app-wide assistant. */
 export function SettingsPage(props: SettingsPageProps) {
-  if (!props.projectName) {
-    return <div className="settings-panel"><p className="hint">Create a project to configure its sources.</p></div>;
-  }
   return (
-    <div className="settings-panel">
-      <div className="right-sidebar-tools"><span className="meta">{props.projectName}</span></div>
-      <CodeFolderCard {...props} />
-      <SourcesCards {...props} />
-      <DeployCard {...props} />
-      <AgentCard settings={props.settings} catalog={props.catalog} onSave={props.onSaveSettings} />
-      <SettingsSection title="Your data" description={<>Everything lives on this computer in the PM daemon's store at <code>&lt;TermLoop state directory&gt;/pm/pm.sqlite</code>. There is no server and no account.</>}>
-        <p className="hint">Jira API tokens are kept in the operating system's secure credential store, never in that file or in this window.</p>
-      </SettingsSection>
-    </div>
+    <section className="pane settings-pane" aria-label="Settings">
+      <div className="pane-head"><b>Settings</b><span className="meta">{props.projectName}</span><span className="sp" /></div>
+      <div className="body">
+        <div className="settings-column">
+          <CodeRepositoryCard {...props} />
+          <JiraCard {...props} />
+          <DeployCard {...props} />
+          <AgentCard settings={props.settings} catalog={props.catalog} onSave={props.onSaveSettings} />
+          <SettingsSection title="Your data" description={<>Everything lives on this computer in the PM daemon's store at <code>&lt;TermLoop state directory&gt;/pm/pm.sqlite</code>. There is no server and no account.</>}>
+            <p className="hint">Jira API tokens are kept in the operating system's secure credential store, never in that file or in this window.</p>
+          </SettingsSection>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -74,19 +73,33 @@ function Field(props: { label: string; children: ReactNode }) {
   return <label className="field"><span>{props.label}</span>{props.children}</label>;
 }
 
-function CodeFolderCard(props: SettingsPageProps) {
+/** The code host is never typed: the daemon reads it from the folder's git remote. */
+function CodeRepositoryCard(props: SettingsPageProps) {
   const folder = props.projectFolder ?? null;
+  const host = codeHost(props.sources);
   const choose = async () => {
     const picked = await props.onPickFolder?.();
     if (picked && picked !== folder) props.onSetFolder?.(picked);
   };
+  const state = !folder
+    ? { tone: "off" as const, text: "NOT SET" }
+    : host ? { tone: "ok" as const, text: host.badge } : { tone: "warn" as const, text: "NO CODE HOST" };
   return (
     <SettingsSection
-      title="Code folder"
-      state={folder ? { tone: "ok", text: "READ ONLY" } : { tone: "off", text: "NOT SET" }}
-      description="The local checkout of this project's code. The assistant, delivery checks and skills start in it, so they can read the code and its Git history when they plan and check work. They are kept from editing files there."
+      title="Code repository"
+      state={state}
+      description="The local checkout of this project's code. The assistant, delivery checks and skills start in it, read-only, so they can read the code and its Git history. Its Git remote names the code host whose pull requests are matched to tickets by the issue key in their branch or title."
     >
-      {folder ? <p className="hint"><code>{folder}</code></p> : <p className="hint">Without a folder, agents start in an empty workspace of their own.</p>}
+      {folder ? (
+        <dl className="repository-facts">
+          <dt>Folder</dt><dd><code>{folder}</code></dd>
+          <dt>Code host</dt>
+          <dd>{host ? <>{host.name} · <code>{host.path}</code></> : "None found. The folder has no GitHub or Azure DevOps remote."}</dd>
+        </dl>
+      ) : (
+        <p className="hint">Without a folder, agents start in an empty workspace of their own and tickets show no code stages.</p>
+      )}
+      {host && <p className="hint">Pull requests are read with {host.cli} on this computer.</p>}
       <div className="actions">
         <button type="button" className="btn pri" disabled={!props.onPickFolder} onClick={() => void choose()}>{folder ? "Change folder…" : "Choose folder…"}</button>
         {folder && <button type="button" className="btn ghost" onClick={() => props.onSetFolder?.(null)}>Remove folder</button>}
@@ -95,29 +108,26 @@ function CodeFolderCard(props: SettingsPageProps) {
   );
 }
 
-function SourcesCards(props: SettingsPageProps) {
+function codeHost(sources: PmSources | undefined): { badge: string; name: string; path: string; cli: string } | null {
+  const github = sources?.github;
+  if (github) return { badge: "GITHUB", name: "GitHub", path: `${github.owner}/${github.name}`, cli: "the GitHub CLI (gh auth login)" };
+  const azure = sources?.azureDevOps;
+  if (azure) return { badge: "AZURE DEVOPS", name: "Azure DevOps", path: `${azure.organization}/${azure.project}/${azure.name}`, cli: "the Azure CLI (az login, with the azure-devops extension)" };
+  return null;
+}
+
+function JiraCard(props: SettingsPageProps) {
   const jira = props.sources?.jira ?? null;
-  const github = props.sources?.github ?? null;
-  const azure = props.sources?.azureDevOps ?? null;
   const [siteUrl, setSiteUrl] = useState(jira?.siteUrl ?? "");
   const [boardId, setBoardId] = useState(jira?.boardId?.toString() ?? "");
   const [accountEmail, setAccountEmail] = useState(jira?.accountEmail ?? "");
   // Write-only: the field starts empty and is cleared after every save.
   const [token, setToken] = useState("");
-  const [host, setHost] = useState<CodeHostKind>(azure ? "azureDevOps" : "github");
-  // GitHub owner or Azure DevOps organization, the Azure project, the repository.
-  const [owner, setOwner] = useState(github?.owner ?? azure?.organization ?? "");
-  const [project, setProject] = useState(azure?.project ?? "");
-  const [repository, setRepository] = useState(github?.name ?? azure?.name ?? "");
   const [saving, setSaving] = useState(false);
   useEffect(() => {
     setSiteUrl(jira?.siteUrl ?? "");
     setBoardId(jira?.boardId?.toString() ?? "");
     setAccountEmail(jira?.accountEmail ?? "");
-    setHost(azure ? "azureDevOps" : "github");
-    setOwner(github?.owner ?? azure?.organization ?? "");
-    setProject(azure?.project ?? "");
-    setRepository(github?.name ?? azure?.name ?? "");
   }, [props.sources]);
 
   const jiraFilled = siteUrl.trim() !== "" || accountEmail.trim() !== "";
@@ -127,14 +137,8 @@ function SourcesCards(props: SettingsPageProps) {
     const jiraDraft = jiraFilled
       ? { siteUrl: siteUrl.trim().replace(/\/+$/, ""), boardId: Number.isSafeInteger(parsedBoard) ? parsedBoard : null, accountEmail: accountEmail.trim(), token }
       : null;
-    const filled = owner.trim() !== "" && repository.trim() !== "" && (host === "github" || project.trim() !== "");
-    const code: CodeHostInput = !filled
-      ? null
-      : host === "github"
-        ? { kind: "github", owner: owner.trim(), name: repository.trim() }
-        : { kind: "azureDevOps", organization: owner.trim(), project: project.trim(), name: repository.trim() };
     try {
-      await props.onSaveSources(jiraDraft, code);
+      await props.onSaveSources(jiraDraft);
     } finally {
       setToken("");
       setSaving(false);
@@ -166,33 +170,8 @@ function SourcesCards(props: SettingsPageProps) {
             ? "A token is stored in the system credential store. It is never shown again, and only ever sent to Jira."
             : "The token goes straight to the system credential store; this window never reads it back."}
         </p>
-      </SettingsSection>
-      <SettingsSection
-        title="Code host"
-        state={github ? { tone: "ok", text: "GITHUB" } : azure ? { tone: "ok", text: "AZURE DEVOPS" } : { tone: "off", text: "NOT CONNECTED" }}
-        description="Pull requests are matched to tickets by their issue key in the branch or title. The app reads review and build state and how long a pull request has been waiting."
-      >
-        <div className="fields">
-          <Field label="Host">
-            <select aria-label="Code host" value={host} onChange={(event) => setHost(event.target.value as CodeHostKind)}>
-              <option value="github">GitHub</option>
-              <option value="azureDevOps">Azure DevOps</option>
-            </select>
-          </Field>
-          <Field label={host === "github" ? "Owner" : "Organization"}>
-            <input placeholder={host === "github" ? "e.g. acme" : "e.g. contoso"} value={owner} onChange={(event) => setOwner(event.target.value)} />
-          </Field>
-          {host === "azureDevOps" && <Field label="Project"><input placeholder="e.g. Parking" value={project} onChange={(event) => setProject(event.target.value)} /></Field>}
-          <Field label="Repository"><input placeholder="e.g. shop" value={repository} onChange={(event) => setRepository(event.target.value)} /></Field>
-        </div>
-        <p className="hint">
-          {host === "github"
-            ? "Read with the GitHub CLI on this computer (gh auth login)."
-            : "Read with the Azure CLI on this computer (az login, with the azure-devops extension)."}
-        </p>
-        {!props.tracking?.code && <p className="hint">Connect a repository to see code stages (in review, merged) on tickets.</p>}
         <div className="actions">
-          <button type="submit" className="btn pri" disabled={saving}>Save connections</button>
+          <button type="submit" className="btn pri" disabled={saving}>Save Jira</button>
           {jira && <button type="button" className="btn ghost" onClick={props.onClearToken}>Remove stored token</button>}
         </div>
       </SettingsSection>

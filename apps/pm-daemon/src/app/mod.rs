@@ -18,6 +18,7 @@ use tokio::net::TcpListener;
 use tokio::sync::{Notify, broadcast};
 
 mod agents;
+mod code_host;
 mod control;
 mod credentials;
 mod discovery;

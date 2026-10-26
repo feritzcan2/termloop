@@ -19,9 +19,9 @@ use termloop_providers::{
 };
 
 use crate::app::AppState;
+use crate::app::code_host::REMOTES_TIMEOUT;
 
 const GITHUB_TIMEOUT: Duration = Duration::from_secs(15);
-const REMOTES_TIMEOUT: Duration = Duration::from_secs(2);
 /// Similar tickets whose key is looked up in commit messages.
 const SIMILAR_KEYS_MAX: usize = 4;
 

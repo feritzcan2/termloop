@@ -131,11 +131,18 @@ impl GitRunner {
             .with_limits(timeout, REMOTE_OUTPUT_LIMIT)
             .with_absolute_timeout(timeout)?;
         let mut scope = crate::command::GitCommandScope::bounded(&runner, timeout)?;
-        let config_output = scope.checked(
+        let config_output = scope.execute(
             GitOperation::Remotes,
             repository_path,
             ["config", "--null", "--list", "--local"],
         )?;
+        if !config_output.success() {
+            return Err(crate::error::repository_failure(
+                GitOperation::Remotes,
+                config_output.termination,
+                &config_output.stderr,
+            ));
+        }
         Ok(parse_remote_config(&config_output.stdout)?.1)
     }
 

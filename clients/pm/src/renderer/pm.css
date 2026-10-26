@@ -594,10 +594,13 @@ li:hover > .icb.remove, .icb.remove:focus-visible { opacity: 1; }
 .digest-row { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 12px; color: var(--text-secondary); font-size: 12px; }
 .digest-row time { color: var(--dimmer); font: 10px/1.6 var(--font-mono); }
 
-/* ---------- settings sidebar ---------- */
-.settings-panel { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 16px; }
-.settings-panel > .hint { margin: 8px 13px; }
-.settings-section { padding: 16px 13px; border-bottom: 1px solid var(--rule); }
+/* ---------- settings stage ---------- */
+.settings-pane .body { padding-top: 4px; }
+.settings-column { max-width: 880px; margin: 0 auto; padding: 0 8px 24px; }
+.repository-facts { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 6px 16px; margin: 10px 0 0; font-size: 12.5px; }
+.repository-facts dt { color: var(--text-secondary); }
+.repository-facts dd { margin: 0; overflow-wrap: anywhere; }
+.settings-section { padding: 20px 0; border-bottom: 1px solid var(--rule); }
 .settings-section:last-child { border-bottom: 0; }
 .settings-title { display: flex; align-items: center; gap: 10px; }
 .settings-title h3 { margin: 0; font-size: 14px; font-weight: 600; }
@@ -605,9 +608,9 @@ li:hover > .icb.remove, .icb.remove:focus-visible { opacity: 1; }
 .state i { width: 6px; height: 6px; border-radius: 50%; background: var(--dimmer); }
 .state.ok i { background: var(--success); }
 .state.warn i { background: var(--warning); }
-.settings-desc { margin: 4px 0 0; color: var(--text-secondary); font-size: 12.5px; }
+.settings-desc { max-width: 72ch; margin: 4px 0 0; color: var(--text-secondary); font-size: 12.5px; }
 .fields { display: grid; gap: 8px; margin-top: 10px; }
-.field { display: grid; gap: 4px; font-size: 12.5px; }
+.field { display: grid; grid-template-columns: 160px minmax(0, 1fr); align-items: center; gap: 16px; font-size: 12.5px; }
 .field > span { color: var(--text-secondary); }
 .field input, .field select { width: 100%; }
 .actions { display: flex; gap: 6px; margin-top: 12px; }

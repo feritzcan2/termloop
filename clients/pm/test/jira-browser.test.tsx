@@ -319,14 +319,24 @@ describe("Jira stage navigation", () => {
   it("returns the stage to what Jira replaced", () => {
     const store = createPmStore({ view: "ticket" });
     const controller = new PmController(fakeBridge(() => ok({})), store);
-    controller.toggleJiraStage();
+    controller.toggleStage("jira");
     expect(store.getState().view).toBe("jira");
-    controller.toggleJiraStage();
+    controller.toggleStage("jira");
     expect(store.getState().view).toBe("ticket");
     controller.setView("overview");
-    controller.toggleJiraStage();
+    controller.toggleStage("jira");
     controller.setView("jira");
-    controller.toggleJiraStage();
+    controller.toggleStage("jira");
     expect(store.getState().view).toBe("overview");
+  });
+
+  it("returns from Settings to the view Jira replaced, not to Jira", () => {
+    const store = createPmStore({ view: "ticket" });
+    const controller = new PmController(fakeBridge(() => ok({})), store);
+    controller.toggleStage("jira");
+    controller.toggleStage("settings");
+    expect(store.getState().view).toBe("settings");
+    controller.toggleStage("settings");
+    expect(store.getState().view).toBe("ticket");
   });
 });

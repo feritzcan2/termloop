@@ -260,7 +260,8 @@ pub(crate) fn repository_failure(
     ) || contains(
         stderr,
         b"not a git repository (or any parent up to mount point ",
-    ) {
+    ) || contains(stderr, b"can only be used inside a git repository")
+    {
         GitError::NotRepository
     } else if contains(stderr, b"not a git repository:") {
         GitError::MissingRegistration
@@ -333,6 +334,14 @@ mod tests {
     #[test]
     fn repository_failures_have_stable_typed_classification() {
         let exit = CommandTermination::Exited { code: 128 };
+        assert!(matches!(
+            repository_failure(
+                GitOperation::Remotes,
+                exit,
+                b"fatal: --local can only be used inside a git repository"
+            ),
+            GitError::NotRepository
+        ));
         assert!(matches!(
             repository_failure(
                 GitOperation::RepositoryIdentity,

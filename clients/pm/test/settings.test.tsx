@@ -32,36 +32,23 @@ describe("SettingsPage", () => {
 
     typeInto(token, "s3cret-token");
     await act(async () => { container.querySelector("form")!.requestSubmit(); });
-    expect(onSaveSources).toHaveBeenCalledWith(expect.objectContaining({ token: "s3cret-token" }), null);
+    expect(onSaveSources).toHaveBeenCalledWith(expect.objectContaining({ token: "s3cret-token" }));
     expect(token.value).toBe("");
     expect(container.innerHTML).not.toContain("s3cret-token");
     unmount();
   });
 
-  it("saves an Azure DevOps repository as the code host", async () => {
-    const onSaveSources = vi.fn(async () => true);
-    const { container, unmount } = render(<SettingsPage {...props({ onSaveSources })} />);
-    const host = container.querySelector<HTMLSelectElement>('select[aria-label="Code host"]')!;
-    act(() => {
-      host.value = "azureDevOps";
-      host.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-    const input = (placeholder: string) => container.querySelector<HTMLInputElement>(`input[placeholder="${placeholder}"]`)!;
-    typeInto(input("e.g. contoso"), "contoso");
-    typeInto(input("e.g. Parking"), "Parking");
-    typeInto(input("e.g. shop"), "Nucleus");
-    await act(async () => { container.querySelector("form")!.requestSubmit(); });
-    expect(onSaveSources).toHaveBeenCalledWith(expect.anything(), { kind: "azureDevOps", organization: "contoso", project: "Parking", name: "Nucleus" });
-    unmount();
-  });
-
-  it("shows a stored Azure DevOps repository", () => {
+  it("shows the code host found from the folder's remote and offers no host fields", () => {
     const azure = { ...sources, azureDevOps: { organization: "contoso", project: "Parking", name: "Nucleus" } };
-    const { container, unmount } = render(<SettingsPage {...props({ sources: azure })} />);
-    expect(container.querySelector<HTMLSelectElement>('select[aria-label="Code host"]')!.value).toBe("azureDevOps");
+    const { container, unmount } = render(<SettingsPage {...props({ projectFolder: "/work/nucleus", sources: azure })} />);
     expect(container.textContent).toContain("AZURE DEVOPS");
-    expect(container.querySelector<HTMLInputElement>('input[placeholder="e.g. Parking"]')!.value).toBe("Parking");
+    expect(container.textContent).toContain("contoso/Parking/Nucleus");
+    expect(container.querySelector('select[aria-label="Code host"]')).toBeNull();
     unmount();
+
+    const none = render(<SettingsPage {...props({ projectFolder: "/work/plain" })} />);
+    expect(none.container.textContent).toContain("NO CODE HOST");
+    none.unmount();
   });
 
   it("picks a code folder through the native picker and can remove it", async () => {
@@ -75,7 +62,7 @@ describe("SettingsPage", () => {
 
     const set = render(<SettingsPage {...props({ projectFolder: "/work/shop", onPickFolder, onSetFolder })} />);
     expect(set.container.textContent).toContain("/work/shop");
-    expect(set.container.textContent).toContain("READ ONLY");
+    expect(set.container.textContent).toContain("Code repository");
     const remove = [...set.container.querySelectorAll("button")].find((button) => button.textContent === "Remove folder")!;
     act(() => { remove.click(); });
     expect(onSetFolder).toHaveBeenLastCalledWith(null);

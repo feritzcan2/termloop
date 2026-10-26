@@ -55,17 +55,20 @@ describe("right sidebar preference", () => {
 describe("right activity bar", () => {
   it("marks only the open view pressed and reports every choice", () => {
     const onSelect = vi.fn();
-    const view = render(<RightActivityBar open view="sprints" onSelect={onSelect} />);
+    const onToggleSettings = vi.fn();
+    const view = render(<RightActivityBar open view="sprints" onSelect={onSelect} settings={{ active: true, onToggle: onToggleSettings }} />);
     cleanup = view.unmount;
     const buttons = [...view.container.querySelectorAll<HTMLButtonElement>(".activity-bar button")];
-    expect(buttons.map((button) => [button.textContent, button.getAttribute("aria-pressed")])).toEqual([["Sprints", "true"], ["Inbox", "false"], ["Skills", "false"], ["Settings", "false"]]);
+    expect(buttons.map((button) => [button.textContent, button.getAttribute("aria-pressed")])).toEqual([["Sprints", "true"], ["Inbox", "false"], ["Skills", "false"], ["Settings", "true"]]);
     expect(buttons[3]!.classList.contains("bottom")).toBe(true);
     act(() => buttons[1]!.click());
     expect(onSelect).toHaveBeenLastCalledWith("suggestions");
     act(() => buttons[2]!.click());
     expect(onSelect).toHaveBeenLastCalledWith("skills");
+    // Settings switches the stage, not the right panel.
     act(() => buttons[3]!.click());
-    expect(onSelect).toHaveBeenLastCalledWith("settings");
+    expect(onToggleSettings).toHaveBeenCalled();
+    expect(onSelect).toHaveBeenCalledTimes(2);
   });
 });
 

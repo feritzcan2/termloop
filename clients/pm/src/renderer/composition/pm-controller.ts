@@ -19,9 +19,13 @@ import type { PmApi, PmEvent, RendererMethod } from "../../pm-api.js";
 import type { PmState, PmStore, PmView } from "../state/presentation-store.js";
 import { touchesJira } from "../ui/proposal-change.js";
 import type { NoteDraft } from "../ui/NoteDialog.js";
-import type { CodeHostInput, DescriptionSaveOutcome, TicketCapture } from "../ui/types.js";
+import type { DescriptionSaveOutcome, TicketCapture } from "../ui/types.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Stage views the right activity bar toggles, as opposed to ones opened from the board. */
+export type BarStage = "jira" | "settings";
+const isBarStage = (view: PmView): view is BarStage => view === "jira" || view === "settings";
 
 export type JiraSourceInput = { siteUrl: string; boardId: number | null; accountEmail: string; token: string };
 
@@ -29,8 +33,8 @@ export class PmController {
   #unsubscribers: (() => void)[] = [];
   #boardRead: Promise<void> | undefined;
   #boardStale = false;
-  /** The stage content the Jira browser replaced; toggling Jira off returns to it. */
-  #beforeJira: PmView = "overview";
+  /** The stage content Jira or Settings replaced; toggling either off returns to it. */
+  #beforeStage: PmView = "overview";
   /** The description update a PM note started, per ticket; a newer note replaces it. */
   #noteUpdates = new Map<string, string>();
 
@@ -74,13 +78,14 @@ export class PmController {
   }
 
   setView(view: PmView): void {
-    if (view === "jira" && this.state.view !== "jira") this.#beforeJira = this.state.view;
+    if (isBarStage(view) && !isBarStage(this.state.view)) this.#beforeStage = this.state.view;
     this.#set({ view });
+    if (view === "settings") void this.loadSettings();
   }
 
-  /** The activity bar's Jira item: shows the Jira browser in the stage, or returns to what it replaced. */
-  toggleJiraStage(): void {
-    this.setView(this.state.view === "jira" ? this.#beforeJira : "jira");
+  /** An activity bar stage item: shows Jira or Settings in the stage, or returns to what it replaced. */
+  toggleStage(view: BarStage): void {
+    this.setView(this.state.view === view ? this.#beforeStage : view);
   }
 
   handleEvent(event: PmEvent): void {
@@ -96,6 +101,8 @@ export class PmController {
     else void this.refreshBoard();
     const selected = this.state.selectedTicketId;
     if (event.event === "pmBoardChanged" && selected) void Promise.all([this.loadProposals(selected), this.loadNotes(selected)]);
+    // The daemon follows the folder's remote in the background; Settings shows its code host.
+    if (event.event === "pmBoardChanged" && this.state.view === "settings") void this.loadSources();
   }
 
   // Projects ---------------------------------------------------------------
@@ -116,13 +123,14 @@ export class PmController {
     await this.selectProject(project.id);
   }
 
-  /** Sets or clears the code folder the project's agents start in. */
+  /** Sets or clears the code folder the project's agents start in; the daemon reads its code host from it. */
   async setProjectFolder(folder: string | null): Promise<void> {
     const projectId = this.state.projectId;
     if (!projectId) return;
     const project = await this.call("pm_project_update", { projectId, folder });
     if (!project) return;
     this.#set({ projects: this.state.projects.map((candidate) => candidate.id === project.id ? project : candidate) });
+    await this.loadSources();
   }
 
   async selectProject(projectId: string): Promise<void> {
@@ -620,10 +628,10 @@ export class PmController {
     const [settings, catalog] = await Promise.all([
       this.call("pm_settings_read", {}),
       this.state.catalog ? Promise.resolve(this.state.catalog) : this.call("pm_agent_catalog_read", {}),
+      this.loadSources(),
     ]);
     if (settings) this.#set({ settings });
     if (catalog) this.#set({ catalog });
-    await this.loadSources();
   }
 
   async loadSources(): Promise<void> {
@@ -639,10 +647,11 @@ export class PmController {
   }
 
   /**
-   * Saves the Jira and GitHub sources. A typed token is stored first in the
-   * daemon's credential store; only its handle reaches the sources record.
+   * Saves the Jira source; the code host follows the project folder. A typed
+   * token is stored first in the daemon's credential store; only its handle
+   * reaches the sources record.
    */
-  async saveSources(jira: JiraSourceInput | null, code: CodeHostInput): Promise<boolean> {
+  async saveSources(jira: JiraSourceInput | null): Promise<boolean> {
     const projectId = this.state.projectId;
     if (!projectId) return false;
     let jiraSource: MethodParams["pm_sources_set"]["jira"] = null;
@@ -659,9 +668,7 @@ export class PmController {
       }
       jiraSource = { siteUrl: jira.siteUrl, boardId: jira.boardId, accountEmail: jira.accountEmail, credentialHandle };
     }
-    const github = code?.kind === "github" ? { owner: code.owner, name: code.name } : null;
-    const azureDevOps = code?.kind === "azureDevOps" ? { organization: code.organization, project: code.project, name: code.name } : null;
-    const sources = await this.call("pm_sources_set", { projectId, jira: jiraSource, github, azureDevOps });
+    const sources = await this.call("pm_sources_set", { projectId, jira: jiraSource });
     if (!sources) return false;
     this.#set({ sources, notice: { tone: "info", text: "Sources saved." } });
     await this.refreshBoard();

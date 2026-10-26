@@ -9,24 +9,42 @@ const ITEMS: readonly Item[] = [
   { view: "skills", label: "Skills", short: "Skills", icon: "skill" },
 ];
 
-/** Kept at the bottom of the bar, apart from the work views. */
-const SETTINGS: Item = { view: "settings", label: "Settings", short: "Settings", icon: "gear" };
-
 export function rightSidebarLabel(view: RightSidebarView): string {
-  return [...ITEMS, SETTINGS].find((item) => item.view === view)!.label;
+  return ITEMS.find((item) => item.view === view)!.label;
 }
 
 /** The Jira item: it switches the stage, not the right panel; disabled without a Jira source. */
-export type JiraActivity = { available: boolean; active: boolean; onToggle(): void };
+export type JiraActivity = StageActivity & { available: boolean };
+
+/** A stage item's state: whether its view fills the stage, and how to toggle it. */
+export type StageActivity = { active: boolean; onToggle(): void };
+
+/** A stage item: it switches the stage, not the right panel. */
+function stageButton(item: { label: string; short: string; icon: IconName; activity: StageActivity; disabled?: boolean; idleTitle?: string | undefined; className?: string }) {
+  const { active, onToggle } = item.activity;
+  return (
+    <button
+      type="button"
+      aria-label={item.label}
+      aria-pressed={active}
+      className={[active ? "selected" : "", item.className ?? ""].join(" ").trim() || undefined}
+      disabled={item.disabled}
+      title={item.idleTitle ?? `${active ? "Hide" : "Show"} ${item.label}`}
+      onClick={onToggle}
+    >
+      <Icon name={item.icon} /><span>{item.short}</span>
+    </button>
+  );
+}
 
 /**
  * Always visible at the window's right edge, like the TermLoop desktop
  * activity bar. Choosing the open view closes the panel; choosing another
  * switches it.
  */
-export function RightActivityBar(props: { open: boolean; view: RightSidebarView; onSelect(view: RightSidebarView): void; jira?: JiraActivity }) {
-  const jira = props.jira;
-  const button = (item: Item, className?: string) => {
+export function RightActivityBar(props: { open: boolean; view: RightSidebarView; onSelect(view: RightSidebarView): void; jira?: JiraActivity; settings?: StageActivity }) {
+  const { jira, settings } = props;
+  const button = (item: Item) => {
     const selected = props.open && props.view === item.view;
     return (
       <button
@@ -34,7 +52,7 @@ export function RightActivityBar(props: { open: boolean; view: RightSidebarView;
         type="button"
         aria-label={`${item.label} sidebar`}
         aria-pressed={selected}
-        className={[selected ? "selected" : "", className ?? ""].join(" ").trim() || undefined}
+        className={selected ? "selected" : undefined}
         title={selected ? `Hide ${item.label}` : `Show ${item.label}`}
         onClick={() => props.onSelect(item.view)}
       >
@@ -45,20 +63,8 @@ export function RightActivityBar(props: { open: boolean; view: RightSidebarView;
   return (
     <nav className="activity-bar" aria-label="Right sidebar">
       {ITEMS.map((item) => button(item))}
-      {jira && (
-        <button
-          type="button"
-          aria-label="Jira issues"
-          aria-pressed={jira.active}
-          className={jira.active ? "selected" : undefined}
-          disabled={!jira.available && !jira.active}
-          title={!jira.available ? "Connect Jira in Settings" : jira.active ? "Hide Jira issues" : "Show Jira issues"}
-          onClick={jira.onToggle}
-        >
-          <Icon name="jira" /><span>Jira</span>
-        </button>
-      )}
-      {button(SETTINGS, "bottom")}
+      {jira && stageButton({ label: "Jira issues", short: "Jira", icon: "jira", activity: jira, disabled: !jira.available && !jira.active, idleTitle: jira.available ? undefined : "Connect Jira in Settings" })}
+      {settings && stageButton({ label: "Settings", short: "Settings", icon: "gear", activity: settings, className: "bottom" })}
     </nav>
   );
 }

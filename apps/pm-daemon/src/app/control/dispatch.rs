@@ -12,15 +12,14 @@ use termloop_pm::{
 };
 use termloop_pm_contract::pm::{
     CONTRACT_IDENTITY, ErrorCode, PmDigestReadParams, PmEnvironmentsSetParams, PmProbeCreateParams,
-    PmProbeRef, PmProjectCreateParams, PmProjectRef, PmProjectUpdateParams, PmSources,
-    PmSprintCloseParams, PmSprintCreateParams, PmSprintRef, PmSprintUpdateParams,
-    PmTicketBlockerAddParams, PmTicketBlockerRemoveParams, PmTicketCreateParams,
-    PmTicketCriterionAddParams, PmTicketCriterionRemoveParams, PmTicketCriterionSetDoneParams,
-    PmTicketDescriptionSaveParams, PmTicketMoveParams, PmTicketNoteAddParams, PmTicketNoteRef,
-    PmTicketRef, PmTicketUpdateParams,
+    PmProbeRef, PmProjectRef, PmSourcesSetParams, PmSprintCloseParams, PmSprintCreateParams,
+    PmSprintRef, PmSprintUpdateParams, PmTicketBlockerAddParams, PmTicketBlockerRemoveParams,
+    PmTicketCreateParams, PmTicketCriterionAddParams, PmTicketCriterionRemoveParams,
+    PmTicketCriterionSetDoneParams, PmTicketDescriptionSaveParams, PmTicketMoveParams,
+    PmTicketNoteAddParams, PmTicketNoteRef, PmTicketRef, PmTicketUpdateParams,
 };
 
-use super::errors::{ControlError, error, internal, invalid_parameter, not_found};
+use super::errors::{ControlError, error, internal, not_found};
 use super::{operations, skill_methods};
 use crate::app::{AppState, jira_browse, skills};
 
@@ -39,6 +38,8 @@ pub(crate) async fn dispatch(
             "protocolVersion": CONTRACT_IDENTITY,
             "terminalDataPlane": TERMINAL_DATA_PLANE,
         })),
+        "pm_project_create" => operations::project_create(state, params).await,
+        "pm_project_update" => operations::project_update(state, params).await,
         "pm_credential_store" => operations::credential_store(state, params),
         "pm_credential_clear" => operations::credential_clear(state, params),
         "pm_check_start" => operations::check_start(state, params).await,
@@ -106,22 +107,6 @@ fn planning(state: &AppState, method: &str, params: &Value) -> Result<Value, Con
     let store = &mut *store;
     match method {
         "pm_project_list" => Ok(json!({ "projects": to_value(&store.projects()?)? })),
-        "pm_project_create" => {
-            let params: PmProjectCreateParams = parse(params)?;
-            to_value(&store.create_project(&params.name, params.folder.as_deref())?)
-        }
-        "pm_project_update" => {
-            let params: PmProjectUpdateParams = parse(params)?;
-            // Agents start in this folder, so it must be a directory now.
-            if params
-                .folder
-                .as_deref()
-                .is_some_and(|folder| !std::path::Path::new(folder).is_dir())
-            {
-                return Err(invalid_parameter("folder"));
-            }
-            to_value(&store.set_project_folder(&params.project_id, params.folder.as_deref())?)
-        }
         "pm_board_read" => {
             let params: PmProjectRef = parse(params)?;
             require_project(store, &params.project_id)?;
@@ -252,12 +237,12 @@ fn planning(state: &AppState, method: &str, params: &Value) -> Result<Value, Con
             )
         }
         "pm_sources_set" => {
-            let params: PmSources = parse(params)?;
+            let params: PmSourcesSetParams = parse(params)?;
             require_project(store, &params.project_id)?;
+            // The code host follows the project folder, so only Jira is set here.
             let wanted = ProjectSources {
                 jira: params.jira.as_ref().map(convert).transpose()?,
-                github: params.github.as_ref().map(convert).transpose()?,
-                azure_devops: params.azure_dev_ops.as_ref().map(convert).transpose()?,
+                ..store.project_sources(&params.project_id)?
             };
             let stored = store.set_project_sources(&params.project_id, &wanted)?;
             state.board_changed(&params.project_id);

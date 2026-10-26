@@ -58,15 +58,15 @@ pub(crate) fn github(configured: bool, logged_in: bool) -> Verdict {
     match (configured, logged_in) {
         (false, _) => verdict(
             PmToolState::Missing,
-            "No GitHub repository is set in Settings.",
+            "The code folder has no GitHub remote.",
         ),
         (true, false) => verdict(
             PmToolState::NeedsSetup,
-            "The repository is set, but the GitHub CLI is not logged in.",
+            "The code folder has a GitHub remote, but the GitHub CLI is not logged in.",
         ),
         (true, true) => verdict(
             PmToolState::Ready,
-            "The repository is set and the GitHub CLI is logged in.",
+            "The code folder has a GitHub remote and the GitHub CLI is logged in.",
         ),
     }
 }

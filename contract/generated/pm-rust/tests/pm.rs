@@ -62,7 +62,7 @@ fn jira_links_are_only_secret_free_browse_urls() {
         assert!(!validate_method_result("pm_ticket_create", &copy), "{url}");
     }
     let source = |site: &str| {
-        json!({"projectId": "p1", "github": null, "azureDevOps": null, "jira": {
+        json!({"projectId": "p1", "jira": {
             "siteUrl": site, "boardId": 84, "accountEmail": "ada@acme.example",
             "credentialHandle": "jira-acme"
         }})
@@ -79,6 +79,10 @@ fn jira_links_are_only_secret_free_browse_urls() {
         "pm_sources_set",
         &source("https://u:t@acme.atlassian.net")
     ));
+    // The code host follows the project folder's remote and is never set.
+    let mut with_host = source("https://acme.atlassian.net");
+    with_host["github"] = json!({"owner": "acme", "name": "pay"});
+    assert!(!validate_method_params("pm_sources_set", &with_host));
 }
 
 #[test]

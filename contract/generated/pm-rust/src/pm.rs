@@ -131,7 +131,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:9b247a34b7682bf18c836d8ff373f2d75617d9e1b9c1330bae48f569b29f1c99";
+    "sha256:d1e361de139ea0f5735ba457791dcd2abec898392f7692705d0ea1897571781f";
 pub const CAPABILITY_SCOPE: &str = "pm.full";
 pub const METHODS: &[&str] = &[
     "pm_system_version",
@@ -898,6 +898,15 @@ pub struct PmSources {
         deserialize_with = "deserialize_required_nullable"
     )]
     pub azure_dev_ops: Option<PmAzureDevOpsSource>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmSourcesSetParams {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub jira: Option<PmJiraSource>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -2446,7 +2455,6 @@ pub type PmTicketNoteRemoveParams = PmTicketNoteRef;
 pub type PmTicketNoteRemoveResult = PmDeletedResult;
 pub type PmSourcesReadParams = PmProjectRef;
 pub type PmSourcesReadResult = PmSources;
-pub type PmSourcesSetParams = PmSources;
 pub type PmSourcesSetResult = PmSources;
 pub type PmProbeCreateResult = PmProbe;
 pub type PmProbeApproveParams = PmProbeRef;
@@ -4151,6 +4159,32 @@ fn validate_pm_sources(value: &Value) -> bool {
             && object
                 .keys()
                 .all(|key| ["projectId", "jira", "github", "azureDevOps"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_sources_set_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("projectId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object
+            .get("jira")
+            .is_some_and(|field| (validate_pm_jira_source(field) || field.is_null()))
+            && object
+                .keys()
+                .all(|key| ["projectId", "jira"].contains(&key.as_str()))
     })
 }
 
@@ -8638,7 +8672,7 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
         }
         "pm_sources_set" => {
             serde_json::from_value::<PmSourcesSetParams>(params.clone()).is_ok()
-                && validate_pm_sources(params)
+                && validate_pm_sources_set_params(params)
         }
         "pm_credential_store" => {
             serde_json::from_value::<PmCredentialStoreParams>(params.clone()).is_ok()

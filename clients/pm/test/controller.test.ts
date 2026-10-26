@@ -56,22 +56,23 @@ describe("PmController", () => {
       return ok({});
     });
     const controller = new PmController(bridge, createPmStore({ projectId: "project-1" }));
-    await controller.saveSources({ siteUrl: "https://acme.atlassian.net", boardId: 3, accountEmail: "pm@acme.test", token: "s3cret" }, null);
+    await controller.saveSources({ siteUrl: "https://acme.atlassian.net", boardId: 3, accountEmail: "pm@acme.test", token: "s3cret" });
     expect(bridge.calls[0]).toEqual({ method: "pm_credential_store", params: { kind: "jiraApiToken", secret: "s3cret" } });
     const sourcesCall = bridge.calls.find((call) => call.method === "pm_sources_set");
     expect(JSON.stringify(sourcesCall?.params)).not.toContain("s3cret");
-    expect(sourcesCall?.params).toMatchObject({ jira: { credentialHandle: "handle-1" }, github: null, azureDevOps: null });
+    expect(sourcesCall?.params).toEqual({ projectId: "project-1", jira: expect.objectContaining({ credentialHandle: "handle-1" }) });
   });
 
-  it("sends an Azure DevOps code host in place of a GitHub one", async () => {
-    const bridge = fakeBridge((method) => method === "pm_sources_set"
-      ? ok({ projectId: "project-1", jira: null, github: null, azureDevOps: null })
-      : { ok: false, error: { code: "unavailable", message: "offline" } });
-    const controller = new PmController(bridge, createPmStore({ projectId: "project-1" }));
-    await controller.saveSources(null, { kind: "azureDevOps", organization: "contoso", project: "Parking", name: "Nucleus" });
-    expect(bridge.calls.find((call) => call.method === "pm_sources_set")?.params).toEqual({
-      projectId: "project-1", jira: null, github: null, azureDevOps: { organization: "contoso", project: "Parking", name: "Nucleus" },
+  it("rereads the sources after a folder change, which the daemon reads the code host from", async () => {
+    const github = { projectId: "project-1", jira: null, github: { owner: "acme", name: "shop" }, azureDevOps: null };
+    const bridge = fakeBridge((method) => {
+      if (method === "pm_project_update") return ok({ id: "project-1", name: "Shop", folder: "/work/shop", createdAtEpochMs: 0 });
+      if (method === "pm_sources_read") return ok(github);
+      return { ok: false, error: { code: "unavailable", message: "offline" } };
     });
+    const store = createPmStore({ projectId: "project-1" });
+    await new PmController(bridge, store).setProjectFolder("/work/shop");
+    expect(store.getState().sources).toEqual(github);
   });
 
   it("rereads the digest with every board reread, so board changes reach Since yesterday", async () => {

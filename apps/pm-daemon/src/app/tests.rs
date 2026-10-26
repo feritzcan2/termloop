@@ -662,7 +662,7 @@ async fn jira_browse_reads_need_a_source_and_a_stored_token() {
     call(
         state,
         "pm_sources_set",
-        json!({ "projectId": project_id, "github": null, "azureDevOps": null, "jira": {
+        json!({ "projectId": project_id, "jira": {
             "siteUrl": "https://acme.atlassian.net", "boardId": 84,
             "accountEmail": "ada@acme.example", "credentialHandle": handle,
         }}),
@@ -680,37 +680,77 @@ async fn jira_browse_reads_need_a_source_and_a_stored_token() {
     }
 }
 
+/// Points the folder's `origin` remote at `url`, after creating the repository.
+fn repository_with_origin(folder: &std::path::Path, url: &str) {
+    std::fs::create_dir_all(folder).unwrap();
+    let git = termloop_gitio::GitRunner::discover().unwrap();
+    termloop_gitio::test_support::initialize_repository(&git, folder).unwrap();
+    termloop_gitio::test_support::set_remote_url(&git, folder, "origin", std::path::Path::new(url))
+        .unwrap();
+}
+
 #[tokio::test]
-async fn sources_keep_one_azure_devops_repository_normalized() {
+async fn the_code_host_follows_the_project_folder_remote() {
     let fixture = fixture();
     let state = &fixture.state;
     let project_id = project(state).await;
-    let azure = json!({ "organization": "Contoso", "project": "Parking", "name": "Nucleus" });
-    let stored = call(
+    let read = || call(state, "pm_sources_read", json!({ "projectId": project_id }));
+    let set_folder = |folder: Option<&std::path::Path>| {
+        call(
+            state,
+            "pm_project_update",
+            json!({ "projectId": project_id, "folder": folder.map(|folder| folder.to_str().unwrap()) }),
+        )
+    };
+
+    let azure = fixture.directory.join("nucleus");
+    repository_with_origin(
+        &azure,
+        "https://Contoso@dev.azure.com/Contoso/Parking/_git/Nucleus",
+    );
+    set_folder(Some(&azure)).await.unwrap();
+    let sources = read().await.unwrap();
+    assert_eq!(
+        sources["azureDevOps"],
+        json!({ "organization": "contoso", "project": "Parking", "name": "Nucleus" })
+    );
+    assert_eq!(sources["github"], Value::Null);
+
+    let github = fixture.directory.join("shop");
+    repository_with_origin(&github, "git@github.com:acme/shop.git");
+    set_folder(Some(&github)).await.unwrap();
+    let sources = read().await.unwrap();
+    assert_eq!(
+        sources["github"],
+        json!({ "owner": "acme", "name": "shop" })
+    );
+    assert_eq!(sources["azureDevOps"], Value::Null);
+
+    // Jira is set on its own and keeps the detected host.
+    call(
         state,
         "pm_sources_set",
-        json!({ "projectId": project_id, "jira": null, "github": null, "azureDevOps": azure }),
+        json!({ "projectId": project_id, "jira": null }),
     )
     .await
     .unwrap();
     assert_eq!(
-        stored["azureDevOps"],
-        json!({ "organization": "contoso", "project": "Parking", "name": "Nucleus" })
+        read().await.unwrap()["github"],
+        json!({ "owner": "acme", "name": "shop" })
     );
+
+    let plain = fixture.directory.join("plain");
+    std::fs::create_dir_all(&plain).unwrap();
+    set_folder(Some(&plain)).await.unwrap();
+    assert_eq!(read().await.unwrap()["github"], Value::Null);
+
+    set_folder(Some(&github)).await.unwrap();
+    set_folder(None).await.unwrap();
+    let sources = read().await.unwrap();
     assert_eq!(
-        call(state, "pm_sources_read", json!({ "projectId": project_id }))
-            .await
-            .unwrap(),
-        stored
+        (&sources["github"], &sources["azureDevOps"]),
+        (&Value::Null, &Value::Null)
     );
-    let error = call_error(
-        state,
-        "pm_sources_set",
-        json!({ "projectId": project_id, "jira": null,
-            "github": { "owner": "acme", "name": "pay" }, "azureDevOps": azure }),
-    )
-    .await;
-    assert_eq!(error.code, ErrorCode::InvalidParams);
 }
 
 #[tokio::test]

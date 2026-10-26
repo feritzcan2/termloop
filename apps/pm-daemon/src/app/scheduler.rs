@@ -1,8 +1,8 @@
 //! The PM daemon's schedules: each check tick abandons overdue delivery
 //! checks, runs due probes, starts the checks that are due, and runs due
-//! skills; the fact
-//! refresh reads Jira and GitHub for the active sprint's tickets every ten
-//! minutes and after each Jira pull.
+//! skills; the fact refresh reads Jira, follows each project folder's code
+//! host, and reads its pull requests for the active sprint's tickets every
+//! ten minutes and after each Jira pull.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -12,14 +12,12 @@ use termloop_platform::{CommandRequest, CommandTermination};
 use termloop_pm::skill::SkillEvent;
 use termloop_pm::{
     CommitAncestryFact, DeliveryCheck, DeliveryProbe, FactRead, FactsObservation, NewCheck,
-    PmError, ProbeMatcher, ProbeOutcome, ProbeStatus, ProjectSources, PullRequestFact,
-    PullRequestsObservation, SprintState, named_commit, read_jira_sprints,
+    PmError, ProbeMatcher, ProbeOutcome, ProbeStatus, PullRequestFact, PullRequestsObservation,
+    SprintState, named_commit, read_jira_sprints,
 };
-use termloop_providers::{
-    AzureDevOpsClient, AzureRepository, GitHubClient, GitHubRepository, IssueKeyPullRequests,
-    JiraCloudClient, JiraCredential, ProviderFailure,
-};
+use termloop_providers::{JiraCloudClient, JiraCredential, ProviderFailure};
 
+use crate::app::code_host::{self, CodeHost};
 use crate::app::control::errors::ControlError;
 use crate::app::{AppState, agents, credentials, jira, skills};
 
@@ -32,7 +30,6 @@ const FACT_REFRESH_INTERVAL: Duration = Duration::from_secs(10 * 60);
 const PROBE_INTERVAL_MS: u64 = 10 * 60 * 1000;
 const PROBE_TIMEOUT: Duration = Duration::from_secs(30);
 const PROBE_OUTPUT_LIMIT: usize = 64 * 1024;
-const PULL_REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 /// Tickets whose pull requests one refresh reads per project.
 const PULL_REQUEST_TICKETS_MAX: usize = 50;
 
@@ -328,6 +325,7 @@ async fn refresh_facts(state: &AppState) {
     let projects = state.store.lock().projects().unwrap_or_default();
     for project in projects {
         refresh_jira_facts(state, &project.id).await;
+        code_host::refresh(state, &project.id).await;
         refresh_pull_request_facts(state, &project.id).await;
     }
 }
@@ -356,48 +354,8 @@ async fn refresh_jira_facts(state: &AppState, project_id: &str) {
     }
 }
 
-/// The project's code host, read for pull requests naming an issue key.
-enum CodeHost {
-    GitHub(GitHubRepository),
-    Azure(AzureRepository),
-}
-
-impl CodeHost {
-    fn of(sources: ProjectSources) -> Option<Self> {
-        match (sources.github, sources.azure_devops) {
-            (Some(github), _) => Some(Self::GitHub(GitHubRepository {
-                owner: github.owner,
-                name: github.name,
-            })),
-            (None, Some(azure)) => Some(Self::Azure(azure)),
-            (None, None) => None,
-        }
-    }
-
-    /// One read per key on GitHub, which searches by key; one listing for
-    /// every key on Azure DevOps, which cannot.
-    fn pull_requests(
-        &self,
-        provider_directory: &Path,
-        keys: &[String],
-    ) -> Vec<Result<IssueKeyPullRequests, ProviderFailure>> {
-        match self {
-            Self::GitHub(repository) => {
-                let client = GitHubClient::new(provider_directory);
-                keys.iter()
-                    .map(|key| {
-                        client.issue_key_pull_requests(repository, key, PULL_REQUEST_TIMEOUT)
-                    })
-                    .collect()
-            }
-            Self::Azure(repository) => AzureDevOpsClient::new(provider_directory)
-                .issue_keys_pull_requests(repository, keys, true, PULL_REQUEST_TIMEOUT)
-                .unwrap_or_else(|failure| keys.iter().map(|_| Err(failure)).collect()),
-        }
-    }
-}
-
-async fn refresh_pull_request_facts(state: &AppState, project_id: &str) {
+/// Reads one project's pull requests for its active sprint's tickets.
+pub(crate) async fn refresh_pull_request_facts(state: &AppState, project_id: &str) {
     let (label, host, tickets) = {
         let store = state.store.lock();
         let Ok(sources) = store.project_sources(project_id) else {

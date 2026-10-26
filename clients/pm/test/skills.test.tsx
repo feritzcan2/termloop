@@ -229,7 +229,8 @@ describe("SkillsPanel", () => {
     expect(bridge.calls).toEqual([]);
     picked = "/work/shop";
     await controller.setUpSkill("deploymentControl");
-    expect(bridge.calls.slice(0, 2)).toEqual([
+    // Setting the folder rereads the sources, whose code host the daemon found from it.
+    expect(bridge.calls.filter((call) => call.method !== "pm_sources_read").slice(0, 2)).toEqual([
       { method: "pm_project_update", params: { projectId: "project-1", folder: "/work/shop" } },
       { method: "pm_skill_creator_launch", params: { projectId: "project-1", setup: "deploymentControl" } },
     ]);
