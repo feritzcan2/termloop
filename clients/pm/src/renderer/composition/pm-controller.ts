@@ -540,11 +540,19 @@ export class PmController {
 
   /**
    * A skill row's Set up opens that skill's own creator. Deployment control
-   * turns on directly when the project already lists its environments.
+   * turns on directly when the project already lists its environments;
+   * otherwise its setup searches the project's git repository, so the PM
+   * picks one first when the project has no code folder.
    */
   async setUpSkill(kind: PmSkillSetup): Promise<void> {
     const builtin = this.state.skills?.skills.find((skill) => skill.builtin === "deploymentControl");
     if (kind === "deploymentControl" && builtin) return this.setSkillEnabled(builtin.id, true);
+    if (kind === "deploymentControl" && !this.state.projects.find((project) => project.id === this.state.projectId)?.folder) {
+      const folder = await this.bridge.pickFolder();
+      if (!folder) return;
+      await this.setProjectFolder(folder);
+      if (!this.state.projects.find((project) => project.id === this.state.projectId)?.folder) return;
+    }
     return this.launchSkillCreator({ setup: kind });
   }
 

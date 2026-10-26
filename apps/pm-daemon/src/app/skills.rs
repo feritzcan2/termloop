@@ -21,7 +21,7 @@ use termloop_pm::skill::{
 use termloop_pm::{PmError, PmStore, SprintState, Ticket, slack_ts_at};
 use termloop_pm_contract::pm::{EventName, PmToolState};
 
-use crate::app::control::errors::{ControlError, not_found};
+use crate::app::control::errors::{ControlError, constraint, not_found};
 use crate::app::control::to_value;
 use crate::app::{AppState, agents, owners, scheduler, skill_discovery, tool_list};
 
@@ -304,6 +304,9 @@ pub(crate) fn launch_creator(
                 PmAgentProfile::build(&store, project_id, PmAgentMode::SkillCreator, None)?
             }
             CreatorLaunch::Setup(setup) => {
+                if setup == SkillSetup::DeploymentControl {
+                    require_git_repository(&store, project_id)?;
+                }
                 PmAgentProfile::build_skill_setup(&store, project_id, setup)?
             }
             CreatorLaunch::Revise(skill_id) => {
@@ -312,6 +315,22 @@ pub(crate) fn launch_creator(
         }
     };
     agents::launch_profile(state, project_id, &profile, None, None, None)
+}
+
+/// Deployment control setup searches the project's git repository, so the
+/// code folder must be one.
+fn require_git_repository(store: &PmStore, project_id: &str) -> Result<(), ControlError> {
+    let folder = store.project(project_id)?.ok_or_else(not_found)?.folder;
+    match folder {
+        None => Err(constraint(
+            "Choose the project's git repository as its code folder first.",
+        )),
+        // A checkout has .git as a folder, a linked worktree as a file.
+        Some(folder) if !std::path::Path::new(&folder).join(".git").exists() => Err(constraint(
+            "The project's code folder is not a git repository.",
+        )),
+        Some(_) => Ok(()),
+    }
 }
 
 /// A skill-run agent exited: a run it did not finish failed.

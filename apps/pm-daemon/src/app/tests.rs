@@ -160,6 +160,18 @@ async fn a_project_code_folder_must_exist_and_can_be_cleared() {
     .await
     .unwrap();
     assert_eq!(set["folder"], folder);
+    // A folder that is not a git repository gives Deployment control setup
+    // nothing to search.
+    assert_eq!(
+        call(
+            state,
+            "pm_skill_creator_launch",
+            json!({ "projectId": project_id, "setup": "deploymentControl" })
+        )
+        .await,
+        Err(ErrorCode::Constraint)
+    );
+    assert!(state.agents.project_sessions(&project_id).is_empty());
     let missing = fixture.directory.join("missing");
     assert_eq!(
         call(
@@ -1103,6 +1115,18 @@ async fn a_skill_with_nothing_new_records_a_skipped_run_without_an_agent() {
         )
         .await,
         Err(ErrorCode::NotFound)
+    );
+    assert!(state.agents.project_sessions(&project_id).is_empty());
+    // Deployment control setup searches the project's git repository:
+    // without one as the code folder, nothing launches.
+    assert_eq!(
+        call(
+            state,
+            "pm_skill_creator_launch",
+            json!({ "projectId": project_id, "setup": "deploymentControl" })
+        )
+        .await,
+        Err(ErrorCode::Constraint)
     );
     assert!(state.agents.project_sessions(&project_id).is_empty());
     // A setup creator is for one skill, never a revision too.

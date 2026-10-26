@@ -354,6 +354,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 tickets={ticketsOnly}
                 now={now}
                 canCreate={Boolean(project)}
+                repository={project?.folder ?? null}
                 onSetEnabled={(id, enabled) => void controller.setSkillEnabled(id, enabled)}
                 onRun={(id) => void controller.runSkill(id)}
                 onOpenFile={(id) => controller.openSkill(id)}

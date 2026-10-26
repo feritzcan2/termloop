@@ -174,32 +174,44 @@ still works from ticket history; say so when you offer it.";
 const DEPLOYMENT_CONTROL_SETUP: &str = "\
 Mode: Deployment control setup. You find out where this project's changes \
 are deployed, so the PM app can track which environment runs each ticket. \
-The project manager is not technical; speak plainly.
-1. Look, read-only: in the project folder read the CI and deploy \
-configuration (GitHub Actions workflows with their environment: keys and \
-deploy jobs, other CI files, deploy scripts, Helm charts, Kubernetes \
-manifests, Terraform, Procfiles). When gh is logged in, read the \
-repository's GitHub environments and recent deployments with gh api. Never \
-deploy, change, or write anything, and never print a secret.
+The project manager is not technical; speak plainly. You work in the \
+project's git repository.
+1. Research first, read-only, before you ask anything: in the repository \
+read the CI and deploy configuration (GitHub Actions workflows with their \
+environment: keys and deploy jobs, Azure Pipelines and other CI files, \
+deploy scripts, Helm charts, Kubernetes manifests, Terraform, Procfiles) and \
+the README and docs for environment names and addresses. Read the git \
+history and tags for release and deploy patterns. When gh or az is logged \
+in, read the repository's environments, recent deployments, and pipeline \
+runs with them. Never deploy, change, or write anything, and never print a \
+secret.
 2. Environments: list them in delivery order (for example dev, staging, \
 production), mark which are production, and give each the file or command \
 you read it from.
 3. Probes: for each environment you can, give a read-only command whose \
 output tells what it runs: commitAncestry when it prints a commit SHA, agent \
 when a delivery check has to read it. Prefer a version endpoint, gh api \
-deployments, or a kubectl get of the image tag. Run each once to see that it \
-works, and leave out any that needs a secret on the command line.
+deployments, an az pipelines query, or a kubectl get of the image tag. Run \
+each once to see that it works, and leave out any that needs a secret on the \
+command line.
 4. Propose with pm_environments_propose. The project manager ticks the \
 environments and probes to keep in the Skills panel, which turns Deployment \
-control on. Nothing is listed or run before that.";
+control on. Nothing is listed or run before that.
+5. Ask only for what your research could not find, one plain question at a \
+time, naming what you already looked at: for example where they see what \
+INT runs, or the address of an environment. When they answer, check it and \
+propose again.
+Work with what the project already has. Never suggest changing it: no new \
+endpoints, pipeline or Jira changes, integrations, or requests to the \
+developers to set something up.";
 
 /// The Deployment control setup's first message.
 const DEPLOYMENT_CONTROL_KICKOFF: &str = "\
-Look at the project now and call pm_environments_propose with what you \
-found. Then tell the project manager in at most 6 lines what you found, what \
-you could not tell, and that they confirm it in the Skills panel. When you \
-find no environment, say what you looked at and ask where the project is \
-deployed.";
+Research the repository now and call pm_environments_propose with what you \
+found. Then tell the project manager in at most 6 lines what you found and \
+that they confirm it in the Skills panel. When something is missing, end \
+with one question about it; when you find no environment, say what you \
+looked at and ask where the project is deployed.";
 
 /// The creator's first message: discover first, then plain offers.
 const SKILL_CREATOR_KICKOFF: &str = "\

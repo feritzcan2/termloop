@@ -18,6 +18,8 @@ export type SkillsPanelProps = {
   tickets: PmTicket[];
   now: number;
   canCreate: boolean;
+  /** The project's code folder: Deployment control setup searches it. */
+  repository: string | null;
   onSetEnabled(skillId: string, enabled: boolean): void;
   onRun(skillId: string): void;
   /** Opens the skill's SKILL.md in the stage. */
@@ -113,7 +115,17 @@ export function SkillsPanel(props: SkillsPanelProps) {
             const review = known.kind === "deploymentControl"
               ? proposal && (() => setReviewing(true))
               : draft && (() => document.getElementById(draftAnchor(draft.id))?.scrollIntoView?.({ behavior: "smooth", block: "start" }));
-            return <SetupRow key={known.kind} {...known} onReview={review || undefined} onSetUp={() => props.onSetUp(known.kind)} />;
+            const needsRepository = known.kind === "deploymentControl" && props.repository === null;
+            return (
+              <SetupRow
+                key={known.kind}
+                {...known}
+                needs={needsRepository ? "Searches the project's git repository; choose it first." : undefined}
+                setUpLabel={needsRepository ? "Choose repository…" : "Set up"}
+                onReview={review || undefined}
+                onSetUp={() => props.onSetUp(known.kind)}
+              />
+            );
           })}
           {shown.filter((skill) => !KNOWN_SKILLS.some((known) => known.matches(skill))).map(row)}
         </ul>
@@ -152,7 +164,7 @@ function draftAnchor(draftId: string): string {
 }
 
 /** A known skill that is not set up: greyed out, with its own Set up, or Review once its setup proposed something. */
-function SetupRow(props: { name: string; description: string; onReview: (() => void) | undefined; onSetUp(): void }) {
+function SetupRow(props: { name: string; description: string; needs: string | undefined; setUpLabel: string; onReview: (() => void) | undefined; onSetUp(): void }) {
   return (
     <li className="skill-row off setup">
       <span className="skill-tick">
@@ -160,12 +172,13 @@ function SetupRow(props: { name: string; description: string; onReview: (() => v
         <span className="skill-name">{props.name}</span>
       </span>
       <p className="skill-description">{props.description}</p>
+      {props.needs && !props.onReview && <p className="hint">{props.needs}</p>}
       <div className="skill-meta">
         {props.onReview ? <span className="chip ready">Ready to review</span> : <span>Not set up</span>}
         <span className="sp" />
         {props.onReview
           ? <button type="button" className="btn sm pri" onClick={props.onReview}>Review</button>
-          : <button type="button" className="btn sm pri" onClick={props.onSetUp}>Set up</button>}
+          : <button type="button" className="btn sm pri" onClick={props.onSetUp}>{props.setUpLabel}</button>}
       </div>
     </li>
   );

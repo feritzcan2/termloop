@@ -20,6 +20,7 @@ function panel(overrides: Partial<SkillsPanelProps> = {}): SkillsPanelProps {
     tickets: [ticket()],
     now: 0,
     canCreate: true,
+    repository: "/work/shop",
     onSetEnabled: () => undefined,
     onRun: () => undefined,
     onOpenFile: () => undefined,
@@ -189,7 +190,7 @@ describe("SkillsPanel", () => {
       if (method === "pm_skill_creator_launch") return ok({ sessionId: "session-1" });
       return ok({ projectId: "project-1", sessions: [] });
     });
-    const store = createPmStore({ projectId: "project-1" });
+    const store = createPmStore({ projectId: "project-1", projects: [{ id: "project-1", name: "Shop", folder: "/work/shop", createdAtEpochMs: 1 }] });
     const controller = new PmController(bridge, store);
     const launches = () => bridge.calls.filter((call) => call.method === "pm_skill_creator_launch").map((call) => call.params);
     await controller.setUpSkill("bugOwnerFinder");
@@ -199,6 +200,39 @@ describe("SkillsPanel", () => {
     await controller.setUpSkill("deploymentControl");
     expect(launches()).toHaveLength(2);
     expect(bridge.calls.at(-1)).toEqual({ method: "pm_skill_set_enabled", params: { skillId: "skill-1", enabled: true } });
+  });
+
+  it("asks for the git repository before Deployment control setup searches it", async () => {
+    const onSetUp = vi.fn();
+    const { container, unmount } = render(
+      <SkillsPanel {...panel({ onSetUp, repository: null, skills: { projectId: "project-1", environmentProposal: null, skills: [], drafts: [] } })} />,
+    );
+    const [deployment, bug] = [...container.querySelectorAll(".skill-row.setup")];
+    expect(deployment!.textContent).toContain("Searches the project's git repository; choose it first.");
+    act(() => deployment!.querySelector("button")!.click());
+    expect(deployment!.querySelector("button")!.textContent).toBe("Choose repository…");
+    expect(onSetUp).toHaveBeenCalledWith("deploymentControl");
+    expect(bug!.querySelector("button")!.textContent).toBe("Set up");
+    unmount();
+
+    let picked: string | null = null;
+    const bridge = fakeBridge((method, params) => {
+      if (method === "pm_project_update") return ok({ id: "project-1", name: "Shop", folder: (params as { folder: string }).folder, createdAtEpochMs: 1 });
+      if (method === "pm_skill_creator_launch") return ok({ sessionId: "session-1" });
+      return ok({ projectId: "project-1", sessions: [] });
+    });
+    bridge.pickFolder = async () => picked;
+    const store = createPmStore({ projectId: "project-1", projects: [{ id: "project-1", name: "Shop", folder: null, createdAtEpochMs: 1 }] });
+    const controller = new PmController(bridge, store);
+    // Cancelling the picker launches nothing.
+    await controller.setUpSkill("deploymentControl");
+    expect(bridge.calls).toEqual([]);
+    picked = "/work/shop";
+    await controller.setUpSkill("deploymentControl");
+    expect(bridge.calls.slice(0, 2)).toEqual([
+      { method: "pm_project_update", params: { projectId: "project-1", folder: "/work/shop" } },
+      { method: "pm_skill_creator_launch", params: { projectId: "project-1", setup: "deploymentControl" } },
+    ]);
   });
 
   it("turns Deployment control on with only the environments and probes the PM ticked", async () => {

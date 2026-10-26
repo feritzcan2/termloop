@@ -560,11 +560,14 @@ fn deployment_control_sets_up_with_its_own_reader_of_the_project() {
     );
     // It reads the project itself, so the creator's no-commands rule is out.
     assert!(!setup.system_prompt.contains("never run commands"));
+    // It researches before it asks, and works with what the project has.
+    assert!(setup.system_prompt.contains("Research first"));
+    assert!(setup.system_prompt.contains("Never suggest changing it"));
     assert!(
         setup
             .first_message
             .unwrap()
-            .starts_with("Look at the project now and call pm_environments_propose")
+            .starts_with("Research the repository now and call pm_environments_propose")
     );
 }
 
