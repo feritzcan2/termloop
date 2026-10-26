@@ -17,7 +17,7 @@ use termloop_providers::{JiraIssueDetails, JiraIssueSnapshot, JiraListedIssue};
 use termloop_terminal::TerminalService;
 use tokio::sync::{Notify, broadcast};
 
-use super::agents::{AgentRecord, AgentRegistry};
+use super::agents::{self, AgentRecord, AgentRegistry};
 use super::control::errors::ControlError;
 use super::control::{decode_request, run_request};
 use super::scheduler::{self, Refusal};
@@ -665,6 +665,23 @@ async fn a_project_without_a_kept_conversation_is_not_resumable() {
         .await
         .unwrap();
     assert_eq!(listed["resumable"], true);
+}
+
+#[tokio::test]
+async fn an_assistant_whose_terminal_is_gone_is_closed_instead_of_reached() {
+    let fixture = fixture();
+    let state = &fixture.state;
+    let project_id = project(state).await;
+    register_agent(state, &project_id, PmAgentMode::Assistant, "bearer");
+
+    // Without a message to deliver, the running assistant is simply reused.
+    let reused = agents::reach_running_assistant(state, &project_id, None).unwrap();
+    assert_eq!(reused.session_id, "session-1");
+
+    // Its terminal never took input, so a message closes the stale session.
+    assert!(agents::reach_running_assistant(state, &project_id, Some("plan")).is_none());
+    assert!(state.agents.running_session("session-1").is_none());
+    assert!(agents::reach_running_assistant(state, &project_id, None).is_none());
 }
 
 fn launched(_: &AppState, _: &DeliveryCheck) -> Result<String, ControlError> {

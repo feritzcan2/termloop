@@ -294,22 +294,22 @@ pub(crate) fn launch_assistant(
             task,
         )?
     };
-    if let Some(running) = state.agents.running_assistant(project_id) {
-        if !fresh {
-            if let Some(message) = &profile.resume_message {
-                deliver(state, &running.session_id, message)?;
-            }
-            let record = state
-                .agents
-                .refocus(&running.session_id, focus_ticket_id)
-                .unwrap_or(running);
-            state.publish(
-                EventName::PmAgentChanged,
-                json!({ "projectId": project_id, "sessionId": record.session_id }),
-            );
-            return Ok(record);
+    if fresh {
+        if let Some(running) = state.agents.running_assistant(project_id) {
+            stop(state, &running.session_id)?;
         }
-        stop(state, &running.session_id)?;
+    } else if let Some(running) =
+        reach_running_assistant(state, project_id, profile.resume_message.as_deref())
+    {
+        let record = state
+            .agents
+            .refocus(&running.session_id, focus_ticket_id)
+            .unwrap_or(running);
+        state.publish(
+            EventName::PmAgentChanged,
+            json!({ "projectId": project_id, "sessionId": record.session_id }),
+        );
+        return Ok(record);
     }
     if fresh {
         state
@@ -328,18 +328,41 @@ pub(crate) fn launch_assistant(
     )
 }
 
+/// The project's running assistant once `message` reached it. An assistant
+/// whose terminal no longer takes input exited before the reaper saw it: its
+/// session is closed so the caller starts the conversation again.
+pub(crate) fn reach_running_assistant(
+    state: &AppState,
+    project_id: &str,
+    message: Option<&str>,
+) -> Option<AgentRecord> {
+    let running = state.agents.running_assistant(project_id)?;
+    let Some(message) = message else {
+        return Some(running);
+    };
+    if deliver(state, &running.session_id, message) {
+        return Some(running);
+    }
+    let _ = state.terminal.terminate(&running.session_id);
+    on_agent_exit(state, &running.session_id);
+    None
+}
+
 /// Pastes a message into a running agent's terminal and submits it.
-fn deliver(state: &AppState, session_id: &str, message: &str) -> Result<(), ControlError> {
-    let chunks =
+fn deliver(state: &AppState, session_id: &str, message: &str) -> bool {
+    let delivered =
         termloop_platform::generated_terminal_paste_submission_sequence(message.as_bytes())
-            .map_err(|_| internal())?;
-    state
-        .terminal
-        .input_sequence(session_id, &chunks)
-        .map_err(|error| {
-            tracing::warn!(%error, "a message did not reach the PM assistant");
-            constraint("the assistant is unavailable")
-        })
+            .map_err(|error| error.to_string())
+            .and_then(|chunks| {
+                state
+                    .terminal
+                    .input_sequence(session_id, &chunks)
+                    .map_err(|error| error.to_string())
+            });
+    if let Err(error) = &delivered {
+        tracing::warn!(%error, "a message did not reach the PM assistant");
+    }
+    delivered.is_ok()
 }
 
 /// Whether the project's next assistant launch resumes a conversation
