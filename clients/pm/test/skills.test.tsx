@@ -9,7 +9,7 @@ import { SkillsPanel, type SkillsPanelProps } from "../src/renderer/ui/SkillsPan
 import { fakeBridge, manifest, ok, playbook, proposal, skill, skillDraft, ticket } from "./fixtures.js";
 import { render } from "./render.js";
 
-const BOARD = { projectId: "project-1", sprints: [], tickets: [], playbook: playbook(), runningChecks: [], tracking: { jira: true, code: false, deploy: false, tier: "tickets" } };
+const BOARD = { projectId: "project-1", sprints: [], tickets: [], playbook: playbook(), runningChecks: [], epics: [], epicBreakdowns: [], tracking: { jira: true, code: false, deploy: false, tier: "tickets" } };
 
 function panel(overrides: Partial<SkillsPanelProps> = {}): SkillsPanelProps {
   return {

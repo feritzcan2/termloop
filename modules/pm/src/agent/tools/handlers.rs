@@ -14,9 +14,10 @@ use crate::skill::{
     SkillPrefilter, SkillSample, SkillSource, SkillTrigger,
 };
 use crate::{
-    Board, ChannelWatermark, CheckReport, DataTier, DeliveryRisk, NewTicketNote, PmError, PmStore,
-    ProposalChange, ProposalOrigin, SprintState, Ticket, TicketAuthor, TicketDelivery,
-    TicketDeliveryFacts, TicketNote, TicketNoteKind, TicketPriority, TicketProposal, TicketStatus,
+    Board, BreakdownTask, ChannelWatermark, CheckReport, DataTier, DeliveryRisk, EpicDraft,
+    NewTicketNote, PmError, PmStore, ProposalChange, ProposalOrigin, SprintState, Ticket,
+    TicketAuthor, TicketDelivery, TicketDeliveryFacts, TicketNote, TicketNoteKind, TicketPriority,
+    TicketProposal, TicketStatus,
 };
 
 /// Which tickets a board read lists.
@@ -65,6 +66,20 @@ pub struct BoardTicket {
     pub risks: usize,
     /// A delivery check is running for the ticket.
     pub checking: bool,
+    /// The epic the ticket works toward.
+    pub epic_id: Option<String>,
+}
+
+/// One epic as the agent sees it; its progress is its tickets'.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardEpic {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    /// Every ticket of the epic, across sprints and the backlog.
+    pub tickets: usize,
+    pub done: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -77,6 +92,7 @@ pub struct BoardReadResult {
     pub steps: Vec<String>,
     pub sprints: Vec<BoardSprint>,
     pub tickets: Vec<BoardTicket>,
+    pub epics: Vec<BoardEpic>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -262,6 +278,27 @@ pub struct PlaybookProposeParams {
     pub steps: Vec<PlaybookStep>,
 }
 
+/// A split of a goal into tickets: under an existing epic (`epic_id`) or
+/// a new one (`epic`).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct BreakdownProposeParams {
+    #[serde(default)]
+    pub epic_id: Option<String>,
+    #[serde(default)]
+    pub epic: Option<EpicDraft>,
+    pub tasks: Vec<BreakdownTask>,
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BreakdownProposeResult {
+    pub breakdown_id: String,
+    /// Always false: the project manager picks the tasks to keep.
+    pub applied: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlaybookProposeResult {
@@ -332,6 +369,7 @@ pub(super) fn board_read(
                 next_step: delivery.playbook.next_index().map(title),
                 risks: delivery.risks.len(),
                 checking: delivery.checking,
+                epic_id: ticket.epic_id.clone(),
             }
         })
         .collect();
@@ -347,6 +385,27 @@ pub(super) fn board_read(
             ends_at_epoch_ms: sprint.ends_at_epoch_ms,
         })
         .collect();
+    let epics = board
+        .epics
+        .iter()
+        .map(|epic| {
+            let of_epic = || {
+                board
+                    .tickets
+                    .iter()
+                    .filter(|ticket| ticket.epic_id.as_deref() == Some(epic.id.as_str()))
+            };
+            BoardEpic {
+                id: epic.id.clone(),
+                title: epic.title.clone(),
+                description: epic.description.clone(),
+                tickets: of_epic().count(),
+                done: of_epic()
+                    .filter(|ticket| ticket.status == TicketStatus::Done)
+                    .count(),
+            }
+        })
+        .collect();
     Ok(BoardReadResult {
         tier: board.tracking.tier,
         steps: board
@@ -357,6 +416,7 @@ pub(super) fn board_read(
             .collect(),
         sprints,
         tickets,
+        epics,
     })
 }
 
@@ -592,6 +652,26 @@ pub(super) fn playbook_propose(
 ) -> Result<PlaybookProposeResult, PmToolError> {
     store.propose_playbook(&context.project_id, params.summary, params.steps)?;
     Ok(PlaybookProposeResult { applied: false })
+}
+
+/// Keeps a breakdown for the PM; no epic or ticket changes until the PM
+/// accepts the tasks it keeps.
+pub(super) fn breakdown_propose(
+    store: &mut PmStore,
+    context: &PmToolContext,
+    params: BreakdownProposeParams,
+) -> Result<BreakdownProposeResult, PmToolError> {
+    let breakdown = store.propose_epic_breakdown(
+        &context.project_id,
+        params.epic_id.as_deref(),
+        params.epic,
+        params.tasks,
+        params.summary,
+    )?;
+    Ok(BreakdownProposeResult {
+        breakdown_id: breakdown.id,
+        applied: false,
+    })
 }
 
 pub(super) fn risks_read(

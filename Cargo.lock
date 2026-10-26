@@ -2667,6 +2667,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "termloop-domain",
  "termloop-launch",
  "termloop-platform",
  "termloop-providers",

@@ -36,6 +36,7 @@ import type { WidthBounds } from "../ui/ResizeHandle.js";
 import { RightActivityBar } from "../ui/RightActivityBar.js";
 import { RightSidebar } from "../ui/RightSidebar.js";
 import { SettingsPage } from "../ui/SettingsPage.js";
+import { EpicsPanel } from "../ui/EpicsPanel.js";
 import { PlaybookPanel } from "../ui/PlaybookPanel.js";
 import { SkillsPanel } from "../ui/SkillsPanel.js";
 import { SuggestionsPanel } from "../ui/SuggestionsPanel.js";
@@ -91,6 +92,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
     sessionId: session.sessionId,
     state: session.state,
     assistant: session.mode === "assistant" || session.mode === "skillCreator",
+    keepsConversation: session.mode === "assistant",
     provider: session.provider,
     label: agentLabel(session, allTickets, state.skills?.skills ?? EMPTY),
     detail: session.mode === "assistant"
@@ -224,10 +226,12 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 tabs={agents}
                 activeSessionId={state.activeAgentSessionId}
                 canStart={Boolean(project)}
+                resumable={state.assistantResumable}
                 focusLabel={entry ? ticketLabel(entry.ticket) : undefined}
                 mountTerminal={mountTerminal}
                 onStop={(id) => void controller.stopAgent(id)}
                 onStart={() => launchAgent(ticketId)}
+                onNewConversation={() => void controller.newConversation(ticketId)}
               />
             ) : view === "settings" ? (
               <SettingsPage
@@ -266,6 +270,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 key={ticketId}
                 entry={entry}
                 sprints={sprints}
+                epics={board?.epics ?? EMPTY}
                 tier={tier}
                 jiraConfigured={jiraConfigured}
                 playbook={playbook}
@@ -342,6 +347,21 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                   onImport: (jiraSprintId) => void controller.importJiraSprint(jiraSprintId),
                   onOpenSettings: openSettings,
                 }}
+              />
+            ) : right.view === "epics" ? (
+              <EpicsPanel
+                epics={board?.epics ?? EMPTY}
+                breakdowns={board?.epicBreakdowns ?? EMPTY}
+                tickets={allTickets}
+                sprints={sprints}
+                canCreate={Boolean(project)}
+                onCreate={(title, description) => void controller.createEpic(title, description)}
+                onRename={(epicId, title) => void controller.updateEpic(epicId, { title })}
+                onDelete={(epicId) => void controller.deleteEpic(epicId)}
+                onPlan={(epicId) => void controller.planEpic(epicId)}
+                onOpenTicket={(id) => void controller.selectTicket(id)}
+                onAccept={(breakdownId, indices, sprintId) => controller.acceptBreakdown(breakdownId, indices, sprintId)}
+                onReject={(breakdownId) => void controller.rejectBreakdown(breakdownId)}
               />
             ) : right.view === "playbook" ? (
               <PlaybookPanel

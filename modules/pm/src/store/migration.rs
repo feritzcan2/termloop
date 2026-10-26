@@ -452,6 +452,41 @@ CREATE INDEX delivery_checks_by_project ON delivery_checks (project_id, started_
 CREATE INDEX delivery_checks_by_ticket ON delivery_checks (ticket_id, started_at_epoch_ms);
 "#;
 
+const V14: &str = r#"
+CREATE TABLE epics (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    created_at_epoch_ms INTEGER NOT NULL,
+    updated_at_epoch_ms INTEGER NOT NULL
+) STRICT;
+CREATE INDEX epics_by_project ON epics (project_id, created_at_epoch_ms);
+
+ALTER TABLE tickets ADD COLUMN epic_id TEXT REFERENCES epics (id) ON DELETE SET NULL;
+CREATE INDEX tickets_by_epic ON tickets (epic_id) WHERE epic_id IS NOT NULL;
+
+CREATE TABLE epic_breakdowns (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    epic_id TEXT REFERENCES epics (id) ON DELETE CASCADE,
+    epic_json TEXT,
+    tasks_json TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    created_at_epoch_ms INTEGER NOT NULL,
+    CHECK ((epic_id IS NULL) = (epic_json IS NOT NULL))
+) STRICT;
+CREATE INDEX epic_breakdowns_by_project ON epic_breakdowns (project_id, created_at_epoch_ms);
+
+CREATE TABLE assistant_conversations (
+    project_id TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,
+    cwd TEXT NOT NULL,
+    started_at_epoch_ms INTEGER NOT NULL
+) STRICT;
+"#;
+
 /// Every migration in order; a version is never edited once released.
 const MIGRATIONS: &[(u32, &str)] = &[
     (1, V1),
@@ -467,6 +502,7 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (11, V11),
     (12, V12),
     (13, V13),
+    (14, V14),
 ];
 
 pub const SCHEMA_VERSION: u32 = MIGRATIONS[MIGRATIONS.len() - 1].0;

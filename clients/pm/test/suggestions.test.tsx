@@ -7,7 +7,7 @@ import { SuggestionsPanel, type SuggestionsPanelProps } from "../src/renderer/ui
 import { boardTicket, fakeBridge, manifest, ok, proposal, skill, ticket } from "./fixtures.js";
 import { render } from "./render.js";
 
-const BOARD = { projectId: "project-1", sprints: [], tickets: [], environments: [], probes: [], runningChecks: [], tracking: { jira: true, code: false, deploy: false, tier: "tickets" } };
+const BOARD = { projectId: "project-1", sprints: [], tickets: [], environments: [], probes: [], runningChecks: [], epics: [], epicBreakdowns: [], tracking: { jira: true, code: false, deploy: false, tier: "tickets" } };
 
 const blockers = proposal({ id: "p-1", skillId: "skill-1", skillVersion: 1, change: { kind: "blockers", blockers: ["Waiting on the API"] }, summary: "Blocked in standup" });
 const comment = proposal({ id: "p-2", skillId: "skill-2", skillVersion: 1, change: { kind: "jiraComment", body: "Blocked on the API." }, summary: "Tell Jira" });

@@ -109,6 +109,8 @@ export const rules = [
       && !file.startsWith("contract/generated/")
       && file !== "apps/server/src/hook.rs"
       && file !== "apps/server/src/app/control/dispatch.rs"
+      // The PM assistant's launch adapter turns its kept conversation into a resume.
+      && file !== "modules/pm/src/agent/launch.rs"
       && !file.startsWith("tools/ci/")
       && !file.startsWith("tests/"),
     pattern: /\b(?:ResumeRef|native_session_id)\b/,

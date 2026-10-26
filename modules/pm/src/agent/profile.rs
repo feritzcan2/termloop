@@ -46,7 +46,17 @@ description does not reflect yet. An updated description is one complete \
 pm_ticket_propose_description that keeps the current text and structure, \
 merges in the pending notes, removes only what a note supersedes, and lists \
 contradictions under an \"Open questions\" heading instead of choosing; it \
-replaces your earlier pending description draft.";
+replaces your earlier pending description draft.
+Plan epics: an epic is a larger goal of the project that its tickets work \
+toward. When the project manager wants to plan one or split work into \
+tickets, research first (the board, related tickets, and the project's code \
+folder read-only when you work in it), ask only what research could not \
+answer, one plain question at a time, then propose the split with one \
+pm_epic_propose_breakdown. The project manager picks the tasks to keep in the \
+Epics panel; nothing changes before they do.
+This conversation is the project's one assistant and lasts across days: \
+the project manager comes back to it. When a message names a ticket or a \
+task, work on that one.";
 
 const DELIVERY_CHECK: &str = "\
 Mode: delivery check. You are not interactive; nobody answers questions. \
@@ -94,6 +104,7 @@ const OFFER_SPRINT_DESCRIPTIONS: &str = "draft clearer descriptions for the risk
 const OFFER_SPRINT_BLOCKERS: &str = "propose blockers for the tickets at risk";
 const OFFER_SPRINT_CHECKS: &str =
     "list the tickets stuck at a Playbook step and what each waits for";
+const OFFER_PLAN_EPIC: &str = "plan an epic and split it into tickets";
 const OFFER_SPRINT_JIRA: &str = "prepare a Jira update for a linked ticket as a description \
 proposal you accept and then confirm as a Jira diff";
 
@@ -306,15 +317,37 @@ Reply in at most 6 lines: what changed, which sources you could not read, \
 and the open questions. The project manager applies or dismisses the draft \
 on the ticket.";
 
-/// What the assistant is started for.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+/// The assistant's message when the project manager asks it to plan an
+/// epic.
+const PLAN_EPIC_KICKOFF: &str = "\
+Help the project manager plan an epic, then stop and wait. 1. For the epic \
+named below, read it and its tickets with pm_board_read (scope all); without \
+one, ask in one plain question which goal the epic is for. 2. Research \
+before you ask more: the board, related tickets, and the project's code \
+folder read-only when you work in it, to learn what already exists. 3. Ask \
+only what research could not answer, one plain question at a time. 4. \
+Propose the split with one pm_epic_propose_breakdown: independently \
+deliverable tasks in build order, each with what to build and why and \
+testable acceptance criteria; for an existing epic, leave out what its \
+tickets already cover. 5. Reply in at most 6 lines: the tasks and what the \
+split rests on. The project manager picks the tasks to keep in the Epics \
+panel.";
+
+/// What the assistant is started or asked for.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum AssistantTask {
-    /// A fresh conversation that opens with a brief and offers.
+    /// Open with a brief and offers; on a running or resumed conversation,
+    /// only point at the ticket in focus.
     #[default]
     Brief,
     /// Update the focus ticket's description from its notes and sources.
     UpdateDescription,
+    /// Plan an epic: an existing one, or a new goal.
+    PlanEpic { epic_id: Option<String> },
 }
+
+/// The epics listed in the assistant's prompt.
+const PROMPT_EPICS_MAX: usize = 30;
 
 /// The notes of the ticket in focus quoted in the prompt.
 const FOCUS_NOTES_MAX: usize = 20;
@@ -336,7 +369,7 @@ pub(super) const SKILL_CREATOR_TEMPLATE: PromptTemplate = PromptTemplate {
 /// The visible provenance of the assistant's instructions.
 pub(super) const ASSISTANT_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "pm.agent.assistant",
-    version: 1,
+    version: 2,
     authored_body: ASSISTANT,
 };
 
@@ -355,6 +388,9 @@ pub struct PmAgentProfile {
     /// The first message: a delivery check's non-interactive instruction,
     /// or the assistant's kickoff, which only a fresh conversation gets.
     pub first_message: Option<String>,
+    /// The assistant's message to a conversation it resumes or that is
+    /// already running: the task asked for, or the ticket now in focus.
+    pub resume_message: Option<String>,
     pub tools: Vec<&'static str>,
     /// Read-only tools of the agent's own MCP servers that run without
     /// asking: a skill run's approved agent tools, else none.
@@ -564,6 +600,7 @@ fn assistant_kickoff(board: &Board, focus: Option<&Ticket>) -> String {
         if board.tracking.jira {
             offers.push(OFFER_SPRINT_JIRA);
         }
+        offers.push(OFFER_PLAN_EPIC);
     }
     let mut message = ASSISTANT_KICKOFF.to_owned();
     for offer in offers {
@@ -663,12 +700,34 @@ impl PmAgentProfile {
         task: AssistantTask,
         creator: CreatorFocus,
     ) -> Result<Self, PmError> {
-        if task == AssistantTask::UpdateDescription
-            && (mode != PmAgentMode::Assistant || focus_ticket_id.is_none())
-        {
+        let task_fits = match &task {
+            AssistantTask::Brief => true,
+            AssistantTask::UpdateDescription => {
+                mode == PmAgentMode::Assistant && focus_ticket_id.is_some()
+            }
+            AssistantTask::PlanEpic { .. } => mode == PmAgentMode::Assistant,
+        };
+        if !task_fits {
             return Err(PmError::Invalid("task"));
         }
         let board = store.board(project_id)?;
+        let epic = match &task {
+            AssistantTask::PlanEpic {
+                epic_id: Some(epic_id),
+            } => {
+                if !valid_id(epic_id) {
+                    return Err(PmError::Invalid("epicId"));
+                }
+                Some(
+                    board
+                        .epics
+                        .iter()
+                        .find(|epic| &epic.id == epic_id)
+                        .ok_or(PmError::NotFound)?,
+                )
+            }
+            _ => None,
+        };
         let focus = match focus_ticket_id {
             Some(ticket_id) => {
                 if !valid_id(ticket_id) {
@@ -735,17 +794,44 @@ impl PmAgentProfile {
                 }
             }
         }
+        if mode == PmAgentMode::Assistant
+            && let Some(section) = epics_section(&board)
+        {
+            sections.push(section);
+        }
         if mode == PmAgentMode::SkillCreator {
             sections.push(installed_skills_section(store, project_id)?);
         }
         let system_prompt = bounded_prompt(sections.join("\n\n"));
         let focus_ticket = focus.map(|index| &board.tickets[index]);
-        let first_message = Some(match mode {
-            PmAgentMode::Assistant if task == AssistantTask::UpdateDescription => format!(
+        let task_message = match &task {
+            AssistantTask::Brief => None,
+            AssistantTask::UpdateDescription => Some(format!(
                 "{UPDATE_DESCRIPTION_KICKOFF}\nThe ticket in focus is {}.",
                 focus_ticket.expect("an update has its ticket").id
-            ),
-            PmAgentMode::Assistant => assistant_kickoff(&board, focus_ticket),
+            )),
+            AssistantTask::PlanEpic { .. } => Some(match epic {
+                Some(epic) => format!(
+                    "{PLAN_EPIC_KICKOFF}\nThe epic is \"{}\" ({}).",
+                    epic.title, epic.id
+                ),
+                None => PLAN_EPIC_KICKOFF.to_owned(),
+            }),
+        };
+        let resume_message = match (mode, &task_message, focus_ticket) {
+            (PmAgentMode::Assistant, Some(message), _) => Some(message.clone()),
+            (PmAgentMode::Assistant, None, Some(ticket)) => Some(format!(
+                "The project manager is now looking at ticket {} (\"{}\"). Read it with \
+                 pm_ticket_read and say in at most 4 lines where it stands and what you \
+                 can do for it.",
+                ticket.id, ticket.title
+            )),
+            _ => None,
+        };
+        let first_message = Some(match mode {
+            PmAgentMode::Assistant => {
+                task_message.unwrap_or_else(|| assistant_kickoff(&board, focus_ticket))
+            }
             PmAgentMode::DeliveryCheck => {
                 let step = &board.playbook.steps[check_step.expect("a check has its step")];
                 format!(
@@ -766,6 +852,7 @@ impl PmAgentProfile {
             mode,
             system_prompt,
             first_message,
+            resume_message,
             tools: mode.tools().to_vec(),
             external_tools: Vec::new(),
         })
@@ -838,6 +925,7 @@ impl PmAgentProfile {
             mode: PmAgentMode::SkillRun,
             system_prompt: bounded_prompt(sections.join("\n\n")),
             first_message: Some(skill_run_kickoff(brief)),
+            resume_message: None,
             tools: brief.tools.clone(),
             external_tools: brief.agent_tools.clone(),
         })
@@ -876,6 +964,42 @@ fn notes_section(notes: &[TicketNote]) -> Option<String> {
             ),
         };
         section.push_str(&line);
+    }
+    Some(section)
+}
+
+/// The project's epics with their progress, for the assistant to plan
+/// with.
+fn epics_section(board: &Board) -> Option<String> {
+    if board.epics.is_empty() {
+        return None;
+    }
+    let mut section = "Epics (title, id, done of tickets):".to_owned();
+    for epic in board.epics.iter().take(PROMPT_EPICS_MAX) {
+        let tickets: Vec<_> = board
+            .tickets
+            .iter()
+            .filter(|ticket| ticket.epic_id.as_deref() == Some(epic.id.as_str()))
+            .collect();
+        let done = tickets
+            .iter()
+            .filter(|ticket| ticket.status == TicketStatus::Done)
+            .count();
+        section.push_str(&format!(
+            "\n- {} ({}): {done} of {}",
+            epic.title,
+            epic.id,
+            tickets.len()
+        ));
+    }
+    if board.epics.len() > PROMPT_EPICS_MAX {
+        section.push_str("\n- more; pm_board_read lists them");
+    }
+    if !board.epic_breakdowns.is_empty() {
+        section.push_str(&format!(
+            "\n{} breakdown(s) wait for the project manager in the Epics panel.",
+            board.epic_breakdowns.len()
+        ));
     }
     Some(section)
 }

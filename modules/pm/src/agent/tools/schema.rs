@@ -6,10 +6,11 @@ use serde_json::{Value, json};
 
 use super::PmToolContext;
 use crate::agent::{
-    PM_BOARD_READ, PM_CHECK_REPORT, PM_OWNER_EVIDENCE_READ, PM_PLAYBOOK_PROPOSE, PM_RISKS_READ,
-    PM_SKILL_DISCOVERY_READ, PM_SKILL_DRAFT_SUBMIT, PM_SKILL_DRY_RUN_REQUEST, PM_SKILL_RUN_FINISH,
-    PM_SKILL_TOOL_VERIFY, PM_TICKET_NOTE_ADD, PM_TICKET_PROPOSE_ACCEPTANCE_CRITERIA,
-    PM_TICKET_PROPOSE_DESCRIPTION, PM_TICKET_READ, PM_TICKET_SUGGEST, SKILL_READ_TOOLS,
+    PM_BOARD_READ, PM_CHECK_REPORT, PM_EPIC_PROPOSE_BREAKDOWN, PM_OWNER_EVIDENCE_READ,
+    PM_PLAYBOOK_PROPOSE, PM_RISKS_READ, PM_SKILL_DISCOVERY_READ, PM_SKILL_DRAFT_SUBMIT,
+    PM_SKILL_DRY_RUN_REQUEST, PM_SKILL_RUN_FINISH, PM_SKILL_TOOL_VERIFY, PM_TICKET_NOTE_ADD,
+    PM_TICKET_PROPOSE_ACCEPTANCE_CRITERIA, PM_TICKET_PROPOSE_DESCRIPTION, PM_TICKET_READ,
+    PM_TICKET_SUGGEST, SKILL_READ_TOOLS,
 };
 use crate::commands::{TS_FRACTION_MAX_DIGITS, TS_SECONDS_MAX_DIGITS};
 use crate::playbook::{
@@ -28,9 +29,11 @@ use crate::skill::{
     SKILL_WHAT_IT_DOES_MAX_CHARS,
 };
 use crate::{
+    BREAKDOWN_TASKS_MAX, EPIC_DESCRIPTION_MAX_CHARS, EPIC_TITLE_MAX_CHARS,
     PROPOSAL_SUMMARY_MAX_CHARS, TICKET_ASSIGNEE_MAX_CHARS, TICKET_BLOCKERS_MAX,
     TICKET_CRITERIA_MAX, TICKET_DESCRIPTION_MAX_CHARS, TICKET_ITEM_MAX_CHARS,
     TICKET_NOTE_LABEL_MAX_CHARS, TICKET_NOTE_MAX_CHARS, TICKET_NOTE_URL_MAX_BYTES,
+    TICKET_TITLE_MAX_CHARS,
 };
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -434,6 +437,45 @@ fn definition(name: &'static str) -> PmToolDefinition {
                     }
                 }),
                 &["summary", "steps"],
+            ),
+        ),
+        PM_EPIC_PROPOSE_BREAKDOWN => (
+            "Propose splitting a goal into tickets: under an existing epic (epicId from \
+             pm_board_read) or a new epic (epic), never both. Each task becomes a ticket with \
+             its description and acceptance criteria once the PM accepts it. The PM picks the \
+             tasks to keep; nothing changes until then, and nothing is written to Jira.",
+            object(
+                json!({
+                    "epicId": { "type": "string", "minLength": 1, "description": "An existing epic's id from pm_board_read." },
+                    "epic": object(
+                        json!({
+                            "title": { "type": "string", "minLength": 1, "maxLength": EPIC_TITLE_MAX_CHARS },
+                            "description": { "type": "string", "maxLength": EPIC_DESCRIPTION_MAX_CHARS, "description": "The goal and its scope in Markdown." }
+                        }),
+                        &["title"],
+                    ),
+                    "tasks": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": BREAKDOWN_TASKS_MAX,
+                        "description": "Independently deliverable tickets, in the order to build them, with distinct titles.",
+                        "items": object(
+                            json!({
+                                "title": { "type": "string", "minLength": 1, "maxLength": TICKET_TITLE_MAX_CHARS },
+                                "description": { "type": "string", "maxLength": TICKET_DESCRIPTION_MAX_CHARS, "description": "What to build and why, in Markdown." },
+                                "acceptanceCriteria": {
+                                    "type": "array",
+                                    "maxItems": TICKET_CRITERIA_MAX,
+                                    "uniqueItems": true,
+                                    "items": { "type": "string", "minLength": 1, "maxLength": TICKET_ITEM_MAX_CHARS }
+                                }
+                            }),
+                            &["title"],
+                        )
+                    },
+                    "summary": summary()
+                }),
+                &["tasks", "summary"],
             ),
         ),
         _ => unreachable!("every PM tool has a definition"),

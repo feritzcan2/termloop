@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { PmController } from "../src/renderer/composition/pm-controller.js";
 import { createPmStore } from "../src/renderer/state/presentation-store.js";
-import { fakeBridge, jiraDiff, ok } from "./fixtures.js";
+import { fakeBridge, jiraDiff, ok, ticket } from "./fixtures.js";
 
 describe("PmController", () => {
   it("accepts an agent proposal only through pm_ticket_proposal_accept", async () => {
     const bridge = fakeBridge((method) => {
       if (method === "pm_ticket_proposals_read") return ok({ proposals: [] });
-      if (method === "pm_board_read") return ok({ projectId: "project-1", sprints: [], tickets: [], environments: [], probes: [], runningChecks: [], tracking: { jira: false, code: false, deploy: false, tier: "tickets" } });
+      if (method === "pm_board_read") return ok({ projectId: "project-1", sprints: [], tickets: [], environments: [], probes: [], runningChecks: [], epics: [], epicBreakdowns: [], tracking: { jira: false, code: false, deploy: false, tier: "tickets" } });
       return ok({});
     });
     const controller = new PmController(bridge, createPmStore({ projectId: "project-1" }));
@@ -160,7 +160,7 @@ describe("PmController", () => {
 
   it("rereads the digest with every board reread, so board changes reach Since yesterday", async () => {
     const bridge = fakeBridge((method) => {
-      if (method === "pm_board_read") return ok({ projectId: "project-1", sprints: [], tickets: [], environments: [], probes: [], runningChecks: [], tracking: { jira: false, code: false, deploy: false, tier: "tickets" } });
+      if (method === "pm_board_read") return ok({ projectId: "project-1", sprints: [], tickets: [], environments: [], probes: [], runningChecks: [], epics: [], epicBreakdowns: [], tracking: { jira: false, code: false, deploy: false, tier: "tickets" } });
       if (method === "pm_digest_read") return ok({ projectId: "project-1", sinceEpochMs: 0, untilEpochMs: 1, entries: [], truncated: false });
       return ok({});
     });
@@ -203,6 +203,43 @@ describe("PmController", () => {
     expect(store.getState()).toMatchObject({ view: "ticket", activeAgentSessionId: undefined });
   });
 
+  it("plans an epic and starts a new conversation through the assistant launch", async () => {
+    const session = { sessionId: "agent-1", projectId: "project-1", mode: "assistant", provider: "claude", focusTicketId: null, checkId: null, skillId: null, state: "running", startedAtEpochMs: 0, exitedAtEpochMs: null };
+    const bridge = fakeBridge((method) => {
+      if (method === "pm_agent_launch") return ok(session);
+      if (method === "pm_agent_list") return ok({ sessions: [session], resumable: false });
+      return ok({});
+    });
+    const controller = new PmController(bridge, createPmStore({ projectId: "project-1" }));
+    await controller.planEpic("epic-1");
+    await controller.planEpic();
+    await controller.newConversation(undefined);
+    expect(bridge.calls.filter((call) => call.method === "pm_agent_launch").map((call) => call.params)).toEqual([
+      { projectId: "project-1", task: "planEpic", epicId: "epic-1" },
+      { projectId: "project-1", task: "planEpic" },
+      { projectId: "project-1", fresh: true },
+    ]);
+  });
+
+  it("accepts the kept tasks of a breakdown into the chosen sprint", async () => {
+    const epic = { id: "epic-1", projectId: "project-1", title: "Checkout", description: "", createdAtEpochMs: 0, updatedAtEpochMs: 0 };
+    const board = { projectId: "project-1", sprints: [], tickets: [], runningChecks: [], epics: [epic], epicBreakdowns: [], tracking: { jira: false, code: false, deploy: false, tier: "tickets" } };
+    const bridge = fakeBridge((method) => {
+      if (method === "pm_epic_breakdown_accept") return ok({ epic, tickets: [ticket({ epicId: "epic-1" })] });
+      if (method === "pm_board_read") return ok(board);
+      return ok({});
+    });
+    const store = createPmStore({ projectId: "project-1" });
+    const controller = new PmController(bridge, store);
+    expect(await controller.acceptBreakdown("breakdown-1", [0, 2], "sprint-1")).toBe(true);
+    expect(await controller.acceptBreakdown("breakdown-1", [1], null)).toBe(true);
+    expect(bridge.calls.filter((call) => call.method === "pm_epic_breakdown_accept").map((call) => call.params)).toEqual([
+      { breakdownId: "breakdown-1", taskIndices: [0, 2], sprintId: "sprint-1" },
+      { breakdownId: "breakdown-1", taskIndices: [1] },
+    ]);
+    expect(store.getState().notice?.text).toBe("1 ticket(s) created under Checkout.");
+  });
+
   it("loads the agent catalog with the settings", async () => {
     const catalog = { providers: [{ id: "claude", label: "Claude", models: ["default"], permissions: { assistant: ["default"], check: ["bypassPermissions"] } }] };
     const bridge = fakeBridge((method) => method === "pm_agent_catalog_read" ? ok(catalog) : ok({}));
@@ -210,19 +247,19 @@ describe("PmController", () => {
     await new PmController(bridge, store).loadSettings();
     expect(store.getState().catalog).toEqual(catalog);
   });
-  it("records a note and starts a background description update without changing the ticket", async () => {
+  it("records a note and asks the project's one assistant for a description update without changing the ticket", async () => {
     const note = { id: "note-1", ticketId: "ticket-1", kind: "fact", text: "CSV too", url: null, sourceKey: null, author: "pm", createdAtEpochMs: 1, pending: true };
     const session = (sessionId: string) => ({ sessionId, projectId: "project-1", mode: "assistant", provider: "claude", focusTicketId: "ticket-1", checkId: null, skillId: null, state: "running", startedAtEpochMs: 0, exitedAtEpochMs: null });
-    let launched = 0;
+    // The daemon keeps one assistant per project: every launch reaches it.
     const live: ReturnType<typeof session>[] = [];
     const bridge = fakeBridge((method) => {
       if (method === "pm_ticket_note_add") return ok(note);
       if (method === "pm_ticket_notes_read") return ok({ ticketId: "ticket-1", notes: [note] });
       if (method === "pm_agent_launch") {
-        live.push(session(`agent-${++launched}`));
-        return ok(live.at(-1));
+        if (live.length === 0) live.push(session("agent-1"));
+        return ok(live[0]);
       }
-      if (method === "pm_agent_list") return ok({ sessions: live });
+      if (method === "pm_agent_list") return ok({ sessions: live, resumable: true });
       return ok({});
     });
     const store = createPmStore({ projectId: "project-1", view: "ticket", selectedTicketId: "ticket-1" });
@@ -235,13 +272,13 @@ describe("PmController", () => {
     expect(store.getState().view).toBe("ticket");
     expect(bridge.calls.map((call) => call.method)).not.toContain("pm_agent_stop");
 
-    // A second note replaces the first update, so one draft merges both.
+    // A second note goes to the same conversation; nothing is stopped.
     await controller.addNote("ticket-1", { kind: "fact", text: "PDF too", url: null });
-    expect(bridge.calls.filter((call) => call.method === "pm_agent_stop").map((call) => call.params)).toEqual([{ sessionId: "agent-1" }]);
-    expect(store.getState().activeAgentSessionId).toBe("agent-2");
+    expect(bridge.calls.map((call) => call.method)).not.toContain("pm_agent_stop");
+    expect(store.getState()).toMatchObject({ activeAgentSessionId: "agent-1", assistantResumable: true });
 
     await controller.updateDescription("ticket-1");
-    expect(store.getState()).toMatchObject({ view: "agent", activeAgentSessionId: "agent-3" });
+    expect(store.getState()).toMatchObject({ view: "agent", activeAgentSessionId: "agent-1" });
     const methods = bridge.calls.map((call) => call.method);
     expect(methods).not.toContain("pm_ticket_description_save");
     expect(methods).not.toContain("pm_ticket_update");

@@ -157,6 +157,9 @@ pub struct Ticket {
     /// When a sprint read last saw the linked issue.
     #[serde(default)]
     pub jira_pulled_at_epoch_ms: Option<u64>,
+    /// The epic of the same project this ticket works toward.
+    #[serde(default)]
+    pub epic_id: Option<String>,
     /// How often the ticket left a closed sprint unfinished.
     pub carry_over_count: u32,
     pub blockers: Vec<Blocker>,

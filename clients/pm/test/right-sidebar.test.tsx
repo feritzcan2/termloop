@@ -62,18 +62,20 @@ describe("right activity bar", () => {
     const view = render(<RightActivityBar open view="sprints" onSelect={onSelect} settings={{ active: true, onToggle: onToggleSettings }} />);
     cleanup = view.unmount;
     const buttons = [...view.container.querySelectorAll<HTMLButtonElement>(".activity-bar button")];
-    expect(buttons.map((button) => [button.textContent, button.getAttribute("aria-pressed")])).toEqual([["Sprints", "true"], ["Playbook", "false"], ["Inbox", "false"], ["Skills", "false"], ["Settings", "true"]]);
-    expect(buttons[4]!.classList.contains("bottom")).toBe(true);
+    expect(buttons.map((button) => [button.textContent, button.getAttribute("aria-pressed")])).toEqual([["Sprints", "true"], ["Epics", "false"], ["Playbook", "false"], ["Inbox", "false"], ["Skills", "false"], ["Settings", "true"]]);
+    expect(buttons[5]!.classList.contains("bottom")).toBe(true);
     act(() => buttons[1]!.click());
-    expect(onSelect).toHaveBeenLastCalledWith("playbook");
+    expect(onSelect).toHaveBeenLastCalledWith("epics");
     act(() => buttons[2]!.click());
-    expect(onSelect).toHaveBeenLastCalledWith("suggestions");
+    expect(onSelect).toHaveBeenLastCalledWith("playbook");
     act(() => buttons[3]!.click());
+    expect(onSelect).toHaveBeenLastCalledWith("suggestions");
+    act(() => buttons[4]!.click());
     expect(onSelect).toHaveBeenLastCalledWith("skills");
     // Settings switches the stage, not the right panel.
-    act(() => buttons[4]!.click());
+    act(() => buttons[5]!.click());
     expect(onToggleSettings).toHaveBeenCalled();
-    expect(onSelect).toHaveBeenCalledTimes(3);
+    expect(onSelect).toHaveBeenCalledTimes(4);
   });
 });
 
@@ -114,7 +116,7 @@ describe("agents under tickets", () => {
     const onSelectAgent = vi.fn();
     const onStopAgent = vi.fn();
     const agent = (sessionId: string, focusTicketId: string | null) =>
-      ({ sessionId, label: "Assistant", state: "running" as const, assistant: true, provider: "claude" as const, detail: "", focusTicketId });
+      ({ sessionId, label: "Assistant", state: "running" as const, assistant: true, keepsConversation: true, provider: "claude" as const, detail: "", focusTicketId });
     const view = render(
       <SprintSidebar
         sprints={[active]}

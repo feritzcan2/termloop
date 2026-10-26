@@ -10,16 +10,19 @@ use crate::{PmError, PmStore, Project, ProjectSources};
 
 /// Every table holding rows of one project, in a safe deletion order.
 const PROJECT_TABLES: &[&str] = &[
+    "epic_breakdowns",
     "delivery_checks",
     "skill_runs",
     "skill_drafts",
     "skills",
     "skill_discovery_cache",
     "tickets",
+    "epics",
     "sprints",
     "project_sources",
     "playbooks",
     "playbook_proposals",
+    "assistant_conversations",
 ];
 
 fn project_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {

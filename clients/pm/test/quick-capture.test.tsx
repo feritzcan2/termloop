@@ -104,7 +104,7 @@ describe("quick capture overlay", () => {
 });
 
 describe("PmController.captureTicket", () => {
-  const board = { projectId: "project-1", sprints: [], tickets: [], environments: [], probes: [], runningChecks: [], tracking: { jira: false, code: false, deploy: false, tier: "tickets" } };
+  const board = { projectId: "project-1", sprints: [], tickets: [], environments: [], probes: [], runningChecks: [], epics: [], epicBreakdowns: [], tracking: { jira: false, code: false, deploy: false, tier: "tickets" } };
 
   it("creates with sprint, priority and assignee, stays on the current view, and asks an assistant about the ticket", async () => {
     const bridge = fakeBridge((method) => {

@@ -127,7 +127,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:5edd96025c8e84822eadc611d75213cb59a5b23cd54f5f46daa972ef18e10b26";
+    "sha256:0327178ad35c63cd1fe57de4c32857ad191abc0040663e06503aad3a504a4fe5";
 pub const CAPABILITY_SCOPE: &str = "pm.full";
 pub const METHODS: &[&str] = &[
     "pm_system_version",
@@ -160,6 +160,11 @@ pub const METHODS: &[&str] = &[
     "pm_ticket_notes_read",
     "pm_ticket_note_add",
     "pm_ticket_note_remove",
+    "pm_epic_create",
+    "pm_epic_update",
+    "pm_epic_delete",
+    "pm_epic_breakdown_accept",
+    "pm_epic_breakdown_reject",
     "pm_sources_read",
     "pm_sources_set",
     "pm_credential_store",
@@ -493,6 +498,8 @@ pub struct PmTicket {
         deserialize_with = "deserialize_required_nullable"
     )]
     pub jira_pulled_at_epoch_ms: Option<u64>,
+    #[serde(rename = "epicId", deserialize_with = "deserialize_required_nullable")]
+    pub epic_id: Option<String>,
     #[serde(rename = "carryOverCount")]
     pub carry_over_count: u32,
     pub blockers: Vec<PmBlocker>,
@@ -680,6 +687,9 @@ pub struct PmBoard {
     #[serde(rename = "runningChecks")]
     pub running_checks: Vec<PmCheck>,
     pub tracking: PmTracking,
+    pub epics: Vec<PmEpic>,
+    #[serde(rename = "epicBreakdowns")]
+    pub epic_breakdowns: Vec<PmEpicBreakdown>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1140,6 +1150,8 @@ pub struct PmTicketCreateParams {
     pub sprint_id: Option<String>,
     #[serde(rename = "jiraUrl", skip_serializing_if = "Option::is_none")]
     pub jira_url: Option<String>,
+    #[serde(rename = "epicId", skip_serializing_if = "Option::is_none")]
+    pub epic_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1157,6 +1169,8 @@ pub struct PmTicketUpdateParams {
     pub assignee: Option<String>,
     #[serde(rename = "jiraUrl", skip_serializing_if = "Option::is_none")]
     pub jira_url: Option<String>,
+    #[serde(rename = "epicId", skip_serializing_if = "Option::is_none")]
+    pub epic_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1466,6 +1480,10 @@ pub struct PmAgentLaunchParams {
     pub focus_ticket_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub task: Option<PmAssistantTask>,
+    #[serde(rename = "epicId", skip_serializing_if = "Option::is_none")]
+    pub epic_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fresh: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1474,12 +1492,15 @@ pub enum PmAssistantTask {
     Brief,
     #[serde(rename = "updateDescription")]
     UpdateDescription,
+    #[serde(rename = "planEpic")]
+    PlanEpic,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct PmAgentListResult {
     pub sessions: Vec<PmAgentSession>,
+    pub resumable: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -2483,6 +2504,105 @@ pub struct PmJiraSprintImportResult {
     pub outcome: PmJiraSprintImportOutcome,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmEpic {
+    pub id: String,
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    pub title: String,
+    pub description: String,
+    #[serde(rename = "createdAtEpochMs")]
+    pub created_at_epoch_ms: u64,
+    #[serde(rename = "updatedAtEpochMs")]
+    pub updated_at_epoch_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmEpicDraft {
+    pub title: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmEpicBreakdownTask {
+    pub title: String,
+    pub description: String,
+    #[serde(rename = "acceptanceCriteria")]
+    pub acceptance_criteria: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmEpicBreakdown {
+    pub id: String,
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    #[serde(rename = "epicId", deserialize_with = "deserialize_required_nullable")]
+    pub epic_id: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub epic: Option<PmEpicDraft>,
+    pub tasks: Vec<PmEpicBreakdownTask>,
+    pub summary: String,
+    #[serde(rename = "createdAtEpochMs")]
+    pub created_at_epoch_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmEpicCreateParams {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmEpicUpdateParams {
+    #[serde(rename = "epicId")]
+    pub epic_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmEpicRef {
+    #[serde(rename = "epicId")]
+    pub epic_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmEpicBreakdownRef {
+    #[serde(rename = "breakdownId")]
+    pub breakdown_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmEpicBreakdownAcceptParams {
+    #[serde(rename = "breakdownId")]
+    pub breakdown_id: String,
+    #[serde(rename = "taskIndices")]
+    pub task_indices: Vec<u32>,
+    #[serde(rename = "sprintId", skip_serializing_if = "Option::is_none")]
+    pub sprint_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmEpicBreakdownAcceptResult {
+    pub epic: PmEpic,
+    pub tickets: Vec<PmTicket>,
+}
+
 pub type PmSystemVersionParams = EmptyParams;
 pub type PmProjectListParams = EmptyParams;
 pub type PmProjectCreateResult = PmProject;
@@ -2515,6 +2635,12 @@ pub type PmTicketNotesReadParams = PmTicketRef;
 pub type PmTicketNoteAddResult = PmTicketNote;
 pub type PmTicketNoteRemoveParams = PmTicketNoteRef;
 pub type PmTicketNoteRemoveResult = PmDeletedResult;
+pub type PmEpicCreateResult = PmEpic;
+pub type PmEpicUpdateResult = PmEpic;
+pub type PmEpicDeleteParams = PmEpicRef;
+pub type PmEpicDeleteResult = PmDeletedResult;
+pub type PmEpicBreakdownRejectParams = PmEpicBreakdownRef;
+pub type PmEpicBreakdownRejectResult = PmRejectedResult;
 pub type PmSourcesReadParams = PmProjectRef;
 pub type PmSourcesReadResult = PmSources;
 pub type PmSourcesSetResult = PmSources;
@@ -2722,6 +2848,11 @@ fn validate_method(value: &Value) -> bool {
             "pm_ticket_notes_read",
             "pm_ticket_note_add",
             "pm_ticket_note_remove",
+            "pm_epic_create",
+            "pm_epic_update",
+            "pm_epic_delete",
+            "pm_epic_breakdown_accept",
+            "pm_epic_breakdown_reject",
             "pm_sources_read",
             "pm_sources_set",
             "pm_credential_store",
@@ -3181,7 +3312,7 @@ fn validate_pm_ticket_versions_summary(value: &Value) -> bool {
     clippy::redundant_closure
 )]
 fn validate_pm_ticket(value: &Value) -> bool {
-    value.as_object().is_some_and(|object| object.get("id").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128 && contract_pattern_matches("^[!-~]+$", text))) && object.get("projectId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128 && contract_pattern_matches("^[!-~]+$", text))) && object.get("title").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 160)) && object.get("description").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() <= 20000)) && object.get("status").is_some_and(|field| validate_pm_ticket_status(field)) && object.get("priority").is_some_and(|field| validate_pm_ticket_priority(field)) && object.get("assignee").is_some_and(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 120) || field.is_null())) && object.get("sprintId").is_some_and(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128 && contract_pattern_matches("^[!-~]+$", text)) || field.is_null())) && object.get("rank").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()))) && object.get("jiraUrl").is_some_and(|field| (field.as_str().is_some_and(|text| text.chars().count() <= 2048 && contract_pattern_matches("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$", text)) || field.is_null())) && object.get("jiraSprintId").is_some_and(|field| (field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64))) || field.is_null())) && object.get("jiraPulledAtEpochMs").is_some_and(|field| (field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64))) || field.is_null())) && object.get("carryOverCount").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64)))) && object.get("blockers").is_some_and(|field| field.as_array().is_some_and(|items| items.len() <= 32 && items.iter().all(|item| validate_pm_blocker(item)))) && object.get("acceptanceCriteria").is_some_and(|field| field.as_array().is_some_and(|items| items.len() <= 64 && items.iter().all(|item| validate_pm_acceptance_criterion(item)))) && object.get("versions").is_some_and(|field| (validate_pm_ticket_versions_summary(field) || field.is_null())) && object.get("createdAtEpochMs").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64)))) && object.get("updatedAtEpochMs").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64)))) && object.keys().all(|key| ["id", "projectId", "title", "description", "status", "priority", "assignee", "sprintId", "rank", "jiraUrl", "jiraSprintId", "jiraPulledAtEpochMs", "carryOverCount", "blockers", "acceptanceCriteria", "versions", "createdAtEpochMs", "updatedAtEpochMs"].contains(&key.as_str())))
+    value.as_object().is_some_and(|object| object.get("id").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128 && contract_pattern_matches("^[!-~]+$", text))) && object.get("projectId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128 && contract_pattern_matches("^[!-~]+$", text))) && object.get("title").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 160)) && object.get("description").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() <= 20000)) && object.get("status").is_some_and(|field| validate_pm_ticket_status(field)) && object.get("priority").is_some_and(|field| validate_pm_ticket_priority(field)) && object.get("assignee").is_some_and(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 120) || field.is_null())) && object.get("sprintId").is_some_and(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128 && contract_pattern_matches("^[!-~]+$", text)) || field.is_null())) && object.get("rank").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()))) && object.get("jiraUrl").is_some_and(|field| (field.as_str().is_some_and(|text| text.chars().count() <= 2048 && contract_pattern_matches("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$", text)) || field.is_null())) && object.get("jiraSprintId").is_some_and(|field| (field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64))) || field.is_null())) && object.get("jiraPulledAtEpochMs").is_some_and(|field| (field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64))) || field.is_null())) && object.get("epicId").is_some_and(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128 && contract_pattern_matches("^[!-~]+$", text)) || field.is_null())) && object.get("carryOverCount").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64)))) && object.get("blockers").is_some_and(|field| field.as_array().is_some_and(|items| items.len() <= 32 && items.iter().all(|item| validate_pm_blocker(item)))) && object.get("acceptanceCriteria").is_some_and(|field| field.as_array().is_some_and(|items| items.len() <= 64 && items.iter().all(|item| validate_pm_acceptance_criterion(item)))) && object.get("versions").is_some_and(|field| (validate_pm_ticket_versions_summary(field) || field.is_null())) && object.get("createdAtEpochMs").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64)))) && object.get("updatedAtEpochMs").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64)))) && object.keys().all(|key| ["id", "projectId", "title", "description", "status", "priority", "assignee", "sprintId", "rank", "jiraUrl", "jiraSprintId", "jiraPulledAtEpochMs", "epicId", "carryOverCount", "blockers", "acceptanceCriteria", "versions", "createdAtEpochMs", "updatedAtEpochMs"].contains(&key.as_str())))
 }
 
 #[allow(
@@ -3607,6 +3738,16 @@ fn validate_pm_board(value: &Value) -> bool {
             && object
                 .get("tracking")
                 .is_some_and(|field| validate_pm_tracking(field))
+            && object.get("epics").is_some_and(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() <= 256 && items.iter().all(|item| validate_pm_epic(item))
+                })
+            })
+            && object.get("epicBreakdowns").is_some_and(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() <= 8 && items.iter().all(|item| validate_pm_epic_breakdown(item))
+                })
+            })
             && object.keys().all(|key| {
                 [
                     "projectId",
@@ -3615,6 +3756,8 @@ fn validate_pm_board(value: &Value) -> bool {
                     "playbook",
                     "runningChecks",
                     "tracking",
+                    "epics",
+                    "epicBreakdowns",
                 ]
                 .contains(&key.as_str())
             })
@@ -4932,7 +5075,7 @@ fn validate_pm_sprint_close_result(value: &Value) -> bool {
     clippy::redundant_closure
 )]
 fn validate_pm_ticket_create_params(value: &Value) -> bool {
-    value.as_object().is_some_and(|object| object.get("projectId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128 && contract_pattern_matches("^[!-~]+$", text))) && object.get("title").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 160)) && object.get("description").is_none_or(|field| field.as_str().is_some_and(|text| text.chars().count() <= 20000)) && object.get("status").is_none_or(|field| validate_pm_ticket_status(field)) && object.get("priority").is_none_or(|field| validate_pm_ticket_priority(field)) && object.get("assignee").is_none_or(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 120)) && object.get("sprintId").is_none_or(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128 && contract_pattern_matches("^[!-~]+$", text))) && object.get("jiraUrl").is_none_or(|field| field.as_str().is_some_and(|text| text.chars().count() <= 2048 && contract_pattern_matches("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$", text))) && object.keys().all(|key| ["projectId", "title", "description", "status", "priority", "assignee", "sprintId", "jiraUrl"].contains(&key.as_str())))
+    value.as_object().is_some_and(|object| object.get("projectId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128 && contract_pattern_matches("^[!-~]+$", text))) && object.get("title").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 160)) && object.get("description").is_none_or(|field| field.as_str().is_some_and(|text| text.chars().count() <= 20000)) && object.get("status").is_none_or(|field| validate_pm_ticket_status(field)) && object.get("priority").is_none_or(|field| validate_pm_ticket_priority(field)) && object.get("assignee").is_none_or(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 120)) && object.get("sprintId").is_none_or(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128 && contract_pattern_matches("^[!-~]+$", text))) && object.get("jiraUrl").is_none_or(|field| field.as_str().is_some_and(|text| text.chars().count() <= 2048 && contract_pattern_matches("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$", text))) && object.get("epicId").is_none_or(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128 && contract_pattern_matches("^[!-~]+$", text))) && object.keys().all(|key| ["projectId", "title", "description", "status", "priority", "assignee", "sprintId", "jiraUrl", "epicId"].contains(&key.as_str())))
 }
 
 #[allow(
@@ -4945,7 +5088,7 @@ fn validate_pm_ticket_create_params(value: &Value) -> bool {
     clippy::redundant_closure
 )]
 fn validate_pm_ticket_update_params(value: &Value) -> bool {
-    value.as_object().is_some_and(|object| object.get("ticketId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128 && contract_pattern_matches("^[!-~]+$", text))) && object.get("title").is_none_or(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 160)) && object.get("status").is_none_or(|field| validate_pm_ticket_status(field)) && object.get("priority").is_none_or(|field| validate_pm_ticket_priority(field)) && object.get("assignee").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 120) || field.is_null())) && object.get("jiraUrl").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() <= 2048 && contract_pattern_matches("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$", text)) || field.is_null())) && object.keys().all(|key| ["ticketId", "title", "status", "priority", "assignee", "jiraUrl"].contains(&key.as_str())))
+    value.as_object().is_some_and(|object| object.get("ticketId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128 && contract_pattern_matches("^[!-~]+$", text))) && object.get("title").is_none_or(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 160)) && object.get("status").is_none_or(|field| validate_pm_ticket_status(field)) && object.get("priority").is_none_or(|field| validate_pm_ticket_priority(field)) && object.get("assignee").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 120) || field.is_null())) && object.get("jiraUrl").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() <= 2048 && contract_pattern_matches("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$", text)) || field.is_null())) && object.get("epicId").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128 && contract_pattern_matches("^[!-~]+$", text)) || field.is_null())) && object.keys().all(|key| ["ticketId", "title", "status", "priority", "assignee", "jiraUrl", "epicId"].contains(&key.as_str())))
 }
 
 #[allow(
@@ -5950,9 +6093,17 @@ fn validate_pm_agent_launch_params(value: &Value) -> bool {
         }) && object
             .get("task")
             .is_none_or(|field| validate_pm_assistant_task(field))
-            && object
-                .keys()
-                .all(|key| ["projectId", "focusTicketId", "task"].contains(&key.as_str()))
+            && object.get("epicId").is_none_or(|field| {
+                field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 1
+                        && text.chars().count() <= 128
+                        && contract_pattern_matches("^[!-~]+$", text)
+                })
+            })
+            && object.get("fresh").is_none_or(|field| field.is_boolean())
+            && object.keys().all(|key| {
+                ["projectId", "focusTicketId", "task", "epicId", "fresh"].contains(&key.as_str())
+            })
     })
 }
 
@@ -5968,7 +6119,7 @@ fn validate_pm_agent_launch_params(value: &Value) -> bool {
 fn validate_pm_assistant_task(value: &Value) -> bool {
     value
         .as_str()
-        .is_some_and(|text| ["brief", "updateDescription"].contains(&text))
+        .is_some_and(|text| ["brief", "updateDescription", "planEpic"].contains(&text))
 }
 
 #[allow(
@@ -5987,8 +6138,11 @@ fn validate_pm_agent_list_result(value: &Value) -> bool {
                 items.len() <= 64 && items.iter().all(|item| validate_pm_agent_session(item))
             })
         }) && object
-            .keys()
-            .all(|key| ["sessions"].contains(&key.as_str()))
+            .get("resumable")
+            .is_some_and(|field| field.is_boolean())
+            && object
+                .keys()
+                .all(|key| ["sessions", "resumable"].contains(&key.as_str()))
     })
 }
 
@@ -8819,6 +8973,360 @@ fn validate_pm_jira_sprint_import_result(value: &Value) -> bool {
 }
 
 #[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_epic(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("id").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("projectId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("title").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 160)
+        }) && object.get("description").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() <= 20000)
+        }) && object.get("createdAtEpochMs").is_some_and(|field| {
+            field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 0_u64))
+            })
+        }) && object.get("updatedAtEpochMs").is_some_and(|field| {
+            field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 0_u64))
+            })
+        }) && object.keys().all(|key| {
+            [
+                "id",
+                "projectId",
+                "title",
+                "description",
+                "createdAtEpochMs",
+                "updatedAtEpochMs",
+            ]
+            .contains(&key.as_str())
+        })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_epic_draft(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("title").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 160)
+        }) && object.get("description").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() <= 20000)
+        }) && object
+            .keys()
+            .all(|key| ["title", "description"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_epic_breakdown_task(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("title").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 160)
+        }) && object.get("description").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() <= 20000)
+        }) && object.get("acceptanceCriteria").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() <= 64
+                    && items.iter().all(|item| {
+                        item.as_str().is_some_and(|text| {
+                            text.chars().count() >= 1 && text.chars().count() <= 500
+                        })
+                    })
+            })
+        }) && object
+            .keys()
+            .all(|key| ["title", "description", "acceptanceCriteria"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_epic_breakdown(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("id").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("projectId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("epicId").is_some_and(|field| {
+            (field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            }) || field.is_null())
+        }) && object
+            .get("epic")
+            .is_some_and(|field| (validate_pm_epic_draft(field) || field.is_null()))
+            && object.get("tasks").is_some_and(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() >= 1
+                        && items.len() <= 30
+                        && items
+                            .iter()
+                            .all(|item| validate_pm_epic_breakdown_task(item))
+                })
+            })
+            && object.get("summary").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 300)
+            })
+            && object.get("createdAtEpochMs").is_some_and(|field| {
+                field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                })
+            })
+            && object.keys().all(|key| {
+                [
+                    "id",
+                    "projectId",
+                    "epicId",
+                    "epic",
+                    "tasks",
+                    "summary",
+                    "createdAtEpochMs",
+                ]
+                .contains(&key.as_str())
+            })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_epic_create_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("projectId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("title").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 160)
+        }) && object.get("description").is_none_or(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() <= 20000)
+        }) && object
+            .keys()
+            .all(|key| ["projectId", "title", "description"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_epic_update_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("epicId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("title").is_none_or(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 160)
+        }) && object.get("description").is_none_or(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() <= 20000)
+        }) && object
+            .keys()
+            .all(|key| ["epicId", "title", "description"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_epic_ref(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("epicId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.keys().all(|key| ["epicId"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_epic_breakdown_ref(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("breakdownId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object
+            .keys()
+            .all(|key| ["breakdownId"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_epic_breakdown_accept_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("breakdownId").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object.get("taskIndices").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() >= 1
+                    && items.len() <= 30
+                    && json_array_unique(items)
+                    && items.iter().all(|item| {
+                        item.as_number().is_some_and(|number| {
+                            (number.as_i64().is_some() || number.as_u64().is_some())
+                                && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                                && (number.as_u64().is_some_and(|number| number <= 29_u64))
+                        })
+                    })
+            })
+        }) && object.get("sprintId").is_none_or(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
+        }) && object
+            .keys()
+            .all(|key| ["breakdownId", "taskIndices", "sprintId"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_epic_breakdown_accept_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("epic")
+            .is_some_and(|field| validate_pm_epic(field))
+            && object.get("tickets").is_some_and(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() <= 30 && items.iter().all(|item| validate_pm_ticket(item))
+                })
+            })
+            && object
+                .keys()
+                .all(|key| ["epic", "tickets"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
     clippy::absurd_extreme_comparisons,
     clippy::len_zero,
     clippy::redundant_closure
@@ -8944,6 +9452,26 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
         "pm_ticket_note_remove" => {
             serde_json::from_value::<PmTicketNoteRemoveParams>(params.clone()).is_ok()
                 && validate_pm_ticket_note_ref(params)
+        }
+        "pm_epic_create" => {
+            serde_json::from_value::<PmEpicCreateParams>(params.clone()).is_ok()
+                && validate_pm_epic_create_params(params)
+        }
+        "pm_epic_update" => {
+            serde_json::from_value::<PmEpicUpdateParams>(params.clone()).is_ok()
+                && validate_pm_epic_update_params(params)
+        }
+        "pm_epic_delete" => {
+            serde_json::from_value::<PmEpicDeleteParams>(params.clone()).is_ok()
+                && validate_pm_epic_ref(params)
+        }
+        "pm_epic_breakdown_accept" => {
+            serde_json::from_value::<PmEpicBreakdownAcceptParams>(params.clone()).is_ok()
+                && validate_pm_epic_breakdown_accept_params(params)
+        }
+        "pm_epic_breakdown_reject" => {
+            serde_json::from_value::<PmEpicBreakdownRejectParams>(params.clone()).is_ok()
+                && validate_pm_epic_breakdown_ref(params)
         }
         "pm_sources_read" => {
             serde_json::from_value::<PmSourcesReadParams>(params.clone()).is_ok()
@@ -9223,6 +9751,26 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         "pm_ticket_note_remove" => {
             serde_json::from_value::<PmTicketNoteRemoveResult>(result.clone()).is_ok()
                 && validate_pm_deleted_result(result)
+        }
+        "pm_epic_create" => {
+            serde_json::from_value::<PmEpicCreateResult>(result.clone()).is_ok()
+                && validate_pm_epic(result)
+        }
+        "pm_epic_update" => {
+            serde_json::from_value::<PmEpicUpdateResult>(result.clone()).is_ok()
+                && validate_pm_epic(result)
+        }
+        "pm_epic_delete" => {
+            serde_json::from_value::<PmEpicDeleteResult>(result.clone()).is_ok()
+                && validate_pm_deleted_result(result)
+        }
+        "pm_epic_breakdown_accept" => {
+            serde_json::from_value::<PmEpicBreakdownAcceptResult>(result.clone()).is_ok()
+                && validate_pm_epic_breakdown_accept_result(result)
+        }
+        "pm_epic_breakdown_reject" => {
+            serde_json::from_value::<PmEpicBreakdownRejectResult>(result.clone()).is_ok()
+                && validate_pm_rejected_result(result)
         }
         "pm_sources_read" => {
             serde_json::from_value::<PmSourcesReadResult>(result.clone()).is_ok()

@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import type { PmDataTier, PmPlaybook, PmSprint, PmTicket, PmTicketDelivery, PmTicketPriority, PmTicketStatus } from "@termloop/pm-contract/pm";
+import type { PmDataTier, PmEpic, PmPlaybook, PmSprint, PmTicket, PmTicketDelivery, PmTicketPriority, PmTicketStatus } from "@termloop/pm-contract/pm";
 import {
   PRIORITY_LABEL,
   NOT_STARTED,
@@ -17,6 +17,8 @@ export type TicketFieldsProps = {
   ticket: PmTicket;
   delivery: PmTicketDelivery;
   sprints: PmSprint[];
+  /** The project's epics; the epic chip shows when there is one. */
+  epics?: PmEpic[] | undefined;
   tier: PmDataTier;
   playbook?: PmPlaybook | undefined;
   now: number;
@@ -28,11 +30,11 @@ export type TicketFieldsProps = {
 };
 
 /**
- * The ticket's field chips: status, priority, assignee, sprint, and Jira link
+ * The ticket's field chips: status, priority, assignee, sprint, epic, and Jira link
  * are editable; the Playbook step and pull requests are read from facts. Each
  * change is one update; free text is committed when it loses focus.
  */
-export function TicketFields({ ticket, delivery, sprints, tier, playbook, now, onUpdate, onMoveSprint, actions }: TicketFieldsProps) {
+export function TicketFields({ ticket, delivery, sprints, epics = [], tier, playbook, now, onUpdate, onMoveSprint, actions }: TicketFieldsProps) {
   const [assignee, setAssignee] = useState(ticket.assignee ?? "");
   const [jiraUrl, setJiraUrl] = useState(ticket.jiraUrl ?? "");
   const [jiraInvalid, setJiraInvalid] = useState(false);
@@ -81,6 +83,14 @@ export function TicketFields({ ticket, delivery, sprints, tier, playbook, now, o
             ))}
           </select>
         </label>
+        {(epics.length > 0 || ticket.epicId) && (
+          <label className="chip-control">
+            <select aria-label="Epic" value={ticket.epicId ?? ""} onChange={(event) => onUpdate({ epicId: event.target.value || null })}>
+              <option value="">No epic</option>
+              {epics.map((epic) => <option key={epic.id} value={epic.id}>{epic.title}</option>)}
+            </select>
+          </label>
+        )}
         {ticket.blockers.length > 0 && <span className="chip-static bad">Blocked · {ticket.blockers[0]!.text}{ticket.blockers.length > 1 ? ` +${ticket.blockers.length - 1}` : ""}</span>}
         {playbook && <span className="chip-static" data-testid="step-chip">{ticketStep(playbook, delivery)?.title ?? NOT_STARTED}</span>}
         {ticket.carryOverCount > 0 && <span className="chip-static">Carried over ×{ticket.carryOverCount}</span>}

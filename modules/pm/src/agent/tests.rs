@@ -518,3 +518,104 @@ fn a_slack_run_reads_with_its_approved_own_tools_after_each_position() {
         )
     );
 }
+
+#[test]
+fn planning_an_epic_names_it_and_reaches_a_resumed_conversation() {
+    let (mut store, ticket_id) = project_store();
+    let epic = store.create_epic("p1", "Checkout", "").unwrap();
+    store.set_ticket_epic(&ticket_id, Some(&epic.id)).unwrap();
+    let plan = PmAgentProfile::build_for(
+        &store,
+        "p1",
+        PmAgentMode::Assistant,
+        None,
+        AssistantTask::PlanEpic {
+            epic_id: Some(epic.id.clone()),
+        },
+    )
+    .unwrap();
+    let kickoff = plan.first_message.clone().unwrap();
+    assert!(kickoff.starts_with("Help the project manager plan an epic"));
+    assert!(kickoff.ends_with(&format!("The epic is \"Checkout\" ({}).", epic.id)));
+    assert_eq!(plan.resume_message.as_ref(), Some(&kickoff));
+    assert!(
+        plan.system_prompt
+            .contains(&format!("- Checkout ({}): 0 of 1", epic.id))
+    );
+    assert!(plan.tools.contains(&PM_EPIC_PROPOSE_BREAKDOWN));
+    assert!(matches!(
+        PmAgentProfile::build_for(
+            &store,
+            "p1",
+            PmAgentMode::Assistant,
+            None,
+            AssistantTask::PlanEpic {
+                epic_id: Some("missing".into())
+            },
+        ),
+        Err(PmError::NotFound)
+    ));
+    assert!(matches!(
+        PmAgentProfile::build_for(
+            &store,
+            "p1",
+            PmAgentMode::SkillCreator,
+            None,
+            AssistantTask::PlanEpic { epic_id: None },
+        ),
+        Err(PmError::Invalid("task"))
+    ));
+
+    // A brief resumes quietly, or points at the ticket in focus.
+    let quiet = PmAgentProfile::build(&store, "p1", PmAgentMode::Assistant, None).unwrap();
+    assert_eq!(quiet.resume_message, None);
+    let focused =
+        PmAgentProfile::build(&store, "p1", PmAgentMode::Assistant, Some(&ticket_id)).unwrap();
+    assert!(focused.resume_message.unwrap().contains(&ticket_id));
+
+    let directory = cli_directory();
+    let session = "11111111-1111-4111-8111-111111111111";
+    for (agent, conversation, expected) in [
+        (
+            "claude",
+            PmConversation::Start(session.into()),
+            Some(&kickoff),
+        ),
+        (
+            "claude",
+            PmConversation::Resume(session.into()),
+            plan.resume_message.as_ref(),
+        ),
+        (
+            "codex",
+            PmConversation::Resume("codex-thread".into()),
+            plan.resume_message.as_ref(),
+        ),
+    ] {
+        let mut request =
+            PmLaunchRequest::new(agent, "/tmp/pm", &plan, ENDPOINT, TOKEN, CONFIG_PATH);
+        request.executable_directory = Some(&directory);
+        request.conversation = conversation;
+        let launched = pm_launch_plan(request).unwrap();
+        let args = launched.payload.args();
+        assert_eq!(args.last(), expected, "{agent}");
+        assert!(
+            args.iter()
+                .any(|arg| arg.contains(session) || arg == "codex-thread")
+        );
+    }
+    for (agent, conversation) in [
+        ("codex", PmConversation::Start(session.into())),
+        ("claude", PmConversation::Resume("not-a-uuid".into())),
+    ] {
+        let mut request =
+            PmLaunchRequest::new(agent, "/tmp/pm", &plan, ENDPOINT, TOKEN, CONFIG_PATH);
+        request.executable_directory = Some(&directory);
+        request.conversation = conversation;
+        assert!(matches!(
+            pm_launch_plan(request),
+            Err(PmLaunchError::InvalidConversation)
+        ));
+    }
+    std::fs::remove_dir_all(directory).ok();
+}

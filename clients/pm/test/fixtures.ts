@@ -13,7 +13,7 @@ export function ticket(overrides: Partial<PmTicket> = {}): PmTicket {
   return {
     id: "ticket-1", projectId: "project-1", title: "Checkout button", description: "Old text", status: "inProgress",
     priority: "medium", assignee: "ada", sprintId: "sprint-1", rank: 1, jiraUrl: "https://acme.atlassian.net/browse/SHOP-7",
-    jiraSprintId: null, jiraPulledAtEpochMs: null, carryOverCount: 0, blockers: [], acceptanceCriteria: [],
+    jiraSprintId: null, jiraPulledAtEpochMs: null, epicId: null, carryOverCount: 0, blockers: [], acceptanceCriteria: [],
     versions: { count: 2, headNumber: 2, headAuthor: "pm", headRecordedAtEpochMs: 0 }, createdAtEpochMs: 0, updatedAtEpochMs: 0,
     ...overrides,
   };

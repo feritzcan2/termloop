@@ -544,6 +544,129 @@ async fn mcp_denies_a_tool_outside_the_agents_mode() {
     );
 }
 
+#[tokio::test]
+async fn the_pm_accepts_the_tasks_it_keeps_from_an_assistant_breakdown() {
+    let fixture = fixture();
+    let state = &fixture.state;
+    let project_id = project(state).await;
+    let bearer = "a".repeat(64);
+    register_agent(state, &project_id, PmAgentMode::Assistant, &bearer);
+    let proposed = mcp::handle_message(
+        state,
+        &bearer,
+        &json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": termloop_pm::agent::PM_EPIC_PROPOSE_BREAKDOWN,
+                "arguments": {
+                    "epic": { "title": "Checkout", "description": "Pay by card" },
+                    "tasks": [
+                        { "title": "API", "acceptanceCriteria": ["Charges the card"] },
+                        { "title": "UI" },
+                    ],
+                    "summary": "Split by layer",
+                },
+            },
+        }),
+        true,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(proposed["result"]["isError"], false);
+
+    let board = call(state, "pm_board_read", json!({ "projectId": project_id }))
+        .await
+        .unwrap();
+    assert_eq!(board["epics"], json!([]));
+    let breakdown_id = board["epicBreakdowns"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let accepted = call(
+        state,
+        "pm_epic_breakdown_accept",
+        json!({ "breakdownId": breakdown_id, "taskIndices": [0] }),
+    )
+    .await
+    .unwrap();
+    let epic_id = accepted["epic"]["id"].as_str().unwrap().to_owned();
+    assert_eq!(accepted["tickets"][0]["title"], "API");
+    assert_eq!(accepted["tickets"][0]["epicId"], epic_id.as_str());
+
+    let board = call(state, "pm_board_read", json!({ "projectId": project_id }))
+        .await
+        .unwrap();
+    assert_eq!(board["epics"][0]["title"], "Checkout");
+    assert_eq!(board["epicBreakdowns"], json!([]));
+    assert_eq!(board["tickets"].as_array().unwrap().len(), 1);
+
+    let ticket_id = accepted["tickets"][0]["id"].as_str().unwrap();
+    let cleared = call(
+        state,
+        "pm_ticket_update",
+        json!({ "ticketId": ticket_id, "epicId": null }),
+    )
+    .await
+    .unwrap();
+    assert!(cleared["epicId"].is_null());
+    let other = ticket(state, &project_id, json!({ "epicId": epic_id })).await;
+    assert_eq!(other["epicId"], epic_id.as_str());
+
+    let deleted = call(state, "pm_epic_delete", json!({ "epicId": epic_id }))
+        .await
+        .unwrap();
+    assert_eq!(deleted, json!({ "deleted": true }));
+    let board = call(state, "pm_board_read", json!({ "projectId": project_id }))
+        .await
+        .unwrap();
+    assert_eq!(board["epics"], json!([]));
+    assert!(
+        board["tickets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|entry| entry["ticket"]["epicId"].is_null())
+    );
+    assert_eq!(
+        call(
+            state,
+            "pm_epic_breakdown_reject",
+            json!({ "breakdownId": breakdown_id }),
+        )
+        .await,
+        Err(ErrorCode::NotFound)
+    );
+}
+
+#[tokio::test]
+async fn a_project_without_a_kept_conversation_is_not_resumable() {
+    let fixture = fixture();
+    let state = &fixture.state;
+    let project_id = project(state).await;
+    let listed = call(state, "pm_agent_list", json!({ "projectId": project_id }))
+        .await
+        .unwrap();
+    assert_eq!(listed["resumable"], false);
+    state
+        .store
+        .lock()
+        .remember_assistant_conversation(&termloop_pm::AssistantConversation {
+            project_id: project_id.clone(),
+            provider: "claude".to_owned(),
+            conversation_id: "11111111-1111-4111-8111-111111111111".to_owned(),
+            cwd: "/code".to_owned(),
+            started_at_epoch_ms: 1,
+        })
+        .unwrap();
+    let listed = call(state, "pm_agent_list", json!({ "projectId": project_id }))
+        .await
+        .unwrap();
+    assert_eq!(listed["resumable"], true);
+}
+
 fn launched(_: &AppState, _: &DeliveryCheck) -> Result<String, ControlError> {
     Ok("session-check".to_owned())
 }

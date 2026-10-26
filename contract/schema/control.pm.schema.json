@@ -36,6 +36,11 @@
       "pm_ticket_notes_read",
       "pm_ticket_note_add",
       "pm_ticket_note_remove",
+      "pm_epic_create",
+      "pm_epic_update",
+      "pm_epic_delete",
+      "pm_epic_breakdown_accept",
+      "pm_epic_breakdown_reject",
       "pm_sources_read",
       "pm_sources_set",
       "pm_credential_store",
@@ -341,6 +346,46 @@
       },
       "result": {
         "$ref": "#/$defs/pmDeletedResult"
+      }
+    },
+    "pm_epic_create": {
+      "params": {
+        "$ref": "#/$defs/pmEpicCreateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmEpic"
+      }
+    },
+    "pm_epic_update": {
+      "params": {
+        "$ref": "#/$defs/pmEpicUpdateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmEpic"
+      }
+    },
+    "pm_epic_delete": {
+      "params": {
+        "$ref": "#/$defs/pmEpicRef"
+      },
+      "result": {
+        "$ref": "#/$defs/pmDeletedResult"
+      }
+    },
+    "pm_epic_breakdown_accept": {
+      "params": {
+        "$ref": "#/$defs/pmEpicBreakdownAcceptParams"
+      },
+      "result": {
+        "$ref": "#/$defs/pmEpicBreakdownAcceptResult"
+      }
+    },
+    "pm_epic_breakdown_reject": {
+      "params": {
+        "$ref": "#/$defs/pmEpicBreakdownRef"
+      },
+      "result": {
+        "$ref": "#/$defs/pmRejectedResult"
       }
     },
     "pm_sources_read": {
@@ -793,6 +838,11 @@
         "pm_ticket_notes_read",
         "pm_ticket_note_add",
         "pm_ticket_note_remove",
+        "pm_epic_create",
+        "pm_epic_update",
+        "pm_epic_delete",
+        "pm_epic_breakdown_accept",
+        "pm_epic_breakdown_reject",
         "pm_sources_read",
         "pm_sources_set",
         "pm_credential_store",
@@ -1218,6 +1268,7 @@
         "jiraUrl",
         "jiraSprintId",
         "jiraPulledAtEpochMs",
+        "epicId",
         "carryOverCount",
         "blockers",
         "acceptanceCriteria",
@@ -1297,6 +1348,15 @@
           ],
           "minimum": 0,
           "x-rust-type": "u64"
+        },
+        "epicId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
         },
         "carryOverCount": {
           "type": "integer",
@@ -1680,7 +1740,9 @@
         "tickets",
         "playbook",
         "runningChecks",
-        "tracking"
+        "tracking",
+        "epics",
+        "epicBreakdowns"
       ],
       "properties": {
         "projectId": {
@@ -1715,6 +1777,20 @@
         },
         "tracking": {
           "$ref": "#/$defs/pmTracking"
+        },
+        "epics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmEpic"
+          },
+          "maxItems": 256
+        },
+        "epicBreakdowns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmEpicBreakdown"
+          },
+          "maxItems": 8
         }
       }
     },
@@ -3000,6 +3076,12 @@
           "type": "string",
           "maxLength": 2048,
           "pattern": "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$"
+        },
+        "epicId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
         }
       }
     },
@@ -3043,6 +3125,15 @@
           ],
           "maxLength": 2048,
           "pattern": "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$"
+        },
+        "epicId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
         }
       }
     },
@@ -3904,6 +3995,15 @@
         },
         "task": {
           "$ref": "#/$defs/pmAssistantTask"
+        },
+        "epicId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "fresh": {
+          "type": "boolean"
         }
       }
     },
@@ -3912,7 +4012,8 @@
       "type": "string",
       "enum": [
         "brief",
-        "updateDescription"
+        "updateDescription",
+        "planEpic"
       ]
     },
     "pmAgentListResult": {
@@ -3920,7 +4021,8 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "sessions"
+        "sessions",
+        "resumable"
       ],
       "properties": {
         "sessions": {
@@ -3929,6 +4031,9 @@
             "$ref": "#/$defs/pmAgentSession"
           },
           "maxItems": 64
+        },
+        "resumable": {
+          "type": "boolean"
         }
       }
     },
@@ -6532,6 +6637,306 @@
         },
         "outcome": {
           "$ref": "#/$defs/pmJiraSprintImportOutcome"
+        }
+      }
+    },
+    "pmEpic": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "projectId",
+        "title",
+        "description",
+        "createdAtEpochMs",
+        "updatedAtEpochMs"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 20000
+        },
+        "createdAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "updatedAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "pmEpicDraft": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "description"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 20000
+        }
+      }
+    },
+    "pmEpicBreakdownTask": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "description",
+        "acceptanceCriteria"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 20000
+        },
+        "acceptanceCriteria": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "maxItems": 64
+        }
+      }
+    },
+    "pmEpicBreakdown": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "projectId",
+        "epicId",
+        "epic",
+        "tasks",
+        "summary",
+        "createdAtEpochMs"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "epicId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "epic": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/pmEpicDraft"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tasks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmEpicBreakdownTask"
+          },
+          "minItems": 1,
+          "maxItems": 30
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "createdAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "pmEpicCreateParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "title"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 20000
+        }
+      }
+    },
+    "pmEpicUpdateParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "epicId"
+      ],
+      "properties": {
+        "epicId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 20000
+        }
+      }
+    },
+    "pmEpicRef": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "epicId"
+      ],
+      "properties": {
+        "epicId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        }
+      }
+    },
+    "pmEpicBreakdownRef": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "breakdownId"
+      ],
+      "properties": {
+        "breakdownId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        }
+      }
+    },
+    "pmEpicBreakdownAcceptParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "breakdownId",
+        "taskIndices"
+      ],
+      "properties": {
+        "breakdownId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "taskIndices": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 29,
+            "x-rust-type": "u32"
+          },
+          "minItems": 1,
+          "maxItems": 30,
+          "uniqueItems": true
+        },
+        "sprintId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        }
+      }
+    },
+    "pmEpicBreakdownAcceptResult": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "epic",
+        "tickets"
+      ],
+      "properties": {
+        "epic": {
+          "$ref": "#/$defs/pmEpic"
+        },
+        "tickets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pmTicket"
+          },
+          "maxItems": 30
         }
       }
     }

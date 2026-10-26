@@ -50,7 +50,7 @@ describe("TicketPlaybook", () => {
   });
 
   it("marks a step through pm_playbook_step_mark and rereads the board", async () => {
-    const board = { projectId: "project-1", sprints: [], tickets: [], playbook: playbook(), runningChecks: [], tracking: { jira: false, code: false, deploy: true, tier: "deploy" } };
+    const board = { projectId: "project-1", sprints: [], tickets: [], playbook: playbook(), runningChecks: [], epics: [], epicBreakdowns: [], tracking: { jira: false, code: false, deploy: true, tier: "deploy" } };
     const bridge = fakeBridge((method) => (method === "pm_board_read" ? ok(board) : method === "pm_digest_read" ? ok({ projectId: "project-1", entries: [] }) : ok({})));
     await new PmController(bridge, createPmStore({ projectId: "project-1" })).markStep("ticket-1", "live", true);
     expect(bridge.calls[0]).toEqual({ method: "pm_playbook_step_mark", params: { ticketId: "ticket-1", stepId: "live", passed: true } });

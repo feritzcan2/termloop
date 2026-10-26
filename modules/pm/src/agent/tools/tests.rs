@@ -6,8 +6,9 @@ use super::*;
 use crate::ChannelWatermark;
 use crate::ProposalChange;
 use crate::agent::{
-    PM_OWNER_EVIDENCE_READ, PM_PLAYBOOK_PROPOSE, PM_SKILL_DISCOVERY_READ, PM_SKILL_DRY_RUN_REQUEST,
-    PM_SKILL_TOOL_VERIFY, PM_TICKET_NOTE_ADD, PM_TOOLS,
+    PM_EPIC_PROPOSE_BREAKDOWN, PM_OWNER_EVIDENCE_READ, PM_PLAYBOOK_PROPOSE,
+    PM_SKILL_DISCOVERY_READ, PM_SKILL_DRY_RUN_REQUEST, PM_SKILL_TOOL_VERIFY, PM_TICKET_NOTE_ADD,
+    PM_TOOLS,
 };
 use crate::playbook::{
     AgentCheck, PlaybookStep, PullRequestStepState, StepCheck, StepEvaluator, StepVerdict,
@@ -214,6 +215,22 @@ fn samples() -> Vec<(&'static str, Value)> {
             }),
         ),
         (PM_SKILL_DRY_RUN_REQUEST, json!({ "draftId": "d1" })),
+        (
+            PM_EPIC_PROPOSE_BREAKDOWN,
+            sample(BreakdownProposeParams {
+                epic_id: Some("e1".into()),
+                epic: Some(crate::EpicDraft {
+                    title: "Checkout".into(),
+                    description: "One-step checkout".into(),
+                }),
+                tasks: vec![crate::BreakdownTask {
+                    title: "API".into(),
+                    description: "Add the endpoint".into(),
+                    acceptance_criteria: vec!["Returns 201".into()],
+                }],
+                summary: "Split by layer".into(),
+            }),
+        ),
         (PM_OWNER_EVIDENCE_READ, json!({ "ticketId": "t1" })),
         (
             PM_PLAYBOOK_PROPOSE,
@@ -688,4 +705,65 @@ fn the_assistant_records_notes_the_ticket_read_returns() {
     assert_eq!(read["notes"].as_array().unwrap().len(), 1);
     assert_eq!(read["notes"][0]["author"], "agent");
     assert_eq!(read["notes"][0]["sourceKey"], "slack:C1:1.1");
+}
+
+#[test]
+fn the_assistant_proposes_an_epic_breakdown_the_pm_accepts() {
+    let mut store = store();
+    let result = call_pm_tool(
+        &mut store,
+        &assistant("p1"),
+        PM_EPIC_PROPOSE_BREAKDOWN,
+        json!({
+            "epic": { "title": "Checkout", "description": "Pay in one step." },
+            "tasks": [
+                { "title": "API", "acceptanceCriteria": ["Returns 201"] },
+                { "title": "UI", "description": "The pay button." }
+            ],
+            "summary": "Split by layer."
+        }),
+    )
+    .unwrap();
+    assert_eq!(result["applied"], false);
+    let breakdowns = store.epic_breakdowns("p1").unwrap();
+    assert_eq!(breakdowns.len(), 1);
+    assert_eq!(result["breakdownId"], breakdowns[0].id.as_str());
+    assert!(store.epics("p1").unwrap().is_empty());
+
+    let accepted = store
+        .accept_epic_breakdown(&breakdowns[0].id, &[0, 1], None)
+        .unwrap();
+    let board = call_pm_tool(
+        &mut store,
+        &assistant("p1"),
+        PM_BOARD_READ,
+        json!({ "scope": "all" }),
+    )
+    .unwrap();
+    assert_eq!(board["epics"][0]["id"], accepted.epic.id.as_str());
+    assert_eq!(board["epics"][0]["tickets"], 2);
+    assert_eq!(board["tickets"][0]["epicId"], accepted.epic.id.as_str());
+
+    for context in [
+        PmToolContext::new("p1", PmAgentMode::SkillCreator),
+        delivery_check("p1", &accepted.tickets[0].id),
+    ] {
+        let error = call_pm_tool(
+            &mut store,
+            &context,
+            PM_EPIC_PROPOSE_BREAKDOWN,
+            json!({ "epicId": accepted.epic.id, "tasks": [{ "title": "Docs" }], "summary": "x" }),
+        )
+        .unwrap_err();
+        assert_eq!(error.code(), "denied");
+    }
+    let foreign = store.create_epic("p2", "Search", "").unwrap();
+    let error = call_pm_tool(
+        &mut store,
+        &assistant("p1"),
+        PM_EPIC_PROPOSE_BREAKDOWN,
+        json!({ "epicId": foreign.id, "tasks": [{ "title": "Docs" }], "summary": "x" }),
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), "invalidArguments");
 }

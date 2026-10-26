@@ -320,6 +320,26 @@ h3.s .r { margin-left: auto; color: var(--dimmer); font: 400 10px/1 var(--font-m
 .right-sidebar-tools { display: flex; align-items: center; gap: 6px; padding: 8px 10px 2px 13px; }
 .right-sidebar-tools .view-action { margin-left: 0; }
 .playbook-panel { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 16px; }
+.epics-panel { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 16px; }
+.epic-list { margin: 6px 0 0; padding: 0; list-style: none; }
+.epic-row { padding: 6px 10px 8px 8px; border-bottom: 1px solid var(--rule); }
+.epic-head { display: flex; align-items: center; gap: 4px; font-size: 12.5px; }
+.epic-head input { flex: 1; height: 24px; font-size: 12px; }
+.epic-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.epic-head .done { color: var(--dimmer); font: 10px/1 var(--font-mono); }
+.epic-progress { height: 3px; margin: 5px 0 0 26px; border-radius: 2px; background: var(--rule); overflow: hidden; }
+.epic-progress i { display: block; height: 100%; background: var(--accent); }
+.epic-goal { margin: 6px 0 0 26px; white-space: pre-wrap; }
+.epic-tickets { margin: 6px 0 0 26px; padding: 0; list-style: none; display: grid; gap: 3px; }
+.epic-tickets .link { white-space: normal; }
+.epic-actions, .breakdown-actions { display: flex; align-items: center; gap: 4px; margin: 8px 0 0 26px; }
+.breakdown-card { margin: 4px 10px 8px 13px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 12.5px; }
+.breakdown-card .hint { margin: 4px 0 6px; }
+.breakdown-tasks { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.breakdown-tasks label { display: flex; align-items: baseline; gap: 6px; }
+.breakdown-tasks .meta { margin-left: auto; color: var(--dimmer); font-size: 10.5px; white-space: nowrap; }
+.breakdown-actions { margin-left: 0; }
+.breakdown-actions select { height: 24px; font-size: 11.5px; }
 .playbook-panel .pad { margin: 8px 13px; }
 .playbook-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin: 16px 13px; font-size: 12.5px; }
 .playbook-empty .hint { margin: 0; }

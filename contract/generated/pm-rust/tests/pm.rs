@@ -9,7 +9,7 @@ fn ticket() -> serde_json::Value {
         "id": "t1", "projectId": "p1", "title": "Add login", "description": "",
         "status": "todo", "priority": "medium", "assignee": null, "sprintId": null,
         "rank": -3, "jiraUrl": "https://acme.atlassian.net/browse/PAY-42",
-        "jiraSprintId": null, "jiraPulledAtEpochMs": null, "carryOverCount": 0,
+        "jiraSprintId": null, "jiraPulledAtEpochMs": null, "epicId": null, "carryOverCount": 0,
         "blockers": [], "acceptanceCriteria": [{"id": "c1", "text": "Logs in", "done": false}],
         "versions": null, "createdAtEpochMs": 1, "updatedAtEpochMs": 2
     })
@@ -19,7 +19,7 @@ fn ticket() -> serde_json::Value {
 fn surface_is_one_full_scope_over_every_method() {
     assert_eq!(CAPABILITY_SCOPE, "pm.full");
     assert!(CONTRACT_IDENTITY.starts_with("sha256:") && CONTRACT_IDENTITY.len() == 71);
-    assert_eq!(METHODS.len(), 67);
+    assert_eq!(METHODS.len(), 72);
     assert!(METHODS.iter().all(|method| method.starts_with("pm_")));
     assert_eq!(
         EVENTS,
@@ -239,5 +239,42 @@ fn jira_browse_results_carry_only_secret_free_issue_fields() {
     assert!(!validate_method_result(
         "pm_jira_favourite_filters_read",
         &json!({"projectId": "p1", "filters": [{"id": "10000", "name": "Mine", "jql": ""}], "truncated": false})
+    ));
+}
+
+#[test]
+fn epic_breakdowns_are_accepted_by_distinct_task_indices() {
+    let epic = json!({
+        "id": "e1", "projectId": "p1", "title": "Checkout", "description": "",
+        "createdAtEpochMs": 1, "updatedAtEpochMs": 1
+    });
+    assert!(validate_method_result(
+        "pm_epic_breakdown_accept",
+        &json!({"epic": epic, "tickets": [ticket()]})
+    ));
+    assert!(validate_method_result("pm_epic_create", &epic));
+    let mut board_ticket = ticket();
+    board_ticket["epicId"] = json!("e1");
+    assert!(validate_method_result("pm_ticket_update", &board_ticket));
+    for accept in [
+        json!({"breakdownId": "b1", "taskIndices": [0, 2], "sprintId": "s1"}),
+        json!({"breakdownId": "b1", "taskIndices": [1]}),
+    ] {
+        assert!(validate_method_params("pm_epic_breakdown_accept", &accept));
+    }
+    for accept in [
+        json!({"breakdownId": "b1", "taskIndices": []}),
+        json!({"breakdownId": "b1", "taskIndices": [0, 0]}),
+        json!({"breakdownId": "b1", "taskIndices": [30]}),
+    ] {
+        assert!(!validate_method_params("pm_epic_breakdown_accept", &accept));
+    }
+    assert!(validate_method_params(
+        "pm_agent_launch",
+        &json!({"projectId": "p1", "task": "planEpic", "epicId": "e1", "fresh": true})
+    ));
+    assert!(validate_method_params(
+        "pm_ticket_update",
+        &json!({"ticketId": "t1", "epicId": null})
     ));
 }

@@ -20,7 +20,7 @@ use termloop_pm_contract::pm::{
 };
 
 use super::errors::{ControlError, error, internal, not_found};
-use super::{operations, playbook_methods, skill_methods};
+use super::{epic_methods, operations, playbook_methods, skill_methods};
 use crate::app::{AppState, jira_browse, skills};
 
 const PRODUCT: &str = "termloop-pm";
@@ -78,6 +78,11 @@ pub(crate) async fn dispatch(
         "pm_playbook_proposal_apply" => playbook_methods::proposal_apply(state, params),
         "pm_playbook_proposal_discard" => playbook_methods::proposal_discard(state, params),
         "pm_playbook_step_mark" => playbook_methods::step_mark(state, params),
+        "pm_epic_create" => epic_methods::create(state, params),
+        "pm_epic_update" => epic_methods::update(state, params),
+        "pm_epic_delete" => epic_methods::delete(state, params),
+        "pm_epic_breakdown_accept" => epic_methods::breakdown_accept(state, params),
+        "pm_epic_breakdown_reject" => epic_methods::breakdown_reject(state, params),
         "pm_ticket_proposal_accept" => skill_methods::proposal_accept(state, params),
         "pm_ticket_proposal_reject" => skill_methods::proposal_reject(state, params),
         _ => {
@@ -316,11 +321,12 @@ fn ticket_create(
     new.assignee = parsed.assignee;
     new.sprint_id = parsed.sprint_id;
     new.jira_url = parsed.jira_url;
+    new.epic_id = parsed.epic_id;
     let ticket = store.create_ticket(new)?;
     published_ticket(state, &ticket)
 }
 
-/// Applies each present field in turn; `assignee` or `jiraUrl` sent as
+/// Applies each present field in turn; `assignee`, `epicId`, or `jiraUrl` sent as
 /// `null` clears it. The steps are separate store commands.
 fn ticket_update(
     state: &AppState,
@@ -345,6 +351,9 @@ fn ticket_update(
     }
     if let Some(assignee) = nullable_string(params, "assignee") {
         store.set_ticket_assignee(id, assignee.as_deref())?;
+    }
+    if let Some(epic_id) = nullable_string(params, "epicId") {
+        store.set_ticket_epic(id, epic_id.as_deref())?;
     }
     changed_ticket(state, store, id)
 }
@@ -409,6 +418,8 @@ pub(crate) fn board(
         "playbook": to_value(&board.playbook)?,
         "runningChecks": running,
         "tracking": to_value(&board.tracking)?,
+        "epics": to_value(&board.epics)?,
+        "epicBreakdowns": to_value(&board.epic_breakdowns)?,
     }))
 }
 

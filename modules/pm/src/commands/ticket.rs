@@ -3,6 +3,7 @@
 
 use rusqlite::{Connection, OptionalExtension, params};
 
+use super::epic::check_ticket_epic;
 use super::{
     check_id, next_rank, require_open_sprint, require_sprint, require_ticket, touch_ticket,
 };
@@ -53,6 +54,7 @@ pub struct NewTicket {
     pub assignee: Option<String>,
     pub sprint_id: Option<String>,
     pub jira_url: Option<String>,
+    pub epic_id: Option<String>,
 }
 
 impl NewTicket {
@@ -265,6 +267,49 @@ pub(super) fn add_blocker(
     touch_ticket(connection, ticket_id, now)
 }
 
+/// Inserts a validated new ticket with its first description version inside
+/// a command's transaction.
+pub(super) fn insert_ticket(
+    connection: &Connection,
+    id: &str,
+    ticket: &NewTicket,
+    now: u64,
+) -> Result<(), PmError> {
+    let project_id = ticket.project_id.as_str();
+    let sprint_id = ticket.sprint_id.as_deref();
+    check_target_sprint(connection, project_id, sprint_id)?;
+    check_ticket_epic(connection, project_id, ticket.epic_id.as_deref())?;
+    ensure_jira_url_free(connection, project_id, ticket.jira_url.as_deref(), None)?;
+    let rank = next_rank(connection, project_id, sprint_id)?;
+    connection.execute(
+        "INSERT INTO tickets (id, project_id, title, status, priority, assignee, \
+             sprint_id, rank, jira_url, epic_id, created_at_epoch_ms, updated_at_epoch_ms) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)",
+        params![
+            id,
+            project_id,
+            ticket.title,
+            ticket.status.as_str(),
+            ticket.priority.as_str(),
+            ticket.assignee,
+            sprint_id,
+            rank,
+            ticket.jira_url,
+            ticket.epic_id,
+            now
+        ],
+    )?;
+    record_version(
+        connection,
+        id,
+        &ticket.description,
+        ticket.description_author,
+        None,
+        now,
+    )?;
+    Ok(())
+}
+
 impl PmStore {
     pub fn create_ticket(&mut self, ticket: NewTicket) -> Result<Ticket, PmError> {
         check_id(&ticket.project_id, "projectId")?;
@@ -279,36 +324,7 @@ impl PmStore {
         let id = self.new_id();
         let now = self.now();
         self.write(|transaction| {
-            let project_id = ticket.project_id.as_str();
-            let sprint_id = ticket.sprint_id.as_deref();
-            check_target_sprint(transaction, project_id, sprint_id)?;
-            ensure_jira_url_free(transaction, project_id, ticket.jira_url.as_deref(), None)?;
-            let rank = next_rank(transaction, project_id, sprint_id)?;
-            transaction.execute(
-                "INSERT INTO tickets (id, project_id, title, status, priority, assignee, \
-                     sprint_id, rank, jira_url, created_at_epoch_ms, updated_at_epoch_ms) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)",
-                params![
-                    id,
-                    project_id,
-                    ticket.title,
-                    ticket.status.as_str(),
-                    ticket.priority.as_str(),
-                    ticket.assignee,
-                    sprint_id,
-                    rank,
-                    ticket.jira_url,
-                    now
-                ],
-            )?;
-            record_version(
-                transaction,
-                &id,
-                &ticket.description,
-                ticket.description_author,
-                None,
-                now,
-            )?;
+            insert_ticket(transaction, &id, &ticket, now)?;
             require_ticket(transaction, &id)
         })
     }

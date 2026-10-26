@@ -41,6 +41,8 @@ export type PmState = {
   /** Notes read so far, by ticket. */
   notes: Record<string, PmTicketNote[]>;
   agents: PmAgentSession[];
+  /** Whether the project's assistant resumes an earlier conversation. */
+  assistantResumable: boolean;
   activeAgentSessionId: string | undefined;
   /** The skill whose SKILL.md is open in the stage. */
   openSkillId: string | undefined;
@@ -73,6 +75,7 @@ export const initialPmState: PmState = {
   versions: {},
   notes: {},
   agents: [],
+  assistantResumable: false,
   activeAgentSessionId: undefined,
   openSkillId: undefined,
   settings: undefined,

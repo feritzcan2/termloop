@@ -161,7 +161,7 @@ fn load_tickets(
     let mut statement = connection.prepare(&format!(
         "SELECT t.id, t.project_id, t.title, t.status, t.priority, t.assignee, t.sprint_id, \
              t.rank, t.jira_url, t.carry_over_count, t.created_at_epoch_ms, \
-             t.updated_at_epoch_ms, t.jira_sprint_id, t.jira_pulled_at_epoch_ms \
+             t.updated_at_epoch_ms, t.jira_sprint_id, t.jira_pulled_at_epoch_ms, t.epic_id \
          FROM tickets t WHERE {filter} \
          ORDER BY t.sprint_id IS NULL, t.sprint_id, t.rank, t.id"
     ))?;
@@ -184,6 +184,7 @@ fn load_tickets(
                 jira_url: row.get(8)?,
                 jira_sprint_id: row.get(12)?,
                 jira_pulled_at_epoch_ms: row.get(13)?,
+                epic_id: row.get(14)?,
                 carry_over_count: row.get(9)?,
                 blockers: blockers.remove(&id).unwrap_or_default(),
                 acceptance_criteria: criteria.remove(&id).unwrap_or_default(),

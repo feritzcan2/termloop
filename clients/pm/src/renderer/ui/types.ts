@@ -18,7 +18,7 @@ import type {
 export type PmView = "overview" | "ticket" | "jira" | "agent" | "skill" | "settings";
 
 /** What the right activity bar opens in the right sidebar. */
-export type RightSidebarView = "sprints" | "playbook" | "suggestions" | "skills";
+export type RightSidebarView = "sprints" | "epics" | "playbook" | "suggestions" | "skills";
 
 export type JiraDialogView = {
   ticketId: string;
@@ -51,6 +51,8 @@ export type AgentTab = {
   label: string;
   state: PmAgentState;
   assistant: boolean;
+  /** The project's assistant, which keeps one conversation across launches. */
+  keepsConversation: boolean;
   provider: PmAgentProvider;
   /** What the session is about, e.g. its focus ticket. */
   detail: string;

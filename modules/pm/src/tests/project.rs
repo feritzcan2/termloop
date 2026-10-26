@@ -64,7 +64,31 @@ fn deleting_a_project_removes_every_row_it_owns_and_nothing_else() {
     for project in [&doomed.id, &kept.id] {
         let sprint = sprint(&mut store, project, "Sprint 1");
         let work = ticket(&mut store, project, "Login", Some(&sprint.id));
-        ticket(&mut store, project, "Later", None);
+        let later = ticket(&mut store, project, "Later", None);
+        let epic = store.create_epic(project, "Checkout", "").unwrap();
+        store.set_ticket_epic(&later.id, Some(&epic.id)).unwrap();
+        store
+            .propose_epic_breakdown(
+                project,
+                Some(&epic.id),
+                None,
+                vec![crate::BreakdownTask {
+                    title: "API".into(),
+                    description: String::new(),
+                    acceptance_criteria: Vec::new(),
+                }],
+                "Split by layer.".into(),
+            )
+            .unwrap();
+        store
+            .remember_assistant_conversation(&crate::AssistantConversation {
+                project_id: project.clone(),
+                provider: "claude".into(),
+                conversation_id: "11111111-1111-4111-8111-111111111111".into(),
+                cwd: "/work".into(),
+                started_at_epoch_ms: 1,
+            })
+            .unwrap();
         store
             .save_ticket_description(&work.id, "Users sign in.", TicketAuthor::Pm, None)
             .unwrap();

@@ -21,6 +21,7 @@ fn ticket() -> Ticket {
         jira_url: None,
         jira_sprint_id: None,
         jira_pulled_at_epoch_ms: None,
+        epic_id: None,
         carry_over_count: 0,
         blockers: vec![],
         acceptance_criteria: vec![AcceptanceCriterion {

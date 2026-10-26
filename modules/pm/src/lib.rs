@@ -9,6 +9,7 @@ mod board;
 mod commands;
 mod delivery;
 mod digest;
+mod epic;
 mod error;
 mod note;
 pub mod playbook;
@@ -27,14 +28,14 @@ mod tests;
 
 pub use board::Board;
 pub use commands::{
-    ChannelWatermark, CheckReport, ClosedSprint, DeletedSprint, FactRead, FactsObservation,
-    JIRA_PULL_NEW_TICKETS_MAX, JiraChange, JiraIssueState, JiraObservation, JiraPullChanges,
-    JiraPullOutcome, JiraSprintImportOutcome, JiraSprintImportRead, JiraSprintPull, JiraSprintRead,
-    JiraWriteDiff, JiraWriteOutcome, JiraWriteTarget, MARKED_PASSED_EVIDENCE, NewTicket,
-    ProposalOrigin, PullRequestsObservation, RecordedCheckReport, SKILL_DISCOVERY_MAX_BYTES,
-    SKILL_PAUSE_AFTER_FAILURES, SKILL_RETRY_AFTER_MS, SKILL_SLACK_RETENTION_MS, TicketEdit,
-    apply_jira_write, read_jira_issue_state, read_jira_sprint_import, read_jira_sprints,
-    slack_ts_at, slack_ts_key,
+    AcceptedBreakdown, ChannelWatermark, CheckReport, ClosedSprint, DeletedSprint, FactRead,
+    FactsObservation, JIRA_PULL_NEW_TICKETS_MAX, JiraChange, JiraIssueState, JiraObservation,
+    JiraPullChanges, JiraPullOutcome, JiraSprintImportOutcome, JiraSprintImportRead,
+    JiraSprintPull, JiraSprintRead, JiraWriteDiff, JiraWriteOutcome, JiraWriteTarget,
+    MARKED_PASSED_EVIDENCE, NewTicket, ProposalOrigin, PullRequestsObservation,
+    RecordedCheckReport, SKILL_DISCOVERY_MAX_BYTES, SKILL_PAUSE_AFTER_FAILURES,
+    SKILL_RETRY_AFTER_MS, SKILL_SLACK_RETENTION_MS, TicketEdit, apply_jira_write,
+    read_jira_issue_state, read_jira_sprint_import, read_jira_sprints, slack_ts_at, slack_ts_key,
 };
 pub use delivery::checks::{
     CHECK_DEADLINE_MS, CHECK_RETRY_AFTER_MS, DeliveryCheck, DeliveryCheckOutcome,
@@ -49,6 +50,11 @@ pub use delivery::risks::{DeliveryRisk, DeliveryRiskKind, RiskInputs, delivery_r
 pub use delivery::tracking::{DataTier, Tracking};
 pub use delivery::{FactsSummary, TicketDelivery};
 pub use digest::{DIGEST_ENTRIES_MAX, Digest, DigestEntry, DigestKind, DigestSource, digest};
+pub use epic::{
+    AssistantConversation, BREAKDOWN_TASKS_MAX, BreakdownTask, EPIC_DESCRIPTION_MAX_CHARS,
+    EPIC_TITLE_MAX_CHARS, Epic, EpicBreakdown, EpicDraft, EpicEdit, PROJECT_BREAKDOWNS_MAX,
+    PROJECT_EPICS_MAX, valid_epic_description, valid_epic_title,
+};
 pub use error::PmError;
 pub use note::{
     NewTicketNote, TICKET_NOTE_LABEL_MAX_CHARS, TICKET_NOTE_MAX_CHARS, TICKET_NOTE_SOURCES_MAX,

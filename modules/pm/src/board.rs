@@ -2,11 +2,12 @@
 //! derived from it (Playbook positions, risks, the data tier) is stored.
 
 use crate::delivery::{TicketDelivery, ticket_delivery};
+use crate::epic::{Epic, EpicBreakdown};
 use crate::playbook::Playbook;
 use crate::store::{
-    project_facts, project_playbook, project_running_checks, project_sources, project_sprints,
-    project_tickets, project_verdicts, proposal_by_id, sprint_by_id, ticket_by_id, ticket_facts,
-    ticket_versions,
+    project_breakdowns, project_epics, project_facts, project_playbook, project_running_checks,
+    project_sources, project_sprints, project_tickets, project_verdicts, proposal_by_id,
+    sprint_by_id, ticket_by_id, ticket_facts, ticket_versions,
 };
 use crate::validation::check_id as check;
 use crate::{
@@ -16,7 +17,8 @@ use crate::{
 
 /// One project's planning state: its sprints in creation order, its tickets
 /// (sprint lanes, then the backlog, each in rank order), its Playbook, and
-/// what is derived about each ticket's delivery (in ticket order).
+/// what is derived about each ticket's delivery (in ticket order), and its
+/// epics with the breakdowns waiting for the PM.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Board {
@@ -26,6 +28,8 @@ pub struct Board {
     pub playbook: Playbook,
     pub deliveries: Vec<TicketDelivery>,
     pub tracking: Tracking,
+    pub epics: Vec<Epic>,
+    pub epic_breakdowns: Vec<EpicBreakdown>,
 }
 
 impl PmStore {
@@ -65,6 +69,8 @@ impl PmStore {
             playbook,
             deliveries,
             tracking,
+            epics: project_epics(connection, project_id)?,
+            epic_breakdowns: project_breakdowns(connection, project_id)?,
         })
     }
 

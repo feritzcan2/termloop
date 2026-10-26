@@ -20,6 +20,7 @@ use errors::ControlError;
 use errors::error;
 
 mod dispatch;
+mod epic_methods;
 pub(crate) mod errors;
 mod operations;
 mod playbook_methods;

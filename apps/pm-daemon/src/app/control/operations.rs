@@ -142,12 +142,16 @@ pub(super) fn agent_launch(state: &AppState, params: &Value) -> Result<Value, Co
     let task = match params.task {
         None | Some(PmAssistantTask::Brief) => AssistantTask::Brief,
         Some(PmAssistantTask::UpdateDescription) => AssistantTask::UpdateDescription,
+        Some(PmAssistantTask::PlanEpic) => AssistantTask::PlanEpic {
+            epic_id: params.epic_id,
+        },
     };
     let record = agents::launch_assistant(
         state,
         &params.project_id,
         params.focus_ticket_id.as_deref(),
         task,
+        params.fresh.unwrap_or(false),
     )?;
     Ok(record.value())
 }
@@ -155,7 +159,10 @@ pub(super) fn agent_launch(state: &AppState, params: &Value) -> Result<Value, Co
 pub(super) fn agent_list(state: &AppState, params: &Value) -> Result<Value, ControlError> {
     let params: PmProjectRef = parse(params)?;
     require_project(&state.store.lock(), &params.project_id)?;
-    Ok(json!({ "sessions": state.agents.project_sessions(&params.project_id) }))
+    Ok(json!({
+        "sessions": state.agents.project_sessions(&params.project_id),
+        "resumable": agents::resumable(state, &params.project_id)?,
+    }))
 }
 
 pub(super) fn agent_stop(state: &AppState, params: &Value) -> Result<Value, ControlError> {

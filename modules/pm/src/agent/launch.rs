@@ -8,6 +8,7 @@
 //! (`TERMLOOP_MCP_TOKEN`), never in argv. Nothing here generates, logs, or
 //! persists it.
 
+use termloop_domain::{ResumeProvider, ResumeRef};
 use termloop_launch::{
     AgentConversationLaunch, AgentObservationLaunch, InvocationError, LaunchPayload, LaunchRequest,
     McpConnection, PromptTemplate, resolve,
@@ -41,8 +42,8 @@ pub struct PmLaunchRequest<'a> {
     /// Where the daemon wrote [`claude_mcp_config`] privately; Claude only.
     pub claude_mcp_config_path: &'a str,
     /// The assistant may resume an earlier conversation; a delivery check
-    /// always starts fresh.
-    pub conversation: AgentConversationLaunch<'a>,
+    /// always starts a new one.
+    pub conversation: PmConversation,
     pub observation: Option<AgentObservationLaunch<'a>>,
     /// Test seam: where the agent CLI is looked up instead of the PATH.
     pub executable_directory: Option<&'a std::path::Path>,
@@ -71,12 +72,25 @@ impl<'a> PmLaunchRequest<'a> {
             mcp_endpoint,
             mcp_token,
             claude_mcp_config_path,
-            conversation: AgentConversationLaunch::Fresh { resume_ref: None },
+            conversation: PmConversation::New,
             observation: None,
             executable_directory: None,
             read_only_workspace: false,
         }
     }
+}
+
+/// Which provider conversation a launch opens.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum PmConversation {
+    /// A new conversation the provider names itself.
+    #[default]
+    New,
+    /// A new conversation under the session id the daemon assigned, to
+    /// resume it later; Claude only.
+    Start(String),
+    /// The earlier conversation with this provider session id.
+    Resume(String),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -89,6 +103,8 @@ pub enum PmLaunchError {
     InvalidToken,
     #[error("a delivery check or skill run starts a fresh conversation with its first message")]
     InvalidDeliveryCheck,
+    #[error("the conversation id does not fit the provider")]
+    InvalidConversation,
     #[error(transparent)]
     Launch(#[from] InvocationError),
 }
@@ -166,10 +182,15 @@ fn template(mode: PmAgentMode) -> &'static PromptTemplate {
     }
 }
 
-/// The profile's first message, sent only on a fresh conversation: a
-/// resumed assistant conversation already has its opening.
+/// The message the launch sends: the profile's first message on a fresh
+/// conversation, its resume message on a resumed one, which already has its
+/// opening.
 pub(super) fn first_message(profile: &PmAgentProfile, fresh: bool) -> Option<&str> {
-    profile.first_message.as_deref().filter(|_| fresh)
+    if fresh {
+        profile.first_message.as_deref()
+    } else {
+        profile.resume_message.as_deref()
+    }
 }
 
 /// Resolves the PM agent's launch: the profile's system prompt as provider
@@ -186,10 +207,24 @@ pub fn pm_launch_plan(request: PmLaunchRequest<'_>) -> Result<PmLaunchPlan, PmLa
         return Err(PmLaunchError::InvalidToken);
     }
     let profile = request.profile;
-    let fresh = matches!(
-        request.conversation,
-        AgentConversationLaunch::Fresh { resume_ref: None }
-    );
+    let provider = if request.agent_id == "claude" {
+        ResumeProvider::Claude
+    } else {
+        ResumeProvider::Codex
+    };
+    let resume_ref = match &request.conversation {
+        PmConversation::New => None,
+        PmConversation::Start(_) if provider != ResumeProvider::Claude => {
+            return Err(PmLaunchError::InvalidConversation);
+        }
+        PmConversation::Start(id) | PmConversation::Resume(id) => Some(
+            ResumeRef::for_provider(provider, id.clone())
+                .ok_or(PmLaunchError::InvalidConversation)?,
+        ),
+    };
+    // A started conversation carries the id the daemon assigned it; it
+    // still opens with the first message.
+    let fresh = !matches!(request.conversation, PmConversation::Resume(_));
     if matches!(
         profile.mode,
         PmAgentMode::DeliveryCheck | PmAgentMode::SkillRun
@@ -202,7 +237,14 @@ pub fn pm_launch_plan(request: PmLaunchRequest<'_>) -> Result<PmLaunchPlan, PmLa
     launch.model = request.model;
     launch.permission = request.permission;
     launch.reasoning = request.reasoning;
-    launch.conversation = request.conversation;
+    launch.conversation = match (&request.conversation, &resume_ref) {
+        (PmConversation::Resume(_), Some(resume_ref)) => {
+            AgentConversationLaunch::Resume { resume_ref }
+        }
+        (_, resume_ref) => AgentConversationLaunch::Fresh {
+            resume_ref: resume_ref.as_ref(),
+        },
+    };
     launch.observation = request.observation;
     launch.mcp = Some(McpConnection {
         endpoint: request.mcp_endpoint,
@@ -221,7 +263,8 @@ pub fn pm_launch_plan(request: PmLaunchRequest<'_>) -> Result<PmLaunchPlan, PmLa
     let mut resolved = resolve(launch)?;
     if let Some(message) = first_message(profile, fresh) {
         let purpose = match profile.mode {
-            PmAgentMode::Assistant => "PM assistant kickoff",
+            PmAgentMode::Assistant if fresh => "PM assistant kickoff",
+            PmAgentMode::Assistant => "PM assistant resume",
             PmAgentMode::DeliveryCheck => "PM delivery check",
             PmAgentMode::SkillRun => "PM skill run",
             PmAgentMode::SkillCreator => "PM skill creator kickoff",

@@ -1,5 +1,6 @@
 mod checks;
 mod delivery;
+mod epic;
 mod jira;
 mod note;
 mod playbook;

@@ -8,18 +8,19 @@ mod profile;
 mod tools;
 
 pub use launch::{
-    PM_MCP_SERVER_NAME, PmLaunchError, PmLaunchPlan, PmLaunchRequest, claude_mcp_config,
-    pm_launch_plan,
+    PM_MCP_SERVER_NAME, PmConversation, PmLaunchError, PmLaunchPlan, PmLaunchRequest,
+    claude_mcp_config, pm_launch_plan,
 };
 pub use profile::{
     AssistantTask, PM_SYSTEM_PROMPT_MAX_BYTES, PmAgentProfile, SkillRunBrief, SkillSetup,
     SlackChannelBrief,
 };
 pub use tools::{
-    AcceptanceCriteriaProposalParams, BoardReadParams, BoardReadResult, BoardScope, BoardSprint,
-    BoardTicket, CheckReportParams, CheckReportResult, DescriptionProposalParams, NoteAddParams,
-    NoteAddResult, PlaybookProposeParams, PmToolContext, PmToolDefinition, PmToolError,
-    ProposalResult, RisksReadParams, RisksReadResult, SkillDraftSubmitParams, SkillRunContext,
+    AcceptanceCriteriaProposalParams, BoardEpic, BoardReadParams, BoardReadResult, BoardScope,
+    BoardSprint, BoardTicket, BreakdownProposeParams, BreakdownProposeResult, CheckReportParams,
+    CheckReportResult, DescriptionProposalParams, NoteAddParams, NoteAddResult,
+    PlaybookProposeParams, PmToolContext, PmToolDefinition, PmToolError, ProposalResult,
+    RisksReadParams, RisksReadResult, SkillDraftSubmitParams, SkillRunContext,
     SkillRunFinishParams, SuggestParams, TicketReadParams, TicketReadResult, TicketRisks,
     call_pm_tool, pm_tool_access, pm_tool_definitions,
 };
@@ -56,6 +57,7 @@ pub const PM_SKILL_DRY_RUN_REQUEST: &str = "pm_skill_dry_run_request";
 pub const PM_TICKET_NOTE_ADD: &str = "pm_ticket_note_add";
 pub const PM_OWNER_EVIDENCE_READ: &str = "pm_owner_evidence_read";
 pub const PM_PLAYBOOK_PROPOSE: &str = "pm_playbook_propose";
+pub const PM_EPIC_PROPOSE_BREAKDOWN: &str = "pm_epic_propose_breakdown";
 
 /// The read tools a skill manifest may approve. A run sees exactly the
 /// ones its manifest approved, plus [`SKILL_PROPOSAL_TOOLS`].
@@ -101,6 +103,7 @@ pub const PM_TOOLS: &[&str] = &[
     PM_TICKET_NOTE_ADD,
     PM_OWNER_EVIDENCE_READ,
     PM_PLAYBOOK_PROPOSE,
+    PM_EPIC_PROPOSE_BREAKDOWN,
 ];
 
 impl PmAgentMode {
@@ -116,6 +119,7 @@ impl PmAgentMode {
                 PM_TICKET_PROPOSE_ACCEPTANCE_CRITERIA,
                 PM_RISKS_READ,
                 PM_TICKET_NOTE_ADD,
+                PM_EPIC_PROPOSE_BREAKDOWN,
             ],
             Self::DeliveryCheck => &[
                 PM_BOARD_READ,

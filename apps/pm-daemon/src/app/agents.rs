@@ -8,10 +8,10 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 use termloop_pm::agent::{
-    AssistantTask, PmAgentMode, PmAgentProfile, PmLaunchRequest, PmToolContext, SkillRunContext,
-    claude_mcp_config, pm_launch_plan,
+    AssistantTask, PmAgentMode, PmAgentProfile, PmConversation, PmLaunchRequest, PmToolContext,
+    SkillRunContext, claude_mcp_config, pm_launch_plan,
 };
-use termloop_pm::{DeliveryCheck, DeliveryCheckOutcome, PmSettings};
+use termloop_pm::{AssistantConversation, DeliveryCheck, DeliveryCheckOutcome, PmSettings};
 use termloop_pm_contract::pm::EventName;
 
 use crate::app::AppState;
@@ -30,9 +30,10 @@ const SKILL_RUN_PERMISSION: &str = "default";
 /// or the saved permissions: the catalog's `acceptEdits` launches as
 /// `--permission-mode auto`.
 const CLAUDE_PERMISSION: &str = "acceptEdits";
-/// How long a description update keeps running after its draft, so its
-/// closing reply reaches the terminal.
-const STOP_AFTER_DRAFT: Duration = Duration::from_secs(20);
+/// A resumed assistant that exits sooner than this could not resume its
+/// conversation (the provider no longer holds it), so the next launch
+/// starts a new one.
+const FAILED_RESUME_WINDOW: Duration = Duration::from_secs(15);
 
 #[derive(Clone)]
 pub(crate) struct AgentRecord {
@@ -44,8 +45,10 @@ pub(crate) struct AgentRecord {
     pub(crate) check_id: Option<String>,
     /// The skill run a skill-run agent works for.
     pub(crate) skill: Option<SkillRunContext>,
-    /// A description update: its work ends with the draft it proposes.
-    ends_with_draft: bool,
+    /// The provider conversation a project's assistant keeps across
+    /// launches, and whether this launch resumed it.
+    conversation: Option<String>,
+    resumed: bool,
     pub(crate) started_at_epoch_ms: u64,
     pub(crate) exited_at_epoch_ms: Option<u64>,
     /// The bearer the agent's MCP client sends; never logged or returned.
@@ -71,7 +74,8 @@ impl AgentRecord {
             focus_ticket_id,
             check_id,
             skill: None,
-            ends_with_draft: false,
+            conversation: None,
+            resumed: false,
             started_at_epoch_ms: termloop_platform::current_epoch_ms(),
             exited_at_epoch_ms: None,
             mcp_token,
@@ -147,16 +151,29 @@ impl AgentRegistry {
             })
     }
 
-    /// The running description update holding this MCP bearer.
-    fn draft_session(&self, bearer: &str) -> Option<String> {
+    /// The project's running assistant, when it has one.
+    fn running_assistant(&self, project_id: &str) -> Option<AgentRecord> {
         self.lock()
             .values()
-            .find(|record| {
+            .filter(|record| {
                 record.running()
-                    && record.ends_with_draft
-                    && constant_time_equal(record.mcp_token.as_bytes(), bearer.as_bytes())
+                    && record.mode == PmAgentMode::Assistant
+                    && record.project_id == project_id
             })
-            .map(|record| record.session_id.clone())
+            .max_by_key(|record| record.started_at_epoch_ms)
+            .cloned()
+    }
+
+    /// Points a running session at the ticket the PM now looks at.
+    fn refocus(&self, session_id: &str, focus_ticket_id: Option<&str>) -> Option<AgentRecord> {
+        let mut sessions = self.lock();
+        let record = sessions
+            .get_mut(session_id)
+            .filter(|record| record.running())?;
+        if focus_ticket_id.is_some() {
+            record.focus_ticket_id = focus_ticket_id.map(str::to_owned);
+        }
+        Some(record.clone())
     }
 
     /// The running agent session of a skill run, when it has one.
@@ -255,13 +272,16 @@ pub(crate) fn launch(
     launch_profile(state, project_id, &profile, focus_ticket_id, check_id, None)
 }
 
-/// Launches the project's assistant for a task; `UpdateDescription` needs
-/// the ticket in focus.
+/// Opens the project's one assistant for a task. A running assistant gets
+/// the task as its next message; otherwise the assistant launches, resuming
+/// the project's conversation when it has one. `fresh` stops a running
+/// assistant and forgets the conversation, so a new one starts.
 pub(crate) fn launch_assistant(
     state: &AppState,
     project_id: &str,
     focus_ticket_id: Option<&str>,
     task: AssistantTask,
+    fresh: bool,
 ) -> Result<AgentRecord, ControlError> {
     let profile = {
         let store = state.store.lock();
@@ -274,6 +294,29 @@ pub(crate) fn launch_assistant(
             task,
         )?
     };
+    if let Some(running) = state.agents.running_assistant(project_id) {
+        if !fresh {
+            if let Some(message) = &profile.resume_message {
+                deliver(state, &running.session_id, message)?;
+            }
+            let record = state
+                .agents
+                .refocus(&running.session_id, focus_ticket_id)
+                .unwrap_or(running);
+            state.publish(
+                EventName::PmAgentChanged,
+                json!({ "projectId": project_id, "sessionId": record.session_id }),
+            );
+            return Ok(record);
+        }
+        stop(state, &running.session_id)?;
+    }
+    if fresh {
+        state
+            .store
+            .lock()
+            .forget_assistant_conversation(project_id)?;
+    }
     launch_profile_with(
         state,
         project_id,
@@ -281,21 +324,49 @@ pub(crate) fn launch_assistant(
         focus_ticket_id,
         None,
         None,
-        task == AssistantTask::UpdateDescription,
+        true,
     )
 }
 
-/// Stops a description update once the draft it proposed has landed; the
-/// draft waits on the ticket, so the session has nothing left to do.
-pub(crate) fn stop_after_draft(state: &AppState, bearer: &str) {
-    let Some(session) = state.agents.draft_session(bearer) else {
-        return;
-    };
-    let state = state.clone();
-    tokio::spawn(async move {
-        tokio::time::sleep(STOP_AFTER_DRAFT).await;
-        let _ = stop(&state, &session);
-    });
+/// Pastes a message into a running agent's terminal and submits it.
+fn deliver(state: &AppState, session_id: &str, message: &str) -> Result<(), ControlError> {
+    let chunks =
+        termloop_platform::generated_terminal_paste_submission_sequence(message.as_bytes())
+            .map_err(|_| internal())?;
+    state
+        .terminal
+        .input_sequence(session_id, &chunks)
+        .map_err(|error| {
+            tracing::warn!(%error, "a message did not reach the PM assistant");
+            constraint("the assistant is unavailable")
+        })
+}
+
+/// Whether the project's next assistant launch resumes a conversation
+/// under the current provider.
+pub(crate) fn resumable(state: &AppState, project_id: &str) -> Result<bool, ControlError> {
+    let store = state.store.lock();
+    let provider = store.settings()?.agent_provider;
+    Ok(store
+        .assistant_conversation(project_id)?
+        .is_some_and(|conversation| conversation.provider == provider))
+}
+
+/// The conversation an assistant launch opens: the stored one when it was
+/// held by the same provider in the same folder, else a new one. Only
+/// Claude takes a conversation id up front, so only Claude's are kept.
+fn assistant_conversation(
+    stored: Option<AssistantConversation>,
+    provider: &str,
+    cwd: &str,
+) -> PmConversation {
+    match stored {
+        Some(conversation) if conversation.provider == provider && conversation.cwd == cwd => {
+            PmConversation::Resume(conversation.conversation_id)
+        }
+        _ if provider == "claude" => PmConversation::Start(termloop_platform::generate_uuid_v4()),
+        _ => PmConversation::New,
+    }
 }
 
 /// The model a delivery check launches with. One the provider does not
@@ -352,13 +423,18 @@ fn launch_profile_with(
     focus_ticket_id: Option<&str>,
     check_id: Option<&str>,
     skill: Option<SkillRunContext>,
-    ends_with_draft: bool,
+    keeps_conversation: bool,
 ) -> Result<AgentRecord, ControlError> {
     let mode = profile.mode;
-    let (settings, folder) = {
+    let (settings, folder, stored) = {
         let store = state.store.lock();
         let project = store.project(project_id)?.ok_or_else(not_found)?;
-        (store.settings()?, project.folder)
+        let stored = if keeps_conversation {
+            store.assistant_conversation(project_id)?
+        } else {
+            None
+        };
+        (store.settings()?, project.folder, stored)
     };
     let permission = launch_permission(&settings, mode);
     // A project's own folder is its team's code: agents read it, never edit it.
@@ -398,6 +474,10 @@ fn launch_profile_with(
     };
     request.permission = permission;
     request.read_only_workspace = read_only_workspace;
+    if keeps_conversation {
+        request.conversation = assistant_conversation(stored, &settings.agent_provider, &cwd);
+    }
+    let conversation = request.conversation.clone();
     let plan = pm_launch_plan(request).map_err(|error| {
         tracing::warn!(%error, "the PM agent launch could not be resolved");
         let _ = termloop_platform::remove_file_if_present(&config_path);
@@ -414,7 +494,10 @@ fn launch_profile_with(
     );
     record.mcp_config = Some(config_path.clone());
     record.skill = skill;
-    record.ends_with_draft = ends_with_draft;
+    if let PmConversation::Start(id) | PmConversation::Resume(id) = &conversation {
+        record.conversation = Some(id.clone());
+        record.resumed = matches!(conversation, PmConversation::Resume(_));
+    }
     // Registered before the spawn, so the agent's first MCP call is known.
     state.agents.insert(record.clone());
     if let Err(error) = termloop_agent_runtime::spawn_agent_terminal(
@@ -428,6 +511,22 @@ fn launch_profile_with(
         state.agents.remove(&session_id);
         let _ = termloop_platform::remove_file_if_present(&config_path);
         return Err(constraint("the agent is unavailable"));
+    }
+    if let PmConversation::Start(id) = conversation {
+        let remembered =
+            state
+                .store
+                .lock()
+                .remember_assistant_conversation(&AssistantConversation {
+                    project_id: project_id.to_owned(),
+                    provider: settings.agent_provider.clone(),
+                    conversation_id: id,
+                    cwd,
+                    started_at_epoch_ms: record.started_at_epoch_ms,
+                });
+        if let Err(error) = remembered {
+            tracing::warn!(%error, "the PM assistant conversation was not kept");
+        }
     }
     state.publish(
         EventName::PmAgentChanged,
@@ -486,10 +585,37 @@ pub(crate) fn on_agent_exit(state: &AppState, session_id: &str) {
     if let Some(run) = &record.skill {
         super::skills::on_run_exit(state, &record.project_id, &run.run_id);
     }
+    if failed_resume(&record) {
+        forget_conversation(state, &record);
+    }
     state.publish(
         EventName::PmAgentChanged,
         json!({ "projectId": record.project_id, "sessionId": record.session_id }),
     );
+}
+
+/// A resumed assistant that exited right away did not find its
+/// conversation.
+fn failed_resume(record: &AgentRecord) -> bool {
+    record.resumed
+        && record.exited_at_epoch_ms.is_some_and(|exited| {
+            exited.saturating_sub(record.started_at_epoch_ms)
+                < FAILED_RESUME_WINDOW.as_millis() as u64
+        })
+}
+
+/// Forgets the project's conversation when it is still this session's, so
+/// a newer conversation is never dropped.
+fn forget_conversation(state: &AppState, record: &AgentRecord) {
+    let mut store = state.store.lock();
+    let current = store.assistant_conversation(&record.project_id);
+    let same = matches!(
+        (&current, &record.conversation),
+        (Ok(Some(stored)), Some(id)) if stored.conversation_id == *id
+    );
+    if same && let Err(error) = store.forget_assistant_conversation(&record.project_id) {
+        tracing::warn!(%error, "the PM assistant conversation was not forgotten");
+    }
 }
 
 pub(crate) fn publish_check(state: &AppState, check: &DeliveryCheck) {
@@ -515,32 +641,78 @@ pub(crate) fn remove_agent_files(state: &AppState) {
 mod tests {
     use super::*;
 
-    fn record(session_id: &str, token: &str, ends_with_draft: bool) -> AgentRecord {
-        let mut record = AgentRecord::new(
+    fn record(session_id: &str, project_id: &str, mode: PmAgentMode) -> AgentRecord {
+        AgentRecord::new(
             session_id.to_owned(),
-            "p1".to_owned(),
-            PmAgentMode::Assistant,
+            project_id.to_owned(),
+            mode,
             "claude".to_owned(),
-            Some("t1".to_owned()),
             None,
-            token.to_owned(),
-        );
-        record.ends_with_draft = ends_with_draft;
-        record
+            None,
+            format!("token-{session_id}"),
+        )
     }
 
     #[test]
-    fn only_a_running_description_update_ends_with_its_draft() {
+    fn a_project_has_one_running_assistant_to_reach() {
         let agents = AgentRegistry::default();
-        agents.insert(record("brief", "token-brief", false));
-        agents.insert(record("update", "token-update", true));
-        assert_eq!(agents.draft_session("token-brief"), None);
+        agents.insert(record("creator", "p1", PmAgentMode::SkillCreator));
+        agents.insert(record("other", "p2", PmAgentMode::Assistant));
+        assert!(agents.running_assistant("p1").is_none());
+        agents.insert(record("assistant", "p1", PmAgentMode::Assistant));
         assert_eq!(
-            agents.draft_session("token-update").as_deref(),
-            Some("update")
+            agents
+                .running_assistant("p1")
+                .map(|record| record.session_id),
+            Some("assistant".to_owned())
         );
-        agents.mark_exited("update");
-        assert_eq!(agents.draft_session("token-update"), None);
+        let refocused = agents.refocus("assistant", Some("t2")).expect("running");
+        assert_eq!(refocused.focus_ticket_id.as_deref(), Some("t2"));
+        agents.mark_exited("assistant");
+        assert!(agents.running_assistant("p1").is_none());
+        assert!(agents.refocus("assistant", Some("t3")).is_none());
+    }
+
+    #[test]
+    fn a_stored_conversation_resumes_only_in_its_provider_and_folder() {
+        let stored = AssistantConversation {
+            project_id: "p1".to_owned(),
+            provider: "claude".to_owned(),
+            conversation_id: "11111111-1111-4111-8111-111111111111".to_owned(),
+            cwd: "/code".to_owned(),
+            started_at_epoch_ms: 1,
+        };
+        assert_eq!(
+            assistant_conversation(Some(stored.clone()), "claude", "/code"),
+            PmConversation::Resume(stored.conversation_id.clone())
+        );
+        assert!(matches!(
+            assistant_conversation(Some(stored.clone()), "claude", "/elsewhere"),
+            PmConversation::Start(id) if id != stored.conversation_id
+        ));
+        assert_eq!(
+            assistant_conversation(Some(stored), "codex", "/code"),
+            PmConversation::New
+        );
+        assert!(matches!(
+            assistant_conversation(None, "claude", "/code"),
+            PmConversation::Start(_)
+        ));
+    }
+
+    #[test]
+    fn only_a_resume_that_exits_at_once_failed() {
+        let mut resumed = record("assistant", "p1", PmAgentMode::Assistant);
+        resumed.resumed = true;
+        resumed.started_at_epoch_ms = 1_000;
+        resumed.exited_at_epoch_ms = Some(3_000);
+        assert!(failed_resume(&resumed));
+        resumed.exited_at_epoch_ms = Some(1_000 + FAILED_RESUME_WINDOW.as_millis() as u64);
+        assert!(!failed_resume(&resumed));
+        let mut started = record("assistant", "p1", PmAgentMode::Assistant);
+        started.started_at_epoch_ms = 1_000;
+        started.exited_at_epoch_ms = Some(2_000);
+        assert!(!failed_resume(&started));
     }
 
     #[test]

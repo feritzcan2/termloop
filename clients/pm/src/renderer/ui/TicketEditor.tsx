@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { PmBoardTicket, PmDataTier, PmPlaybook, PmProposal, PmSprint, PmTicketVersion } from "@termloop/pm-contract/pm";
+import type { PmBoardTicket, PmDataTier, PmEpic, PmPlaybook, PmProposal, PmSprint, PmTicketVersion } from "@termloop/pm-contract/pm";
 import { MarkdownEditor } from "./MarkdownEditor.js";
 import { ProposalCard } from "./ProposalCard.js";
 import { TicketFields } from "./TicketFields.js";
@@ -14,6 +14,8 @@ import type { DescriptionSaveOutcome } from "./types.js";
 export type TicketEditorProps = {
   entry: PmBoardTicket;
   sprints: PmSprint[];
+  /** The project's epics, for the ticket's epic choice. */
+  epics?: PmEpic[];
   tier: PmDataTier;
   jiraConfigured: boolean;
   /** The project's Playbook; absent until the board is read. */
@@ -134,6 +136,7 @@ export function TicketEditor(props: TicketEditorProps) {
           ticket={ticket}
           delivery={delivery}
           sprints={props.sprints}
+          epics={props.epics}
           tier={props.tier}
           playbook={props.playbook}
           now={props.now}

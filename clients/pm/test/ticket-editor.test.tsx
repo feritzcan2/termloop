@@ -217,7 +217,7 @@ describe("description save outcome", () => {
           ? { ok: false, error: { code: "conflict", message: "conflict with a newer change" } } as never
           : ok(ticket({ versions: { count: 4, headNumber: 4, headAuthor: "pm", headRecordedAtEpochMs: 0 } }));
       }
-      return ok({ projectId: "project-1", sprints: [], tickets: [], environments: [], probes: [], runningChecks: [], tracking: { jira: false, code: false, deploy: false, tier: "tickets" } });
+      return ok({ projectId: "project-1", sprints: [], tickets: [], environments: [], probes: [], runningChecks: [], epics: [], epicBreakdowns: [], tracking: { jira: false, code: false, deploy: false, tier: "tickets" } });
     });
     const controller = new PmController(bridge, createPmStore({ projectId: "project-1" }));
     expect(await controller.saveDescription("ticket-1", "text", 2)).toEqual({ kind: "conflict" });

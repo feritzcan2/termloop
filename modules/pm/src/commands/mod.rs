@@ -4,6 +4,7 @@
 
 mod check_report;
 mod checks;
+mod epic;
 mod facts;
 mod jira_mirror;
 mod jira_write;
@@ -20,6 +21,7 @@ mod ticket;
 use rusqlite::{Connection, OptionalExtension, params};
 
 pub use check_report::{CheckReport, RecordedCheckReport};
+pub use epic::AcceptedBreakdown;
 pub use facts::{FactRead, FactsObservation, JiraObservation, PullRequestsObservation};
 pub use jira_mirror::{
     JIRA_PULL_NEW_TICKETS_MAX, JiraPullChanges, JiraPullOutcome, JiraSprintImportOutcome,

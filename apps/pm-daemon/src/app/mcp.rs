@@ -11,13 +11,13 @@ use serde_json::{Value, json};
 use termloop_pm::agent::{
     PM_BOARD_READ, PM_CHECK_REPORT, PM_HOST_TOOLS, PM_OWNER_EVIDENCE_READ, PM_PLAYBOOK_PROPOSE,
     PM_RISKS_READ, PM_SKILL_DISCOVERY_READ, PM_SKILL_DRAFT_SUBMIT, PM_SKILL_RUN_FINISH,
-    PM_SKILL_TOOL_VERIFY, PM_TICKET_PROPOSE_DESCRIPTION, PM_TICKET_READ, PM_TICKET_SUGGEST,
-    PmToolError, call_pm_tool, pm_tool_access, pm_tool_definitions,
+    PM_SKILL_TOOL_VERIFY, PM_TICKET_READ, PM_TICKET_SUGGEST, PmToolError, call_pm_tool,
+    pm_tool_access, pm_tool_definitions,
 };
 use termloop_pm::skill::SkillEvent;
 use termloop_pm_contract::pm::EventName;
 
-use crate::app::{AppState, agents, skills};
+use crate::app::{AppState, skills};
 
 pub(crate) const MAX_MCP_BODY_BYTES: usize = 256 * 1024;
 const MCP_PROTOCOLS: &[&str] = &["2025-06-18", "2025-11-25"];
@@ -161,9 +161,6 @@ pub(crate) async fn handle_message(
                 )
             {
                 skills::publish(state, &context.project_id);
-            }
-            if outcome.is_ok() && name == PM_TICKET_PROPOSE_DESCRIPTION {
-                agents::stop_after_draft(state, bearer);
             }
             if outcome.is_ok()
                 && name == PM_SKILL_RUN_FINISH

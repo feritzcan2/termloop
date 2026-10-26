@@ -5,6 +5,7 @@ type Item = { view: RightSidebarView; label: string; short: string; icon: IconNa
 
 const ITEMS: readonly Item[] = [
   { view: "sprints", label: "Sprints", short: "Sprints", icon: "flag" },
+  { view: "epics", label: "Epics", short: "Epics", icon: "epic" },
   { view: "playbook", label: "Playbook", short: "Playbook", icon: "playbook" },
   { view: "suggestions", label: "Suggestions", short: "Inbox", icon: "inbox" },
   { view: "skills", label: "Skills", short: "Skills", icon: "skill" },
