@@ -1,14 +1,14 @@
 import { useState } from "react";
 import type { PmBoardTicket, PmDataTier, PmDigestEntry, PmPlaybook, PmSprint } from "@termloop/pm-contract/pm";
 import { Icon } from "./icons.js";
-import { PRIORITY_LABEL, RISK_LABEL, dayRuler, nextStep, riskTone, sprintDay, stepColumns, tierAtLeast, ticketLabel } from "./format.js";
+import { PRIORITY_LABEL, RISK_LABEL, dayRuler, nextStep, riskTone, sprintDay, statusColumns, stepColumns, tierAtLeast, ticketLabel } from "./format.js";
 
 export type SprintOverviewProps = {
   sprint: PmSprint | undefined;
   sprints: PmSprint[];
   tickets: PmBoardTicket[];
   tier: PmDataTier;
-  /** The project's Playbook: the board has one column per step. */
+  /** The project's Playbook: the board has one column per step, else one per status. */
   playbook: PmPlaybook | undefined;
   digest: PmDigestEntry[];
   /** The Jira board the project's sprints come from, if any. */
@@ -46,7 +46,7 @@ export function SprintOverview(props: SprintOverviewProps) {
   const position = sprintDay(sprint, props.now);
   const people = assignees(tickets);
   const shown = boardFilter(tickets, query, assignee);
-  const columns = props.playbook ? stepColumns(shown, props.playbook) : [];
+  const columns = props.playbook?.steps.length ? stepColumns(shown, props.playbook) : statusColumns(shown);
   const targets = props.sprints.filter((candidate) => candidate.id !== sprint.id && (candidate.state === "planned" || candidate.state === "backlog"));
   // Jira owns an open sprint of the project's board: a pull would bring it back.
   const jiraOwned = sprint.jiraSprintId !== null && sprint.state !== "closed" && sprint.jiraBoardId === props.jiraBoardId;

@@ -29,6 +29,16 @@ describe("sprint overview", () => {
     unmount();
   });
 
+  it("falls back to status columns without a Playbook", () => {
+    const { container, unmount } = render(
+      <SprintOverview sprint={sprint()} sprints={[sprint()]} tickets={[boardTicket({ status: "inReview" })]} tier="tickets"
+        playbook={undefined} digest={[]} now={0} onOpenTicket={noop} onActivate={noop} onClose={noop} onDelete={noop} jiraBoardId={null} />,
+    );
+    const heads = [...container.querySelectorAll(".board-col-head")].map((element) => element.textContent);
+    expect(heads).toEqual(["To do0", "In progress0", "In review1", "Done0"]);
+    unmount();
+  });
+
   it("filters the board by text and by assignee", () => {
     const tickets = [
       boardTicket({ id: "a1", title: "Login", assignee: "Ada Lovelace", jiraUrl: null }),

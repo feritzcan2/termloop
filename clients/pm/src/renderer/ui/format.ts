@@ -116,6 +116,11 @@ export function stepColumns(lane: PmBoardTicket[], playbook: PmPlaybook): { key:
   ];
 }
 
+/** A lane split by ticket status, for a project without Playbook steps; lane order kept within each. */
+export function statusColumns(lane: PmBoardTicket[]): { key: string; title: string; tickets: PmBoardTicket[] }[] {
+  return STATUS_ORDER.map((status) => ({ key: status, title: STATUS_LABEL[status], tickets: lane.filter((entry) => entry.ticket.status === status) }));
+}
+
 /** {@link stepColumns} with empty steps left out. */
 export function stepSections(lane: PmBoardTicket[], playbook: PmPlaybook): { key: string; title: string; tickets: PmBoardTicket[] }[] {
   return stepColumns(lane, playbook).filter((section) => section.tickets.length > 0);
