@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use termloop_gitio::GitRunner;
+use termloop_gitio::{GitRefName, GitRunner, ObjectId};
 
 fn git(cwd: &Path, args: &[&str]) {
     let status = Command::new("git")
@@ -131,6 +131,101 @@ fn missing_reflog_keeps_the_separately_proven_current_branch() {
         facts.current_branch.into_iter().collect::<Vec<_>>()
     );
     assert!(facts.truncated);
+
+    let _ = std::fs::remove_dir_all(repository.parent().unwrap());
+}
+
+fn head(cwd: &Path) -> String {
+    String::from_utf8(output(cwd, &["rev-parse", "HEAD"]))
+        .unwrap()
+        .trim()
+        .to_owned()
+}
+
+#[test]
+fn pushed_remote_refs_are_the_worktree_commits_under_any_remote_name() {
+    let (repository, worktree) = fixture("pushed");
+    let base = head(&worktree);
+    git(
+        &repository,
+        &["update-ref", "refs/remotes/origin/main", &base],
+    );
+    git(
+        &repository,
+        &[
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/main",
+        ],
+    );
+    git(&worktree, &["commit", "--allow-empty", "-m", "own work"]);
+    let pushed = head(&worktree);
+    git(
+        &repository,
+        &[
+            "update-ref",
+            "refs/remotes/origin/feature/KEY-1-fix",
+            &pushed,
+        ],
+    );
+    git(
+        &worktree,
+        &["commit", "--allow-empty", "-m", "unpushed work"],
+    );
+    git(
+        &repository,
+        &["update-ref", "refs/remotes/origin/elsewhere", &base],
+    );
+    git(
+        &repository,
+        &["commit", "--allow-empty", "-m", "base moved"],
+    );
+    let moved = head(&repository);
+    git(
+        &repository,
+        &["update-ref", "refs/remotes/origin/main", &moved],
+    );
+    git(&worktree, &["merge", "--no-edit", "main"]);
+
+    let runner = GitRunner::discover_with_timeout(Duration::from_millis(2_500)).unwrap();
+    let base_oid = ObjectId::from_hex(base.into_bytes()).unwrap();
+    let base_ref = GitRefName::from_bytes(b"refs/remotes/origin/main".to_vec()).unwrap();
+    let observed = runner
+        .observe_worktree_pushed_remote_refs_with_timeout(
+            &repository,
+            &worktree,
+            &base_oid,
+            Some(&base_ref),
+            Duration::from_millis(2_500),
+        )
+        .unwrap();
+    assert_eq!(
+        observed
+            .references
+            .iter()
+            .map(|reference| reference.as_bytes())
+            .collect::<Vec<_>>(),
+        vec![b"refs/remotes/origin/feature/KEY-1-fix".as_slice()]
+    );
+    assert!(!observed.truncated);
+
+    let missing_ref = GitRefName::from_bytes(b"refs/remotes/origin/gone".to_vec()).unwrap();
+    let without_current_base = runner
+        .observe_worktree_pushed_remote_refs_with_timeout(
+            &repository,
+            &worktree,
+            &base_oid,
+            Some(&missing_ref),
+            Duration::from_millis(2_500),
+        )
+        .unwrap();
+    assert!(
+        without_current_base
+            .references
+            .iter()
+            .any(|reference| reference.as_bytes() == b"refs/remotes/origin/main"),
+        "only the recorded base bounds the result once the current base ref is gone"
+    );
 
     let _ = std::fs::remove_dir_all(repository.parent().unwrap());
 }

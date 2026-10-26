@@ -55,7 +55,7 @@ pub use source_control::{
 pub use worktree::{GitText, RegisteredPathState, WorktreeCheckout, WorktreeFacts, WorktreeMarker};
 pub use worktree_branches::{
     WORKTREE_BRANCH_REFLOG_ENTRY_LIMIT, WorktreeBranchEvidence, WorktreeBranchObservation,
-    WorktreeBranchObservationSource,
+    WorktreeBranchObservationSource, WorktreePushedRemoteRefs,
 };
 
 pub fn module_name() -> &'static str {

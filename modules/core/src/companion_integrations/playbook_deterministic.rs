@@ -361,6 +361,7 @@ fn read_task_branch_pull_requests(
                 task,
                 &worktree_branches::ObservedBranchFacts {
                     branches,
+                    pushed: Vec::new(),
                     candidate_truncated: false,
                 },
             )

@@ -1,4 +1,5 @@
-use std::path::Path;
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use termloop_platform::CommandTermination;
@@ -12,6 +13,7 @@ pub const WORKTREE_BRANCH_REFLOG_ENTRY_LIMIT: usize = 256;
 const BRANCH_CREATION_REFLOG_ENTRY_LIMIT: usize = 1024;
 const WORKTREE_BRANCH_OUTPUT_LIMIT: usize = 128 * 1024;
 const WORKTREE_BRANCH_OBSERVATION_DEADLINE: Duration = Duration::from_millis(2_500);
+const PUSHED_REMOTE_REF_LIMIT: usize = 32;
 const CHECKOUT_PREFIX: &[u8] = b"checkout: moving from ";
 const CHECKOUT_SEPARATOR: &[u8] = b" to ";
 
@@ -62,34 +64,11 @@ impl GitRunner {
             .clone()
             .with_shared_observation_budget(timeout, WORKTREE_BRANCH_OUTPUT_LIMIT)?;
         let mut scope = GitCommandScope::bounded(&runner, timeout)?;
+        let (worktree_root, checkout) =
+            runner.registered_worktree_checkout(repository_path, worktree_path, &mut scope)?;
+        let worktree_root = worktree_root.as_path();
 
-        let repository =
-            runner.inspect_repository_identity_in_scope(repository_path, &mut scope)?;
-        let worktree = runner.inspect_repository_identity_in_scope(worktree_path, &mut scope)?;
-        let requested_worktree =
-            termloop_platform::canonical_existing_directory_path(worktree_path).map_err(
-                |error| crate::error::map_platform_error(error, GitOperation::RepositoryIdentity),
-            )?;
-        let worktree_root = worktree
-            .worktree_root()
-            .ok_or(GitError::MissingRegistration)?;
-        if repository.common_dir() != worktree.common_dir() || worktree_root != requested_worktree {
-            return Err(GitError::MissingRegistration);
-        }
-
-        let registration = runner
-            .list_worktrees_in_scope(repository_path, &mut scope)?
-            .into_iter()
-            .find(|registration| {
-                matches!(
-                    &registration.path_state,
-                    RegisteredPathState::Present { canonical_path }
-                        if canonical_path == worktree_root
-                )
-            })
-            .ok_or(GitError::MissingRegistration)?;
-
-        let (current, current_oid) = match registration.checkout {
+        let (current, current_oid) = match checkout {
             WorktreeCheckout::Branch { reference, oid } => (Some(reference), oid),
             WorktreeCheckout::Detached { .. } | WorktreeCheckout::Bare => (None, None),
         };
@@ -182,6 +161,150 @@ impl GitRunner {
         }
         Ok(evidence)
     }
+
+    /// Remote-tracking refs whose tip is one of the exact worktree's own
+    /// commits: reachable from its checked-out HEAD and from none of the
+    /// supplied base commits. These are the branches this worktree pushed,
+    /// whatever name it pushed them under. A base ref that no longer exists is
+    /// skipped; the recorded base OID still bounds the result.
+    pub fn observe_worktree_pushed_remote_refs_with_timeout(
+        &self,
+        repository_path: &Path,
+        worktree_path: &Path,
+        recorded_base_oid: &ObjectId,
+        current_base_ref: Option<&GitRefName>,
+        timeout: Duration,
+    ) -> Result<WorktreePushedRemoteRefs, GitError> {
+        let timeout = timeout.min(WORKTREE_BRANCH_OBSERVATION_DEADLINE);
+        let runner = self
+            .clone()
+            .with_shared_observation_budget(timeout, WORKTREE_BRANCH_OUTPUT_LIMIT)?;
+        let mut scope = GitCommandScope::bounded(&runner, timeout)?;
+        let (_, checkout) =
+            runner.registered_worktree_checkout(repository_path, worktree_path, &mut scope)?;
+        let head = match checkout {
+            WorktreeCheckout::Branch { oid: Some(oid), .. }
+            | WorktreeCheckout::Detached { oid } => oid,
+            _ => return Ok(WorktreePushedRemoteRefs::default()),
+        };
+
+        let mut excluded = vec![recorded_base_oid.clone()];
+        if let Some(reference) = current_base_ref
+            && let Some(oid) = exact_ref_oid(repository_path, reference, &mut scope)?
+        {
+            excluded.push(oid);
+        }
+        let mut arguments = vec![
+            OsString::from("for-each-ref"),
+            OsString::from("--sort=refname"),
+            OsString::from(format!("--count={}", PUSHED_REMOTE_REF_LIMIT + 1)),
+            OsString::from("--format=%(refname)"),
+            OsString::from(format!("--merged={}", head.as_hex())),
+        ];
+        arguments.extend(
+            excluded
+                .iter()
+                .map(|oid| OsString::from(format!("--no-merged={}", oid.as_hex()))),
+        );
+        arguments.push(OsString::from("refs/remotes/"));
+        let outcome =
+            scope.checked(GitOperation::ListRemoteBranches, repository_path, arguments)?;
+        parse_pushed_remote_refs(&outcome.stdout)
+    }
+
+    fn registered_worktree_checkout(
+        &self,
+        repository_path: &Path,
+        worktree_path: &Path,
+        scope: &mut GitCommandScope<'_>,
+    ) -> Result<(PathBuf, WorktreeCheckout), GitError> {
+        let repository = self.inspect_repository_identity_in_scope(repository_path, scope)?;
+        let worktree = self.inspect_repository_identity_in_scope(worktree_path, scope)?;
+        let requested_worktree =
+            termloop_platform::canonical_existing_directory_path(worktree_path).map_err(
+                |error| crate::error::map_platform_error(error, GitOperation::RepositoryIdentity),
+            )?;
+        let worktree_root = worktree
+            .worktree_root()
+            .ok_or(GitError::MissingRegistration)?;
+        if repository.common_dir() != worktree.common_dir() || worktree_root != requested_worktree {
+            return Err(GitError::MissingRegistration);
+        }
+
+        let registration = self
+            .list_worktrees_in_scope(repository_path, scope)?
+            .into_iter()
+            .find(|registration| {
+                matches!(
+                    &registration.path_state,
+                    RegisteredPathState::Present { canonical_path }
+                        if canonical_path == worktree_root
+                )
+            })
+            .ok_or(GitError::MissingRegistration)?;
+        Ok((worktree_root.to_path_buf(), registration.checkout))
+    }
+}
+
+/// Remote-tracking refs a worktree pushed; see
+/// [`GitRunner::observe_worktree_pushed_remote_refs_with_timeout`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct WorktreePushedRemoteRefs {
+    pub references: Vec<GitRefName>,
+    pub truncated: bool,
+}
+
+fn exact_ref_oid(
+    repository_path: &Path,
+    reference: &GitRefName,
+    scope: &mut GitCommandScope<'_>,
+) -> Result<Option<ObjectId>, GitError> {
+    let pattern = termloop_platform::os_string_from_process_bytes(reference.as_bytes().to_vec())
+        .map_err(|error| crate::error::map_platform_error(error, GitOperation::ResolveRef))?;
+    let outcome = scope.checked(
+        GitOperation::ResolveRef,
+        repository_path,
+        [
+            OsString::from("for-each-ref"),
+            OsString::from("--format=%(refname)%00%(objectname)%00"),
+            pattern,
+        ],
+    )?;
+    for line in outcome.stdout.split(|byte| *byte == b'\n') {
+        let line = strip_git_line_cr(line);
+        if line.is_empty() {
+            continue;
+        }
+        let fields = nul_fields(line, 2)?;
+        if fields[0] == reference.as_bytes() {
+            return ObjectId::from_hex(fields[1].to_vec()).map(Some);
+        }
+    }
+    Ok(None)
+}
+
+fn parse_pushed_remote_refs(bytes: &[u8]) -> Result<WorktreePushedRemoteRefs, GitError> {
+    let mut pushed = WorktreePushedRemoteRefs::default();
+    for line in bytes.split(|byte| *byte == b'\n') {
+        let line = strip_git_line_cr(line);
+        if line.is_empty() {
+            continue;
+        }
+        let reference =
+            GitRefName::from_bytes(line.to_vec()).map_err(|_| GitError::ParseFailed {
+                operation: GitOperation::ListRemoteBranches,
+            })?;
+        // `refs/remotes/<remote>/HEAD` names another remote ref, never a push.
+        if reference.as_bytes().ends_with(b"/HEAD") {
+            continue;
+        }
+        if pushed.references.len() == PUSHED_REMOTE_REF_LIMIT {
+            pushed.truncated = true;
+            break;
+        }
+        pushed.references.push(reference);
+    }
+    Ok(pushed)
 }
 
 fn parse_head_reflog(bytes: &[u8]) -> Result<(Vec<HeadReflogEntry>, bool), GitError> {

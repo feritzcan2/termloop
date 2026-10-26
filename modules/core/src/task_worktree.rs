@@ -165,7 +165,7 @@ impl CoreRuntime {
     /// Returns only the exact creation ref and OID captured by the currently
     /// managed Task worktree proof. This is intentionally absent for manually
     /// bound/existing branches and for any stale or inconsistent proof tuple.
-    fn task_recorded_branch_base(
+    pub(crate) fn task_recorded_branch_base(
         &self,
         task_id: &str,
         binding: &TaskBranchBinding,

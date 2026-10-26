@@ -1,12 +1,15 @@
 use std::path::Path;
 
-use termloop_gitio::{BranchRemoteFacts, GitError, GitOperation, GitRunner};
+use termloop_gitio::{BranchRemoteFacts, GitError, GitOperation, GitRefName, GitRunner, ObjectId};
 
 const MAX_BRANCH_NAMES: usize = 16;
 
 #[derive(Clone)]
 pub(super) struct ObservedBranchFacts {
     pub(super) branches: Vec<BranchRemoteFacts>,
+    /// Remote-tracking refs holding this worktree's own commits, whatever
+    /// branch name they were pushed under.
+    pub(super) pushed: Vec<GitRefName>,
     pub(super) candidate_truncated: bool,
 }
 
@@ -15,6 +18,7 @@ pub(super) fn observe(
     repository_root: &Path,
     durable_branch: &str,
     worktree_path: Option<&Path>,
+    recorded_base: Option<&(String, String)>,
     deadline: termloop_platform::MonotonicDeadline,
 ) -> Result<ObservedBranchFacts, GitError> {
     let mut names = Vec::<Vec<u8>>::new();
@@ -40,6 +44,24 @@ pub(super) fn observe(
                 candidate_truncated |= evidence.truncated;
                 current_branch = evidence.current_branch;
                 worktree_branches = evidence.branches;
+            }
+            Err(_) => candidate_truncated = true,
+        }
+    }
+
+    let mut pushed = Vec::new();
+    if let (Some(worktree_path), Some((base_ref, base_oid))) = (worktree_path, recorded_base) {
+        match observe_pushed(
+            runner,
+            repository_root,
+            worktree_path,
+            base_ref,
+            base_oid,
+            deadline,
+        ) {
+            Ok(observed) => {
+                candidate_truncated |= observed.truncated;
+                pushed = observed.references;
             }
             Err(_) => candidate_truncated = true,
         }
@@ -84,8 +106,31 @@ pub(super) fn observe(
     )?;
     Ok(ObservedBranchFacts {
         branches,
+        pushed,
         candidate_truncated,
     })
+}
+
+fn observe_pushed(
+    runner: &GitRunner,
+    repository_root: &Path,
+    worktree_path: &Path,
+    base_ref: &str,
+    base_oid: &str,
+    deadline: termloop_platform::MonotonicDeadline,
+) -> Result<termloop_gitio::WorktreePushedRemoteRefs, GitError> {
+    let base_oid = ObjectId::from_hex(base_oid.as_bytes().to_vec())?;
+    let base_ref = GitRefName::from_bytes(base_ref.as_bytes().to_vec()).ok();
+    let remaining = deadline.remaining().ok_or(GitError::Timeout {
+        operation: GitOperation::ListRemoteBranches,
+    })?;
+    runner.observe_worktree_pushed_remote_refs_with_timeout(
+        repository_root,
+        worktree_path,
+        &base_oid,
+        base_ref.as_ref(),
+        remaining,
+    )
 }
 
 fn push_reference(names: &mut Vec<Vec<u8>>, reference: &[u8]) {
