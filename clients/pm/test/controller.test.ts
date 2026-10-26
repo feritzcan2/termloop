@@ -33,6 +33,37 @@ describe("PmController", () => {
     expect(store.getState().projects[0]?.folder).toBeNull();
   });
 
+  it("deletes the open project and opens the first remaining one, or none", async () => {
+    const shop = { id: "project-1", name: "Shop", folder: null, createdAtEpochMs: 1 };
+    const search = { id: "project-2", name: "Search", folder: null, createdAtEpochMs: 2 };
+    const bridge = fakeBridge((method) => {
+      if (method === "pm_project_delete") return ok({ deleted: true });
+      return { ok: false, error: { code: "unavailable", message: "offline" } };
+    });
+    const store = createPmStore({ projectId: "project-1", projects: [shop, search] });
+    const controller = new PmController(bridge, store);
+    await controller.deleteProject();
+    expect(bridge.calls[0]).toEqual({ method: "pm_project_delete", params: { projectId: "project-1" } });
+    expect(store.getState()).toMatchObject({ projectId: "project-2", projects: [search] });
+    bridge.calls.length = 0;
+    await controller.deleteProject();
+    expect(store.getState()).toMatchObject({ projectId: undefined, projects: [], board: undefined });
+    // With no project left there is nothing to read.
+    expect(bridge.calls.map((call) => call.method)).toEqual(["pm_project_delete"]);
+  });
+
+  it("deletes a sprint, unfocuses it, and rereads the board", async () => {
+    const bridge = fakeBridge((method) => {
+      if (method === "pm_sprint_delete") return ok({ sprint: { name: "Sprint 12" }, movedTicketIds: ["t1", "t2"] });
+      return { ok: false, error: { code: "unavailable", message: "offline" } };
+    });
+    const store = createPmStore({ projectId: "project-1", selectedSprintId: "sprint-1" });
+    await new PmController(bridge, store).deleteSprint("sprint-1");
+    expect(bridge.calls[0]).toEqual({ method: "pm_sprint_delete", params: { sprintId: "sprint-1" } });
+    expect(bridge.calls.map((call) => call.method)).toContain("pm_board_read");
+    expect(store.getState().selectedSprintId).toBeUndefined();
+  });
+
   it("shows Jira's fresh diff when apply finds the shown diff stale", async () => {
     const fresh = jiraDiff({ token: "diff-token-2", changes: [{ field: "summary", jira: "Renamed in Jira", ticket: "Checkout button" }] });
     const bridge = fakeBridge((method) => {

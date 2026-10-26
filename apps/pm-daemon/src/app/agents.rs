@@ -173,6 +173,15 @@ impl AgentRegistry {
             .map(|record| record.session_id.clone())
     }
 
+    /// The running sessions of a project.
+    pub(crate) fn running_project_sessions(&self, project_id: &str) -> Vec<String> {
+        self.lock()
+            .values()
+            .filter(|record| record.running() && record.project_id == project_id)
+            .map(|record| record.session_id.clone())
+            .collect()
+    }
+
     /// A project's sessions, newest first.
     pub(crate) fn project_sessions(&self, project_id: &str) -> Vec<Value> {
         let sessions = self.lock();

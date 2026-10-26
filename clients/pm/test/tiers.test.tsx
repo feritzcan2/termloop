@@ -43,6 +43,7 @@ function overview(tier: PmDataTier) {
       onOpenTicket={noop}
       onActivate={noop}
       onClose={noop}
+      onDelete={noop}
     />,
   );
   cleanup = view.unmount;

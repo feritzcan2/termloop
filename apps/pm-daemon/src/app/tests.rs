@@ -400,6 +400,85 @@ async fn a_stored_credential_returns_only_a_handle_and_stays_out_of_the_pm_store
     assert!(super::credentials::resolve(&*fixture.credentials, handle).is_err());
 }
 
+#[tokio::test]
+async fn deleting_a_project_drops_its_rows_and_its_unshared_jira_token() {
+    let fixture = fixture();
+    let state = &fixture.state;
+    let project_id = project(state).await;
+    let kept_id = project(state).await;
+    let sprint = call(
+        state,
+        "pm_sprint_create",
+        json!({ "projectId": project_id, "name": "Sprint 1" }),
+    )
+    .await
+    .unwrap();
+    let work = ticket(state, &project_id, json!({ "sprintId": sprint["id"] })).await;
+    let stored = call(
+        state,
+        "pm_credential_store",
+        json!({ "kind": "jiraApiToken", "secret": "jira-token" }),
+    )
+    .await
+    .unwrap();
+    let handle = stored["credentialHandle"].as_str().unwrap();
+    // Both projects name the same token.
+    for project in [&project_id, &kept_id] {
+        call(
+            state,
+            "pm_sources_set",
+            json!({ "projectId": project, "jira": {
+                "siteUrl": "https://acme.atlassian.net",
+                "boardId": null,
+                "accountEmail": "pm@acme.test",
+                "credentialHandle": handle,
+            }}),
+        )
+        .await
+        .unwrap();
+    }
+
+    let moved = call(
+        state,
+        "pm_sprint_delete",
+        json!({ "sprintId": sprint["id"] }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(moved["movedTicketIds"], json!([work["id"]]));
+    let board = call(state, "pm_board_read", json!({ "projectId": project_id }))
+        .await
+        .unwrap();
+    assert_eq!(board["sprints"], json!([]));
+
+    let mut events = state.events.subscribe();
+    assert_eq!(
+        call(
+            state,
+            "pm_project_delete",
+            json!({ "projectId": project_id })
+        )
+        .await,
+        Ok(json!({ "deleted": true }))
+    );
+    assert!(events.try_recv().is_err());
+    // The kept project still names the token, so it stays.
+    assert!(super::credentials::resolve(&*fixture.credentials, handle).is_ok());
+    let listed = call(state, "pm_project_list", json!({})).await.unwrap();
+    assert_eq!(listed["projects"].as_array().unwrap().len(), 1);
+    assert_eq!(listed["projects"][0]["id"], kept_id);
+    for method in ["pm_board_read", "pm_project_delete"] {
+        assert_eq!(
+            call(state, method, json!({ "projectId": project_id })).await,
+            Err(ErrorCode::NotFound)
+        );
+    }
+    call(state, "pm_project_delete", json!({ "projectId": kept_id }))
+        .await
+        .unwrap();
+    assert!(super::credentials::resolve(&*fixture.credentials, handle).is_err());
+}
+
 fn register_agent(state: &AppState, project_id: &str, mode: PmAgentMode, bearer: &str) {
     state.agents.insert(AgentRecord::new(
         "session-1".to_owned(),

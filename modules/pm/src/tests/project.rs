@@ -57,6 +57,89 @@ fn a_project_folder_is_set_validated_and_cleared() {
 }
 
 #[test]
+fn deleting_a_project_removes_every_row_it_owns_and_nothing_else() {
+    let mut store = store();
+    let doomed = store.create_project("Payments", None).unwrap();
+    let kept = store.create_project("Search", None).unwrap();
+    for project in [&doomed.id, &kept.id] {
+        let sprint = sprint(&mut store, project, "Sprint 1");
+        let work = ticket(&mut store, project, "Login", Some(&sprint.id));
+        ticket(&mut store, project, "Later", None);
+        store
+            .save_ticket_description(&work.id, "Users sign in.", TicketAuthor::Pm, None)
+            .unwrap();
+        store
+            .set_project_sources(
+                project,
+                &crate::ProjectSources {
+                    github: Some(crate::GitHubSource {
+                        owner: "acme".into(),
+                        name: "pay".into(),
+                    }),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    }
+    let (deleted, sources) = store.delete_project(&doomed.id).unwrap();
+    assert_eq!(deleted, doomed);
+    assert!(sources.github.is_some());
+    assert_eq!(store.projects().unwrap(), vec![kept.clone()]);
+    assert!(matches!(
+        store.delete_project(&doomed.id),
+        Err(PmError::NotFound)
+    ));
+    // No table keeps a row of the deleted project; the other one is whole.
+    let rows = |project_id: &str| -> i64 {
+        let connection = store.connection();
+        let mut tables = connection
+            .prepare(
+                "SELECT m.name FROM sqlite_master m, pragma_table_info(m.name) c \
+                 WHERE m.type = 'table' AND c.name = 'project_id'",
+            )
+            .unwrap();
+        let tables: Vec<String> = tables
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        let mut total = 0;
+        for table in tables {
+            total += connection
+                .query_row(
+                    &format!("SELECT COUNT(*) FROM {table} WHERE project_id = ?1"),
+                    [project_id],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap();
+        }
+        total
+            + connection
+                .query_row(
+                    "SELECT COUNT(*) FROM ticket_versions v JOIN tickets t ON t.id = v.ticket_id \
+                     WHERE t.project_id = ?1",
+                    [project_id],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap()
+    };
+    assert_eq!(rows(&doomed.id), 0);
+    assert!(rows(&kept.id) > 0);
+    assert_eq!(
+        store
+            .connection()
+            .query_row(
+                "SELECT COUNT(*) FROM ticket_versions v LEFT JOIN tickets t ON t.id = v.ticket_id \
+             WHERE t.id IS NULL",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+        0
+    );
+}
+
+#[test]
 fn settings_default_until_updated_and_keep_absent_fields() {
     let mut store = store();
     assert_eq!(store.settings().unwrap(), PmSettings::default());

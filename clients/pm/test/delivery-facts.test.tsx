@@ -46,7 +46,7 @@ describe("playbook steps", () => {
   it("list tickets waiting at a step in the overview at the deploy tier", () => {
     const view = render(
       <SprintOverview sprint={sprint()} sprints={[sprint()]} tickets={[waitingLive()]} tier="deploy" playbook={playbook()} digest={[]} now={0}
-        onOpenTicket={noop} onActivate={noop} onClose={noop} />,
+        onOpenTicket={noop} onActivate={noop} onClose={noop} onDelete={noop} />,
     );
     cleanup = view.unmount;
     const section = view.container.querySelector<HTMLElement>('[aria-label="Waiting at a step"]')!;

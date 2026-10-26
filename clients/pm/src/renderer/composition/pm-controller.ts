@@ -141,8 +141,27 @@ export class PmController {
     await this.loadSources();
   }
 
+  /** Deletes the open project and everything stored for it, then opens the first remaining one. */
+  async deleteProject(): Promise<void> {
+    const projectId = this.state.projectId;
+    if (!projectId) return;
+    const project = this.state.projects.find((candidate) => candidate.id === projectId);
+    if (!(await this.call("pm_project_delete", { projectId }))) return;
+    const projects = this.state.projects.filter((candidate) => candidate.id !== projectId);
+    this.#set({ projects, notice: { tone: "info", text: `${project?.name ?? "The project"} deleted.` } });
+    const next = projects[0];
+    if (next) await this.selectProject(next.id);
+    else this.#set({ ...this.#openedProject(undefined), view: "overview" });
+  }
+
   async selectProject(projectId: string): Promise<void> {
-    this.#set({
+    this.#set(this.#openedProject(projectId));
+    await this.refreshProject();
+  }
+
+  /** The state of a freshly opened project, before its first reads. */
+  #openedProject(projectId: string | undefined): Partial<PmState> {
+    return {
       projectId,
       board: undefined,
       digest: undefined,
@@ -159,8 +178,7 @@ export class PmController {
       tools: undefined,
       suggestions: undefined,
       view: this.state.view === "ticket" || this.state.view === "agent" || this.state.view === "skill" ? "overview" : this.state.view,
-    });
-    await this.refreshProject();
+    };
   }
 
   async refreshProject(): Promise<void> {
@@ -234,6 +252,17 @@ export class PmController {
     if (!result) return;
     this.#set({
       notice: { tone: "info", text: `${result.sprint.name} closed; ${result.carriedOverTicketIds.length} ticket(s) carried over.` },
+    });
+    await this.refreshBoard();
+  }
+
+  /** Deletes a sprint; its tickets move to the end of the backlog. */
+  async deleteSprint(sprintId: string): Promise<void> {
+    const result = await this.call("pm_sprint_delete", { sprintId });
+    if (!result) return;
+    this.#set({
+      selectedSprintId: this.state.selectedSprintId === sprintId ? undefined : this.state.selectedSprintId,
+      notice: { tone: "info", text: `${result.sprint.name} deleted; ${result.movedTicketIds.length} ticket(s) moved to No sprint.` },
     });
     await this.refreshBoard();
   }

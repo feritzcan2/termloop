@@ -64,6 +64,38 @@ pub(super) async fn project_update(
     to_value(&project)
 }
 
+/// Deletes a project and everything stored for it. Its running agents are
+/// stopped first; its Jira token is dropped unless another project still
+/// names it.
+pub(super) fn project_delete(state: &AppState, params: &Value) -> Result<Value, ControlError> {
+    let params: PmProjectRef = parse(params)?;
+    require_project(&state.store.lock(), &params.project_id)?;
+    for session_id in state.agents.running_project_sessions(&params.project_id) {
+        agents::stop(state, &session_id)?;
+    }
+    let (sources, handle_shared) = {
+        let mut store = state.store.lock();
+        let (_, sources) = store.delete_project(&params.project_id)?;
+        let mut handle_shared = false;
+        if let Some(jira) = &sources.jira {
+            for other in store.projects()? {
+                let other = store.project_sources(&other.id)?.jira;
+                handle_shared |=
+                    other.is_some_and(|other| other.credential_handle == jira.credential_handle);
+            }
+        }
+        (sources, handle_shared)
+    };
+    if let Some(jira) = sources.jira.filter(|_| !handle_shared) {
+        // The project is gone either way; a token left behind is only logged.
+        if let Err(error) = credentials::clear(&*state.credentials, &jira.credential_handle) {
+            tracing::warn!(?error, "failed to drop a deleted project's Jira token");
+        }
+    }
+    // No board event: a client reading the deleted board would only fail.
+    Ok(json!({ "deleted": true }))
+}
+
 pub(super) fn credential_store(state: &AppState, params: &Value) -> Result<Value, ControlError> {
     let params: PmCredentialStoreParams = parse(params)?;
     let handle = credentials::store_jira_token(&*state.credentials, &params.secret)?;

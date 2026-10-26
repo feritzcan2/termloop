@@ -226,3 +226,69 @@ fn invalid_ids_are_rejected_before_any_lookup() {
         Err(PmError::Invalid("sprintId"))
     ));
 }
+
+#[test]
+fn deleting_a_sprint_moves_its_tickets_to_the_end_of_the_backlog() {
+    let mut store = store();
+    let sprint = sprint(&mut store, "p1", "Sprint 1");
+    let waiting = ticket(&mut store, "p1", "Waiting", None);
+    let first = ticket(&mut store, "p1", "First", Some(&sprint.id));
+    let second = ticket(&mut store, "p1", "Second", Some(&sprint.id));
+    store
+        .connection()
+        .execute(
+            "UPDATE tickets SET status = 'done' WHERE id = ?1",
+            [&second.id],
+        )
+        .unwrap();
+    store.activate_sprint(&sprint.id).unwrap();
+    let deleted = store.delete_sprint(&sprint.id).unwrap();
+    assert_eq!(deleted.sprint.id, sprint.id);
+    assert_eq!(
+        deleted.moved_ticket_ids,
+        vec![first.id.clone(), second.id.clone()]
+    );
+    assert_eq!(store.sprint(&sprint.id).unwrap(), None);
+    let backlog: Vec<_> = [&waiting.id, &first.id, &second.id]
+        .map(|id| store.ticket(id).unwrap().unwrap())
+        .into_iter()
+        .collect();
+    assert!(backlog.iter().all(|ticket| ticket.sprint_id.is_none()));
+    assert!(backlog.windows(2).all(|pair| pair[0].rank < pair[1].rank));
+    assert!(backlog.iter().all(|ticket| ticket.carry_over_count == 0));
+    assert!(matches!(
+        store.delete_sprint(&sprint.id),
+        Err(PmError::NotFound)
+    ));
+}
+
+#[test]
+fn an_open_sprint_of_the_mirrored_jira_board_is_not_deleted() {
+    let mut store = store();
+    let mirrored = sprint(&mut store, "p1", "Jira 1");
+    let elsewhere = sprint(&mut store, "p1", "Old board");
+    let connection = store.connection();
+    connection
+        .execute(
+            "INSERT INTO project_sources (project_id, jira_site_url, jira_board_id, \
+                 jira_account_email, jira_credential_handle) \
+             VALUES ('p1', 'https://acme.atlassian.net', 7, 'pm@acme.test', 'pm-jira-x')",
+            [],
+        )
+        .unwrap();
+    for (id, board) in [(&mirrored.id, 7), (&elsewhere.id, 8)] {
+        connection
+            .execute(
+                "UPDATE sprints SET jira_sprint_id = 1 + ?2, jira_board_id = ?2 WHERE id = ?1",
+                rusqlite::params![id, board],
+            )
+            .unwrap();
+    }
+    assert!(matches!(
+        store.delete_sprint(&mirrored.id),
+        Err(PmError::Constraint("Jira owns this sprint"))
+    ));
+    store.delete_sprint(&elsewhere.id).unwrap();
+    store.close_sprint(&mirrored.id, None).unwrap();
+    store.delete_sprint(&mirrored.id).unwrap();
+}

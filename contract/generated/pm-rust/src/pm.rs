@@ -127,7 +127,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:ded3c190ba14895d4fe389cfd20639826db774dd7a05968e42b940d49bdc9636";
+    "sha256:d80c53767b4b4ecb89a376db1f1a43fcf6572234c23b9e0563d715089bcc897a";
 pub const CAPABILITY_SCOPE: &str = "pm.full";
 pub const METHODS: &[&str] = &[
     "pm_system_version",
@@ -136,12 +136,14 @@ pub const METHODS: &[&str] = &[
     "pm_project_list",
     "pm_project_create",
     "pm_project_update",
+    "pm_project_delete",
     "pm_board_read",
     "pm_digest_read",
     "pm_sprint_create",
     "pm_sprint_update",
     "pm_sprint_activate",
     "pm_sprint_close",
+    "pm_sprint_delete",
     "pm_ticket_create",
     "pm_ticket_update",
     "pm_ticket_move",
@@ -1099,6 +1101,14 @@ pub struct PmSprintCloseParams {
     pub sprint_id: String,
     #[serde(rename = "carryOverTo", skip_serializing_if = "Option::is_none")]
     pub carry_over_to: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PmSprintDeleteResult {
+    pub sprint: PmSprint,
+    #[serde(rename = "movedTicketIds")]
+    pub moved_ticket_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -2370,12 +2380,15 @@ pub type PmSystemVersionParams = EmptyParams;
 pub type PmProjectListParams = EmptyParams;
 pub type PmProjectCreateResult = PmProject;
 pub type PmProjectUpdateResult = PmProject;
+pub type PmProjectDeleteParams = PmProjectRef;
+pub type PmProjectDeleteResult = PmDeletedResult;
 pub type PmBoardReadParams = PmProjectRef;
 pub type PmBoardReadResult = PmBoard;
 pub type PmSprintCreateResult = PmSprint;
 pub type PmSprintUpdateResult = PmSprint;
 pub type PmSprintActivateParams = PmSprintRef;
 pub type PmSprintActivateResult = PmSprint;
+pub type PmSprintDeleteParams = PmSprintRef;
 pub type PmTicketCreateResult = PmTicket;
 pub type PmTicketUpdateResult = PmTicket;
 pub type PmTicketMoveResult = PmTicket;
@@ -2576,12 +2589,14 @@ fn validate_method(value: &Value) -> bool {
             "pm_project_list",
             "pm_project_create",
             "pm_project_update",
+            "pm_project_delete",
             "pm_board_read",
             "pm_digest_read",
             "pm_sprint_create",
             "pm_sprint_update",
             "pm_sprint_activate",
             "pm_sprint_close",
+            "pm_sprint_delete",
             "pm_ticket_create",
             "pm_ticket_update",
             "pm_ticket_move",
@@ -4724,6 +4739,40 @@ fn validate_pm_sprint_close_params(value: &Value) -> bool {
         }) && object
             .keys()
             .all(|key| ["sprintId", "carryOverTo"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_pm_sprint_delete_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("sprint")
+            .is_some_and(|field| validate_pm_sprint(field))
+            && object.get("movedTicketIds").is_some_and(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() >= 0
+                        && items.len() <= 10000
+                        && json_array_unique(items)
+                        && items.iter().all(|item| {
+                            item.as_str().is_some_and(|text| {
+                                text.chars().count() >= 1
+                                    && text.chars().count() <= 128
+                                    && contract_pattern_matches("^[!-~]+$", text)
+                            })
+                        })
+                })
+            })
+            && object
+                .keys()
+                .all(|key| ["sprint", "movedTicketIds"].contains(&key.as_str()))
     })
 }
 
@@ -8358,6 +8407,10 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<PmProjectUpdateParams>(params.clone()).is_ok()
                 && validate_pm_project_update_params(params)
         }
+        "pm_project_delete" => {
+            serde_json::from_value::<PmProjectDeleteParams>(params.clone()).is_ok()
+                && validate_pm_project_ref(params)
+        }
         "pm_board_read" => {
             serde_json::from_value::<PmBoardReadParams>(params.clone()).is_ok()
                 && validate_pm_project_ref(params)
@@ -8381,6 +8434,10 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
         "pm_sprint_close" => {
             serde_json::from_value::<PmSprintCloseParams>(params.clone()).is_ok()
                 && validate_pm_sprint_close_params(params)
+        }
+        "pm_sprint_delete" => {
+            serde_json::from_value::<PmSprintDeleteParams>(params.clone()).is_ok()
+                && validate_pm_sprint_ref(params)
         }
         "pm_ticket_create" => {
             serde_json::from_value::<PmTicketCreateParams>(params.clone()).is_ok()
@@ -8617,6 +8674,10 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
             serde_json::from_value::<PmProjectUpdateResult>(result.clone()).is_ok()
                 && validate_pm_project(result)
         }
+        "pm_project_delete" => {
+            serde_json::from_value::<PmProjectDeleteResult>(result.clone()).is_ok()
+                && validate_pm_deleted_result(result)
+        }
         "pm_board_read" => {
             serde_json::from_value::<PmBoardReadResult>(result.clone()).is_ok()
                 && validate_pm_board(result)
@@ -8640,6 +8701,10 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         "pm_sprint_close" => {
             serde_json::from_value::<PmSprintCloseResult>(result.clone()).is_ok()
                 && validate_pm_sprint_close_result(result)
+        }
+        "pm_sprint_delete" => {
+            serde_json::from_value::<PmSprintDeleteResult>(result.clone()).is_ok()
+                && validate_pm_sprint_delete_result(result)
         }
         "pm_ticket_create" => {
             serde_json::from_value::<PmTicketCreateResult>(result.clone()).is_ok()

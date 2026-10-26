@@ -27,7 +27,7 @@ mod tests;
 
 pub use board::Board;
 pub use commands::{
-    ChannelWatermark, CheckReport, ClosedSprint, FactRead, FactsObservation,
+    ChannelWatermark, CheckReport, ClosedSprint, DeletedSprint, FactRead, FactsObservation,
     JIRA_PULL_NEW_TICKETS_MAX, JiraChange, JiraIssueState, JiraObservation, JiraPullChanges,
     JiraPullOutcome, JiraSprintPull, JiraSprintRead, JiraWriteDiff, JiraWriteOutcome,
     JiraWriteTarget, MARKED_PASSED_EVIDENCE, NewTicket, ProposalOrigin, PullRequestsObservation,

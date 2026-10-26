@@ -12,12 +12,14 @@
       "pm_project_list",
       "pm_project_create",
       "pm_project_update",
+      "pm_project_delete",
       "pm_board_read",
       "pm_digest_read",
       "pm_sprint_create",
       "pm_sprint_update",
       "pm_sprint_activate",
       "pm_sprint_close",
+      "pm_sprint_delete",
       "pm_ticket_create",
       "pm_ticket_update",
       "pm_ticket_move",
@@ -146,6 +148,14 @@
         "$ref": "#/$defs/pmProject"
       }
     },
+    "pm_project_delete": {
+      "params": {
+        "$ref": "#/$defs/pmProjectRef"
+      },
+      "result": {
+        "$ref": "#/$defs/pmDeletedResult"
+      }
+    },
     "pm_board_read": {
       "params": {
         "$ref": "#/$defs/pmProjectRef"
@@ -192,6 +202,14 @@
       },
       "result": {
         "$ref": "#/$defs/pmSprintCloseResult"
+      }
+    },
+    "pm_sprint_delete": {
+      "params": {
+        "$ref": "#/$defs/pmSprintRef"
+      },
+      "result": {
+        "$ref": "#/$defs/pmSprintDeleteResult"
       }
     },
     "pm_ticket_create": {
@@ -724,12 +742,14 @@
         "pm_project_list",
         "pm_project_create",
         "pm_project_update",
+        "pm_project_delete",
         "pm_board_read",
         "pm_digest_read",
         "pm_sprint_create",
         "pm_sprint_update",
         "pm_sprint_activate",
         "pm_sprint_close",
+        "pm_sprint_delete",
         "pm_ticket_create",
         "pm_ticket_update",
         "pm_ticket_move",
@@ -2850,6 +2870,32 @@
           "minLength": 1,
           "maxLength": 128,
           "pattern": "^[!-~]+$"
+        }
+      }
+    },
+    "pmSprintDeleteResult": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sprint",
+        "movedTicketIds"
+      ],
+      "properties": {
+        "sprint": {
+          "$ref": "#/$defs/pmSprint"
+        },
+        "movedTicketIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[!-~]+$"
+          },
+          "minItems": 0,
+          "maxItems": 10000,
+          "uniqueItems": true
         }
       }
     },

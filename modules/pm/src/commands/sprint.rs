@@ -2,7 +2,7 @@
 //! most one active sprint, and closing a sprint carries its unfinished
 //! tickets over, counting each carry-over on the ticket.
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use super::{check_id, next_rank, require_open_sprint, require_sprint};
 use crate::sprint::{PROJECT_OPEN_SPRINTS_MAX, valid_sprint_goal, valid_sprint_name};
@@ -15,6 +15,15 @@ use crate::{PmError, PmStore, Sprint, SprintState};
 pub struct ClosedSprint {
     pub sprint: Sprint,
     pub carried_over_ticket_ids: Vec<String>,
+}
+
+/// A deleted sprint and the tickets it moved to the backlog, in their
+/// previous order.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeletedSprint {
+    pub sprint: Sprint,
+    pub moved_ticket_ids: Vec<String>,
 }
 
 fn check_goal(goal: Option<&str>) -> Result<(), PmError> {
@@ -191,6 +200,56 @@ impl PmStore {
                 }
             }
             close_open_sprint(transaction, &sprint, carry_over_to, now)
+        })
+    }
+
+    /// Deletes a sprint. Its tickets, done or not, move in order to the end
+    /// of the backlog; their carry-over counts stay as they are. An open
+    /// sprint mirroring the board the project's Jira source names is
+    /// refused: the next pull would bring it back.
+    pub fn delete_sprint(&mut self, sprint_id: &str) -> Result<DeletedSprint, PmError> {
+        let now = self.now();
+        self.write(|transaction| {
+            let sprint = require_sprint(transaction, sprint_id)?;
+            if sprint.state != SprintState::Closed
+                && let Some(board_id) = sprint.jira_board_id
+            {
+                let source_board: Option<u64> = transaction
+                    .query_row(
+                        "SELECT jira_board_id FROM project_sources WHERE project_id = ?1",
+                        [&sprint.project_id],
+                        |row| row.get(0),
+                    )
+                    .optional()?
+                    .flatten();
+                if source_board == Some(board_id) {
+                    return Err(PmError::Constraint("Jira owns this sprint"));
+                }
+            }
+            let moved = {
+                let mut statement = transaction
+                    .prepare("SELECT id FROM tickets WHERE sprint_id = ?1 ORDER BY rank, id")?;
+                statement
+                    .query_map([&sprint.id], |row| row.get::<_, String>(0))?
+                    .collect::<Result<Vec<_>, _>>()?
+            };
+            let first_rank = next_rank(transaction, &sprint.project_id, None)?;
+            for (offset, ticket_id) in moved.iter().enumerate() {
+                let rank = i64::try_from(offset)
+                    .ok()
+                    .and_then(|offset| first_rank.checked_add(offset))
+                    .ok_or(PmError::Constraint("ticket rank overflow"))?;
+                transaction.execute(
+                    "UPDATE tickets SET sprint_id = NULL, rank = ?2, updated_at_epoch_ms = ?3 \
+                     WHERE id = ?1",
+                    params![ticket_id, rank, now],
+                )?;
+            }
+            transaction.execute("DELETE FROM sprints WHERE id = ?1", [&sprint.id])?;
+            Ok(DeletedSprint {
+                sprint,
+                moved_ticket_ids: moved,
+            })
         })
     }
 }

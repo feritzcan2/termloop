@@ -14,6 +14,7 @@ export type SprintOverviewProps = {
   onOpenTicket(ticketId: string): void;
   onActivate(sprintId: string): void;
   onClose(sprintId: string, carryOverTo: string | undefined): void;
+  onDelete(sprintId: string): void;
 };
 
 const ENDS = new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short" });
@@ -22,6 +23,7 @@ const DAY = new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric
 
 export function SprintOverview(props: SprintOverviewProps) {
   const [closing, setClosing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [carryOverTo, setCarryOverTo] = useState("");
   const [standup, setStandup] = useState<string | undefined>(undefined);
   const sprint = props.sprint;
@@ -60,6 +62,7 @@ export function SprintOverview(props: SprintOverviewProps) {
           <button type="button" className="btn sm" onClick={() => props.onActivate(sprint.id)}>Activate sprint</button>
         )}
         {sprint.state === "active" && <button type="button" className="btn sm" onClick={() => setClosing(true)}>Close sprint</button>}
+        <button type="button" className="btn sm ghost" onClick={() => setDeleting(true)}>Delete sprint</button>
       </div>
       <div className="body">
         <p className="lead">{sprint.goal ?? <span className="muted">No goal set.</span>}</p>
@@ -73,6 +76,17 @@ export function SprintOverview(props: SprintOverviewProps) {
             <div className="card-foot">
               <button type="button" className="btn sm ghost" onClick={() => setClosing(false)}>Cancel</button>
               <button type="button" className="btn sm pri" onClick={() => { setClosing(false); props.onClose(sprint.id, carryOverTo || undefined); }}>Close sprint</button>
+            </div>
+          </div>
+        )}
+        {deleting && (
+          <div className="card" role="dialog" aria-label="Delete sprint">
+            <p>
+              Delete <strong>{sprint.name}</strong>? Its {tickets.length} {tickets.length === 1 ? "ticket moves" : "tickets move"} to No sprint. This cannot be undone.
+            </p>
+            <div className="card-foot">
+              <button type="button" className="btn sm ghost" onClick={() => setDeleting(false)}>Cancel</button>
+              <button type="button" className="btn sm pri" onClick={() => { setDeleting(false); props.onDelete(sprint.id); }}>Delete sprint</button>
             </div>
           </div>
         )}

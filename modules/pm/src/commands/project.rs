@@ -6,7 +6,21 @@ use super::check_id;
 use crate::project::{PROJECTS_MAX, valid_project_folder, valid_project_name};
 use crate::settings::{PmSettings, SettingsEdit};
 use crate::store::to_json;
-use crate::{PmError, PmStore, Project};
+use crate::{PmError, PmStore, Project, ProjectSources};
+
+/// Every table holding rows of one project, in a safe deletion order.
+const PROJECT_TABLES: &[&str] = &[
+    "delivery_checks",
+    "skill_runs",
+    "skill_drafts",
+    "skills",
+    "skill_discovery_cache",
+    "tickets",
+    "sprints",
+    "project_sources",
+    "playbooks",
+    "playbook_proposals",
+];
 
 fn project_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {
     Ok(Project {
@@ -76,6 +90,31 @@ impl PmStore {
         self.project(project_id)?.ok_or(PmError::NotFound)
     }
 
+    /// Deletes a project and everything stored for it: sprints, tickets with
+    /// their versions, notes, proposals, and facts, sources, the Playbook,
+    /// skills, and delivery checks. Returns the project as it was, with the
+    /// sources it had, so the caller can drop what lives outside the store.
+    pub fn delete_project(
+        &mut self,
+        project_id: &str,
+    ) -> Result<(Project, ProjectSources), PmError> {
+        let project = self.project(project_id)?.ok_or(PmError::NotFound)?;
+        let sources = self.project_sources(project_id)?;
+        self.write(|transaction| {
+            // Children first: tickets refuse to lose their sprint, and
+            // ticket and skill rows cascade to their own children.
+            for table in PROJECT_TABLES {
+                transaction.execute(
+                    &format!("DELETE FROM {table} WHERE project_id = ?1"),
+                    [project_id],
+                )?;
+            }
+            transaction.execute("DELETE FROM projects WHERE id = ?1", [project_id])?;
+            Ok(())
+        })?;
+        Ok((project, sources))
+    }
+
     /// Every registered project, oldest first.
     pub fn projects(&self) -> Result<Vec<Project>, PmError> {
         let mut statement = self.connection().prepare(
@@ -141,5 +180,31 @@ impl PmStore {
             Ok(())
         })?;
         Ok(settings)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PROJECT_TABLES;
+    use crate::PmStore;
+
+    #[test]
+    fn project_deletion_covers_every_table_with_a_project_id() {
+        let store = PmStore::open_in_memory().unwrap();
+        let mut statement = store
+            .connection()
+            .prepare(
+                "SELECT m.name FROM sqlite_master m, pragma_table_info(m.name) c \
+                 WHERE m.type = 'table' AND c.name = 'project_id' ORDER BY m.name",
+            )
+            .unwrap();
+        let tables: Vec<String> = statement
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        let mut covered: Vec<&str> = PROJECT_TABLES.to_vec();
+        covered.sort_unstable();
+        assert_eq!(tables, covered);
     }
 }

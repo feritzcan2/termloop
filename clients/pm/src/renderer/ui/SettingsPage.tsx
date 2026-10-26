@@ -32,6 +32,8 @@ export type SettingsPageProps = {
   onClearToken(): void;
   onPickFolder?(): Promise<string | null>;
   onSetFolder?(folder: string | null): void;
+  /** Deletes the open project and everything stored for it. */
+  onDeleteProject?(): void;
   onSaveSettings(edit: PmSettingsUpdateParams): void;
   /** Resolves true once saved over `baseRevision`. */
   onSavePlaybook(baseRevision: number, steps: PmPlaybookStep[]): Promise<boolean>;
@@ -54,9 +56,31 @@ export function SettingsPage(props: SettingsPageProps) {
           <SettingsSection title="Your data" description={<>Everything lives on this computer in the PM daemon's store at <code>&lt;TermLoop state directory&gt;/pm/pm.sqlite</code>. There is no server and no account.</>}>
             <p className="hint">Jira API tokens are kept in the operating system's secure credential store, never in that file or in this window.</p>
           </SettingsSection>
+          {props.onDeleteProject && <DeleteProjectCard projectName={props.projectName} onDelete={props.onDeleteProject} />}
         </div>
       </div>
     </section>
+  );
+}
+
+export function DeleteProjectCard(props: { projectName: string; onDelete(): void }) {
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <SettingsSection title="Delete project" description="Removes this project from this computer: its sprints, tickets, notes, Playbook, skills and sources. Its running agents are stopped. Nothing in Jira or the code repository changes.">
+      {confirming ? (
+        <div className="card" role="dialog" aria-label="Delete project">
+          <p>Delete <strong>{props.projectName}</strong> and everything stored for it? This cannot be undone.</p>
+          <div className="card-foot">
+            <button type="button" className="btn sm ghost" onClick={() => setConfirming(false)}>Cancel</button>
+            <button type="button" className="btn sm pri" onClick={() => { setConfirming(false); props.onDelete(); }}>Delete project</button>
+          </div>
+        </div>
+      ) : (
+        <div className="actions">
+          <button type="button" className="btn ghost" onClick={() => setConfirming(true)}>Delete project…</button>
+        </div>
+      )}
+    </SettingsSection>
   );
 }
 

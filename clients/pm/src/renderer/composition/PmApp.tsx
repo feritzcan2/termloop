@@ -244,6 +244,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 onClearToken={() => void controller.clearJiraToken()}
                 onPickFolder={() => controller.bridge.pickFolder()}
                 onSetFolder={(folder) => void controller.setProjectFolder(folder)}
+                onDeleteProject={() => void controller.deleteProject()}
                 onSaveSettings={(edit) => void controller.saveSettings(edit)}
                 onSavePlaybook={(baseRevision, steps) => controller.savePlaybook(baseRevision, steps)}
                 onCreatePlaybook={() => void controller.setUpSkill("playbook")}
@@ -307,6 +308,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 onOpenTicket={(id) => void controller.selectTicket(id)}
                 onActivate={(id) => void controller.activateSprint(id)}
                 onClose={(id, carryOverTo) => void controller.closeSprint(id, carryOverTo)}
+                onDelete={(id) => void controller.deleteSprint(id)}
               />
             )}
           </div>

@@ -16,7 +16,7 @@ describe("sprint overview", () => {
     });
     const { container, unmount } = render(
       <SprintOverview sprint={sprint()} sprints={[sprint()]} tickets={[risky, boardTicket({ id: "t2" })]} tier="tickets"
-        playbook={playbook()} digest={[]} now={0} onOpenTicket={noop} onActivate={noop} onClose={noop} />,
+        playbook={playbook()} digest={[]} now={0} onOpenTicket={noop} onActivate={noop} onClose={noop} onDelete={noop} />,
     );
     const rows = container.querySelectorAll(".attn-row");
     expect(rows).toHaveLength(1);

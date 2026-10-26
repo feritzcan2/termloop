@@ -40,6 +40,7 @@ pub(crate) async fn dispatch(
         })),
         "pm_project_create" => operations::project_create(state, params).await,
         "pm_project_update" => operations::project_update(state, params).await,
+        "pm_project_delete" => operations::project_delete(state, params),
         "pm_credential_store" => operations::credential_store(state, params),
         "pm_credential_clear" => operations::credential_clear(state, params),
         "pm_check_start" => operations::check_start(state, params).await,
@@ -130,6 +131,12 @@ fn planning(state: &AppState, method: &str, params: &Value) -> Result<Value, Con
             let closed = store.close_sprint(&params.sprint_id, params.carry_over_to.as_deref())?;
             state.board_changed(&closed.sprint.project_id);
             to_value(&closed)
+        }
+        "pm_sprint_delete" => {
+            let params: PmSprintRef = parse(params)?;
+            let deleted = store.delete_sprint(&params.sprint_id)?;
+            state.board_changed(&deleted.sprint.project_id);
+            to_value(&deleted)
         }
         "pm_ticket_create" => ticket_create(state, store, params),
         "pm_ticket_update" => ticket_update(state, store, params),
