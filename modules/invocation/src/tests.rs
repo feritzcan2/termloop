@@ -2388,7 +2388,7 @@ fn ask_to_reply_is_one_visible_terminal_safe_delivery() {
 #[test]
 fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
     let prompt = executor_prompt(ExecutorRole::Steward).unwrap();
-    assert_eq!(prompt.provenance().template_version, 42);
+    assert_eq!(prompt.provenance().template_version, 43);
     assert!(prompt.authored_preview().contains("routine_finding_read"));
     assert!(prompt.authored_preview().contains("playbook_read"));
     assert!(prompt.authored_preview().contains("task_set_steward_brief"));
@@ -2615,6 +2615,10 @@ fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
             .authored_preview()
             .contains("is disposition 6, not a reason to leave it pending")
     );
+    let flattened = prompt.authored_preview().replace('\n', " ");
+    assert!(flattened.contains("Disposition 6 requires an exact named owner"));
+    assert!(flattened.contains("that has no proven owner under that rule, is never disposition 6"));
+    assert!(flattened.contains("its diagnosis is Task-scoped work"));
     assert!(prompt.authored_preview().contains("deliveredAndDismissed"));
     assert!(
         prompt
@@ -2637,7 +2641,7 @@ fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
         default_steward_system_prompt()
     );
     let latest_retired =
-        include_str!("../../../resources/prompts/retired/builtin.steward.executor.v41.md")
+        include_str!("../../../resources/prompts/retired/builtin.steward.executor.v42.md")
             .splitn(3, "\n\n")
             .nth(2)
             .unwrap()
@@ -2679,7 +2683,7 @@ fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
 #[test]
 fn pipeline_prompts_use_live_provider_neutral_evidence_and_one_outcome_contract() {
     let steward = executor_prompt(ExecutorRole::Steward).unwrap();
-    assert_eq!(steward.provenance().template_version, 42);
+    assert_eq!(steward.provenance().template_version, 43);
     let steward = steward.authored_preview();
     assert!(steward.contains("stage title is only a label"));
     assert!(steward.contains("steward_complete_assignment"));
