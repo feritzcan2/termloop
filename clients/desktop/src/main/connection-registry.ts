@@ -28,10 +28,16 @@ type RegistryEntry = {
   summary: ConnectionProfileSummary;
   state: ConnectionSourceState;
   message?: string;
-  client?: RegistryControlClient;
-  clientIdentity?: string;
+  pool?: CommandPool;
   subscription: ControlSubscription;
 };
+
+// Independent command sockets per source. One stalled request, and the
+// retirement of the socket it ran on, must not reject unrelated commands.
+const COMMAND_POOL_SIZE = 4;
+
+type CommandPool = { identity: string; members: PoolMember[] };
+type PoolMember = { client: RegistryControlClient; inFlight: number; retired: boolean };
 
 type RegistryControlClient = Pick<TermLoopControlClient, "call" | "close">;
 type RegistryControlClientFactory = (config: DesktopConnectionConfig) => RegistryControlClient;
@@ -98,26 +104,23 @@ export class ConnectionRegistry {
     const entry = await this.#entry(profileId);
     for (let attempt = 0; ; attempt += 1) {
       let config: DesktopConnectionConfig | undefined;
-      let client: RegistryControlClient | undefined;
+      let member: PoolMember | undefined;
       try {
         config = await this.#connectionConfig(profileId);
         if (!config) throw new Error("daemonUnavailable");
-        client = this.#client(entry, config);
-        const result = await client.call(method, ...args);
+        member = this.#member(entry, config);
+        member.inFlight += 1;
+        const result = await member.client.call(method, ...args).finally(() => this.#release(member!));
         this.#setState(profileId, "connected");
         return result;
       } catch (error) {
-        if (client && isControlTransportFailure(error)) {
+        if (member && isControlTransportFailure(error)) {
           // Subscription and command sockets are independent. A live subscription
           // must not keep an unresponsive command socket cached indefinitely.
           // An older in-flight failure must never retire its replacement.
           const responsive = error instanceof Error && error.message === "request timeout"
-            && entry.client === client && await this.#connectionResponds(client);
-          if (!responsive && entry.client === client) {
-            delete entry.client;
-            delete entry.clientIdentity;
-            client.close();
-          }
+            && !member.retired && await this.#connectionResponds(member.client);
+          if (!responsive) this.#retire(entry, member);
           // Account metadata is safe to read again. Never replay a launch or
           // other mutation: the server may already have applied it.
           if (attempt === 0 && config?.kind === "remote" && method === "agent.accountList"
@@ -158,9 +161,7 @@ export class ConnectionRegistry {
 
   async reconnect(profileId: string): Promise<void> {
     const entry = await this.#entry(profileId);
-    entry.client?.close();
-    delete entry.client;
-    delete entry.clientIdentity;
+    this.#closePool(entry);
     entry.subscription.reconnect();
   }
 
@@ -168,7 +169,7 @@ export class ConnectionRegistry {
     const entry = this.#entries.get(profileId);
     if (!entry) return;
     entry.subscription.stop();
-    entry.client?.close();
+    this.#closePool(entry);
     this.#entries.delete(profileId);
   }
 
@@ -257,15 +258,47 @@ export class ConnectionRegistry {
     return this.profiles.remoteConfig(profileId);
   }
 
-  #client(entry: RegistryEntry, config: DesktopConnectionConfig): RegistryControlClient {
+  #member(entry: RegistryEntry, config: DesktopConnectionConfig): PoolMember {
     const identity = config.kind === "remote"
       ? `remote:${config.profileId}:${config.controlUrl}`
       : `local:${config.controlUrl}:${config.token}`;
-    if (entry.client && entry.clientIdentity === identity) return entry.client;
-    entry.client?.close();
-    entry.client = this.createClient(config);
-    entry.clientIdentity = identity;
-    return entry.client;
+    if (entry.pool?.identity !== identity) {
+      this.#closePool(entry);
+      entry.pool = { identity, members: [] };
+    }
+    const { members } = entry.pool;
+    // Reuse an idle socket first so a quiet source keeps a single connection;
+    // open another only while every live socket is busy.
+    const idle = members.find((member) => member.inFlight === 0);
+    if (idle) return idle;
+    if (members.length < COMMAND_POOL_SIZE) {
+      const member: PoolMember = { client: this.createClient(config), inFlight: 0, retired: false };
+      members.push(member);
+      return member;
+    }
+    return members.reduce((least, member) => member.inFlight < least.inFlight ? member : least);
+  }
+
+  #release(member: PoolMember): void {
+    member.inFlight -= 1;
+    if (member.retired && member.inFlight === 0) member.client.close();
+  }
+
+  // A retired socket takes no new work. Its other in-flight commands settle on
+  // their own response or timeout before the socket is closed.
+  #retire(entry: RegistryEntry, member: PoolMember): void {
+    if (member.retired) return;
+    member.retired = true;
+    if (entry.pool) entry.pool.members = entry.pool.members.filter((candidate) => candidate !== member);
+    if (member.inFlight === 0) member.client.close();
+  }
+
+  #closePool(entry: RegistryEntry): void {
+    for (const member of entry.pool?.members ?? []) {
+      member.retired = true;
+      member.client.close();
+    }
+    delete entry.pool;
   }
 
   #setState(profileId: string, state: ConnectionSourceState, message?: string): void {

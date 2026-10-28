@@ -129,7 +129,7 @@ describe("remote command connection recovery", () => {
     } finally { registry.stopAll(); }
   });
 
-  it("keeps a responsive connection and concurrent command alive when only the account read is slow", async () => {
+  it("keeps a responsive connection and a concurrent command alive when only the account read is slow", async () => {
     const { registry, sockets } = fixture();
     try {
       const result = registry.call(PROFILE, "agent.accountList");
@@ -137,46 +137,79 @@ describe("remote command connection recovery", () => {
       const concurrent = registry.call(PROFILE, "agent.authStatusList", {});
       void concurrent.catch(() => {});
       await flush();
-      sockets[0]!.open();
+      expect(sockets).toHaveLength(2);
+      for (const socket of sockets) socket.open();
       await flush();
       const originalAccountId = sockets[0]!.sent.find((request) => request.method === "agent.accountList")!.id;
-      const concurrentId = sockets[0]!.sent.find((request) => request.method === "agent.authStatusList")!.id;
+      const concurrentId = sockets[1]!.sent.find((request) => request.method === "agent.authStatusList")!.id;
       await vi.advanceTimersByTimeAsync(controlRequestTimeoutMs("agent.accountList"));
       const ping = sockets[0]!.sent.find((request) => request.method === "system.ping")!;
       sockets[0]!.reply(ping.id, { pong: true });
       await flush();
       const retry = sockets[0]!.sent.filter((request) => request.method === "agent.accountList").at(-1)!;
       expect(retry.id).not.toBe(originalAccountId);
-      expect(sockets).toHaveLength(1);
-      expect(sockets[0]!.close).not.toHaveBeenCalled();
+      expect(sockets).toHaveLength(2);
+      expect(sockets.every((socket) => socket.close.mock.calls.length === 0)).toBe(true);
       sockets[0]!.reply(retry.id, accounts);
-      sockets[0]!.reply(concurrentId, []);
+      sockets[1]!.reply(concurrentId, []);
       await expect(result).resolves.toEqual(accounts);
       await expect(concurrent).resolves.toEqual([]);
     } finally { registry.stopAll(); }
   });
 
-  it("coalesces simultaneous timeout probes and shares one replacement connection", async () => {
+  it("retires only the stalled socket while a concurrent read on another socket completes", async () => {
     const { registry, sockets } = fixture();
     try {
-      const first = registry.call(PROFILE, "agent.accountList");
-      const second = registry.call(PROFILE, "agent.accountList");
-      void first.catch(() => {});
-      void second.catch(() => {});
+      const stalled = expect(registry.call(PROFILE, "project.delete", { projectId: "project" })).rejects.toThrow("request timeout");
       await flush();
       sockets[0]!.open();
       await flush();
-      await vi.advanceTimersByTimeAsync(controlRequestTimeoutMs("agent.accountList"));
-      expect(sockets[0]!.sent.filter((request) => request.method === "system.ping")).toHaveLength(1);
-      await vi.advanceTimersByTimeAsync(2_000);
+      await vi.advanceTimersByTimeAsync(6_000);
+      const changes = registry.call(PROFILE, "project.list");
+      void changes.catch(() => {});
       await flush();
-      expect(sockets).toHaveLength(2);
-      expect(sockets[0]!.close).toHaveBeenCalledOnce();
       sockets[1]!.open();
       await flush();
-      for (const request of sockets[1]!.sent) sockets[1]!.reply(request.id, accounts);
-      await expect(Promise.all([first, second])).resolves.toEqual([accounts, accounts]);
+      await vi.advanceTimersByTimeAsync(controlRequestTimeoutMs("project.delete") - 6_000);
+      await vi.advanceTimersByTimeAsync(2_000);
+      await stalled;
+      expect(sockets[0]!.close).toHaveBeenCalledOnce();
       expect(sockets[1]!.close).not.toHaveBeenCalled();
+      sockets[1]!.reply(sockets[1]!.sent[0]!.id, []);
+      await expect(changes).resolves.toEqual([]);
+      const next = registry.call(PROFILE, "agent.accountList");
+      void next.catch(() => {});
+      await flush();
+      expect(sockets[1]!.sent.at(-1)!.method).toBe("agent.accountList");
+      sockets[1]!.reply(sockets[1]!.sent.at(-1)!.id, accounts);
+      await expect(next).resolves.toEqual(accounts);
+    } finally { registry.stopAll(); }
+  });
+
+  it("drains other commands on a retired socket before closing it", async () => {
+    const { registry, sockets } = fixture();
+    try {
+      const stalled = expect(registry.call(PROFILE, "project.delete", { projectId: "project" })).rejects.toThrow("request timeout");
+      const busy = [1, 2, 3].map(() => registry.call(PROFILE, "project.list"));
+      for (const call of busy) void call.catch(() => {});
+      await flush();
+      expect(sockets).toHaveLength(4);
+      for (const socket of sockets) socket.open();
+      await flush();
+      await vi.advanceTimersByTimeAsync(6_000);
+      // Every socket is busy and the pool is full, so this shares the first socket.
+      const sharing = registry.call(PROFILE, "project.list");
+      void sharing.catch(() => {});
+      await flush();
+      const sharingRequest = sockets[0]!.sent.at(-1)!;
+      expect(sharingRequest.method).toBe("project.list");
+      await vi.advanceTimersByTimeAsync(controlRequestTimeoutMs("project.delete") - 6_000);
+      await vi.advanceTimersByTimeAsync(2_000);
+      await stalled;
+      expect(sockets[0]!.close).not.toHaveBeenCalled();
+      sockets[0]!.reply(sharingRequest.id, []);
+      await expect(sharing).resolves.toEqual([]);
+      expect(sockets[0]!.close).toHaveBeenCalledOnce();
     } finally { registry.stopAll(); }
   });
 });
