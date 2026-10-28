@@ -17,6 +17,8 @@ const OUTPUT_ACTIVITY_SETTLEMENT_TIMEOUT: Duration = Duration::from_secs(3);
 const COMPOSER_RENDER_SETTLEMENT_QUIET: Duration = Duration::from_millis(1_500);
 const COMPOSER_RENDER_SETTLEMENT_TIMEOUT: Duration = Duration::from_secs(10);
 const COMPOSER_READY_TIMEOUT: Duration = Duration::from_secs(20);
+const LATE_SETTLEMENT_TIMEOUT: Duration = Duration::from_secs(120);
+const LATE_SETTLEMENT_POLL: Duration = Duration::from_secs(3);
 const PROTOCOL_REPLY_SETTLEMENT_TIMEOUT: Duration = Duration::from_millis(125);
 const MAX_PROTOCOL_REPLY_SETTLEMENT_WAITS: usize = 8;
 const PROVIDER_ACK_TIMEOUT: Duration = Duration::from_secs(5);
@@ -336,13 +338,13 @@ impl GeneratedInputDeliveryRuntime {
             },
         );
 
-        if user_input_activity.is_err() {
+        let Ok(user_input_baseline) = user_input_activity else {
             self.fail_immediately(
                 session_id,
                 GeneratedInputDeliveryFailure::TerminalUnavailable,
             );
             return true;
-        }
+        };
 
         let input_readiness = match terminal.input_readiness_snapshot(session_id, runtime_epoch) {
             Ok(readiness) => readiness,
@@ -409,6 +411,7 @@ impl GeneratedInputDeliveryRuntime {
                     input_readiness,
                     prepared_paste,
                     settlement,
+                    user_input_baseline,
                     cancel_submit,
                     paste_started,
                     submit_receipted_signal: Arc::clone(&worker_submit_receipted),
@@ -1025,6 +1028,7 @@ struct GeneratedInputTransportPlan {
         termloop_terminal::OutputActivitySnapshot,
     )>,
     settlement: GeneratedInputSettlement,
+    user_input_baseline: UserInputActivitySnapshot,
     cancel_submit: Arc<AtomicBool>,
     paste_started: Arc<AtomicBool>,
     submit_receipted_signal: Arc<AtomicBool>,
@@ -1039,6 +1043,7 @@ fn run_transport_delivery(plan: GeneratedInputTransportPlan) -> GeneratedInputTr
         input_readiness,
         prepared_paste,
         settlement,
+        user_input_baseline,
         cancel_submit,
         paste_started,
         submit_receipted_signal,
@@ -1199,6 +1204,16 @@ fn run_transport_delivery(plan: GeneratedInputTransportPlan) -> GeneratedInputTr
             )
         }
     };
+    let settlement = match settlement {
+        Err(OutputSettlementFailure::TimedOut) => wait_for_late_settlement(
+            &terminal,
+            &session_id,
+            runtime_epoch,
+            user_input_baseline,
+            &cancel_submit,
+        ),
+        settled => settled,
+    };
     match settlement {
         Ok(receipt) => diagnostics.settlement_evidence = Some(receipt.evidence),
         Err(OutputSettlementFailure::TimedOut) => {
@@ -1267,6 +1282,51 @@ fn run_transport_delivery(plan: GeneratedInputTransportPlan) -> GeneratedInputTr
     result.retry_readiness_baseline = retry_readiness_baseline;
     result.retry_output_baseline = retry_output_baseline;
     result
+}
+
+/// A composer that gave no settlement proof inside its window consumed the
+/// paste long ago. Keep the same submission pending and submit it after the
+/// first later quiet window, unless direct client input, a provider-state
+/// cancellation, or the bounded deadline hands it back to the user.
+fn wait_for_late_settlement(
+    terminal: &TerminalService,
+    session_id: &str,
+    runtime_epoch: u64,
+    user_input_baseline: UserInputActivitySnapshot,
+    cancel_submit: &AtomicBool,
+) -> Result<termloop_terminal::OutputSettlementReceipt, OutputSettlementFailure> {
+    let deadline = termloop_platform::MonotonicDeadline::after(LATE_SETTLEMENT_TIMEOUT)
+        .map_err(|_| OutputSettlementFailure::InvalidWindow)?;
+    let terminal_failure = |error| match error {
+        TerminalError::SessionNotFound => OutputSettlementFailure::TerminalClosed,
+        _ => OutputSettlementFailure::TrackerUnavailable,
+    };
+    let input_untouched = || {
+        terminal
+            .user_input_activity(session_id, runtime_epoch)
+            .map(|activity| activity == user_input_baseline)
+            .map_err(terminal_failure)
+    };
+    loop {
+        if cancel_submit.load(Ordering::Acquire) || !input_untouched()? {
+            return Err(OutputSettlementFailure::TimedOut);
+        }
+        let remaining = deadline
+            .remaining()
+            .filter(|remaining| *remaining >= COMPOSER_RENDER_SETTLEMENT_QUIET)
+            .ok_or(OutputSettlementFailure::TimedOut)?;
+        let output = terminal
+            .output_activity_snapshot(session_id, runtime_epoch)
+            .map_err(terminal_failure)?;
+        match output.wait_for_settlement_after_observed_activity(
+            COMPOSER_RENDER_SETTLEMENT_QUIET,
+            remaining.min(LATE_SETTLEMENT_POLL),
+        ) {
+            Err(OutputSettlementFailure::TimedOut) => {}
+            Ok(_) if !input_untouched()? => return Err(OutputSettlementFailure::TimedOut),
+            settled => return settled,
+        }
+    }
 }
 
 fn wait_for_composer_ready(

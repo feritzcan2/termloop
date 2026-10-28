@@ -827,3 +827,132 @@ fn test_submission() -> GeneratedTerminalSubmission {
     )
     .unwrap()
 }
+
+#[cfg(unix)]
+struct SilentComposer {
+    root: std::path::PathBuf,
+    terminal: TerminalService,
+}
+
+#[cfg(unix)]
+impl SilentComposer {
+    /// A raw, non-echoing PTY never produces the render evidence that the
+    /// first settlement window looks for, like a composer that stays still.
+    fn spawn() -> Self {
+        let root = std::env::temp_dir().join(format!(
+            "termloop-late-settlement-{}",
+            termloop_platform::generate_opaque_id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let terminal = TerminalService::default();
+        terminal
+            .spawn(termloop_terminal::PtySpawnSpec {
+                session_id: "silent".into(),
+                runtime_epoch: 1,
+                program: "/bin/sh".into(),
+                args: vec![
+                    "-c".into(),
+                    "stty raw -echo; touch ready; exec /bin/cat > received".into(),
+                ],
+                cwd: root.display().to_string(),
+                environment: termloop_platform::LaunchEnvironment::os_baseline(),
+                recent_output_replay: true,
+            })
+            .unwrap();
+        let end = std::time::Instant::now() + Duration::from_secs(5);
+        while !root.join("ready").exists() {
+            assert!(std::time::Instant::now() < end, "fixture timeout");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        Self { root, terminal }
+    }
+
+    fn received(&self) -> Vec<u8> {
+        std::fs::read(self.root.join("received")).unwrap_or_default()
+    }
+}
+
+#[cfg(unix)]
+impl Drop for SilentComposer {
+    fn drop(&mut self) {
+        let _ = self.terminal.terminate_all();
+        let _ = std::fs::remove_dir_all(&self.root);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn unsettled_composer_submits_once_it_stays_quiet() {
+    let composer = SilentComposer::spawn();
+    let mut runtime = GeneratedInputDeliveryRuntime::default();
+    let events = runtime.take_events().unwrap();
+    let submission = test_submission();
+    assert!(runtime.begin(
+        &composer.terminal,
+        "silent",
+        1,
+        0,
+        submission.clone(),
+        GeneratedInputSettlement::OutputActivity,
+    ));
+
+    let event = events.recv_timeout(Duration::from_secs(15)).unwrap();
+    assert!(runtime.apply_transport_event(event));
+    assert_eq!(
+        runtime.state("silent", 1),
+        Some(GeneratedInputDeliveryState::AwaitingProviderAck)
+    );
+    let diagnostics = runtime.diagnostics("silent", 1).unwrap();
+    assert_eq!(
+        diagnostics.settlement_evidence,
+        Some(OutputSettlementEvidence::Quiescence)
+    );
+    assert_eq!(diagnostics.submit_attempts, 1);
+    let mut expected = submission.paste_input().to_vec();
+    expected.extend_from_slice(submission.submit_input());
+    let end = std::time::Instant::now() + Duration::from_secs(5);
+    while composer.received() != expected {
+        assert!(
+            std::time::Instant::now() < end,
+            "submit never reached the PTY"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn unsettled_composer_stays_manual_after_client_input() {
+    let composer = SilentComposer::spawn();
+    let mut runtime = GeneratedInputDeliveryRuntime::default();
+    let events = runtime.take_events().unwrap();
+    let submission = test_submission();
+    assert!(runtime.begin(
+        &composer.terminal,
+        "silent",
+        1,
+        0,
+        submission.clone(),
+        GeneratedInputSettlement::OutputActivity,
+    ));
+    composer.terminal.input_user("silent", 1, b"x").unwrap();
+
+    let event = events.recv_timeout(Duration::from_secs(15)).unwrap();
+    assert!(runtime.apply_transport_event(event));
+    assert_eq!(
+        runtime.state("silent", 1),
+        Some(GeneratedInputDeliveryState::Blocked)
+    );
+    assert_eq!(
+        runtime.failure("silent", 1),
+        Some(GeneratedInputDeliveryFailure::OutputDidNotSettle)
+    );
+    assert_eq!(runtime.diagnostics("silent", 1).unwrap().submit_attempts, 0);
+    let mut expected = submission.paste_input().to_vec();
+    expected.extend_from_slice(b"x");
+    let end = std::time::Instant::now() + Duration::from_secs(5);
+    while composer.received() != expected {
+        assert!(std::time::Instant::now() < end, "unexpected PTY input");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
