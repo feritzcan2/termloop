@@ -2,7 +2,6 @@
 resolver = "2"
 members = [
   "contract/generated/rust",
-  "contract/generated/pm-rust",
   "modules/domain",
   "modules/platform",
   "modules/gitio",
@@ -16,10 +15,8 @@ members = [
   "modules/terminal-wire",
   "modules/observability",
   "modules/llm",
-  "modules/pm",
   "modules/core",
   "apps/server",
-  "apps/pm-daemon",
   "apps/companion",
   "spikes/r0-terminal/server",
 ]

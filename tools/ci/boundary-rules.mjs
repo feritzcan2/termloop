@@ -92,7 +92,7 @@ export const rules = [
   },
   {
     id: "STORE_WRITE_OWNER",
-    applies: (file) => /\.rs$/.test(file) && !file.startsWith("modules/core/") && !file.startsWith("modules/store/") && !file.startsWith("modules/pm/") && !file.startsWith("spikes/"),
+    applies: (file) => /\.rs$/.test(file) && !file.startsWith("modules/core/") && !file.startsWith("modules/store/") && !file.startsWith("spikes/"),
     pattern: /\.commit\s*\(|CoreWriteAuthority|issue_core_write_authority|\.(?:insert_project|insert_session|mark_session_exited|reconcile_restart|establish_session_resume_ref|mark_session_resuming|complete_session_resume|mark_session_resume_failed|mark_sessions_resume_failed|mark_startup_resume_overflow|delete_session_descriptor)\s*\(/,
     message: "durable store write outside its core/store owners"
   },
@@ -109,8 +109,6 @@ export const rules = [
       && !file.startsWith("contract/generated/")
       && file !== "apps/server/src/hook.rs"
       && file !== "apps/server/src/app/control/dispatch.rs"
-      // The PM assistant's launch adapter turns its kept conversation into a resume.
-      && file !== "modules/pm/src/agent/launch.rs"
       && !file.startsWith("tools/ci/")
       && !file.startsWith("tests/"),
     pattern: /\b(?:ResumeRef|native_session_id)\b/,

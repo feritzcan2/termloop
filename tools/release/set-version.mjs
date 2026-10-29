@@ -18,9 +18,7 @@ const jsonFiles = [
   "clients/terminal-surface/package.json",
   "clients/ghostty-host/package.json",
   "clients/cli/package.json",
-  "clients/pm/package.json",
   "contract/generated/typescript/package.json",
-  "contract/generated/pm-typescript/package.json",
 ];
 
 async function setJsonVersion(relative) {

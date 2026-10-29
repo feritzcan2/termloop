@@ -3,11 +3,10 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { loadContractModel } from "./model.mjs";
 import { controlTarget } from "./target-control.mjs";
-import { pmTarget } from "./target-pm.mjs";
 
 // Each contract target is one schema (plus companion schemas) and the Rust and
 // TypeScript sources generated from it. `--check` reports drift in every target.
-const targets = [controlTarget, pmTarget];
+const targets = [controlTarget];
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const outputs = [];
