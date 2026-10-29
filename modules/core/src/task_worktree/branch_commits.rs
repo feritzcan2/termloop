@@ -250,47 +250,138 @@ fn summary_request(
     }
 }
 
-/// A fresh, uncached count of one Task branch's own commits, the same count
+/// A fresh, uncached count of the Task branch's own commits, the same count
 /// the Task's commit summary shows. A Playbook gate reads this instead of the
 /// display cache.
+///
+/// An Agent may continue the Task on a branch it created from the Task branch
+/// in the same worktree (for example a ticket-named branch). Those descendants
+/// are counted against the Task's own base too, so committing there satisfies
+/// the gate exactly as committing on the Task branch would.
 #[derive(Clone)]
 pub(crate) struct TaskBranchCommitProbe {
     repository_root: String,
-    request: BranchCommitSummaryRequest,
+    /// The Task branch first, then its descendants in membership order.
+    branches: Vec<(String, BranchCommitSummaryRequest)>,
 }
 
 impl TaskBranchCommitProbe {
-    /// Blocking; call without the core lock.
-    pub(crate) fn observe(&self) -> Result<BranchCommitState, CoreError> {
+    /// Each branch's state, in probe order. Blocking; call without the core
+    /// lock.
+    pub(crate) fn observe(&self) -> Result<Vec<(String, BranchCommitState)>, CoreError> {
         let runner =
             GitRunner::discover_with_timeout(termloop_gitio::BRANCH_COMMIT_OBSERVATION_DEADLINE)
                 .map_err(super::git_mapping::map_git_observation_error)?;
-        let mut batch = runner
+        let requests = self
+            .branches
+            .iter()
+            .map(|(_, request)| request.clone())
+            .collect::<Vec<_>>();
+        let batch = runner
             .observe_branch_commit_summary_requests(
                 std::path::Path::new(&self.repository_root),
-                std::slice::from_ref(&self.request),
+                &requests,
             )
             .map_err(super::git_mapping::map_git_observation_error)?;
-        batch
-            .observations
-            .pop()
-            .ok_or(CoreError::RepositoryUnavailable)?
-            .map(|observation| observation.state)
-            .map_err(super::git_mapping::map_git_observation_error)
+        if batch.observations.len() != self.branches.len() {
+            return Err(CoreError::RepositoryUnavailable);
+        }
+        self.branches
+            .iter()
+            .zip(batch.observations)
+            .map(|((name, _), observation)| {
+                observation
+                    .map(|observation| (name.clone(), observation.state))
+                    .map_err(super::git_mapping::map_git_observation_error)
+            })
+            .collect()
     }
 }
 
 impl CoreRuntime {
-    /// The commit read for this Task's current branch, or `None` when it has
-    /// no branch.
+    /// The commit read for this Task's current branch and the branches it was
+    /// continued on, or `None` when it has no branch.
     pub(crate) fn task_branch_commit_probe(&self, task_id: &str) -> Option<TaskBranchCommitProbe> {
         let task = self.store.tasks().iter().find(|task| task.id == task_id)?;
         let binding = task.branch.as_ref()?;
         let recorded_base = self.task_recorded_branch_base(task_id, binding);
+        let mut branches = vec![(
+            binding.name.clone(),
+            summary_request(binding, recorded_base.as_ref()),
+        )];
+        branches.extend(
+            self.task_descendant_branches(task, binding)
+                .into_iter()
+                .map(|name| {
+                    let request = summary_request(
+                        &TaskBranchBinding {
+                            repository_root: binding.repository_root.clone(),
+                            name: name.clone(),
+                        },
+                        recorded_base.as_ref(),
+                    );
+                    (name, request)
+                }),
+        );
         Some(TaskBranchCommitProbe {
             repository_root: binding.repository_root.clone(),
-            request: summary_request(binding, recorded_base.as_ref()),
+            branches,
         })
+    }
+
+    /// Worktree-observed branches created from the Task branch, directly or
+    /// through another such branch, that no other Task holds.
+    fn task_descendant_branches(
+        &self,
+        task: &TaskRecord,
+        binding: &TaskBranchBinding,
+    ) -> Vec<String> {
+        let Some(set) = self
+            .store
+            .task_branch_sets()
+            .iter()
+            .find(|set| set.task_id == task.id)
+        else {
+            return Vec::new();
+        };
+        let held_elsewhere = |ref_name: &str| {
+            self.store.tasks().iter().any(|candidate| {
+                candidate.id != task.id
+                    && candidate.branch.as_ref().is_some_and(|other| {
+                        other.repository_root == binding.repository_root
+                            && format!("refs/heads/{}", other.name) == ref_name
+                    })
+            })
+        };
+        let mut family = vec![format!("refs/heads/{}", binding.name)];
+        let mut descendants = Vec::new();
+        // Memberships are bounded; each pass adopts at least one or stops.
+        loop {
+            let adopted = set
+                .memberships
+                .iter()
+                .filter(|membership| {
+                    membership.repository_root == binding.repository_root
+                        && !family.contains(&membership.ref_name)
+                        && membership
+                            .parent_ref_name
+                            .as_ref()
+                            .is_some_and(|parent| family.contains(parent))
+                        && !held_elsewhere(&membership.ref_name)
+                })
+                .filter_map(|membership| {
+                    let name = membership.ref_name.strip_prefix("refs/heads/")?;
+                    (!name.is_empty()).then(|| (membership.ref_name.clone(), name.to_owned()))
+                })
+                .collect::<Vec<_>>();
+            if adopted.is_empty() {
+                return descendants;
+            }
+            for (ref_name, name) in adopted {
+                family.push(ref_name);
+                descendants.push(name);
+            }
+        }
     }
 
     pub fn plan_task_branch_commit_summary_list(

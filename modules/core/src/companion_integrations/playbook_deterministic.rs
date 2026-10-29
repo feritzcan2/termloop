@@ -296,25 +296,43 @@ fn read_task_branch_commits(
     task: &TaskSnapshot,
     probe: Option<&TaskBranchCommitProbe>,
 ) -> CommitRead {
-    let (Some(branch), Some(probe)) = (&task.branch_name, probe) else {
+    let (Some(probe), true) = (probe, task.branch_name.is_some()) else {
         return CommitRead::Unavailable(Fallback::NoTaskBranch);
     };
     match probe.observe() {
-        Ok(BranchCommitState::Available { base_ref, count }) => CommitRead::Read {
-            branch: branch.clone(),
-            base: short_ref(&String::from_utf8_lossy(base_ref.as_bytes())),
-            count,
-        },
-        Ok(BranchCommitState::Unavailable {
-            reason: BranchCommitUnavailable::BranchMissing,
-            ..
-        }) => CommitRead::Unavailable(Fallback::NoTaskBranch),
-        Ok(BranchCommitState::Unavailable { .. }) => {
-            CommitRead::Unavailable(Fallback::CommitsUnavailable)
-        }
+        Ok(states) => commit_read(states),
         Err(CoreError::GitObservationTimedOut) => CommitRead::Unavailable(Fallback::Timeout),
         Err(_) => CommitRead::Unavailable(Fallback::CommitsUnavailable),
     }
+}
+
+/// The Task branch's read, unless it has no commits of its own and a branch
+/// the Task was continued on has some. Pure.
+pub(crate) fn commit_read(states: Vec<(String, BranchCommitState)>) -> CommitRead {
+    let read = |(branch, state): (String, BranchCommitState)| match state {
+        BranchCommitState::Available { base_ref, count } => CommitRead::Read {
+            branch,
+            base: short_ref(&String::from_utf8_lossy(base_ref.as_bytes())),
+            count,
+        },
+        BranchCommitState::Unavailable {
+            reason: BranchCommitUnavailable::BranchMissing,
+            ..
+        } => CommitRead::Unavailable(Fallback::NoTaskBranch),
+        BranchCommitState::Unavailable { .. } => {
+            CommitRead::Unavailable(Fallback::CommitsUnavailable)
+        }
+    };
+    let mut reads = states.into_iter().map(read);
+    let Some(primary) = reads.next() else {
+        return CommitRead::Unavailable(Fallback::CommitsUnavailable);
+    };
+    if matches!(primary, CommitRead::Read { count, .. } if count > 0) {
+        return primary;
+    }
+    reads
+        .find(|read| matches!(read, CommitRead::Read { count, .. } if *count > 0))
+        .unwrap_or(primary)
 }
 
 /// `refs/remotes/origin/main` reads as `origin/main` in evidence.

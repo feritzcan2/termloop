@@ -268,6 +268,23 @@ fn exact_worktree_branch_evidence_becomes_durable_and_drives_commit_review() {
     assert_eq!(commits["base_evidence"], "branchCreationReflog");
     assert_eq!(commits["commits"].as_array().unwrap().len(), 1);
     assert_eq!(commits["commits"][0]["branch_name"], "agent/secondary");
+
+    // The Playbook commit gate counts the continuation branch against the
+    // Task's own base, after the still-empty Task branch.
+    let states = fixture
+        .runtime
+        .task_branch_commit_probe(&task_id)
+        .unwrap()
+        .observe()
+        .unwrap();
+    let counts = states
+        .iter()
+        .map(|(name, state)| match state {
+            termloop_gitio::BranchCommitState::Available { count, .. } => (name.as_str(), *count),
+            other => panic!("{name} unavailable: {other:?}"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(counts, [("feature/cleanup", 0), ("agent/secondary", 1)]);
 }
 
 #[test]

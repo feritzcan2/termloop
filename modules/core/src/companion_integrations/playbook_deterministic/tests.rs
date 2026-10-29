@@ -318,6 +318,51 @@ fn a_commit_check_passes_on_the_task_branchs_first_own_commit() {
 }
 
 #[test]
+fn a_commit_check_follows_a_branch_the_task_was_continued_on() {
+    let available = |count| BranchCommitState::Available {
+        base_ref: termloop_gitio::GitRefName::from_bytes(
+            b"refs/remotes/origin/development".to_vec(),
+        )
+        .unwrap(),
+        count,
+    };
+    let read = |branch: &str, count| CommitRead::Read {
+        branch: branch.into(),
+        base: "origin/development".into(),
+        count,
+    };
+    // The Task branch's own commits answer first.
+    assert_eq!(
+        commit_read(vec![
+            ("feature/login".into(), available(2)),
+            ("TICKET-1".into(), available(1)),
+        ]),
+        read("feature/login", 2)
+    );
+    // An empty Task branch yields to the first continuation with commits.
+    assert_eq!(
+        commit_read(vec![
+            ("feature/login".into(), available(0)),
+            ("TICKET-0".into(), available(0)),
+            ("TICKET-1".into(), available(1)),
+        ]),
+        read("TICKET-1", 1)
+    );
+    // Nothing committed anywhere still reports the Task branch.
+    assert_eq!(
+        commit_read(vec![
+            ("feature/login".into(), available(0)),
+            ("TICKET-1".into(), available(0)),
+        ]),
+        read("feature/login", 0)
+    );
+    assert_eq!(
+        commit_read(vec![]),
+        CommitRead::Unavailable(Fallback::CommitsUnavailable)
+    );
+}
+
+#[test]
 fn a_commit_check_reads_local_git_only_and_passes_through_the_verdict_path() {
     let committed = PlaybookDeterministicCheck {
         kind: BranchCommitted,
