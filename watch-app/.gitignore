@@ -1,0 +1,5 @@
+TermLoopWatch.xcodeproj/
+*.xcuserstate
+xcuserdata/
+build/
+DerivedData/

@@ -523,6 +523,7 @@
 		DB3F3FC4EA5C7BB02A45A14D /* MarkdownTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBD4F4B1C94A259FBDE7B233 /* MarkdownTheme.swift */; };
 		DB521B2B69B17109B0E52726 /* DevServerSetupStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9C74F18A57C98420EA7CBB8 /* DevServerSetupStateStore.swift */; };
 		DB5AD40BA6732E6224B76AD9 /* AgentSocketCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = F935897229585174F4CB2014 /* AgentSocketCommands.swift */; };
+		A9E70099A6EAC0DE00000202 /* WatchAgentSocketCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70099A6EAC0DE00000201 /* WatchAgentSocketCommands.swift */; };
 		DC1F6B0DABEA282A4FEC50B1 /* ClaudeResumeCommandBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F1EA1BF4035CC735CECEB70 /* ClaudeResumeCommandBuilder.swift */; };
 		DC46A286F52CC68C200B5261 /* DevServerStatusChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2E71500D0810EF215BDF342 /* DevServerStatusChip.swift */; };
 		DCC935C5F55C1DCB33E25521 /* WorkspacePullRequestSidebarTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14A7DC53B9CA33BE2A421711 /* WorkspacePullRequestSidebarTests.swift */; };
@@ -1213,6 +1214,7 @@
 		F8000001A1B2C3D4E5F60718 /* SocketControlPasswordStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocketControlPasswordStoreTests.swift; sourceTree = "<group>"; };
 		F9000001A1B2C3D4E5F60718 /* GhosttyEnsureFocusWindowActivationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyEnsureFocusWindowActivationTests.swift; sourceTree = "<group>"; };
 		F935897229585174F4CB2014 /* AgentSocketCommands.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentSocketCommands.swift; sourceTree = "<group>"; };
+		A9E70099A6EAC0DE00000201 /* WatchAgentSocketCommands.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchAgentSocketCommands.swift; sourceTree = "<group>"; };
 		F96E3FD276CB1CD037C5ABAD /* ContextBankMirror.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContextBankMirror.swift; sourceTree = "<group>"; };
 		FA000001A1B2C3D4E5F60718 /* WorkspaceStressProfileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceStressProfileTests.swift; sourceTree = "<group>"; };
 		FA100001A1B2C3D4E5F60718 /* BrowserImportMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserImportMappingTests.swift; sourceTree = "<group>"; };
@@ -1605,6 +1607,7 @@
 			isa = PBXGroup;
 			children = (
 				F935897229585174F4CB2014 /* AgentSocketCommands.swift */,
+				A9E70099A6EAC0DE00000201 /* WatchAgentSocketCommands.swift */,
 				4A105A4759A38A9DD2AECF3F /* TermLoopTCPBridge+ForceTake.swift */,
 				D5E7C23DCF1CD75F98A20AB7 /* TermLoopSocketIO.swift */,
 				01087C370B08637E2CD5CC4E /* TermLoopDevServerSocketCommands.swift */,
@@ -2779,6 +2782,7 @@
 				002FFEC16193AC6231CEB731 /* VariableSubstitution.swift in Sources */,
 				FF3695CF24E4E01ED81A90C6 /* AgentEngine.swift in Sources */,
 				DB5AD40BA6732E6224B76AD9 /* AgentSocketCommands.swift in Sources */,
+				A9E70099A6EAC0DE00000202 /* WatchAgentSocketCommands.swift in Sources */,
 				A1F00003A1B2C3D4E5F60730 /* AgentPromptDocument.swift in Sources */,
 				A1F00004A1B2C3D4E5F60730 /* AgentPromptStore.swift in Sources */,
 				BC42CB07C2562DE2F81E104C /* AgentsSidebarView.swift in Sources */,
