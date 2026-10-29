@@ -584,6 +584,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_timed_out_waiter_kept_alive_wedges_the_lock_until_dropped() {
+        let lock = MonitoredMutex::new(());
+        let owner = lock.lock().await;
+        {
+            let stale = tokio::time::timeout(Duration::from_millis(5), lock.lock());
+            tokio::pin!(stale);
+            assert!((&mut stale).await.is_err());
+            drop(owner);
+            // The fair mutex hands the lock to the parked waiter, which nobody
+            // polls, while telemetry reports no owner.
+            assert!(
+                tokio::time::timeout(Duration::from_millis(50), lock.lock())
+                    .await
+                    .is_err()
+            );
+            assert!(lock.health().owner_channel.is_none());
+        }
+        tokio::time::timeout(Duration::from_millis(50), lock.lock())
+            .await
+            .expect("dropping the stale waiter releases the lock");
+    }
+
+    #[tokio::test]
     async fn releasing_a_guard_updates_the_lock_free_projection() {
         let observation_sequence = Arc::new(AtomicU64::new(2));
         let projection = CoreProjectionSnapshot::new(1, 2, observation_sequence);

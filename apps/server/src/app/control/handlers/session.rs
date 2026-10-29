@@ -1500,13 +1500,19 @@ async fn run_agent_resume_session(
             }
         }
     });
-    tokio::pin!(readiness);
-    let readiness = tokio::select! {
-        result = &mut readiness => result.unwrap_or(AgentResumeReadiness::TimedOut),
-        _ = shutdown.changed() => {
-            attempt_cancellation.store(true, Ordering::Release);
-            return shutdown_agent_resume_attempt(state, plan).await;
+    // A timed-out readiness poll may still be queued on the fair Core lock.
+    // Drop it before any follow-up locks Core: a parked waiter would be handed
+    // the lock, never polled again, and wedge the whole control plane.
+    let readiness = {
+        tokio::pin!(readiness);
+        tokio::select! {
+            result = &mut readiness => Some(result.unwrap_or(AgentResumeReadiness::TimedOut)),
+            _ = shutdown.changed() => None,
         }
+    };
+    let Some(readiness) = readiness else {
+        attempt_cancellation.store(true, Ordering::Release);
+        return shutdown_agent_resume_attempt(state, plan).await;
     };
     if readiness != AgentResumeReadiness::Ready {
         let reason = if readiness == AgentResumeReadiness::ProcessExited {
