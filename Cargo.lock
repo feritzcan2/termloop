@@ -2506,7 +2506,7 @@ dependencies = [
 
 [[package]]
 name = "termloop-agent-runtime"
-version = "2.0.10"
+version = "2.0.11"
 dependencies = [
  "serde",
  "serde_json",
@@ -2521,7 +2521,7 @@ dependencies = [
 
 [[package]]
 name = "termloop-agents"
-version = "2.0.10"
+version = "2.0.11"
 dependencies = [
  "futures-util",
  "serde",
@@ -2536,7 +2536,7 @@ dependencies = [
 
 [[package]]
 name = "termloop-companion"
-version = "2.0.10"
+version = "2.0.11"
 dependencies = [
  "futures-util",
  "serde",
@@ -2548,7 +2548,7 @@ dependencies = [
 
 [[package]]
 name = "termloop-contract"
-version = "2.0.10"
+version = "2.0.11"
 dependencies = [
  "regex",
  "serde",
@@ -2557,7 +2557,7 @@ dependencies = [
 
 [[package]]
 name = "termloop-core"
-version = "2.0.10"
+version = "2.0.11"
 dependencies = [
  "base64",
  "serde",
@@ -2581,7 +2581,7 @@ dependencies = [
 
 [[package]]
 name = "termloop-domain"
-version = "2.0.10"
+version = "2.0.11"
 dependencies = [
  "serde",
  "uuid",
@@ -2589,14 +2589,14 @@ dependencies = [
 
 [[package]]
 name = "termloop-gitio"
-version = "2.0.10"
+version = "2.0.11"
 dependencies = [
  "termloop-platform",
 ]
 
 [[package]]
 name = "termloop-invocation"
-version = "2.0.10"
+version = "2.0.11"
 dependencies = [
  "serde",
  "serde_json",
@@ -2610,7 +2610,7 @@ dependencies = [
 
 [[package]]
 name = "termloop-launch"
-version = "2.0.10"
+version = "2.0.11"
 dependencies = [
  "serde",
  "serde_json",
@@ -2623,14 +2623,14 @@ dependencies = [
 
 [[package]]
 name = "termloop-llm"
-version = "2.0.10"
+version = "2.0.11"
 dependencies = [
  "termloop-platform",
 ]
 
 [[package]]
 name = "termloop-observability"
-version = "2.0.10"
+version = "2.0.11"
 dependencies = [
  "termloop-gitio",
  "termloop-platform",
@@ -2638,7 +2638,7 @@ dependencies = [
 
 [[package]]
 name = "termloop-platform"
-version = "2.0.10"
+version = "2.0.11"
 dependencies = [
  "base64",
  "cap-std",
@@ -2661,7 +2661,7 @@ dependencies = [
 
 [[package]]
 name = "termloop-pm"
-version = "2.0.10"
+version = "2.0.11"
 dependencies = [
  "rusqlite",
  "serde",
@@ -2676,7 +2676,7 @@ dependencies = [
 
 [[package]]
 name = "termloop-pm-contract"
-version = "2.0.10"
+version = "2.0.11"
 dependencies = [
  "regex",
  "serde",
@@ -2685,7 +2685,7 @@ dependencies = [
 
 [[package]]
 name = "termloop-pm-daemon"
-version = "2.0.10"
+version = "2.0.11"
 dependencies = [
  "axum",
  "futures-util",
@@ -2710,7 +2710,7 @@ dependencies = [
 
 [[package]]
 name = "termloop-providers"
-version = "2.0.10"
+version = "2.0.11"
 dependencies = [
  "caseless",
  "reqwest",
@@ -2727,7 +2727,7 @@ dependencies = [
 
 [[package]]
 name = "termloop-r0-server"
-version = "2.0.10"
+version = "2.0.11"
 dependencies = [
  "axum",
  "futures-util",
@@ -2741,7 +2741,7 @@ dependencies = [
 
 [[package]]
 name = "termloop-server"
-version = "2.0.10"
+version = "2.0.11"
 dependencies = [
  "axum",
  "futures-util",
@@ -2763,7 +2763,7 @@ dependencies = [
 
 [[package]]
 name = "termloop-store"
-version = "2.0.10"
+version = "2.0.11"
 dependencies = [
  "serde",
  "serde_json",
@@ -2775,7 +2775,7 @@ dependencies = [
 
 [[package]]
 name = "termloop-terminal"
-version = "2.0.10"
+version = "2.0.11"
 dependencies = [
  "portable-pty",
  "termloop-platform",
@@ -2787,7 +2787,7 @@ dependencies = [
 
 [[package]]
 name = "termloop-terminal-wire"
-version = "2.0.10"
+version = "2.0.11"
 dependencies = [
  "uuid",
 ]

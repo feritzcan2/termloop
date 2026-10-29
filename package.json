@@ -1,6 +1,6 @@
 {
   "name": "termloop",
-  "version": "2.0.10",
+  "version": "2.0.11",
   "private": true,
   "packageManager": "pnpm@10.14.0",
   "engines": {
