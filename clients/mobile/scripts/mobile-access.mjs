@@ -77,7 +77,7 @@ async function enroll(desired) {
   const discovery = JSON.parse(await readFile(runtimeFile, "utf8"));
   validateDiscovery(discovery);
   const tailscaleBin = option("--tailscale-bin") ?? await findTailscale();
-  const status = JSON.parse((await execFile(tailscaleBin, ["status", "--json"], { windowsHide: true, timeout: 10_000, maxBuffer: 1024 * 1024 })).stdout);
+  const status = JSON.parse((await execFile(tailscaleBin, ["status", "--json"], { windowsHide: true, timeout: 30_000, maxBuffer: 1024 * 1024 })).stdout);
   if (status.BackendState !== "Running" || status.Self?.Online !== true) {
     throw new Error("Tailscale is not connected on this computer.");
   }

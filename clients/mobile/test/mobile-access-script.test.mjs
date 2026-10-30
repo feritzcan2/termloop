@@ -9,7 +9,8 @@ import { reconcileGatewayInstall } from "../scripts/mobile-access-installer.mjs"
 
 const execFile = promisify(execFileCallback);
 
-describe("mobile access bootstrap", () => {
+// A loaded runner can stall each fixture process launch for seconds.
+describe("mobile access bootstrap", { timeout: 60_000 }, () => {
   it.skipIf(process.platform === "win32")("installs a stable gateway and never ships rotating daemon credentials", async () => {
     const directory = mkdtempSync(path.join(os.tmpdir(), "termloop-mobile-access-"));
     const runtime = path.join(directory, "runtime.json");
@@ -277,7 +278,7 @@ fi
           previousOwner: "ai.termloop.desktop",
         })]),
       });
-  }, 20_000);
+  });
 
   it.skipIf(process.platform === "win32")("installs and restarts a persistent systemd user service on Linux", async () => {
     const directory = mkdtempSync(path.join(os.tmpdir(), "termloop-mobile-access-linux-"));
@@ -374,7 +375,7 @@ printf '%s\n' "$*" >> "$SYSTEMCTL_LOG"
         env: { ...process.env, XDG_RUNTIME_DIR: directory },
       });
     }
-  }, 15_000);
+  });
 
   it.skipIf(process.platform === "win32")("serializes reconciliation, preserves tokens, and refuses downgrades", async () => {
     const directory = mkdtempSync(path.join(os.tmpdir(), "termloop-mobile-reconcile-"));
