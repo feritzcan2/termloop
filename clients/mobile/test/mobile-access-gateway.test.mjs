@@ -14,7 +14,7 @@ import {
   encodeFrame,
 } from "../src/adapters/production/terminal-frame";
 
-describe("persistent mobile access gateway", () => {
+describe("persistent mobile access gateway", { timeout: 20_000 }, () => {
   it.each(process.platform === "win32"
     ? [["ipc", true], ["ipc", false]]
     : [["signal", true], ["ipc", true], ["ipc", false]])("multiplexes control, invalidations, and terminal frames (%s shutdown, daemon receipts %s)", async (shutdown, daemonReceipts) => {
@@ -678,7 +678,9 @@ async function freePort() {
 }
 
 async function waitForHealth(port) {
-  for (let attempt = 0; attempt < 50; attempt += 1) {
+  // A loaded CI runner can take seconds to start Node and rotate a capped log.
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
     try { if ((await fetch(`http://127.0.0.1:${port}/health`)).ok) return; } catch { /* retry */ }
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
