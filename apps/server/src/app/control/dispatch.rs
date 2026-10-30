@@ -1789,7 +1789,6 @@ async fn dispatch_inner(
             && matches!(
                 request.method.as_str(),
                 "project.delete"
-                    | "task.provisionWorktree"
                     | "task.dismissWorktreeProvisioning"
                     | "task.cleanupWorktree"
                     | "task.forgetStaleWorktree"

@@ -698,7 +698,13 @@ pub(in crate::app) async fn provision_task_worktree(
     }
     loop {
         let step = match progress {
-            termloop_core::TaskWorktreeProvisioningProgress::Return(value) => return Ok(value),
+            termloop_core::TaskWorktreeProvisioningProgress::Return(value) => {
+                // Steward Task start and Task automation reach this outside
+                // control dispatch, so the new checkout's watcher is
+                // registered here for every caller.
+                refresh_all_health_demands(state).await;
+                return Ok(value);
+            }
             termloop_core::TaskWorktreeProvisioningProgress::Execute(step) => step,
         };
         let executed = tokio::task::spawn_blocking(move || step.execute())
