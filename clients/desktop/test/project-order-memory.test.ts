@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { moveProject, moveProjectBy, orderProjects, readProjectOrder, writeProjectOrder } from "../src/renderer/project-order-memory.js";
+import { arrangeProjects, moveProject, moveProjectBy, orderProjects, readProjectOrder, writeProjectOrder } from "../src/renderer/project-order-memory.js";
 
 function memoryStorage(initial: string | null = null): Storage {
   let value = initial;
@@ -46,6 +46,35 @@ describe("Project order memory", () => {
     const order = ["a", "b", "c", "d"];
     expect(moveProjectBy(projects, order, "a", -1)).toBe(order);
     expect(moveProjectBy(projects, order, "d", 1)).toBe(order);
+  });
+
+  it("sinks Projects on offline computers without forgetting their arranged place", () => {
+    const sources = [
+      { id: "a", connectionState: "offline" as const },
+      { id: "b", connectionState: "connected" as const },
+      { id: "c", connectionState: "offline" as const },
+      { id: "d", connectionState: "connecting" as const },
+    ];
+    expect(arrangeProjects(sources, []).map((project) => project.id)).toEqual(["b", "d", "a", "c"]);
+    expect(arrangeProjects(sources.map(({ id }) => ({ id })), ["c", "a"]).map((project) => project.id))
+      .toEqual(["c", "a", "b", "d"]);
+  });
+
+  it("moves Projects only within their reachable or offline side", () => {
+    const sources = [
+      { id: "a", connectionState: "offline" as const },
+      { id: "b", connectionState: "connected" as const },
+      { id: "c", connectionState: "offline" as const },
+      { id: "d", connectionState: "connected" as const },
+    ];
+    expect(moveProject(sources, [], "d", "b")).toEqual(["a", "d", "b", "c"]);
+    expect(moveProject(sources, [], "a", "c")).toEqual(["b", "c", "a", "d"]);
+    const order = ["a", "b", "c", "d"];
+    expect(moveProject(sources, order, "d", "a")).toBe(order);
+    // Arranged as b, d | a, c: Alt+↓ on the last reachable Project stops at the boundary.
+    expect(moveProjectBy(sources, order, "b", 1)).toEqual(["a", "c", "d", "b"]);
+    expect(moveProjectBy(sources, order, "d", 1)).toBe(order);
+    expect(moveProjectBy(sources, order, "a", -1)).toBe(order);
   });
 
   it("round-trips through preference storage and fails closed on bad data", () => {

@@ -1,3 +1,5 @@
+import type { ConnectionSourceState } from "../connection-profile-types.js";
+
 // Client-local Project ordering. The daemon owns Projects; this only remembers
 // the order the user arranged them in so Cmd+1…Cmd+9 and the Project menu
 // stay stable on this computer.
@@ -6,6 +8,9 @@ const PROJECT_ORDER_KEY = "termloop.projectOrder.v1";
 export type ProjectOrder = readonly string[];
 
 type Identified = { readonly id: string };
+type Arrangeable = Identified & { readonly connectionState?: ConnectionSourceState };
+
+const offline = (project: Arrangeable): boolean => project.connectionState === "offline";
 
 export function readProjectOrder(storage?: Pick<Storage, "getItem">): ProjectOrder {
   try {
@@ -39,32 +44,43 @@ export function orderProjects<T extends Identified>(projects: readonly T[], orde
     .map((entry) => entry.project);
 }
 
+// Projects on offline computers sink below reachable ones. Each side keeps the
+// remembered order, so a reconnected computer returns to its arranged place.
+export function arrangeProjects<T extends Arrangeable>(projects: readonly T[], order: ProjectOrder): T[] {
+  const ordered = orderProjects(projects, order);
+  return [...ordered.filter((project) => !offline(project)), ...ordered.filter(offline)];
+}
+
 // Produces a complete order over the current Projects with `projectId` moved
-// next to `targetId`. Returns the input order unchanged for unknown IDs.
-export function moveProject<T extends Identified>(
+// next to `targetId`. Returns the input order unchanged for unknown IDs, and
+// for a move across the reachable/offline boundary, which connection state
+// owns rather than the arrangement.
+export function moveProject<T extends Arrangeable>(
   projects: readonly T[],
   order: ProjectOrder,
   projectId: string,
   targetId: string,
 ): ProjectOrder {
-  const ids = orderProjects(projects, order).map((project) => project.id);
-  const from = ids.indexOf(projectId);
-  const to = ids.indexOf(targetId);
-  if (from < 0 || to < 0 || from === to) return order;
-  const next = [...ids];
+  const ordered = orderProjects(projects, order);
+  const from = ordered.findIndex((project) => project.id === projectId);
+  const to = ordered.findIndex((project) => project.id === targetId);
+  const source = ordered[from];
+  const target = ordered[to];
+  if (!source || !target || from === to || offline(source) !== offline(target)) return order;
+  const next = ordered.map((project) => project.id);
   next.splice(from, 1);
   next.splice(to, 0, projectId);
   return next;
 }
 
-export function moveProjectBy<T extends Identified>(
+export function moveProjectBy<T extends Arrangeable>(
   projects: readonly T[],
   order: ProjectOrder,
   projectId: string,
   delta: -1 | 1,
 ): ProjectOrder {
-  const ids = orderProjects(projects, order).map((project) => project.id);
-  const from = ids.indexOf(projectId);
-  const target = ids[from + delta];
-  return from < 0 || target === undefined ? order : moveProject(projects, order, projectId, target);
+  const arranged = arrangeProjects(projects, order);
+  const from = arranged.findIndex((project) => project.id === projectId);
+  const target = arranged[from + delta];
+  return from < 0 || target === undefined ? order : moveProject(projects, order, projectId, target.id);
 }

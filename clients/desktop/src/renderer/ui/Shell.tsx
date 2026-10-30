@@ -84,7 +84,7 @@ import { WorkspaceRailCache } from "./WorkspaceRailCache.js";
 import { SidebarShortcutTips } from "./SidebarShortcutTips.js";
 import type { GhosttyShellShortcut } from "../../ghostty-shell-shortcut.js";
 import { persistActiveAgentFavoriteToggle, readActiveAgentFavorites } from "../active-agent-favorites.js";
-import { moveProject, moveProjectBy, orderProjects, readProjectOrder, writeProjectOrder, type ProjectOrder } from "../project-order-memory.js";
+import { arrangeProjects, moveProject, moveProjectBy, readProjectOrder, writeProjectOrder, type ProjectOrder } from "../project-order-memory.js";
 import { ProjectMenuList } from "./ProjectMenuList.js";
 import { readActiveAgentActivityMemory, updateActiveAgentActivityMemory, writeActiveAgentActivityMemory } from "../active-agent-activity-memory.js";
 import { readWorkspaceViewMemory, rememberWorkspaceView, workspaceViewForProject, type WorkspaceView } from "../workspace-view-memory.js";
@@ -678,9 +678,10 @@ export function Shell(props: ShellProps) {
   const [activeAgentActivityMemory, setActiveAgentActivityMemory] = useState(readActiveAgentActivityMemory);
   /// User-arranged Project order. Cmd+1…Cmd+9, the Project menu, and the
   /// command palette all follow it; the daemon's list order is only the
-  /// fallback for Projects the user never arranged.
+  /// fallback for Projects the user never arranged. Projects on offline
+  /// computers sink below reachable ones without changing that arrangement.
   const [projectOrder, setProjectOrder] = useState<ProjectOrder>(readProjectOrder);
-  const orderedProjects = useMemo(() => orderProjects(props.projects, projectOrder), [props.projects, projectOrder]);
+  const orderedProjects = useMemo(() => arrangeProjects(props.projects, projectOrder), [props.projects, projectOrder]);
   const applyProjectOrder = useCallback((next: ProjectOrder) => {
     setProjectOrder((current) => {
       if (next === current) return current;
