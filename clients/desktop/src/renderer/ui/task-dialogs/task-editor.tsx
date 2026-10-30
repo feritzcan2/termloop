@@ -456,7 +456,7 @@ function CreateTaskDialog({ close, createTask, flow }: {
                   </label>
                   <label htmlFor={`create-agent-${agentId}-permission`}><span>Permission mode</span>
                     <select id={`create-agent-${agentId}-permission`} aria-label={`${label} permission mode`} value={selection.permission} disabled={busy || automationLoading} onChange={(event) => changeAgentStart(agentId, { permission: event.target.value as TaskAgentStartSelection["permission"] })}>
-                      {capability.permissions.map((permission) => <option key={permission} value={permission}>{permissionLabel(permission)}</option>)}
+                      {capability.permissions.map((permission) => <option key={permission} value={permission}>{permissionLabel(permission, agentId)}</option>)}
                     </select>
                   </label>
                   <label htmlFor={`create-agent-${agentId}-reasoning`}><span>Reasoning</span>

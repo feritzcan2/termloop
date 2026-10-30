@@ -476,6 +476,10 @@ describe("Task Sources panel", () => {
     await setInput("task-candidate-import-worktree-prefix", "feature");
     await setInput("task-candidate-import-agent", "claude");
     expect(host.querySelector('[data-testid="task-candidate-import-summary"]')?.textContent).toContain("Claude");
+    // Choosing Claude starts it in auto rather than Claude's manual default.
+    const permission = options.querySelector("#task-candidate-import-permission") as HTMLSelectElement;
+    expect(permission.value).toBe("acceptEdits");
+    expect(permission.selectedOptions[0]?.textContent).toBe("auto");
 
     const confirm = [...options.querySelectorAll("button")].find((button) => button.textContent === "Create Task") as HTMLButtonElement;
     await act(async () => { confirm.click(); });
@@ -489,7 +493,7 @@ describe("Task Sources panel", () => {
     await flush();
 
     expect(api.calls.filter((call) => call.startsWith("import:"))).toEqual([
-      "import:10001:3:7:10:provision:feature:refs/remotes/origin/development:claude:default:default:default:message",
+      "import:10001:3:7:10:provision:feature:refs/remotes/origin/development:claude:default:acceptEdits:default:message",
     ]);
     expect(host.textContent).toContain("ACME-1 is now Task “Fix login”");
     expect(host.querySelector('[aria-label="Import ACME-1 as Task"]')).toBeNull();

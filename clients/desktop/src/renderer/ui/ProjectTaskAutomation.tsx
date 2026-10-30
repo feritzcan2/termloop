@@ -136,7 +136,7 @@ export function WorktreeAgentChoice({ idPrefix, value, busy, agentCapabilities, 
         </label>
         <label htmlFor={`${idPrefix}-permission`}><span>Permission mode</span>
           <select id={`${idPrefix}-permission`} value={value.permission ?? ""} disabled={busy} onChange={(event) => change({ ...value, permission: event.target.value as ProjectTaskAutomationDraft["permission"] })}>
-            {permissionOptions.map((permission) => <option key={permission} value={permission}>{permissionLabel(permission)}</option>)}
+            {permissionOptions.map((permission) => <option key={permission} value={permission}>{permissionLabel(permission, value.agentId)}</option>)}
           </select>
         </label>
         <label htmlFor={`${idPrefix}-reasoning`}><span>Reasoning</span>

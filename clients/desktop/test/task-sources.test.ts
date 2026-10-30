@@ -28,6 +28,8 @@ import {
 } from "../src/renderer/task-sources.js";
 import {
   agentChoiceOptions,
+  agentLaunchDefaults,
+  permissionLabel,
   projectTaskAutomationChanged,
   projectTaskAutomationDraftFrom,
   projectTaskAutomationError,
@@ -460,5 +462,17 @@ describe("Project New Task automation", () => {
       { agentId: "codex", label: "Codex", available: true },
     ]);
     expect(agentChoiceOptions([], "retired")).toEqual([{ agentId: "retired", label: "retired", available: false }]);
+  });
+
+  it("starts a Claude Task agent in auto permission while other agents keep their first mode", () => {
+    const capabilities = [fullAgentCapability("claude"), fullAgentCapability("codex")];
+    expect(agentLaunchDefaults(capabilities, "claude")).toEqual({ model: "default", permission: "acceptEdits", reasoning: "default" });
+    expect(agentLaunchDefaults(capabilities, "codex")).toEqual({ model: "default", permission: "default", reasoning: "default" });
+    expect(agentLaunchDefaults([fullAgentCapability("claude", { permissions: ["default", "plan"] })], "claude").permission).toBe("default");
+    expect(permissionLabel("acceptEdits", "claude")).toBe("auto");
+    expect(permissionLabel("default", "claude")).toBe("manual");
+    expect(permissionLabel("acceptEdits", "codex")).toBe("accept edits");
+    expect(taskAutomationSummary({ ...on, agentId: "claude", model: "opus", permission: "acceptEdits" }, "Claude"))
+      .toBe("Task, worktree, and Claude · opus · auto · high reasoning · kickoff message");
   });
 });

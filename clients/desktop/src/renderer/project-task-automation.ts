@@ -111,7 +111,7 @@ export function taskAutomationSummary(draft: ProjectTaskAutomationDraft, agentNa
   if (!draft.createWorktree) return "Task only — no worktree, no agent";
   if (draft.workflowId != null) return `Task, worktree, and workflow · ${workflowName ?? "Unavailable template"}`;
   if (draft.agentId === null) return "Task and worktree — no agent";
-  const selection = [draft.model, draft.permission ? permissionLabel(draft.permission) : null, draft.reasoning ? `${draft.reasoning} reasoning` : null]
+  const selection = [draft.model, draft.permission ? permissionLabel(draft.permission, draft.agentId) : null, draft.reasoning ? `${draft.reasoning} reasoning` : null]
     .filter((value): value is string => value !== null)
     .join(" · ");
   return `Task, worktree, and ${agentName ?? draft.agentId}${selection ? ` · ${selection}` : ""}${draft.kickoffMessage === null ? "" : " · kickoff message"}`;
@@ -186,14 +186,23 @@ export function agentLaunchDefaults(
   agentId: string,
 ): Pick<ProjectTaskAutomationDraft, "model" | "permission" | "reasoning"> {
   const capability = capabilities.find((candidate) => candidate.agent_id === agentId);
+  // Claude's own `default` asks before every edit, so a Task agent left on it
+  // stalls unattended. Claude starts in auto (`acceptEdits`), as Quick Actions do.
+  const permission = agentId === "claude" && capability?.permissions.includes("acceptEdits")
+    ? "acceptEdits"
+    : capability?.permissions[0] ?? "default";
   return {
     model: capability?.models[0] ?? "default",
-    permission: capability?.permissions[0] ?? "default",
+    permission,
     reasoning: capability?.reasoning[0] ?? "default",
   };
 }
 
-export function permissionLabel(permission: NonNullable<ProjectTaskAutomationDraft["permission"]>): string {
+/// Claude launches `acceptEdits` as its `auto` mode and `default` as manual
+/// approval, so its options carry the names Claude itself shows.
+export function permissionLabel(permission: NonNullable<ProjectTaskAutomationDraft["permission"]>, agentId: string | null): string {
+  if (agentId === "claude" && permission === "acceptEdits") return "auto";
+  if (agentId === "claude" && permission === "default") return "manual";
   switch (permission) {
     case "acceptEdits": return "accept edits";
     case "bypassPermissions": return "bypass permissions";
