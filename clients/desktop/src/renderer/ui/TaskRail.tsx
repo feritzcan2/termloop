@@ -265,6 +265,8 @@ export type TaskRailProps = {
   revealTaskWorktree?: ((projectId: string, taskId: string) => Promise<void>) | undefined;
   openTaskWorktreeFile?: ((projectId: string, taskId: string, relativePath: string | null) => Promise<string | null>) | undefined;
   inspectTaskWorktreeCleanup(taskId: string): Promise<TaskWorktreeCleanupPreviewDto>;
+  /** Re-reads the Task's changes, pull requests, and commits on demand. */
+  refreshTask?: ((taskId: string) => Promise<void>) | undefined;
   openTaskChanges(taskId: string, source: ChangesOpenSource): void;
   /// Clicking a Task row puts it on the stage. The rail only raises the intent;
   /// the Shell owns which surface the stage is showing.
@@ -446,6 +448,7 @@ export function TaskRail(props: TaskRailProps) {
       overlayVisibilityChanged={props.overlayVisibilityChanged}
       openChanges={props.openTaskChanges}
       openDetail={props.openTaskDetail}
+      refresh={task.status === "open" ? props.refreshTask : undefined}
       taskHovered={props.taskHovered}
       taskClicked={props.taskClicked}
       detailOpen={props.detailTaskId === task.id}
@@ -738,6 +741,7 @@ type TaskGroupProps = {
   overlayVisibilityChanged(visible: boolean): void;
   openChanges(taskId: string, source: ChangesOpenSource): void;
   openDetail(taskId: string): void;
+  refresh: ((taskId: string) => Promise<void>) | undefined;
   taskHovered: ((taskId: string | undefined) => void) | undefined;
   taskClicked: ((taskId: string) => void) | undefined;
   detailOpen: boolean;
@@ -780,6 +784,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
   /// quiet: disclosure then returns to the stored preference and auto-open
   /// re-arms for the next agent.
   const [liveCollapsed, setLiveCollapsed] = useState<boolean>();
+  const [refreshing, setRefreshing] = useState(false);
   const stage = taskStage(task, props.deleting, props.provisioning);
   const divergence = taskDivergence(task);
   const changeCount = taskChangeCount(task);
@@ -1115,6 +1120,18 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
           </span>
         ) : null}
         <div className={`row-actions${props.favorite ? " has-favorite" : ""}${parked ? " has-parked" : ""}`}>
+          {props.refresh && !props.deleting ? <button
+            type="button"
+            className="row-action task-refresh"
+            aria-label={`Refresh ${task.title}`}
+            aria-busy={refreshing}
+            title="Refresh changes, pull requests, and commits"
+            disabled={refreshing}
+            onClick={() => {
+              setRefreshing(true);
+              void props.refresh!(task.id).finally(() => setRefreshing(false));
+            }}
+          ><Icon name="restart" /></button> : null}
           {props.toggleFavorite && !props.deleting ? <button
             type="button"
             className="row-action task-favorite"

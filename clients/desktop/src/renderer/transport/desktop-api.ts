@@ -342,7 +342,7 @@ export type DesktopApi = {
   taskBranchCommitList(taskId: string, branchId?: string): Promise<TaskBranchCommitListResult>;
   taskBranchCommitChangeList(taskId: string, observationId: string, commitId: string): Promise<TaskBranchCommitChangeListResult>;
   taskBranchCommitDiff(taskId: string, observationId: string, commitId: string, entryId: string): Promise<TaskBranchCommitDiffResult>;
-  gitHostPullRequestList(projectId: string, taskIds: string[]): Promise<GitHostTaskProjectionDto[]>;
+  gitHostPullRequestList(projectId: string, taskIds: string[], refresh?: boolean): Promise<GitHostTaskProjectionDto[]>;
   gitHostPullRequestChangeList(taskId: string, expectedFreshnessGeneration: number, pullRequest: GitHostPullRequestIdentityDto): Promise<GitHostPullRequestChangeListResult>;
   gitHostPullRequestDiff(taskId: string, observationId: string, entryId: string): Promise<GitHostPullRequestDiffResult>;
   gitHostRepositoryPullRequestList(projectId: string, filter: GitHostRepositoryPullRequestFilter): Promise<GitHostRepositoryPullRequestListResult>;

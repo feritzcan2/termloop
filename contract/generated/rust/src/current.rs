@@ -225,7 +225,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:2437b74e1b0914dbae35b9d7104fccc12d399d2bf3745bfe79487fe348ff7584";
+    "sha256:6f6419d73e3a875c106a0248d3a0cd8f2a1a05bb697edaeb1a856fddbe709f68";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -5378,6 +5378,8 @@ pub struct GitHostPullRequestListParams {
     pub project_id: String,
     #[serde(rename = "taskIds")]
     pub task_ids: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refresh: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -22191,9 +22193,10 @@ fn validate_git_host_pull_request_list_params(value: &Value) -> bool {
                             .all(|item| item.as_str().is_some_and(|text| text.chars().count() >= 1))
                 })
             })
+            && object.get("refresh").is_none_or(|field| field.is_boolean())
             && object
                 .keys()
-                .all(|key| ["projectId", "taskIds"].contains(&key.as_str()))
+                .all(|key| ["projectId", "taskIds", "refresh"].contains(&key.as_str()))
     })
 }
 

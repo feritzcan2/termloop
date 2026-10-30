@@ -307,6 +307,15 @@ async fn git_host_pull_request_list_with_priority(
 ) -> Result<serde_json::Value, CoreError> {
     let params = serde_json::from_value::<GitHostPullRequestListParams>(params)
         .map_err(|_| CoreError::InvalidParams("gitHost.pullRequestList".into()))?;
+    // An explicit user refresh drops the cached projection so the observation
+    // below asks the provider again instead of serving the last result.
+    if params.refresh == Some(true) {
+        let mut core = state.core.lock().await;
+        core.invalidate_git_host_local_facts();
+        for task_id in &params.task_ids {
+            core.invalidate_git_host_task(task_id);
+        }
+    }
     if priority == ObservationPriority::Explicit {
         let cached = {
             let core = state.core.lock().await;

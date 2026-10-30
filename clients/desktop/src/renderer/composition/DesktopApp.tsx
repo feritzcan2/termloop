@@ -1937,6 +1937,33 @@ export function DesktopApp() {
       return null;
     }
   }, []);
+  /// The Task row's explicit refresh: re-reads every projection the card shows
+  /// instead of waiting for watchers or the short renderer and daemon caches.
+  /// Listing the worktree changes also re-arms the daemon's health lane, which
+  /// renews the cached change count and publishes its own Task invalidation.
+  const refreshTask = useCallback(async (taskId: string) => {
+    const task = projectionStore.getSnapshot().tasks.find((candidate) => candidate.id === taskId);
+    if (!task) return;
+    const projectId = task.project_id;
+    const api = sourceApiForTask(taskId);
+    const results = await Promise.allSettled([
+      task.worktree ? api.taskWorktreeChangeList(taskId) : Promise.resolve(undefined),
+      api.gitHostPullRequestList(projectId, [taskId], true).then((projections) => {
+        if (presentationStore.getState().selectedProjectId === projectId) {
+          projectionStore.applyGitHostPatch([taskId], projections);
+        }
+      }),
+      refreshBranchCommitProjection(projectId, [taskId]),
+    ]);
+    try {
+      await refreshTaskProjection([taskId]);
+    } catch (error) {
+      projectionStore.setMessage(controlErrorMessage(error));
+      return;
+    }
+    const failure = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+    if (failure) projectionStore.setMessage(`Task refresh incomplete: ${controlErrorMessage(failure.reason)}`);
+  }, []);
   const inspectTaskWorktreeCleanup = useCallback(
     (taskId: string) => sourceApiForTask(taskId).taskInspectWorktreeCleanup(taskId),
     [],
@@ -2653,6 +2680,7 @@ export function DesktopApp() {
       dismissTaskWorktreeProvisioning={dismissTaskWorktreeProvisioning}
       revealTaskWorktree={revealTaskWorktree}
       openTaskWorktreeFile={openTaskWorktreeFile}
+      refreshTask={refreshTask}
       inspectTaskWorktreeCleanup={inspectTaskWorktreeCleanup}
       listProjectWorktreeChanges={(projectId) => sourceApiForProject(projectId).projectWorktreeChangeList(projectId)}
       sourceControlApi={sourceControlApi}

@@ -442,6 +442,7 @@ kbd { padding: 2px 5px; border: 1px solid light-dark(rgba(15,23,42,.07), rgba(25
 .task-row .row-actions:is(.has-favorite, .has-parked) > :not(.task-favorite[aria-pressed="true"], .task-park[aria-pressed="true"]) { opacity: 0; pointer-events: none; }
 .task-row:hover .row-actions:is(.has-favorite, .has-parked) > :not(.task-favorite[aria-pressed="true"], .task-park[aria-pressed="true"]), .task-row .row-actions:is(.has-favorite, .has-parked):focus-within > :not(.task-favorite[aria-pressed="true"], .task-park[aria-pressed="true"]) { opacity: 1; pointer-events: auto; }
 .row-actions .task-park[aria-pressed="true"] { color: var(--accent-strong); }
+.row-actions .task-refresh[aria-busy="true"] svg { animation: loading-spin .8s linear infinite; }
 .task-list { padding: 5px 0 7px; }
 .task-group { padding: 0 7px; }
 .task-group + .task-group { margin-top: 7px; }

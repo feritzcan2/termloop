@@ -14,6 +14,14 @@ fn git_host_projection_is_read_only_strict_and_provider_discriminated() {
         "gitHost.pullRequestList",
         &json!({"projectId":"project","taskIds":[]}),
     ));
+    assert!(validate_method_params(
+        "gitHost.pullRequestList",
+        &json!({"projectId":"project","taskIds":["task"],"refresh":true}),
+    ));
+    assert!(!validate_method_params(
+        "gitHost.pullRequestList",
+        &json!({"projectId":"project","taskIds":["task"],"refresh":"yes"}),
+    ));
     let projection = json!([{
         "usage":"displayOnly",
         "task_id":"task",

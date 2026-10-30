@@ -1383,6 +1383,29 @@ describe("Task rail first-run UX", () => {
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
 
+  it("refreshes a Task from its row action and shows progress until the refresh settles", async () => {
+    const task = launchableTask();
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    let settle: () => void = () => undefined;
+    const refreshTask = vi.fn((_taskId: string) => new Promise<void>((resolve) => { settle = resolve; }));
+    await act(async () => root.render(createElement(TaskRail, { ...railProps({ tasks: [task] }), refreshTask })));
+
+    const button = () => container.querySelector<HTMLButtonElement>(`[aria-label="Refresh ${task.title}"]`)!;
+    await act(async () => button().click());
+    expect(refreshTask).toHaveBeenCalledWith(task.id);
+    expect(button().disabled).toBe(true);
+    expect(button().getAttribute("aria-busy")).toBe("true");
+    await act(async () => settle());
+    expect(button().disabled).toBe(false);
+
+    await act(async () => root.unmount());
+    container.remove();
+    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+  });
+
   it("parks a Task into a folded title line at the end of the board and remembers it", async () => {
     const first = { ...launchableTask(), id: "task-park", title: "Park candidate" };
     const second = launchableTask();

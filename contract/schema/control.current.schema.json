@@ -12319,6 +12319,10 @@
           "minItems": 1,
           "maxItems": 40,
           "uniqueItems": true
+        },
+        "refresh": {
+          "type": "boolean",
+          "description": "Bypass the cached pull request projection and ask the provider again."
         }
       }
     },

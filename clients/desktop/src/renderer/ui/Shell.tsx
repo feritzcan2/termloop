@@ -306,6 +306,7 @@ export type ShellProps = {
   dismissTaskWorktreeProvisioning(taskId: string, operationId: string): Promise<string | undefined>;
   revealTaskWorktree(projectId: string, taskId: string): Promise<void>;
   openTaskWorktreeFile(projectId: string, taskId: string, relativePath: string | null): Promise<string | null>;
+  refreshTask(taskId: string): Promise<void>;
   inspectTaskWorktreeCleanup(taskId: string): Promise<TaskWorktreeCleanupPreviewDto>;
   listProjectWorktreeChanges(projectId: string): Promise<ProjectWorktreeChangeListResult>;
   sourceControlApi: SourceControlApi;
@@ -1727,6 +1728,7 @@ export function Shell(props: ShellProps) {
               ? { revealTaskWorktree: props.revealTaskWorktree, openTaskWorktreeFile: props.openTaskWorktreeFile }
               : {})}
             inspectTaskWorktreeCleanup={props.inspectTaskWorktreeCleanup}
+            refreshTask={props.refreshTask}
             openTaskChanges={(taskId, source) => setChangesPresentation({ kind: "task", taskId, source })}
             openTaskDetail={openTaskDetail}
             detailTaskId={detailTask?.id}
