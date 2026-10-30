@@ -13,7 +13,8 @@ const server = spawn(executable, [], { env: { ...process.env, TERMLOOP_R0_DISCOV
 let stderr = ""; server.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
 
 async function wait() {
-  for (let attempt = 0; attempt < 200; attempt++) {
+  // A freshly built binary waits on the macOS first-launch malware scan.
+  for (let attempt = 0; attempt < 2400; attempt++) {
     try { JSON.parse(await readFile(discovery, "utf8")); return; } catch { await new Promise((resolve) => setTimeout(resolve, 50)); }
   }
   throw new Error(`R0 server discovery timeout: ${stderr}`);

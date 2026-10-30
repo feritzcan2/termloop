@@ -6,7 +6,8 @@ import os from "node:os";
 import path from "node:path";
 import { verifyWorktreeChangeCount } from "./worktree-change-count.mjs";
 
-const SERVER_DISCOVERY_ATTEMPTS = 600;
+// A freshly built binary waits on the macOS first-launch malware scan.
+const SERVER_DISCOVERY_ATTEMPTS = 2400;
 const SERVER_DISCOVERY_POLL_MS = 50;
 
 const runtimeDir = await mkdtemp(path.join(os.tmpdir(), "termloop-s0-"));
