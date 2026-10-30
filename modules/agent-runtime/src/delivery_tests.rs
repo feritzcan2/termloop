@@ -953,3 +953,95 @@ fn unsettled_composer_stays_manual_after_client_input() {
         std::thread::sleep(Duration::from_millis(10));
     }
 }
+
+fn wake_submission() -> GeneratedTerminalSubmission {
+    termloop_launch::generated_submission(
+        &termloop_launch::PromptTemplate {
+            id: PERSISTENT_WAKE_TEMPLATE,
+            version: 10,
+            authored_body: "fixture",
+        },
+        "wake",
+    )
+    .unwrap()
+}
+
+#[test]
+fn only_assistant_wakes_keep_retrying_submit() {
+    assert!(submission_is_persistent_wake(&wake_submission()));
+    assert!(!submission_is_persistent_wake(&test_submission()));
+}
+
+#[test]
+fn unacknowledged_wake_presses_enter_again_until_the_provider_confirms() {
+    let Some(composer) = SilentComposer::spawn() else {
+        return;
+    };
+    let mut runtime = GeneratedInputDeliveryRuntime::default();
+    let events = runtime.take_events().unwrap();
+    let submission = wake_submission();
+    assert!(runtime.begin(
+        &composer.terminal,
+        "silent",
+        1,
+        0,
+        submission.clone(),
+        GeneratedInputSettlement::OutputActivity,
+    ));
+
+    let submitted = events.recv_timeout(Duration::from_secs(15)).unwrap();
+    assert!(runtime.apply_transport_event(submitted));
+    let retried = events.recv_timeout(Duration::from_secs(10)).unwrap();
+    assert!(matches!(
+        retried.outcome,
+        GeneratedInputTransportOutcome::SubmitRetried
+    ));
+    assert!(runtime.apply_transport_event(retried));
+    assert_eq!(
+        runtime.state("silent", 1),
+        Some(GeneratedInputDeliveryState::AwaitingProviderAck)
+    );
+    assert!(runtime.confirm_provider_submission("silent", 1, 1, None));
+    assert_eq!(
+        runtime.state("silent", 1),
+        Some(GeneratedInputDeliveryState::Confirmed)
+    );
+    assert!(
+        events.recv_timeout(Duration::from_secs(7)).is_err(),
+        "a confirmed wake must stop retrying"
+    );
+    let mut expected = submission.paste_input().to_vec();
+    expected.extend_from_slice(submission.submit_input());
+    expected.extend_from_slice(submission.submit_input());
+    assert_eq!(composer.received(), expected);
+}
+
+#[test]
+fn provider_progress_stops_an_unacknowledged_submit_retry() {
+    let mut runtime = GeneratedInputDeliveryRuntime::default();
+    let terminal = TerminalService::default();
+    assert!(runtime.begin(
+        &terminal,
+        "session",
+        1,
+        10,
+        wake_submission(),
+        GeneratedInputSettlement::ComposerRender,
+    ));
+    let delivery = runtime.deliveries.get_mut("session").unwrap();
+    delivery.state = GeneratedInputDeliveryState::AwaitingProviderAck;
+    let cancel_submit = Arc::clone(&delivery.cancel_submit);
+    cancel_submit.store(false, Ordering::Release);
+
+    assert!(!runtime.confirm_provider_progress("session", 1, 10));
+    assert!(
+        !cancel_submit.load(Ordering::Acquire),
+        "older progress is not evidence"
+    );
+    assert!(!runtime.confirm_provider_progress("session", 1, 11));
+    assert!(cancel_submit.load(Ordering::Acquire));
+    assert_eq!(
+        runtime.state("session", 1),
+        Some(GeneratedInputDeliveryState::AwaitingProviderAck)
+    );
+}

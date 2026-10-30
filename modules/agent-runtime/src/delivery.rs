@@ -23,6 +23,8 @@ const PROTOCOL_REPLY_SETTLEMENT_TIMEOUT: Duration = Duration::from_millis(125);
 const MAX_PROTOCOL_REPLY_SETTLEMENT_WAITS: usize = 8;
 const PROVIDER_ACK_TIMEOUT: Duration = Duration::from_secs(5);
 const PROVIDER_ACK_AFTER_RETRY_TIMEOUT: Duration = Duration::from_secs(5);
+const PERSISTENT_WAKE_SUBMIT_WINDOW: Duration = Duration::from_secs(120);
+const PERSISTENT_WAKE_TEMPLATE: &str = "builtin.assistant.wake";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GeneratedInputDeliveryState {
@@ -397,6 +399,7 @@ impl GeneratedInputDeliveryRuntime {
         let retry_terminal = terminal.clone();
         let retry_submission = submission.clone();
         let retry_cancel_submit = Arc::clone(&cancel_submit);
+        let user_input_baseline_for_retry = user_input_baseline;
         let worker_submit_receipted = Arc::clone(&submit_receipted_signal);
         let session_id = session_id.to_owned();
         let worker_session_id = session_id.clone();
@@ -447,55 +450,12 @@ impl GeneratedInputDeliveryRuntime {
                 if retry_cancel_submit.load(Ordering::Acquire) {
                     return;
                 }
-                if !submit_retry_has_structural_evidence(
-                    settlement,
-                    retry_readiness_baseline.as_ref(),
-                    retry_output_baseline.as_ref(),
-                ) {
-                    let _ = event_sender.send(GeneratedInputRuntimeEvent {
-                        session_id: worker_session_id,
-                        runtime_epoch,
-                        delivery_id,
-                        outcome: GeneratedInputTransportOutcome::ProviderAckTimedOut,
-                        diagnostics: GeneratedInputTransportDiagnostics::default(),
-                    });
-                    return;
-                }
-                match provider_ack_wait.try_recv() {
-                    Ok(()) | Err(TryRecvError::Disconnected) => return,
-                    Err(TryRecvError::Empty) => {}
-                }
-                let mut retry_diagnostics = GeneratedInputTransportDiagnostics::default();
-                let retry_outcome = match write_submit_attempt(
-                    &retry_terminal,
-                    &worker_session_id,
-                    runtime_epoch,
-                    retry_submission.submit_input(),
-                    2,
-                    &mut retry_diagnostics,
-                    &worker_submit_receipted,
-                ) {
-                    Ok(_) => GeneratedInputTransportOutcome::SubmitRetried,
-                    Err(
-                        SubmitAttemptFailure::Blocked(failure)
-                        | SubmitAttemptFailure::Failed(failure),
-                    ) => GeneratedInputTransportOutcome::SubmitRetryFailed(failure),
-                };
-                let retry_submitted = matches!(
-                    &retry_outcome,
-                    GeneratedInputTransportOutcome::SubmitRetried
-                );
-                let _ = event_sender.send(GeneratedInputRuntimeEvent {
-                    session_id: worker_session_id.clone(),
-                    runtime_epoch,
-                    delivery_id,
-                    outcome: retry_outcome,
-                    diagnostics: retry_diagnostics,
-                });
-                if retry_submitted
-                    && matches!(
-                        provider_ack_wait.recv_timeout(PROVIDER_ACK_AFTER_RETRY_TIMEOUT),
-                        Err(RecvTimeoutError::Timeout)
+                let persistent_wake = submission_is_persistent_wake(&retry_submission);
+                if !persistent_wake
+                    && !submit_retry_has_structural_evidence(
+                        settlement,
+                        retry_readiness_baseline.as_ref(),
+                        retry_output_baseline.as_ref(),
                     )
                 {
                     let _ = event_sender.send(GeneratedInputRuntimeEvent {
@@ -505,7 +465,83 @@ impl GeneratedInputDeliveryRuntime {
                         outcome: GeneratedInputTransportOutcome::ProviderAckTimedOut,
                         diagnostics: GeneratedInputTransportDiagnostics::default(),
                     });
+                    return;
                 }
+                // A persistent assistant wake keeps pressing Enter until the
+                // provider confirms it, inside a bounded window. Direct client
+                // input, provider progress, or a provider-state cancellation
+                // stops it and hands the prompt back to the user.
+                let retry_deadline = persistent_wake
+                    .then(|| {
+                        termloop_platform::MonotonicDeadline::after(PERSISTENT_WAKE_SUBMIT_WINDOW)
+                            .ok()
+                    })
+                    .flatten();
+                let mut attempt: u8 = 2;
+                loop {
+                    match provider_ack_wait.try_recv() {
+                        Ok(()) | Err(TryRecvError::Disconnected) => return,
+                        Err(TryRecvError::Empty) => {}
+                    }
+                    if retry_cancel_submit.load(Ordering::Acquire)
+                        || (persistent_wake
+                            && retry_terminal
+                                .user_input_activity(&worker_session_id, runtime_epoch)
+                                .map_or(true, |activity| activity != user_input_baseline_for_retry))
+                    {
+                        break;
+                    }
+                    let mut retry_diagnostics = GeneratedInputTransportDiagnostics::default();
+                    let retry_outcome = match write_submit_attempt(
+                        &retry_terminal,
+                        &worker_session_id,
+                        runtime_epoch,
+                        retry_submission.submit_input(),
+                        attempt,
+                        &mut retry_diagnostics,
+                        &worker_submit_receipted,
+                    ) {
+                        Ok(_) => GeneratedInputTransportOutcome::SubmitRetried,
+                        Err(
+                            SubmitAttemptFailure::Blocked(failure)
+                            | SubmitAttemptFailure::Failed(failure),
+                        ) => GeneratedInputTransportOutcome::SubmitRetryFailed(failure),
+                    };
+                    let retry_submitted = matches!(
+                        &retry_outcome,
+                        GeneratedInputTransportOutcome::SubmitRetried
+                    );
+                    let _ = event_sender.send(GeneratedInputRuntimeEvent {
+                        session_id: worker_session_id.clone(),
+                        runtime_epoch,
+                        delivery_id,
+                        outcome: retry_outcome,
+                        diagnostics: retry_diagnostics,
+                    });
+                    if !retry_submitted
+                        || !matches!(
+                            provider_ack_wait.recv_timeout(PROVIDER_ACK_AFTER_RETRY_TIMEOUT),
+                            Err(RecvTimeoutError::Timeout)
+                        )
+                    {
+                        return;
+                    }
+                    let window_open = retry_deadline
+                        .as_ref()
+                        .and_then(|deadline| deadline.remaining())
+                        .is_some();
+                    if !window_open {
+                        break;
+                    }
+                    attempt = attempt.saturating_add(1);
+                }
+                let _ = event_sender.send(GeneratedInputRuntimeEvent {
+                    session_id: worker_session_id,
+                    runtime_epoch,
+                    delivery_id,
+                    outcome: GeneratedInputTransportOutcome::ProviderAckTimedOut,
+                    diagnostics: GeneratedInputTransportDiagnostics::default(),
+                });
             });
         if spawn.is_err() {
             self.fail_immediately(
@@ -787,9 +823,19 @@ impl GeneratedInputDeliveryRuntime {
         let Some(delivery) = self.deliveries.get_mut(session_id) else {
             return false;
         };
-        if delivery.runtime_epoch != runtime_epoch
-            || delivery.state != GeneratedInputDeliveryState::ConfirmedUnattributed
+        if delivery.runtime_epoch != runtime_epoch {
+            return false;
+        }
+        // Provider progress after an unacknowledged submit means the provider
+        // is no longer at a bare composer; stop any pending Enter retry so it
+        // cannot answer a permission prompt or interrupt the running turn.
+        if delivery.state == GeneratedInputDeliveryState::AwaitingProviderAck
+            && provider_sequence > delivery.provider_sequence_baseline
         {
+            delivery.cancel_submit.store(true, Ordering::Release);
+            return false;
+        }
+        if delivery.state != GeneratedInputDeliveryState::ConfirmedUnattributed {
             return false;
         }
         let Some((confirmation_sequence, _)) = delivery.provider_confirmation else {
@@ -1374,6 +1420,10 @@ fn codex_composer_is_ready(facts: termloop_terminal::InputReadinessFacts) -> boo
     } else {
         facts.alternate_screen_active && facts.composer_prompt_seen_in_current_alternate_screen
     }
+}
+
+fn submission_is_persistent_wake(submission: &GeneratedTerminalSubmission) -> bool {
+    submission.provenance().template_ref == PERSISTENT_WAKE_TEMPLATE
 }
 
 fn submit_retry_has_structural_evidence(
