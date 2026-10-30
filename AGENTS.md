@@ -27,6 +27,10 @@ remote clients.
   adding a second independently changing responsibility, assess an intra-module
   split as a separate refactor slice. Do not mix a mechanical split with
   behavior, schema, contract, ownership, or DAG changes.
+- `node tools/ci/check-boundaries.mjs` enforces ownership in preflight: no
+  `cfg(unix|windows|target_os)` outside `modules/platform/` and no
+  `Command::new("git")` outside `modules/gitio/`, tests included. Run it
+  before pushing Rust changes.
 - Add or update focused tests for changed behavior and invariants. For a small
   change confined to one module, run only its local checks, directly affected
   tests, and package type-check. Use `pnpm check` and `pnpm test` only for

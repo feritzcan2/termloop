@@ -19,6 +19,9 @@
 ## Invariants
 
 - OS conditionals in production daemon code live here.
+- Windows directory links use `shared_entries::create_junction`, never
+  `symlink_dir`: a symlink needs Developer Mode or elevation, so it passes on
+  macOS and on an elevated shell but fails on CI and ordinary accounts.
 - On Windows, persist comparable drive-form canonical paths, opt Git into long
   paths, and pass filesystem arguments through the subprocess-path helper.
   Never compare raw verbatim (`\\?\`) paths with Git output.
