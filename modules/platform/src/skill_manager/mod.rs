@@ -428,15 +428,21 @@ fn link_shared_skill_for_claude(home: &Path, directory_name: &str) {
     if std::fs::symlink_metadata(&link).is_ok() || std::fs::create_dir_all(&parent).is_err() {
         return;
     }
-    let target = Path::new("..")
-        .join("..")
-        .join(".agents")
-        .join("skills")
-        .join(directory_name);
     #[cfg(unix)]
-    let _ = std::os::unix::fs::symlink(&target, &link);
+    let _ = std::os::unix::fs::symlink(
+        Path::new("..")
+            .join("..")
+            .join(".agents")
+            .join("skills")
+            .join(directory_name),
+        &link,
+    );
+    // A junction needs no Developer Mode or elevation, but must be absolute.
     #[cfg(windows)]
-    let _ = std::os::windows::fs::symlink_dir(&target, &link);
+    let _ = crate::shared_entries::create_junction(
+        &home.join(".agents").join("skills").join(directory_name),
+        &link,
+    );
 }
 
 fn locate_skill<'catalog>(

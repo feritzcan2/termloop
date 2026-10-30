@@ -90,7 +90,7 @@ pub fn link_shared_directory(
 /// junction does not, and resolves the same way for a local source.
 #[cfg(windows)]
 #[allow(unsafe_code)]
-fn create_junction(source: &Path, target: &Path) -> io::Result<()> {
+pub(crate) fn create_junction(source: &Path, target: &Path) -> io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use std::os::windows::fs::OpenOptionsExt;
     use std::os::windows::io::AsRawHandle;
