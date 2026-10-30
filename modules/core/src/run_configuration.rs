@@ -596,6 +596,7 @@ impl CoreRuntime {
             runtime_epoch: self.runtime_epoch,
             archived_at_epoch_ms: None,
             ask_to_source_session_id: None,
+            fork_source_session_id: None,
             run_configuration_id: Some(configuration.id.clone()),
             improver_target: None,
             ask_to_continuation: None,

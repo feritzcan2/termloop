@@ -85,6 +85,7 @@ fn prepare_relocation_fixture_for(agent_id: &str) -> (Fixture, String, String, P
                 runtime_epoch: 1,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -681,6 +682,7 @@ fn relocation_is_blocked_while_ask_to_delivery_is_current() {
                 runtime_epoch: 2,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: Some(session_id.clone()),
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: Some(AskToContinuation {
@@ -890,6 +892,7 @@ fn ask_to_helper_can_relocate_to_project_without_gaining_interactive_mcp() {
                 runtime_epoch: 3,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: Some(source_session_id),
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: Some(AskToContinuation {

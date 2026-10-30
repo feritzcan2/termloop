@@ -51,7 +51,6 @@ impl CoreRuntime {
         // remains resumable, so keep its Ask-To routing and continuation until
         // an explicit close permanently removes the endpoint.
         self.suspend_ask_to_session_for_resume(&session_id);
-        self.retire_fork_relationship(&session_id);
         self.agent_conversation_activity.remove(&session_id);
         self.resume_ready.remove(&session_id);
         self.resume_failure_reaps.remove(&session_id);
@@ -254,7 +253,6 @@ impl CoreRuntime {
         }
         self.agent_observations.remove(session_id);
         self.suspend_ask_to_session_for_resume(session_id);
-        self.retire_fork_relationship(session_id);
         self.agent_conversation_activity.remove(session_id);
         self.resume_ready.remove(session_id);
         self.pending_agent_forks.remove(session_id);
@@ -301,12 +299,6 @@ impl CoreRuntime {
         let retired_runtime = self.retire_closed_session_runtime(session_id);
         debug_assert!(retired_runtime.is_none());
         Ok(())
-    }
-
-    fn retire_fork_relationship(&mut self, session_id: &str) {
-        self.fork_source_session_ids.remove(session_id);
-        self.fork_source_session_ids
-            .retain(|_, source_id| source_id != session_id);
     }
 
     pub(crate) fn rename_session(&mut self, params: Value) -> Result<Value, CoreError> {
@@ -640,19 +632,19 @@ impl CoreRuntime {
                                 && source.kind == SessionKind::Agent
                         })
                 });
-        let fork_source_session_id = self
-            .fork_source_session_ids
-            .get(&session.id)
-            .map(String::as_str)
-            .filter(|source_id| {
-                *source_id != session.id
-                    && session.kind == SessionKind::Agent
-                    && self.store.sessions().iter().any(|source| {
-                        source.id == *source_id
-                            && source.project_id == session.project_id
-                            && source.kind == SessionKind::Agent
-                    })
-            });
+        let fork_source_session_id =
+            session
+                .fork_source_session_id
+                .as_deref()
+                .filter(|source_id| {
+                    *source_id != session.id
+                        && session.kind == SessionKind::Agent
+                        && self.store.sessions().iter().any(|source| {
+                            source.id == *source_id
+                                && source.project_id == session.project_id
+                                && source.kind == SessionKind::Agent
+                        })
+                });
         let mut projection = session_projection(
             session,
             forkable,

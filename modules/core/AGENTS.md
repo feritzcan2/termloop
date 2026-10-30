@@ -66,8 +66,9 @@
   contents as unverified.
 - Launch accepts only a valid provenance-bearing payload from `invocation`.
 - Native fork is a named Session command derived from a live source Session; it
-  derives the bounded `<source display name> fork-1` child name, creates no
-  durable parent/history relation, and never exposes ResumeRef.
+  derives the bounded `<source display name> fork-1` child name, persists only
+  the exact source Session ID as presentation provenance (never parentage,
+  history, or lifecycle cascading), and never exposes ResumeRef.
 - Agent launch planning and resume consume invocation-owned manifests; core does
   not compose or append agent content, argv, environment, generated files, or
   initial input. One-time preview tickets bind Quick Action, Project, Task, and

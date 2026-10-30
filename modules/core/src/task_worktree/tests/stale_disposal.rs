@@ -118,6 +118,7 @@ fn orphaned_managed_directory_can_forget_after_cleanup_attention_without_touchin
                 runtime_epoch: 1,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,

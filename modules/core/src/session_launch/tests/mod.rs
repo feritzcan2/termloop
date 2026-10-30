@@ -201,6 +201,7 @@ fn running_persistent_assistant_restart_preserves_closed_mcp_role() {
                 runtime_epoch: 7,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -296,6 +297,7 @@ fn running_persistent_assistant_restart_preserves_closed_mcp_role() {
                 runtime_epoch: 7,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -339,6 +341,7 @@ fn running_persistent_assistant_restart_preserves_closed_mcp_role() {
                 runtime_epoch: 7,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -390,6 +393,7 @@ fn running_persistent_assistant_restart_preserves_closed_mcp_role() {
                     runtime_epoch: 7,
                     archived_at_epoch_ms: None,
                     ask_to_source_session_id: None,
+                    fork_source_session_id: None,
                     run_configuration_id: None,
                     improver_target: None,
                     ask_to_continuation: None,
@@ -668,6 +672,7 @@ async fn late_terminal_exit_preserves_the_visible_resume_failure() {
                 runtime_epoch: 9,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -826,6 +831,7 @@ fn intentional_resume_failure_reap_keeps_the_exact_typed_reason() {
                 runtime_epoch: 9,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -946,6 +952,7 @@ fn daemon_restart_restores_stopped_agent_as_an_interactive_terminal() {
                 runtime_epoch: 9,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -1008,6 +1015,7 @@ fn archive_retirement_does_not_recreate_an_exited_agent_terminal() {
                 runtime_epoch: 9,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -1124,6 +1132,7 @@ fn task_archive_retirement_does_not_recreate_an_exited_agent_terminal() {
                 runtime_epoch: 9,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -1210,6 +1219,7 @@ fn close_moves_an_agent_to_deleted_and_restore_recreates_its_terminal_hold() {
                 runtime_epoch: 9,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -1287,6 +1297,7 @@ fn deleted_agent_restore_stays_blocked_after_its_source_directory_is_removed() {
                 runtime_epoch: 3,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -1406,6 +1417,7 @@ fn deleted_agent_with_removed_task_worktree_restores_in_project_root() {
                 runtime_epoch: 3,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -1528,6 +1540,7 @@ fn quick_action_permission_modal_blocks_before_terminal_submission() {
                 runtime_epoch: 9,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -1749,6 +1762,7 @@ fn only_an_assistant_wake_follows_a_failed_claude_turn() {
                     runtime_epoch: 9,
                     archived_at_epoch_ms: None,
                     ask_to_source_session_id: None,
+                    fork_source_session_id: None,
                     run_configuration_id: None,
                     improver_target: None,
                     ask_to_continuation: None,
@@ -1888,6 +1902,7 @@ async fn steward_activation_waits_for_post_hook_and_confirms_once() {
                 runtime_epoch: 9,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -2114,6 +2129,7 @@ async fn assert_quick_action_initial_input_delivery(
                 runtime_epoch: 9,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -2773,6 +2789,7 @@ fn steward_launch_ticket_refuses_an_agent_that_appeared_in_the_task_worktree() {
                 runtime_epoch: 1,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -3269,6 +3286,7 @@ fn runtime_with_session() -> (CoreRuntime, std::path::PathBuf) {
                 runtime_epoch: 1,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -3315,6 +3333,7 @@ fn startup_ownership_uncertainty_does_not_revive_explicitly_exited_agents() {
                     runtime_epoch: 1,
                     archived_at_epoch_ms: None,
                     ask_to_source_session_id: None,
+                    fork_source_session_id: None,
                     run_configuration_id: None,
                     improver_target: None,
                     ask_to_continuation: None,
@@ -3760,6 +3779,7 @@ fn agent_profile_resume_preview_reapplies_profile_without_a_first_message() {
                 runtime_epoch: 2,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -4132,6 +4152,7 @@ fn agent_environment_never_enters_the_durable_session_descriptor() {
         runtime_epoch: 1,
         archived_at_epoch_ms: None,
         ask_to_source_session_id: None,
+        fork_source_session_id: None,
         run_configuration_id: None,
         improver_target: None,
         ask_to_continuation: None,
@@ -4210,6 +4231,7 @@ fn agent_fork_plan_derives_private_source_context_without_persisting_a_parent() 
                 runtime_epoch: 7,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -4266,9 +4288,7 @@ fn agent_fork_plan_derives_private_source_context_without_persisting_a_parent() 
     let mut fork_child = runtime.store.sessions()[0].clone();
     fork_child.id = "fork-child".into();
     fork_child.name = Some("Source fork-1".into());
-    runtime
-        .fork_source_session_ids
-        .insert(fork_child.id.clone(), "source-agent".into());
+    fork_child.fork_source_session_id = Some("source-agent".into());
     let fork_projection = runtime.project_session(&fork_child);
     assert_eq!(fork_projection["fork_source_session_id"], "source-agent");
 
@@ -4289,6 +4309,90 @@ fn agent_fork_plan_derives_private_source_context_without_persisting_a_parent() 
             .plan_agent_fork(json!({ "sessionId": "source-agent" }))
             .is_ok()
     );
+}
+
+#[test]
+fn agent_fork_source_survives_restart_and_is_projected_only_while_the_source_exists() {
+    let root = std::env::temp_dir().join(format!(
+        "termloop-core-fork-restart-{}-{}",
+        std::process::id(),
+        Uuid::new_v4()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let authority = termloop_store::issue_core_write_authority_for_composition();
+    let store = Store::open(root.join("state.json")).unwrap();
+    let mut runtime = CoreRuntime::new(store, authority, TerminalService::default(), 7).unwrap();
+    let project_id = runtime
+        .handle(
+            "project.create",
+            json!({"name": "Fork restart", "folderPath": root}),
+        )
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let agent = |id: &str, fork_source_session_id: Option<&str>| SessionRecord {
+        launch_selection: Default::default(),
+        id: id.into(),
+        project_id: project_id.clone(),
+        name: Some(id.into()),
+        kind: SessionKind::Agent,
+        process: ProcessDescriptor {
+            program: "claude".into(),
+            args: vec![],
+            cwd: root.display().to_string(),
+            agent_id: Some("claude".into()),
+            template_ref: Some("builtin.agent.interactive".into()),
+            template_version: Some(1),
+        },
+        lifecycle_state: "exited".into(),
+        runtime_epoch: 7,
+        archived_at_epoch_ms: None,
+        fork_source_session_id: fork_source_session_id.map(str::to_owned),
+        ask_to_source_session_id: None,
+        run_configuration_id: None,
+        improver_target: None,
+        ask_to_continuation: None,
+        resume_ref: None,
+        resume_launch_guard: None,
+        resume_failure: None,
+    };
+    for session in [agent("source", None), agent("child", Some("source"))] {
+        runtime
+            .store
+            .insert_session(&runtime.write_authority, session)
+            .unwrap();
+    }
+    drop(runtime);
+
+    let fork_source = |runtime: &CoreRuntime| {
+        runtime
+            .list_sessions()
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|session| session["id"] == "child")
+            .unwrap()["fork_source_session_id"]
+            .clone()
+    };
+    let mut reopened =
+        CoreRuntime::open(root.join("state.json"), TerminalService::default(), 8).unwrap();
+    assert_eq!(fork_source(&reopened), "source");
+
+    reopened
+        .store
+        .delete_session_descriptor(&reopened.write_authority, "source")
+        .unwrap();
+    assert!(fork_source(&reopened).is_null());
+    assert_eq!(
+        reopened.store.sessions()[0]
+            .fork_source_session_id
+            .as_deref(),
+        Some("source")
+    );
+
+    let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]
@@ -4336,6 +4440,7 @@ fn provider_history_repair_reserves_the_exact_stopped_codex_session_and_clears_d
                 runtime_epoch: 6,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -4445,6 +4550,7 @@ fn provider_history_damage_is_not_presented_as_a_blind_retry() {
         runtime_epoch: 1,
         archived_at_epoch_ms: None,
         ask_to_source_session_id: None,
+        fork_source_session_id: None,
         run_configuration_id: None,
         improver_target: None,
         ask_to_continuation: None,
@@ -4490,6 +4596,7 @@ fn failed_agent_fork_is_visible_and_retained_until_explicit_release_and_delete()
                 runtime_epoch: 7,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -4605,6 +4712,7 @@ fn terminate_cancels_resume_preparation_and_late_failure_cannot_revive_it() {
                 runtime_epoch: 2,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -4691,6 +4799,7 @@ fn retryable_ownership_failure_can_be_reserved_then_terminated_after_recovery() 
                 runtime_epoch: 1,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -4766,6 +4875,7 @@ fn valid_resume_ref_attempts_even_when_startup_capability_probe_was_inconclusive
                 runtime_epoch: 2,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -4837,6 +4947,7 @@ fn ticketed_manual_resume_reopens_exited_and_retries_a_prior_terminal_failure() 
                 runtime_epoch: 2,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -4874,6 +4985,7 @@ fn ticketed_manual_resume_reopens_exited_and_retries_a_prior_terminal_failure() 
                 runtime_epoch: 2,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -4994,6 +5106,7 @@ fn guarded_resume_trusts_launch_provenance_over_current_task_state() {
                 runtime_epoch: 2,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -5187,6 +5300,7 @@ fn resume_enables_codex_trust_for_a_current_managed_worktree_proof() {
                 runtime_epoch: 1,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -5269,6 +5383,7 @@ fn cwd_unavailable_retry_revalidates_the_exact_path_before_preparing() {
                     runtime_epoch: 2,
                     archived_at_epoch_ms: None,
                     ask_to_source_session_id: None,
+                    fork_source_session_id: None,
                     run_configuration_id: None,
                     improver_target: None,
                     ask_to_continuation: None,
@@ -5355,6 +5470,7 @@ fn startup_resume_admission_is_bounded_fair_and_batches_overflow() {
                         runtime_epoch: 1,
                         archived_at_epoch_ms: None,
                         ask_to_source_session_id: None,
+                        fork_source_session_id: None,
                         run_configuration_id: None,
                         improver_target: None,
                         ask_to_continuation: None,
@@ -5449,6 +5565,7 @@ fn prepared_resume_target_is_revalidated_before_final_commit() {
                 runtime_epoch: 1,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -5578,6 +5695,7 @@ fn client_launch_restart_reserves_then_reaps_the_exact_live_runtime() {
                 runtime_epoch: 2,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -5693,6 +5811,7 @@ fn client_launch_restart_marks_only_a_working_codex_interrupted() {
                     runtime_epoch: 2,
                     archived_at_epoch_ms: None,
                     ask_to_source_session_id: None,
+                    fork_source_session_id: None,
                     run_configuration_id: None,
                     improver_target: None,
                     ask_to_continuation: None,
@@ -5814,6 +5933,7 @@ fn daemon_restart_handoff_interrupts_working_claude_and_codex() {
                     runtime_epoch: 41,
                     archived_at_epoch_ms: None,
                     ask_to_source_session_id: None,
+                    fork_source_session_id: None,
                     run_configuration_id: None,
                     improver_target: None,
                     ask_to_continuation: None,
@@ -6030,6 +6150,7 @@ fn client_launch_restart_snapshot_is_exact_fair_and_larger_than_one_wave() {
                     runtime_epoch: 2,
                     archived_at_epoch_ms: None,
                     ask_to_source_session_id: None,
+                    fork_source_session_id: None,
                     run_configuration_id: None,
                     improver_target: None,
                     ask_to_continuation: None,
@@ -6081,6 +6202,7 @@ fn client_launch_restart_snapshot_is_exact_fair_and_larger_than_one_wave() {
                 runtime_epoch: 2,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,

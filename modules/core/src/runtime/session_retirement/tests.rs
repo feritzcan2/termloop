@@ -78,6 +78,7 @@ impl Fixture {
                         runtime_epoch: 1,
                         archived_at_epoch_ms: None,
                         ask_to_source_session_id: None,
+                        fork_source_session_id: None,
                         run_configuration_id: None,
                         improver_target: None,
                         ask_to_continuation: None,
@@ -114,12 +115,6 @@ impl Fixture {
             core.resume_failure_reaps.insert(id.into());
             core.pending_agent_forks.insert(id.into());
         }
-        core.fork_source_session_ids
-            .insert("retiring".into(), "survivor".into());
-        core.fork_source_session_ids
-            .insert("child".into(), "retiring".into());
-        core.fork_source_session_ids
-            .insert("unrelated-child".into(), "survivor".into());
         Self {
             core,
             directory,
@@ -170,15 +165,6 @@ impl Fixture {
         assert!(!self.core.resume_ready.contains("retiring"));
         assert!(!self.core.resume_failure_reaps.contains("retiring"));
         assert!(!self.core.pending_agent_forks.contains("retiring"));
-        assert!(!self.core.fork_source_session_ids.contains_key("retiring"));
-        assert!(!self.core.fork_source_session_ids.contains_key("child"));
-        assert_eq!(
-            self.core
-                .fork_source_session_ids
-                .get("unrelated-child")
-                .map(String::as_str),
-            Some("survivor")
-        );
         self.assert_runtime_present("survivor");
     }
 }
@@ -354,13 +340,6 @@ fn failed_permanent_retirement_preserves_pending_state_until_a_successful_retry(
                 .pending_generated_input_queues
                 .contains_key("retiring")
         );
-        assert!(
-            fixture
-                .core
-                .fork_source_session_ids
-                .contains_key("retiring")
-        );
-        assert!(fixture.core.fork_source_session_ids.contains_key("child"));
         assert!(
             fixture
                 .core

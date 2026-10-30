@@ -518,6 +518,7 @@ impl CoreRuntime {
             runtime_epoch: self.runtime_epoch,
             archived_at_epoch_ms: None,
             ask_to_source_session_id: None,
+            fork_source_session_id: None,
             run_configuration_id: None,
             improver_target: None,
             ask_to_continuation: None,
@@ -1967,6 +1968,7 @@ impl CoreRuntime {
             runtime_epoch: self.runtime_epoch,
             archived_at_epoch_ms: None,
             ask_to_source_session_id: plan.ask_to_source_session_id.clone(),
+            fork_source_session_id: plan.fork_source_session_id.clone(),
             run_configuration_id: None,
             improver_target: improver_session_target(plan),
             ask_to_continuation: plan.ask_to_continuation.clone(),
@@ -2083,9 +2085,7 @@ impl CoreRuntime {
                 token.clone(),
             );
         }
-        if let Some(source_session_id) = plan.fork_source_session_id.as_ref() {
-            self.fork_source_session_ids
-                .insert(session.id.clone(), source_session_id.clone());
+        if plan.fork_source_session_id.is_some() {
             self.pending_agent_forks.insert(session.id.clone());
         }
         if let Some(runtime) = plan.provider_runtime.take_committed() {

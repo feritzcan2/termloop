@@ -32,8 +32,6 @@ impl CoreRuntime {
         self.agent_conversation_activity.remove(session_id);
         self.claude_turn_watches.remove(session_id);
         self.forget_ask_to_session(session_id);
-        self.fork_source_session_ids
-            .retain(|child, source| child != session_id && source != session_id);
         self.codex_runtimes.remove(session_id)
     }
 }

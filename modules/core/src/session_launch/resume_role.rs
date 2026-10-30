@@ -144,6 +144,7 @@ mod tests {
             runtime_epoch: 1,
             archived_at_epoch_ms: None,
             ask_to_source_session_id: None,
+            fork_source_session_id: None,
             run_configuration_id: None,
             improver_target: None,
             ask_to_continuation: None,

@@ -217,11 +217,6 @@ pub struct CoreRuntime {
     /// them before the close parks them.
     pub(crate) pending_task_closes: HashMap<String, Vec<String>>,
     pub(crate) pending_agent_forks: HashSet<String>,
-    /// Runtime-only fork presentation provenance. Native fork deliberately
-    /// does not create durable parentage; this bounded map lets the current
-    /// projection keep the child directly beneath its source while both are
-    /// present in this daemon runtime.
-    pub(crate) fork_source_session_ids: HashMap<String, String>,
     /// Agent commands may exit while the user still needs the PTY as an
     /// interactive terminal. These runtime-only entries identify replacement
     /// shells that keep the exact logical Session open until Retry or an
@@ -718,7 +713,6 @@ impl CoreRuntime {
             resume_failure_reaps: HashSet::new(),
             pending_task_closes: HashMap::new(),
             pending_agent_forks: HashSet::new(),
-            fork_source_session_ids: HashMap::new(),
             agent_terminal_holds: HashSet::new(),
             pending_session_exits: HashMap::new(),
             pending_agent_resume_refs: HashMap::new(),
@@ -2915,6 +2909,7 @@ mod tests {
                         runtime_epoch: 1,
                         archived_at_epoch_ms: None,
                         ask_to_source_session_id: None,
+                        fork_source_session_id: None,
                         run_configuration_id: None,
                         improver_target: None,
                         ask_to_continuation: None,
@@ -2975,6 +2970,7 @@ mod tests {
                     runtime_epoch: 1,
                     archived_at_epoch_ms: None,
                     ask_to_source_session_id: None,
+                    fork_source_session_id: None,
                     run_configuration_id: None,
                     improver_target: None,
                     ask_to_continuation: None,
@@ -3255,6 +3251,7 @@ mod tests {
                     runtime_epoch: 1,
                     archived_at_epoch_ms: None,
                     ask_to_source_session_id: None,
+                    fork_source_session_id: None,
                     run_configuration_id: None,
                     improver_target: None,
                     ask_to_continuation: None,
@@ -3466,6 +3463,7 @@ mod tests {
                         runtime_epoch: 1,
                         archived_at_epoch_ms: None,
                         ask_to_source_session_id: None,
+                        fork_source_session_id: None,
                         run_configuration_id: None,
                         improver_target: None,
                         ask_to_continuation: None,
@@ -3648,6 +3646,7 @@ mod tests {
                         runtime_epoch: 1,
                         archived_at_epoch_ms: None,
                         ask_to_source_session_id: None,
+                        fork_source_session_id: None,
                         run_configuration_id: None,
                         improver_target: None,
                         ask_to_continuation: None,
@@ -3850,6 +3849,7 @@ mod tests {
                     runtime_epoch: 1,
                     archived_at_epoch_ms: None,
                     ask_to_source_session_id: None,
+                    fork_source_session_id: None,
                     run_configuration_id: None,
                     improver_target: None,
                     ask_to_continuation: None,
@@ -3988,6 +3988,7 @@ mod tests {
                         runtime_epoch: 1,
                         archived_at_epoch_ms: None,
                         ask_to_source_session_id: None,
+                        fork_source_session_id: None,
                         run_configuration_id: None,
                         improver_target: None,
                         ask_to_continuation: None,
@@ -4423,6 +4424,7 @@ mod tests {
                     runtime_epoch: 1,
                     archived_at_epoch_ms: None,
                     ask_to_source_session_id: None,
+                    fork_source_session_id: None,
                     run_configuration_id: None,
                     improver_target: None,
                     ask_to_continuation: None,
@@ -4572,6 +4574,7 @@ mod tests {
                     runtime_epoch: 1,
                     archived_at_epoch_ms: None,
                     ask_to_source_session_id: None,
+                    fork_source_session_id: None,
                     run_configuration_id: None,
                     improver_target: None,
                     ask_to_continuation: None,
@@ -4806,6 +4809,7 @@ mod tests {
                     runtime_epoch: 1,
                     archived_at_epoch_ms: None,
                     ask_to_source_session_id: None,
+                    fork_source_session_id: None,
                     run_configuration_id: None,
                     improver_target: None,
                     ask_to_continuation: None,

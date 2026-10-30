@@ -713,6 +713,18 @@ fn sessions_are_invalid(state: &CurrentState) -> bool {
                                     )
                             })
                 });
+        // The source may later move Projects, be deleted, or be archived, so
+        // only the child's own descriptor is validated here; the projection
+        // shows the relationship only while a same-Project Agent source exists.
+        let invalid_fork_source =
+            session
+                .fork_source_session_id
+                .as_ref()
+                .is_some_and(|source_id| {
+                    source_id.is_empty()
+                        || session.kind != SessionKind::Agent
+                        || source_id == &session.id
+                });
         let invalid_run_configuration = session.run_configuration_id.as_ref().is_some_and(|id| {
             session.kind != SessionKind::Terminal
                 || !state.run_configurations.iter().any(|configuration| {
@@ -749,6 +761,7 @@ fn sessions_are_invalid(state: &CurrentState) -> bool {
         invalid_kind
             || invalid_ask_to_source
             || invalid_ask_to_continuation
+            || invalid_fork_source
             || invalid_run_configuration
             || invalid_improver_target
     })

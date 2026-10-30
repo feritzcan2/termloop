@@ -37,6 +37,7 @@ fn ordinary_agent_launch_preference_is_atomic_and_survives_reopen() {
                 runtime_epoch: 1,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -95,6 +96,7 @@ fn live_codex_launch_selection_update_is_fenced_durable_and_session_local() {
                 runtime_epoch: 7,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -232,6 +234,7 @@ fn live_claude_launch_selection_update_requires_the_matching_provider_and_agent(
                 runtime_epoch: 3,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -328,6 +331,7 @@ fn restart_reconcile_preserves_unconfirmed_agent_without_automatic_resume() {
                 runtime_epoch: 1,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -389,6 +393,7 @@ fn resume_reference_establish_is_idempotent_immutable_and_restart_ready() {
                 runtime_epoch: 7,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -474,6 +479,7 @@ fn running_codex_resume_reference_retargets_with_exact_current_cas() {
                 runtime_epoch: 7,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -552,6 +558,7 @@ fn transient_capability_probe_failure_is_requeued_on_restart() {
                 runtime_epoch: 7,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -610,6 +617,7 @@ fn generic_restart_is_stale_and_close_deletes_only_the_descriptor() {
                 runtime_epoch: 3,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -647,6 +655,7 @@ fn generic_restart_is_stale_and_close_deletes_only_the_descriptor() {
                 runtime_epoch: 3,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -702,6 +711,7 @@ fn session_rename_is_current_state_and_survives_reopen() {
                 runtime_epoch: 1,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -855,6 +865,7 @@ fn marking_an_exited_session_again_does_not_create_a_revision() {
                 runtime_epoch: 1,
                 archived_at_epoch_ms: None,
                 ask_to_source_session_id: None,
+                fork_source_session_id: None,
                 run_configuration_id: None,
                 improver_target: None,
                 ask_to_continuation: None,
@@ -904,6 +915,7 @@ fn ask_to_current_request_survives_source_exit_until_descriptor_delete() {
         runtime_epoch: 7,
         archived_at_epoch_ms: None,
         ask_to_source_session_id: source.map(str::to_owned),
+        fork_source_session_id: None,
         run_configuration_id: None,
         improver_target: None,
         ask_to_continuation: source.map(|_| AskToContinuation {
@@ -1002,5 +1014,97 @@ fn ask_to_current_request_survives_source_exit_until_descriptor_delete() {
     assert!(!persisted.contains("question text"));
     assert!(!persisted.contains("reply text"));
     assert!(!persisted.contains("bearer"));
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn fork_source_migrates_from_schema_65_survives_reopen_and_rejects_invalid_descriptors() {
+    let path = std::env::temp_dir().join(format!(
+        "termloop-store-fork-source-{}.json",
+        uuid::Uuid::new_v4()
+    ));
+    let process = serde_json::json!({
+        "program": "claude", "args": [], "cwd": "/tmp", "agent_id": "claude",
+        "template_ref": "builtin.agent.interactive", "template_version": 1
+    });
+    std::fs::write(
+        &path,
+        serde_json::to_vec(&serde_json::json!({
+            "schema_version": 65, "revision": 3,
+            "projects": [{"id": "project", "name": "Demo", "folder_path": "/tmp"}],
+            "sessions": [{
+                "id": "source", "project_id": "project", "name": null, "kind": "Agent",
+                "launch_selection": {"model": "default", "permission": "default", "reasoning": "default"},
+                "process": process, "lifecycle_state": "exited", "runtime_epoch": 1,
+                "ask_to_source_session_id": null
+            }],
+            "agent_conversation_readiness": [{"sessionId": "source", "readiness": "resumable"}]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let authority = issue_core_write_authority_for_composition();
+    let mut store = Store::open(&path).unwrap();
+    assert_eq!(store.sessions()[0].fork_source_session_id, None);
+    let persisted: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(persisted["schema_version"], CURRENT_SCHEMA_VERSION);
+    assert!(
+        persisted["sessions"][0]
+            .get("fork_source_session_id")
+            .is_none()
+    );
+
+    let mut child = store.sessions()[0].clone();
+    child.id = "child".into();
+    child.fork_source_session_id = Some("source".into());
+    store.insert_session(&authority, child).unwrap();
+    drop(store);
+    let store = Store::open(&path).unwrap();
+    assert_eq!(
+        store
+            .sessions()
+            .iter()
+            .find(|session| session.id == "child")
+            .unwrap()
+            .fork_source_session_id
+            .as_deref(),
+        Some("source")
+    );
+
+    drop(store);
+
+    let valid: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    let child_index = valid["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|session| session["id"] == "child")
+        .unwrap();
+    for invalid_source in ["", "child"] {
+        let mut invalid = valid.clone();
+        invalid["sessions"][child_index]["fork_source_session_id"] =
+            serde_json::json!(invalid_source);
+        std::fs::write(&path, serde_json::to_vec(&invalid).unwrap()).unwrap();
+        assert!(matches!(Store::open(&path), Err(StoreError::CorruptRecord)));
+    }
+    let mut terminal_fork = valid.clone();
+    terminal_fork["sessions"][child_index]["kind"] = serde_json::json!("Terminal");
+    terminal_fork["sessions"][child_index]["process"]["agent_id"] = serde_json::Value::Null;
+    terminal_fork["sessions"][child_index]["launch_selection"] =
+        serde_json::to_value(termloop_domain::AgentLaunchSelection::default()).unwrap();
+    terminal_fork["agent_conversation_readiness"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|row| row["sessionId"] != "child");
+    let mut terminal_without_fork = terminal_fork.clone();
+    terminal_without_fork["sessions"][child_index]
+        .as_object_mut()
+        .unwrap()
+        .remove("fork_source_session_id");
+    std::fs::write(&path, serde_json::to_vec(&terminal_without_fork).unwrap()).unwrap();
+    assert!(Store::open(&path).is_ok());
+    std::fs::write(&path, serde_json::to_vec(&terminal_fork).unwrap()).unwrap();
+    assert!(matches!(Store::open(&path), Err(StoreError::CorruptRecord)));
     let _ = std::fs::remove_file(path);
 }

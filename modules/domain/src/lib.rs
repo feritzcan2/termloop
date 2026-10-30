@@ -1326,6 +1326,11 @@ pub struct SessionRecord {
     pub archived_at_epoch_ms: Option<u64>,
     #[serde(default)]
     pub ask_to_source_session_id: Option<String>,
+    /// Exact source Session of a native fork. Current presentation provenance
+    /// so the child stays beneath its source across restarts, never parentage,
+    /// lifecycle cascading, or history.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fork_source_session_id: Option<String>,
     /// Run configuration this Terminal Session was started from. Current
     /// provenance for projection grouping, never parentage or run history.
     #[serde(default, skip_serializing_if = "Option::is_none")]

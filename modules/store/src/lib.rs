@@ -71,7 +71,8 @@ use termloop_domain::{
 // Version 63 removes orphan branch sets left by Project deletion.
 // Version 64 adds bounded, user-requested Playbook fork evaluation receipts.
 // Version 65 adds close-parked Agent sidecars for Tasks closed with a checkout.
-const CURRENT_SCHEMA_VERSION: u32 = 65;
+// Version 66 adds the native fork source Session ID to Session descriptors.
+const CURRENT_SCHEMA_VERSION: u32 = 66;
 
 pub struct CoreWriteAuthority {
     _private: (),
