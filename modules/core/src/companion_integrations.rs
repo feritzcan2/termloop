@@ -147,6 +147,10 @@ struct TaskSnapshot {
     repository_root: Option<PathBuf>,
     worktree_path: Option<PathBuf>,
     worktree_generation: u64,
+    /// Branches the Task recorded in any of its worktrees, so a recreated
+    /// checkout with a fresh reflog still finds the pull requests opened
+    /// from them.
+    recorded_branches: Vec<String>,
     force_refresh: bool,
 }
 
@@ -167,6 +171,7 @@ struct LocalFactsKey {
     branch_name: String,
     worktree_path: Option<PathBuf>,
     worktree_generation: u64,
+    recorded_branches: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -458,6 +463,7 @@ impl CoreRuntime {
             .into_iter()
             .map(|task| {
                 let mut snapshot = snapshot(task);
+                snapshot.recorded_branches = self.recorded_task_branches(task);
                 snapshot.force_refresh = self
                     .git_host_invalidated_tasks
                     .iter()
@@ -475,6 +481,20 @@ impl CoreRuntime {
             deadline: termloop_platform::MonotonicDeadline::after(Duration::from_secs(10))
                 .map_err(|_| CoreError::GitObservationTimedOut)?,
         })
+    }
+
+    fn recorded_task_branches(&self, task: &TaskRecord) -> Vec<String> {
+        let Some(binding) = task.branch.as_ref() else {
+            return Vec::new();
+        };
+        self.store
+            .task_branch_sets()
+            .iter()
+            .filter(|set| set.task_id == task.id)
+            .flat_map(|set| &set.memberships)
+            .filter(|membership| membership.repository_root == binding.repository_root)
+            .map(|membership| membership.ref_name.clone())
+            .collect()
     }
 
     fn git_host_task_records<'a>(
@@ -1073,6 +1093,7 @@ fn snapshot(task: &TaskRecord) -> TaskSnapshot {
             .as_ref()
             .map(|worktree| PathBuf::from(&worktree.path)),
         worktree_generation: task.worktree_generation,
+        recorded_branches: Vec::new(),
         force_refresh: false,
     }
 }
@@ -1083,6 +1104,7 @@ fn local_facts_key(snapshot: &TaskSnapshot) -> Option<LocalFactsKey> {
         branch_name: snapshot.branch_name.clone()?,
         worktree_path: snapshot.worktree_path.clone(),
         worktree_generation: snapshot.worktree_generation,
+        recorded_branches: snapshot.recorded_branches.clone(),
     })
 }
 
@@ -1100,6 +1122,7 @@ fn observe_local_facts(
         repository_root,
         branch,
         snapshot.worktree_path.as_deref(),
+        &snapshot.recorded_branches,
         deadline,
     )
     .map_err(|error| map_git_error(&error))
@@ -2065,6 +2088,7 @@ mod tests {
                     branch_name: "main".into(),
                     worktree_path: None,
                     worktree_generation: 0,
+                    recorded_branches: vec![],
                 },
                 Err(GitHostProjectionReason::RepositoryUnavailable),
                 1,
@@ -2075,12 +2099,14 @@ mod tests {
             branch_name: "main".into(),
             worktree_path: None,
             worktree_generation: 0,
+            recorded_branches: vec![],
         };
         let newest = LocalFactsKey {
             repository_root: PathBuf::from(format!("/repo/{MAX_LOCAL_FACTS:03}")),
             branch_name: "main".into(),
             worktree_path: None,
             worktree_generation: 0,
+            recorded_branches: vec![],
         };
         assert!(cache.get(&oldest, 1).is_none());
         assert!(cache.get(&newest, LOCAL_FACTS_TTL_MS).is_some());
@@ -2240,6 +2266,7 @@ mod tests {
             repository_root: Some(PathBuf::from("/repo")),
             worktree_path: None,
             worktree_generation: 0,
+            recorded_branches: vec![],
             force_refresh: false,
         };
         let query = PullRequestQuery {
@@ -2279,6 +2306,7 @@ mod tests {
             repository_root: Some(PathBuf::from("/repo")),
             worktree_path: None,
             worktree_generation: 0,
+            recorded_branches: vec![],
             force_refresh: false,
         };
         let facts = BranchRemoteFacts {
@@ -2308,6 +2336,7 @@ mod tests {
             repository_root: Some(PathBuf::from("/repo")),
             worktree_path: None,
             worktree_generation: 0,
+            recorded_branches: vec![],
             force_refresh: false,
         };
         let facts = BranchRemoteFacts {
@@ -2338,6 +2367,7 @@ mod tests {
             repository_root: Some(PathBuf::from("/repo")),
             worktree_path: Some(PathBuf::from("/repo-worktree")),
             worktree_generation: 1,
+            recorded_branches: vec![],
             force_refresh: false,
         };
         let facts = azure_worktree_facts(&["UKIE-804", "termloop/generated", "UKIE-803"]);
@@ -2363,6 +2393,7 @@ mod tests {
             repository_root: Some(PathBuf::from("/repo")),
             worktree_path: Some(PathBuf::from("/repo-worktree")),
             worktree_generation: 1,
+            recorded_branches: vec![],
             force_refresh: false,
         };
         let mut facts =
@@ -2406,6 +2437,7 @@ mod tests {
             repository_root: Some(PathBuf::from("/repo")),
             worktree_path: Some(PathBuf::from("/repo-worktree")),
             worktree_generation: 1,
+            recorded_branches: vec![],
             force_refresh: false,
         };
         let facts = azure_worktree_facts(&["UKIE-835", "termloop/generated"]);
@@ -2455,6 +2487,7 @@ mod tests {
             repository_root: Some(PathBuf::from("/repo")),
             worktree_path: Some(PathBuf::from("/repo-worktree")),
             worktree_generation: 1,
+            recorded_branches: vec![],
             force_refresh: false,
         };
         let facts = azure_worktree_facts(&["UKIE-835-current", "termloop/generated", "UKIE-835"]);
@@ -2557,6 +2590,7 @@ mod tests {
             repository_root: Some(PathBuf::from("/repo")),
             worktree_path: Some(PathBuf::from("/repo-worktree")),
             worktree_generation: 1,
+            recorded_branches: vec![],
             force_refresh: false,
         };
         let facts = azure_worktree_facts(&["UKIE-835-current", "termloop/generated", "UKIE-835"]);
@@ -2636,6 +2670,7 @@ mod tests {
             repository_root: Some(PathBuf::from("/repo")),
             worktree_path: Some(PathBuf::from("/repo-worktree")),
             worktree_generation: 1,
+            recorded_branches: vec![],
             force_refresh: false,
         };
         let facts = BranchRemoteFacts {
@@ -2687,6 +2722,7 @@ mod tests {
                 repository_root: Some(PathBuf::from("/repo")),
                 worktree_path: None,
                 worktree_generation: 0,
+                recorded_branches: vec![],
                 force_refresh: false,
             },
             candidates: vec![ProviderQuery::Github(query.clone())],

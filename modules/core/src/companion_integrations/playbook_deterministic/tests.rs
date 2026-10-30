@@ -895,6 +895,7 @@ fn a_gate_reads_branches_the_worktree_pushed_but_not_branches_it_only_visited() 
         repository_root: Some(repository.clone()),
         worktree_path: Some(worktree.clone()),
         worktree_generation: 1,
+        recorded_branches: vec![],
         force_refresh: false,
     };
     let remaining = || Ok(std::time::Duration::from_secs(5));

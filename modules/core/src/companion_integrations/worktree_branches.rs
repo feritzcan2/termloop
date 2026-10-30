@@ -18,6 +18,7 @@ pub(super) fn observe(
     repository_root: &Path,
     durable_branch: &str,
     worktree_path: Option<&Path>,
+    recorded_branches: &[String],
     deadline: termloop_platform::MonotonicDeadline,
 ) -> Result<ObservedBranchFacts, GitError> {
     let mut names = Vec::<Vec<u8>>::new();
@@ -96,6 +97,11 @@ pub(super) fn observe(
         }
         push_reference(&mut names, reference.as_bytes());
         push_branch_family(&mut names, reference.as_bytes(), &local_branches);
+    }
+    // Recorded branches come last: they matter once the worktree that made
+    // them is gone, and the limit drops them before live evidence.
+    for reference in recorded_branches {
+        push_reference(&mut names, reference.as_bytes());
     }
     candidate_truncated |= names.len() > MAX_BRANCH_NAMES;
     names.truncate(MAX_BRANCH_NAMES);
@@ -197,5 +203,62 @@ mod tests {
             b"termloop/UKIE-804",
             b"feature/UKIE-804-MASTER"
         ));
+    }
+
+    #[test]
+    fn recorded_branches_stay_candidates_after_their_worktree_is_recreated() {
+        let root = std::env::temp_dir().join(format!(
+            "termloop-recorded-branches-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let repository = root.join("repository");
+        let worktree = root.join("worktree");
+        std::fs::create_dir_all(&repository).unwrap();
+        let runner = GitRunner::discover().unwrap();
+        termloop_gitio::test_support::initialize_repository(&runner, &repository).unwrap();
+        termloop_gitio::test_support::set_config(
+            &runner,
+            &repository,
+            "remote.origin.url",
+            "https://github.com/acme/widgets.git",
+        )
+        .unwrap();
+        termloop_gitio::test_support::create_branch(&runner, &repository, "termloop/task").unwrap();
+        termloop_gitio::test_support::create_branch(&runner, &repository, "UKIE-804").unwrap();
+        // A recreated checkout: its reflog has never seen the Task's work branch.
+        runner
+            .add_worktree(
+                &repository,
+                &worktree,
+                &GitRefName::from_bytes(b"refs/heads/termloop/task".to_vec()).unwrap(),
+            )
+            .unwrap();
+
+        let observed = observe(
+            &runner,
+            &repository,
+            "termloop/task",
+            Some(&worktree),
+            &[
+                "refs/heads/UKIE-804".into(),
+                "refs/heads/termloop/task".into(),
+            ],
+            termloop_platform::MonotonicDeadline::after(std::time::Duration::from_secs(10))
+                .unwrap(),
+        )
+        .unwrap();
+        let branches = observed
+            .branches
+            .iter()
+            .map(|branch| branch.local_branch.as_bytes())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            branches,
+            vec![
+                b"refs/heads/termloop/task".as_slice(),
+                b"refs/heads/UKIE-804".as_slice()
+            ]
+        );
+        std::fs::remove_dir_all(root).ok();
     }
 }
