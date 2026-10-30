@@ -125,6 +125,17 @@ pub fn detach_head(runner: &GitRunner, repository: &Path) -> Result<(), GitError
     Ok(())
 }
 
+/// Checks out an existing branch or commit, leaving a HEAD reflog entry the
+/// way a user switching branches would.
+pub fn checkout(runner: &GitRunner, repository: &Path, target: &str) -> Result<(), GitError> {
+    runner.checked(
+        GitOperation::CreateRef,
+        repository,
+        [OsString::from("checkout"), OsString::from(target)],
+    )?;
+    Ok(())
+}
+
 pub fn stage_path(
     runner: &GitRunner,
     repository: &Path,

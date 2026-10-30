@@ -286,6 +286,26 @@ pub mod test_support {
         }
     }
 
+    /// A raw, non-echoing PTY process that records every input byte into
+    /// `received` and marks `ready` once raw mode is set. Windows has no
+    /// equivalent console fixture, so callers skip there.
+    pub fn silent_raw_terminal_process() -> Option<(String, Vec<String>)> {
+        #[cfg(unix)]
+        {
+            Some((
+                "/bin/sh".to_owned(),
+                vec![
+                    "-c".to_owned(),
+                    "stty raw -echo; touch ready; exec /bin/cat > received".to_owned(),
+                ],
+            ))
+        }
+        #[cfg(not(unix))]
+        {
+            None
+        }
+    }
+
     /// Returns a long-lived command that accepts terminal input for
     /// cross-platform orchestration tests. Provider-specific behavior is not
     /// part of this fixture; tests use it only to prove PTY identity/lifetime.

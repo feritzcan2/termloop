@@ -280,7 +280,6 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
-    #[cfg(unix)]
     #[test]
     fn each_user_skill_joins_the_skills_claude_synced_for_the_account() {
         let (root, home, profile) = scratch();

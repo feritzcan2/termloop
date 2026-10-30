@@ -828,17 +828,16 @@ fn test_submission() -> GeneratedTerminalSubmission {
     .unwrap()
 }
 
-#[cfg(unix)]
 struct SilentComposer {
     root: std::path::PathBuf,
     terminal: TerminalService,
 }
 
-#[cfg(unix)]
 impl SilentComposer {
     /// A raw, non-echoing PTY never produces the render evidence that the
     /// first settlement window looks for, like a composer that stays still.
-    fn spawn() -> Self {
+    fn spawn() -> Option<Self> {
+        let (program, args) = termloop_platform::test_support::silent_raw_terminal_process()?;
         let root = std::env::temp_dir().join(format!(
             "termloop-late-settlement-{}",
             termloop_platform::generate_opaque_id()
@@ -849,11 +848,8 @@ impl SilentComposer {
             .spawn(termloop_terminal::PtySpawnSpec {
                 session_id: "silent".into(),
                 runtime_epoch: 1,
-                program: "/bin/sh".into(),
-                args: vec![
-                    "-c".into(),
-                    "stty raw -echo; touch ready; exec /bin/cat > received".into(),
-                ],
+                program,
+                args,
                 cwd: root.display().to_string(),
                 environment: termloop_platform::LaunchEnvironment::os_baseline(),
                 recent_output_replay: true,
@@ -864,7 +860,7 @@ impl SilentComposer {
             assert!(std::time::Instant::now() < end, "fixture timeout");
             std::thread::sleep(Duration::from_millis(10));
         }
-        Self { root, terminal }
+        Some(Self { root, terminal })
     }
 
     fn received(&self) -> Vec<u8> {
@@ -872,7 +868,6 @@ impl SilentComposer {
     }
 }
 
-#[cfg(unix)]
 impl Drop for SilentComposer {
     fn drop(&mut self) {
         let _ = self.terminal.terminate_all();
@@ -880,10 +875,11 @@ impl Drop for SilentComposer {
     }
 }
 
-#[cfg(unix)]
 #[test]
 fn unsettled_composer_submits_once_it_stays_quiet() {
-    let composer = SilentComposer::spawn();
+    let Some(composer) = SilentComposer::spawn() else {
+        return;
+    };
     let mut runtime = GeneratedInputDeliveryRuntime::default();
     let events = runtime.take_events().unwrap();
     let submission = test_submission();
@@ -920,10 +916,11 @@ fn unsettled_composer_submits_once_it_stays_quiet() {
     }
 }
 
-#[cfg(unix)]
 #[test]
 fn unsettled_composer_stays_manual_after_client_input() {
-    let composer = SilentComposer::spawn();
+    let Some(composer) = SilentComposer::spawn() else {
+        return;
+    };
     let mut runtime = GeneratedInputDeliveryRuntime::default();
     let events = runtime.take_events().unwrap();
     let submission = test_submission();

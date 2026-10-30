@@ -15,3 +15,6 @@ serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+termloop-platform = { path = "../platform", features = ["test-support"] }
