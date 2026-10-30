@@ -52,6 +52,8 @@ export const PROFILED_DESKTOP_OPERATIONS = {
   taskWorktreeChangeList: "termloop:task-worktree-change-list",
   taskWorktreeDiff: "termloop:task-worktree-diff",
   taskWorktreePreImage: "termloop:task-worktree-pre-image",
+  taskWorktreeReveal: "termloop:task-worktree-reveal",
+  taskWorktreeOpenFile: "termloop:task-worktree-open-file",
   taskBranchCommitSummaryList: "termloop:task-branch-commit-summary-list",
   taskBranchCommitList: "termloop:task-branch-commit-list",
   taskBranchCommitChangeList: "termloop:task-branch-commit-change-list",

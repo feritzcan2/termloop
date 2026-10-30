@@ -334,6 +334,10 @@ export type DesktopApi = {
   taskWorktreeChangeList(taskId: string): Promise<TaskWorktreeChangeListResult>;
   taskWorktreeDiff(taskId: string, observationId: string, entryId: string): Promise<TaskWorktreeDiffResult>;
   taskWorktreePreImage(taskId: string, observationId: string, entryId: string): Promise<TaskWorktreePreImageResult>;
+  /** Opens the Task worktree folder in the OS file manager. Local connection only. */
+  taskWorktreeReveal(projectId: string, taskId: string): Promise<void>;
+  /** Opens a worktree-relative file, or a picked one when `relativePath` is null; returns the opened worktree-relative path. */
+  taskWorktreeOpenFile(projectId: string, taskId: string, relativePath: string | null): Promise<string | null>;
   taskBranchCommitSummaryList(projectId: string, taskIds: string[]): Promise<TaskBranchCommitSummaryDto[]>;
   taskBranchCommitList(taskId: string, branchId?: string): Promise<TaskBranchCommitListResult>;
   taskBranchCommitChangeList(taskId: string, observationId: string, commitId: string): Promise<TaskBranchCommitChangeListResult>;

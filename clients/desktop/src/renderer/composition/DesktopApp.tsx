@@ -1922,6 +1922,21 @@ export function DesktopApp() {
       return message;
     }
   }, []);
+  const revealTaskWorktree = useCallback(async (projectId: string, taskId: string) => {
+    try {
+      await sourceApiForTask(taskId).taskWorktreeReveal(projectId, taskId);
+    } catch (error) {
+      projectionStore.setMessage(controlErrorMessage(error));
+    }
+  }, []);
+  const openTaskWorktreeFile = useCallback(async (projectId: string, taskId: string, relativePath: string | null) => {
+    try {
+      return await sourceApiForTask(taskId).taskWorktreeOpenFile(projectId, taskId, relativePath);
+    } catch (error) {
+      projectionStore.setMessage(controlErrorMessage(error));
+      return null;
+    }
+  }, []);
   const inspectTaskWorktreeCleanup = useCallback(
     (taskId: string) => sourceApiForTask(taskId).taskInspectWorktreeCleanup(taskId),
     [],
@@ -2636,6 +2651,8 @@ export function DesktopApp() {
       listProjectLocalBranches={listProjectLocalBranches}
       provisionTaskWorktree={provisionTaskWorktree}
       dismissTaskWorktreeProvisioning={dismissTaskWorktreeProvisioning}
+      revealTaskWorktree={revealTaskWorktree}
+      openTaskWorktreeFile={openTaskWorktreeFile}
       inspectTaskWorktreeCleanup={inspectTaskWorktreeCleanup}
       listProjectWorktreeChanges={(projectId) => sourceApiForProject(projectId).projectWorktreeChangeList(projectId)}
       sourceControlApi={sourceControlApi}

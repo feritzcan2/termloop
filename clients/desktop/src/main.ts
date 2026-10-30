@@ -62,6 +62,7 @@ import { ConnectionRegistry, LOCAL_CONNECTION_PROFILE_ID } from "./main/connecti
 import { ConnectionProfileLifecycle } from "./main/connection-profile-lifecycle.js";
 import { currentConnectionProfileId, sourceAwareIpcHandle } from "./main/ipc-source-context.js";
 import { readProjectTasks } from "./main/task-list.js";
+import { worktreeFilePath, worktreeRelativeFile } from "./main/worktree-open.js";
 import { connectionEntityKey } from "./connection-scope.js";
 import { interactiveTaskCreateParams } from "./task-automation-transport.js";
 import { remoteConnectionFailureMessage } from "./main/access-websocket.js";
@@ -1382,6 +1383,44 @@ const taskWorktreeCwd = async (projectId: string, taskId: string) => {
   if (!task.worktree) throw new Error("Task worktree is not available.");
   return task.worktree.path;
 };
+/// Opening a worktree folder or file hands a daemon-read path to this
+/// computer's OS, so it is offered only for the local connection. The renderer
+/// names a Task and, at most, a path relative to its worktree.
+const localTaskWorktreePath = async (projectId: string, taskId: string) => {
+  if (currentConnectionProfileId() !== LOCAL_CONNECTION_PROFILE_ID) throw new Error("worktreeOpenRequiresLocalConnection");
+  return taskWorktreeCwd(projectId, taskId);
+};
+const openLocalPath = async (target: string) => {
+  const failure = await shell.openPath(target);
+  if (failure) throw new Error(failure);
+};
+handleIpc("termloop:task-worktree-reveal", async (event, projectId: string, taskId: string) => {
+  requireMainRenderer(event);
+  await openLocalPath(await localTaskWorktreePath(projectId, taskId));
+});
+handleIpc(
+  "termloop:task-worktree-open-file",
+  async (event, projectId: string, taskId: string, relativePath: unknown) => {
+    requireMainRenderer(event);
+    const worktreePath = await localTaskWorktreePath(projectId, taskId);
+    if (relativePath !== null) {
+      const target = worktreeFilePath(worktreePath, relativePath);
+      await openLocalPath(target);
+      return worktreeRelativeFile(worktreePath, target) ?? null;
+    }
+    if (!mainWindow) return null;
+    const picked = await dialog.showOpenDialog(mainWindow, {
+      title: "Open a file from the Task worktree",
+      buttonLabel: "Open",
+      defaultPath: worktreePath,
+      properties: ["openFile"],
+    });
+    const filePath = picked.canceled ? undefined : picked.filePaths[0];
+    if (!filePath) return null;
+    await openLocalPath(filePath);
+    return worktreeRelativeFile(worktreePath, filePath) ?? null;
+  },
+);
 const quickActionParams = async (
   projectId: string,
   agentId: string,

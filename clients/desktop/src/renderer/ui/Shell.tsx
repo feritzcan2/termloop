@@ -120,6 +120,7 @@ import {
   subscribeAppearancePreference,
 } from "../appearance-theme.js";
 import type { FolderPickerActions } from "./project-dialogs/folder-picker.js";
+import { connectionProfileIdOf } from "../../connection-scope.js";
 import {
   SIDEBAR_MIN_WIDTH,
   clampSidebarWidth,
@@ -303,6 +304,8 @@ export type ShellProps = {
   listProjectLocalBranches(projectId: string): Promise<ProjectLocalBranchListResult>;
   provisionTaskWorktree(params: TaskProvisionWorktreeParams): Promise<string | undefined>;
   dismissTaskWorktreeProvisioning(taskId: string, operationId: string): Promise<string | undefined>;
+  revealTaskWorktree(projectId: string, taskId: string): Promise<void>;
+  openTaskWorktreeFile(projectId: string, taskId: string, relativePath: string | null): Promise<string | null>;
   inspectTaskWorktreeCleanup(taskId: string): Promise<TaskWorktreeCleanupPreviewDto>;
   listProjectWorktreeChanges(projectId: string): Promise<ProjectWorktreeChangeListResult>;
   sourceControlApi: SourceControlApi;
@@ -1720,6 +1723,9 @@ export function Shell(props: ShellProps) {
             loadProjectTaskAutomation={props.taskSourceActions.getProjectAutomation}
             provisionTaskWorktree={props.provisionTaskWorktree}
             dismissTaskWorktreeProvisioning={props.dismissTaskWorktreeProvisioning}
+            {...(connectionProfileIdOf(props.selectedProject) === "local"
+              ? { revealTaskWorktree: props.revealTaskWorktree, openTaskWorktreeFile: props.openTaskWorktreeFile }
+              : {})}
             inspectTaskWorktreeCleanup={props.inspectTaskWorktreeCleanup}
             openTaskChanges={(taskId, source) => setChangesPresentation({ kind: "task", taskId, source })}
             openTaskDetail={openTaskDetail}

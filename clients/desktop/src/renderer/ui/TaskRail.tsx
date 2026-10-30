@@ -18,6 +18,7 @@ import { pullRequestIdentity, type ChangesOpenSource } from "../change-source.js
 import { isAssistantSession } from "./AssistantRail.js";
 import { isProjectRelocationDragCandidate, isTaskRelocationDragCandidate, useOptionalSidebarSessionDnd, type SessionDropPlacement } from "./SidebarSessionDnd.js";
 import { readWorktreeParentPath, writeWorktreeParentPath } from "../worktree-parent-memory.js";
+import { readWorktreeFiles, rememberWorktreeFile } from "../worktree-file-memory.js";
 import { readWorktreeBaseRef, writeWorktreeBaseRef } from "../worktree-base-ref-memory.js";
 import { readTaskCollapsed, writeTaskCollapsed } from "../task-collapse-memory.js";
 import { readFavoriteTaskIds, writeFavoriteTaskIds } from "../task-favorite-memory.js";
@@ -262,6 +263,9 @@ export type TaskRailProps = {
   loadProjectTaskAutomation?(projectId: string): Promise<ProjectTaskAutomationGetResult>;
   provisionTaskWorktree(params: TaskProvisionWorktreeParams): Promise<string | undefined>;
   dismissTaskWorktreeProvisioning(taskId: string, operationId: string): Promise<string | undefined>;
+  /** Present only on the local connection, where the OS can open the worktree. */
+  revealTaskWorktree?: ((projectId: string, taskId: string) => Promise<void>) | undefined;
+  openTaskWorktreeFile?: ((projectId: string, taskId: string, relativePath: string | null) => Promise<string | null>) | undefined;
   inspectTaskWorktreeCleanup(taskId: string): Promise<TaskWorktreeCleanupPreviewDto>;
   openTaskChanges(taskId: string, source: ChangesOpenSource): void;
   /// Clicking a Task row puts it on the stage. The rail only raises the intent;
@@ -348,6 +352,17 @@ export function TaskRail(props: TaskRailProps) {
   const rememberBaseRef = useCallback((baseRef: string) => {
     writeWorktreeBaseRef(props.projectId, baseRef);
   }, [props.projectId]);
+  const [rememberedWorktreeFiles, setRememberedWorktreeFiles] = useState<readonly string[]>(
+    () => readWorktreeFiles(props.projectId),
+  );
+  useEffect(() => {
+    setRememberedWorktreeFiles(readWorktreeFiles(props.projectId));
+  }, [props.projectId]);
+  const openWorktreeFile = useCallback(async (task: Task, relativePath: string | null) => {
+    if (!props.openTaskWorktreeFile) return;
+    const opened = await props.openTaskWorktreeFile(task.project_id, task.id, relativePath);
+    if (opened) setRememberedWorktreeFiles(rememberWorktreeFile(props.projectId, opened));
+  }, [props.openTaskWorktreeFile, props.projectId]);
   const [repairTarget, setRepairTarget] = useState<Task>();
   /// Launches the create flow requested for a Task whose worktree is still
   /// provisioning. Client-local intent only — nothing here is durable, and a
@@ -682,6 +697,13 @@ export function TaskRail(props: TaskRailProps) {
               setMenu(undefined);
               beginTaskRename(menuTask);
             }} /> : null}
+            {menuTask.worktree && props.revealTaskWorktree ? <MenuButton icon="folder" label="Open worktree folder" detail="In the system file manager" action={() => perform(() => props.revealTaskWorktree?.(menuTask.project_id, menuTask.id))} /> : null}
+            {menuTask.worktree && props.openTaskWorktreeFile ? <>
+              {rememberedWorktreeFiles.map((file) => (
+                <MenuButton key={file} icon="fileText" label={`Open ${worktreeFileName(file)}`} detail={file} action={() => perform(() => openWorktreeFile(menuTask, file))} />
+              ))}
+              <MenuButton icon="fileText" label="Open file…" detail="Pick a file from the worktree" action={() => perform(() => openWorktreeFile(menuTask, null))} />
+            </> : null}
             {!menuTask.branch ? <MenuButton icon="branch" label="Use existing branch" detail="Link a local branch to this Task" action={() => perform(() => setBindTarget(menuTask))} /> : null}
             {!menuTask.worktree ? <MenuButton icon="terminal" label="Create worktree" detail={menuTask.worktree_provisioning?.status === "failed" ? "Retry with reviewed values" : "A separate checkout for this Task"} action={() => perform(() => setProvisionTarget(menuTask))} /> : null}
             {canDismissTaskWorktreeProvisioning(menuTask) ? <MenuButton icon="close" label="Dismiss failure" detail="Clear the failed attempt" action={() => perform(() => props.dismissTaskWorktreeProvisioning(menuTask.id, menuTask.worktree_provisioning!.operation_id))} /> : null}
@@ -1640,4 +1662,8 @@ export function GitHostPullRequests({ projection, openChanges, openExternal, com
 function relativeCwd(cwd: string, worktreePath: string): string {
   if (!worktreePath || cwd === worktreePath) return "";
   return cwd.startsWith(`${worktreePath}/`) ? cwd.slice(worktreePath.length + 1) : basename(cwd);
+}
+
+function worktreeFileName(relativePath: string): string {
+  return relativePath.slice(relativePath.lastIndexOf("/") + 1);
 }
