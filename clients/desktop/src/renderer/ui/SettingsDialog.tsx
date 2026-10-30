@@ -17,6 +17,7 @@ import { MobileConnectDialog, type MobileConnectDialogProps } from "./MobileConn
 import { IntegrationsSettings, type IntegrationActions } from "./IntegrationsSettings.js";
 import { AgentConnectionsPanel, type AgentConnectionActions } from "./AgentConnectionsPanel.js";
 import type { ConnectionProfileSummary } from "../../connection-profile-types.js";
+import { connectionStatusSuffix } from "../connection-source-status.js";
 
 export type SettingsPage = "appearance" | "notifications" | "updates" | "servers" | "accounts" | "integrations" | "mobile";
 
@@ -288,7 +289,7 @@ function AgentAccountsSettings({ actions, listProfiles, initialProfileId = "loca
       </div>
       {profiles && profiles.length > 1 ? <label className="conn-field agent-server-select"><span>Computer</span>
         <select aria-label="Computer" value={profile?.id ?? ""} onChange={(event) => setSelectedProfileId(event.target.value)}>
-          {profiles.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}{candidate.state === "offline" ? " · Offline" : ""}</option>)}
+          {profiles.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}{connectionStatusSuffix(candidate.state, candidate.message)}</option>)}
         </select>
       </label> : null}
       {profilesError ? <p className="settings-error" role="alert">Could not load computers: {profilesError}</p>

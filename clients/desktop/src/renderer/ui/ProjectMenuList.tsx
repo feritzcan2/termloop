@@ -2,6 +2,7 @@ import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type D
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { projectShortcutLabel, type KeyboardPlatform } from "../command-surface.js";
+import { connectionStatusSuffix } from "../connection-source-status.js";
 import type { Project } from "../model.js";
 
 export type ProjectMenuGroup = { profileId: string; name: string; projects: readonly Project[] };
@@ -78,7 +79,7 @@ function SortableProjectMenuItem(props: {
     <span className="project-menu-project-copy">
       <strong>{project.name}</strong>
       {props.showConnectionProfile
-        ? <small>{project.connectionProfileName ?? "This computer"}{project.connectionState === "offline" ? " · Offline" : ""}</small>
+        ? <small>{project.connectionProfileName ?? "This computer"}{connectionStatusSuffix(project.connectionState, project.connectionMessage)}</small>
         : null}
     </span>
     {props.shortcut ? <kbd className="project-shortcut-hint">{props.shortcut}</kbd> : <span aria-hidden="true" />}

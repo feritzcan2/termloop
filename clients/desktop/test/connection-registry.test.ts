@@ -5,6 +5,12 @@ vi.mock("electron", () => ({
   safeStorage: { isEncryptionAvailable: () => false },
 }));
 
+vi.mock("../src/main/access-websocket.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../src/main/access-websocket.js")>(),
+  remoteConnectionFailureMessage: vi.fn(() => undefined),
+}));
+
+import { remoteConnectionFailureMessage } from "../src/main/access-websocket.js";
 import type { DesktopConnectionConfig } from "../src/main/connection-profiles.js";
 import { ConnectionRegistry } from "../src/main/connection-registry.js";
 
@@ -100,5 +106,46 @@ describe("ConnectionRegistry routing", () => {
     await expect(registry.summaries()).resolves.toEqual([
       expect.objectContaining({ id: PROFILE_A, state: "connected" }),
     ]);
+  });
+
+  it("reports why a remote handshake was refused instead of a bare transport failure", async () => {
+    const mismatch = "Version mismatch: server termloop.v2, desktop termloop.v3";
+    vi.mocked(remoteConnectionFailureMessage).mockReturnValueOnce(mismatch);
+    const statusChanged = vi.fn();
+    const profiles = {
+      list: async () => [{
+        id: PROFILE_A,
+        name: "Server A",
+        transport: "ssh",
+        scope: "full",
+        endpoint: "a",
+        enabled: true,
+        persistence: "encrypted",
+      }],
+      remoteConfig: async (profileId: string): Promise<DesktopConnectionConfig> => ({
+        kind: "remote",
+        profileId,
+        controlUrl: `ws://${profileId}/control`,
+        terminalUrl: `ws://${profileId}/terminal`,
+        token: "0".repeat(64),
+        terminalToken: "0".repeat(64),
+        credential: {
+          deviceId: "a".repeat(32),
+          privateKey: {},
+          serverFingerprint: `sha256:${"b".repeat(64)}`,
+        },
+      }),
+    };
+    const registry = new ConnectionRegistry(
+      { invalidated: vi.fn(), statusChanged },
+      profiles as never,
+      () => ({ call: vi.fn().mockRejectedValue(new Error("connection failed")), close: vi.fn() }) as never,
+    );
+
+    await expect(registry.call(PROFILE_A, "project.list")).rejects.toThrow(mismatch);
+    expect(remoteConnectionFailureMessage).toHaveBeenCalledWith(PROFILE_A);
+    expect(statusChanged).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: PROFILE_A, state: "offline", message: mismatch }),
+    );
   });
 });

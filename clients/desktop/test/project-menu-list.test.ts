@@ -37,4 +37,30 @@ describe("Project menu list", () => {
     expect(markup).toContain('role="menuitem"');
     expect(markup).not.toContain('aria-roledescription');
   });
+
+  it("names a version mismatch instead of a generic offline source", () => {
+    const remote = (id: string, connectionMessage: string): Project => ({
+      ...project(id, id),
+      connectionProfileId: "remote",
+      connectionProfileName: "Server",
+      connectionState: "offline",
+      connectionMessage,
+    });
+    const projects = [
+      remote("mismatched", "Version mismatch: server termloop.v2, desktop termloop.v3"),
+      remote("unreachable", "Connection lost; reconnecting"),
+    ];
+    const markup = renderToStaticMarkup(createElement(ProjectMenuList, {
+      projects,
+      groups: [{ profileId: "remote", name: "Server", projects }],
+      showGroups: true,
+      selectedProjectId: undefined,
+      platform: "mac",
+      select: vi.fn(),
+      reorder: vi.fn(),
+    }));
+    expect(markup).toContain("Server · Version mismatch</small>");
+    expect(markup).toContain("Server · Offline</small>");
+    expect(markup.match(/data-connection-state="offline"/g)).toHaveLength(2);
+  });
 });

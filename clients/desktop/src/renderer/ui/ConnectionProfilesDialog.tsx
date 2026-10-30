@@ -4,6 +4,7 @@ import { MobilePairingPanel } from "./MobilePairingPanel.js";
 import type { MobileAccessPairingResult } from "../mobile-access.js";
 import { KeepAwakePanel, type KeepAwakeActions } from "./KeepAwakePanel.js";
 import { computerScopeName, hasRemoteComputers } from "../settings-scope.js";
+import { connectionStatusSuffix, isVersionMismatchMessage } from "../connection-source-status.js";
 import type { SshSetupActions } from "../../ssh-setup-types.js";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
@@ -553,7 +554,7 @@ export function ConnectionProfilesDialog({
       <div className="server-profiles-body">
         {view === "connect" ? renderConnect() : view === "share" ? renderShare() : <>
           <label className="conn-field agent-server-select"><span>Computer</span><select value={selectedProfileId} onChange={(event) => setSelectedProfileId(event.target.value)}>
-            {profiles?.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}{profile.transport === "local" ? "" : ` · ${transportLabel(profile.transport)}`}{profile.state === "offline" ? " · Offline" : ""}</option>)}
+            {profiles?.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}{profile.transport === "local" ? "" : ` · ${transportLabel(profile.transport)}`}{connectionStatusSuffix(profile.state, profile.message)}</option>)}
           </select></label>
           {view === "mobile" && prepareRemoteMobileAccess && profiles?.find((profile) => profile.id === selectedProfileId)
             ? <ComputerMobileSettings key={selectedProfileId} profile={profiles.find((profile) => profile.id === selectedProfileId)!} prepare={prepareRemoteMobileAccess} />
@@ -640,7 +641,11 @@ function profileStatus(profile: ConnectionProfileSummary): { tone: Tone; label: 
   if (!profile.enabled) return { tone: "idle", label: "Disabled" };
   switch (profile.state) {
     case "connected": return { tone: "ok", label: "Connected" };
-    case "offline": return { tone: "danger", label: profile.message ? `Offline · ${profile.message}` : "Offline" };
+    case "offline": {
+      const message = profile.message;
+      if (!message) return { tone: "danger", label: "Offline" };
+      return { tone: "danger", label: isVersionMismatchMessage(message) ? message : `Offline · ${message}` };
+    }
     default: return { tone: "warn", label: "Connecting…" };
   }
 }

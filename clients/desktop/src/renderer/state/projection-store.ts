@@ -119,9 +119,14 @@ export class ProjectionStore {
       && previous.name === name
       && previous.state === state
       && previous.message === message) return;
-    const updateScope = <T extends { connectionState?: ConnectionSourceState }>(values: T[]): T[] => (
-      values.map((value) => ({ ...value, connectionState: state }))
-    );
+    const updateScope = <T extends { connectionState?: ConnectionSourceState; connectionMessage?: string }>(
+      values: T[],
+    ): T[] => values.map((value) => {
+      const next = { ...value, connectionState: state };
+      if (message) next.connectionMessage = message;
+      else delete next.connectionMessage;
+      return next;
+    });
     this.#sources.set(profileId, {
       name,
       state,

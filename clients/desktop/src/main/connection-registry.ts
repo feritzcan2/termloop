@@ -14,7 +14,7 @@ import type {
 } from "../connection-profile-types.js";
 import { decorateConnectionEntities } from "../connection-scope.js";
 import { readDiscovery } from "../platform/discovery.js";
-import { createControlSocket } from "./access-websocket.js";
+import { createControlSocket, remoteConnectionFailureMessage } from "./access-websocket.js";
 import {
   connectionProfiles,
   type DesktopConnectionConfig,
@@ -126,11 +126,19 @@ export class ConnectionRegistry {
           if (attempt === 0 && config?.kind === "remote" && method === "agent.accountList"
             && this.#entries.get(profileId) === entry) continue;
         }
-        if (error instanceof TermLoopControlError) this.#setState(profileId, "connected");
-        else if (entry.state !== "connected") {
-          this.#setState(profileId, "offline", error instanceof Error ? error.message : String(error));
+        if (error instanceof TermLoopControlError) {
+          this.#setState(profileId, "connected");
+          throw error;
         }
-        throw error;
+        // A bare transport failure hides why the remote handshake was refused,
+        // such as a server built from another contract version.
+        const handshakeFailure = config?.kind === "remote" && isControlTransportFailure(error)
+          ? remoteConnectionFailureMessage(profileId)
+          : undefined;
+        if (entry.state !== "connected") {
+          this.#setState(profileId, "offline", handshakeFailure ?? (error instanceof Error ? error.message : String(error)));
+        }
+        throw handshakeFailure ? new Error(handshakeFailure) : error;
       }
     }
   }

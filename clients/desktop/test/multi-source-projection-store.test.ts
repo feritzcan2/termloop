@@ -71,6 +71,23 @@ describe("multi-source projection store", () => {
     expect(snapshot.connection).toBe("connected");
   });
 
+  it("carries the source's offline reason onto its Projects until it reconnects", () => {
+    const store = new ProjectionStore();
+    store.applySourceSnapshot(REMOTE_PROFILE, "Home server", [project(REMOTE_PROFILE, "Remote")], [], []);
+    const remote = () => store.getSnapshot().projects.find((value) => value.name === "Remote");
+
+    store.setSourceConnection(REMOTE_PROFILE, "Home server", "offline", "Version mismatch: server a, desktop b");
+    expect(remote()?.connectionMessage).toBe("Version mismatch: server a, desktop b");
+
+    store.setSourceConnection(REMOTE_PROFILE, "Home server", "connecting");
+    expect(remote()).not.toHaveProperty("connectionMessage");
+
+    store.setSourceConnection(REMOTE_PROFILE, "Home server", "offline", "reconnecting");
+    store.applySourceSnapshot(REMOTE_PROFILE, "Home server", [project(REMOTE_PROFILE, "Remote")], [], []);
+    expect(remote()).toMatchObject({ connectionState: "connected" });
+    expect(remote()).not.toHaveProperty("connectionMessage");
+  });
+
   it("keeps the desktop connected while a remote source reconnects", () => {
     const store = new ProjectionStore();
     store.applySourceSnapshot("local", "This computer", [project("local", "Local")], [], []);

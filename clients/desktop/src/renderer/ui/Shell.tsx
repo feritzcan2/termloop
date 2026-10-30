@@ -113,6 +113,7 @@ import type {
 import { ProjectDialog, ProjectDetailsDialog } from "./project-dialogs/project-dialogs.js";
 import { DeleteProjectDialog } from "./project-dialogs/delete-project-dialog.js";
 import { BackgroundSessionRelocation, type BackgroundSessionRelocationIntent } from "../background-session-relocation.js";
+import { connectionStatusSuffix, isVersionMismatchMessage } from "../connection-source-status.js";
 import {
   appearancePreference,
   setAppearancePreference,
@@ -1517,7 +1518,7 @@ export function Shell(props: ShellProps) {
   };
 
   const assistantProjectId = props.selectedProject?.id;
-  const connectionTitle = props.connectionMessage?.startsWith("Version mismatch:")
+  const connectionTitle = isVersionMismatchMessage(props.connectionMessage)
     ? "Server version mismatch"
     : props.connection === "daemonUnavailable"
       ? "Server unavailable"
@@ -1589,7 +1590,7 @@ export function Shell(props: ShellProps) {
                 <span className="project-trigger-copy">
                   <strong id="project-title">{props.selectedProject?.name ?? "No Project"}</strong>
                   {showSettingsScope
-                    ? <small>{scopeName}{selectedConnectionProfileId !== "local" ? " · Remote" : ""}{selectedSourceOffline ? " · Offline" : ""}</small>
+                    ? <small>{scopeName}{selectedConnectionProfileId !== "local" ? " · Remote" : ""}{connectionStatusSuffix(props.selectedProject?.connectionState, props.selectedProject?.connectionMessage)}</small>
                     : null}
                 </span>
                 <Icon name="chevronDown" />

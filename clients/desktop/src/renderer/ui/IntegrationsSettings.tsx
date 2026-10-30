@@ -8,6 +8,7 @@ import type {
 } from "@termloop/contract/current";
 
 import type { ConnectionProfileSummary } from "../../connection-profile-types.js";
+import { connectionStatusSuffix } from "../connection-source-status.js";
 import {
   groupIntegrations,
   integrationCapabilityLabel,
@@ -74,7 +75,7 @@ export function IntegrationsSettings({
     {profiles && multiple ? <label className="conn-field agent-server-select"><span>Computer</span>
       <select aria-label="Computer" value={profile?.id ?? ""} onChange={(event) => setSelectedProfileId(event.target.value)}>
         {profiles.map((candidate) => <option key={candidate.id} value={candidate.id}>
-          {candidate.name}{candidate.state === "offline" ? " · Offline" : ""}
+          {candidate.name}{connectionStatusSuffix(candidate.state, candidate.message)}
         </option>)}
       </select>
     </label> : null}

@@ -4,6 +4,7 @@ export type ConnectionScope = {
   connectionProfileId?: string;
   connectionProfileName?: string;
   connectionState?: ConnectionSourceState;
+  connectionMessage?: string;
 };
 
 export function connectionProfileIdOf(value: ConnectionScope | undefined): string {
