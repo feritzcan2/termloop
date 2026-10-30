@@ -42,7 +42,7 @@ import { ArchivedRail, archivedRailVisible, useArchivedTasks } from "./ArchivedR
 import { useDeletedSessions } from "./DeletedRail.js";
 import { ChangesOverlay, type ChangesSubject } from "./ChangesOverlay.js";
 import { taskReviewAgentSessions } from "../changes-review.js";
-import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget, GitHostPullRequestChangeListResult, GitHostPullRequestDiffResult, GitHostPullRequestIdentityDto, KeepAwakeSetParams, KeepAwakeStatusResult, McpToolDescriptionResetParams, McpToolDescriptionUpdateParams, McpToolSettingsResult, PlaybookRuntimeResult, ProjectLocalBranchListResult, ProjectWorktreeChangeListResult, ProjectWorktreeDiffResult, ProjectWorktreePreImageResult, QuickActionParams, QuickActionPreviewResult, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, SessionRelocationPreviewDto, SettingsImproverTarget, TaskArchivePreviewDto, TaskBranchCommitChangeListResult, TaskBranchCommitDiffResult, TaskBranchCommitListResult, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, TaskWorktreeChangeListResult, TaskWorktreeCleanupPreviewDto, TaskWorktreeDiffResult, TaskWorktreePreImageResult, TaskWorktreeRepairPreviewDto, VoiceCredentialsSetParams, VoiceSettingsResult, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
+import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget, GitHostPullRequestChangeListResult, GitHostPullRequestDiffResult, GitHostPullRequestIdentityDto, KeepAwakeSetParams, KeepAwakeStatusResult, McpToolDescriptionResetParams, McpToolDescriptionUpdateParams, McpToolSettingsResult, PlaybookRuntimeResult, ProjectLocalBranchListResult, ProjectWorktreeChangeListResult, ProjectWorktreeDiffResult, ProjectWorktreePreImageResult, QuickActionParams, QuickActionPreviewResult, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, SessionRelocationPreviewDto, SettingsImproverTarget, TaskBranchCommitChangeListResult, TaskBranchCommitDiffResult, TaskBranchCommitListResult, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, TaskWorktreeChangeListResult, TaskWorktreeCleanupPreviewDto, TaskWorktreeDiffResult, TaskWorktreePreImageResult, TaskWorktreeRepairPreviewDto, VoiceCredentialsSetParams, VoiceSettingsResult, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
 import type { DeletedSessionDto, SessionHistoryPreviewResult } from "@termloop/contract/current";
 import type { ChangesOpenSource } from "../change-source.js";
 import { CommandPalette, KeyboardShortcutsDialog } from "./CommandPalette.js";
@@ -321,8 +321,6 @@ export type ShellProps = {
   sendProjectReviewNotes(projectId: string, sessionId: string, message: string): Promise<string | undefined>;
   setTaskClosed(taskId: string, closed: boolean): Promise<void>;
   listArchivedTasks(projectId: string): Promise<Task[]>;
-  inspectTaskArchive(taskId: string): Promise<TaskArchivePreviewDto>;
-  archiveTask(taskId: string, archiveTicket: string): Promise<string | undefined>;
   restoreTask(taskId: string): Promise<string | undefined>;
   listArchivedSessions(projectId: string): Promise<Session[]>;
   listDeletedSessions(projectId: string): Promise<DeletedSessionDto[]>;
@@ -1728,10 +1726,7 @@ export function Shell(props: ShellProps) {
             repairTaskWorktree={props.repairTaskWorktree}
             dismissTaskWorktreeRepair={props.dismissTaskWorktreeRepair}
             setTaskClosed={props.setTaskClosed}
-            inspectTaskArchive={props.inspectTaskArchive}
-            archiveTask={props.archiveTask}
             archivedTaskCount={archived.count}
-            archivedTasksChanged={archived.reload}
             closeTaskAndWorktree={props.closeTaskAndWorktree}
             openExternal={props.openExternal}
             provisionRequestedTaskId={provisionRequestedTaskId}

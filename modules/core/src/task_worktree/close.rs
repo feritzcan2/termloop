@@ -49,10 +49,12 @@ pub struct TaskWorktreeRecreationPlan {
 pub enum TaskWorktreeRecreationBase {
     /// Check out `branch_name` again.
     ExistingBranch,
-    /// Release `branch_name` and start a fresh branch derived from it at the
-    /// latest base: the configured Project base when one is set, otherwise the
-    /// observed integration branch.
-    FreshFromBase {
+    /// Check out `branch_name` again so the Task keeps its branch and pull
+    /// request. Only when that checkout cannot be made, release `branch_name`
+    /// and start a fresh branch derived from it at the latest base: the
+    /// configured Project base when one is set, otherwise the observed
+    /// integration branch.
+    ExistingElseFreshFromBase {
         released: TaskBranchBinding,
         configured_base_ref: Option<String>,
     },
@@ -112,15 +114,16 @@ impl CoreRuntime {
             worktree_leaf: branch_worktree_leaf(&branch.name),
             destination_path: None,
             operation_id: termloop_platform::generate_uuid_v4(),
-            base: TaskWorktreeRecreationBase::FreshFromBase {
+            base: TaskWorktreeRecreationBase::ExistingElseFreshFromBase {
                 released: branch.clone(),
                 configured_base_ref,
             },
         })
     }
 
-    /// Frees a closed Task's removed-checkout branch so its reopen checkout
-    /// can start a fresh branch from the latest base.
+    /// Frees a closed Task's removed-checkout branch, which could not be
+    /// checked out again, so its reopen checkout can start a fresh branch from
+    /// the latest base.
     pub fn release_task_branch_for_fresh_checkout(
         &mut self,
         task_id: &str,

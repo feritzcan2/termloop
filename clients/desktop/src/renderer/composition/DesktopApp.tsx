@@ -1953,21 +1953,6 @@ export function DesktopApp() {
     (projectId: string) => sourceApiForProject(projectId).taskList(projectId, undefined, "archived"),
     [],
   );
-  const inspectTaskArchive = useCallback(
-    (taskId: string) => sourceApiForTask(taskId).taskInspectArchive(taskId),
-    [],
-  );
-  const archiveTask = useCallback(async (taskId: string, archiveTicket: string) => {
-    try {
-      await sourceApiForTask(taskId).taskArchive(taskId, archiveTicket);
-      await refreshProjection();
-      return undefined;
-    } catch (error) {
-      const message = controlErrorMessage(error);
-      projectionStore.setMessage(message);
-      return message;
-    }
-  }, []);
   const restoreTask = useCallback(async (taskId: string) => {
     let failure: string | undefined;
     try {
@@ -2683,8 +2668,6 @@ export function DesktopApp() {
       sendProjectReviewNotes={sendProjectReviewNotes}
       setTaskClosed={setTaskClosed}
       listArchivedTasks={listArchivedTasks}
-      inspectTaskArchive={inspectTaskArchive}
-      archiveTask={archiveTask}
       restoreTask={restoreTask}
       listArchivedSessions={listArchivedSessions}
       listDeletedSessions={listDeletedSessions}

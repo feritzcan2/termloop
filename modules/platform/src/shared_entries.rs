@@ -82,8 +82,87 @@ pub fn link_shared_directory(
     #[cfg(unix)]
     std::os::unix::fs::symlink(source, target)?;
     #[cfg(windows)]
-    std::os::windows::fs::symlink_dir(source, target)?;
+    create_junction(source, target)?;
     Ok(SharedEntryOutcome::Linked)
+}
+
+/// A directory symlink needs Developer Mode or elevation on Windows; a
+/// junction does not, and resolves the same way for a local source.
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn create_junction(source: &Path, target: &Path) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+    };
+    use windows_sys::Win32::System::IO::DeviceIoControl;
+
+    const IO_REPARSE_TAG_MOUNT_POINT: u32 = 0xA000_0003;
+    const FSCTL_SET_REPARSE_POINT: u32 = 0x0009_00A4;
+    const HEADER_BYTES: usize = 8;
+    const MOUNT_POINT_HEADER_BYTES: usize = 8;
+
+    let absolute = std::path::absolute(source)?;
+    let mut print: Vec<u16> = absolute.as_os_str().encode_wide().collect();
+    let verbatim: Vec<u16> = r"\\?\".encode_utf16().collect();
+    if print.starts_with(&verbatim) {
+        print.drain(..verbatim.len());
+    }
+    let mut substitute: Vec<u16> = r"\??\".encode_utf16().collect();
+    substitute.extend_from_slice(&print);
+
+    let substitute_bytes = substitute.len() * 2;
+    let print_bytes = print.len() * 2;
+    let data_bytes = MOUNT_POINT_HEADER_BYTES + substitute_bytes + 2 + print_bytes + 2;
+    let length = |value: usize| {
+        u16::try_from(value)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "path too long"))
+    };
+    let mut buffer = Vec::with_capacity(HEADER_BYTES + data_bytes);
+    buffer.extend_from_slice(&IO_REPARSE_TAG_MOUNT_POINT.to_le_bytes());
+    buffer.extend_from_slice(&length(data_bytes)?.to_le_bytes());
+    buffer.extend_from_slice(&0u16.to_le_bytes());
+    buffer.extend_from_slice(&0u16.to_le_bytes());
+    buffer.extend_from_slice(&length(substitute_bytes)?.to_le_bytes());
+    buffer.extend_from_slice(&length(substitute_bytes + 2)?.to_le_bytes());
+    buffer.extend_from_slice(&length(print_bytes)?.to_le_bytes());
+    for unit in substitute.iter().chain(&[0]).chain(&print).chain(&[0]) {
+        buffer.extend_from_slice(&unit.to_le_bytes());
+    }
+
+    fs::create_dir(target)?;
+    let result = (|| {
+        let directory = fs::OpenOptions::new()
+            .write(true)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
+            .open(target)?;
+        let mut returned = 0u32;
+        // SAFETY: the handle is open for the call's duration and the input
+        // buffer is a complete mount-point REPARSE_DATA_BUFFER of the given size.
+        let ok = unsafe {
+            DeviceIoControl(
+                directory.as_raw_handle(),
+                FSCTL_SET_REPARSE_POINT,
+                buffer.as_ptr().cast(),
+                buffer.len() as u32,
+                std::ptr::null_mut(),
+                0,
+                &mut returned,
+                std::ptr::null_mut(),
+            )
+        };
+        if ok == 0 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(())
+        }
+    })();
+    if result.is_err() {
+        let _ = fs::remove_dir(target);
+    }
+    result
 }
 
 /// Removes `path` when it is a link whose target no longer exists, so an

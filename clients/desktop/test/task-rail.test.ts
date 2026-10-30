@@ -282,10 +282,7 @@ function railProps(options: RailOptions = {}): TaskRailProps {
     repairTaskWorktree: unused,
     dismissTaskWorktreeRepair: unused,
     setTaskClosed: async () => {},
-    inspectTaskArchive: unused,
-    archiveTask: unused,
     archivedTaskCount: options.archivedTaskCount ?? 0,
-    archivedTasksChanged: () => {},
     closeTaskAndWorktree: options.closeTaskAndWorktree ?? unused,
     openExternal: async () => {},
     overlayVisibilityChanged: () => {},
@@ -344,7 +341,7 @@ describe("Task rail native overlay", () => {
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
 
-  it("keeps the Task menu and Archive dialog above Ghostty in the overlay window", async () => {
+  it("keeps the Task menu and its dialogs above Ghostty in the overlay window", async () => {
     const container = document.createElement("div");
     const overlayContainer = document.createElement("div");
     document.body.append(container);
@@ -354,7 +351,6 @@ describe("Task rail native overlay", () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     await act(async () => root.render(createElement(TaskRail, {
       ...railProps(),
-      inspectTaskArchive: () => new Promise<Awaited<ReturnType<TaskRailProps["inspectTaskArchive"]>>>(() => {}),
       overlayVisibilityChanged,
       overlayContainer,
     })));
@@ -364,11 +360,12 @@ describe("Task rail native overlay", () => {
     expect(overlayContainer.querySelector(".task-context-menu")).not.toBeNull();
     expect(overlayVisibilityChanged).toHaveBeenLastCalledWith(true);
 
-    const archive = [...overlayContainer.querySelectorAll<HTMLButtonElement>("button[role='menuitem']")]
-      .find((button) => button.textContent?.includes("Archive Task"));
-    await act(async () => archive?.click());
-    expect(container.querySelector("[aria-labelledby='archive-task-title']")).toBeNull();
-    expect(overlayContainer.querySelector("[aria-labelledby='archive-task-title']")).not.toBeNull();
+    const menuItems = [...overlayContainer.querySelectorAll<HTMLButtonElement>("button[role='menuitem']")];
+    expect(menuItems.some((button) => button.textContent?.includes("Archive Task"))).toBe(false);
+    const edit = menuItems.find((button) => button.textContent?.includes("Edit Task"));
+    await act(async () => edit?.click());
+    expect(container.querySelector("[aria-labelledby='task-dialog-title']")).toBeNull();
+    expect(overlayContainer.querySelector("[aria-labelledby='task-dialog-title']")).not.toBeNull();
     expect(overlayVisibilityChanged).toHaveBeenLastCalledWith(true);
 
     await act(async () => overlayContainer.querySelector<HTMLButtonElement>(".dialog-backdrop")?.click());

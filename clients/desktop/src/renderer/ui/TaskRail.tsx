@@ -14,7 +14,7 @@ import { CleanupWorktreeDialog } from "./task-dialogs/cleanup-worktree-dialog.js
 import { DeleteTaskDialog } from "./task-dialogs/delete-task-dialog.js";
 import { RepairWorktreeDialog } from "./task-dialogs/repair-worktree-dialog.js";
 import { TaskEditor, type EditorState, type TaskCreateOutcome, type TaskStartSelection } from "./task-dialogs/task-editor.js";
-import type { AgentCapabilityDto, AgentLibraryEntry, ProjectLocalBranchListResult, ProjectTaskAutomationGetResult, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, TaskArchivePreviewDto, TaskCleanupWorktreeParams, TaskDeveloperNoteDto, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, TaskWorktreeCleanupPreviewDto, TaskWorktreeRepairPreviewDto } from "@termloop/contract/current";
+import type { AgentCapabilityDto, AgentLibraryEntry, ProjectLocalBranchListResult, ProjectTaskAutomationGetResult, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, TaskCleanupWorktreeParams, TaskDeveloperNoteDto, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, TaskWorktreeCleanupPreviewDto, TaskWorktreeRepairPreviewDto } from "@termloop/contract/current";
 import { pullRequestIdentity, type ChangesOpenSource } from "../change-source.js";
 import { isAssistantSession } from "./AssistantRail.js";
 import { isProjectRelocationDragCandidate, isTaskRelocationDragCandidate, useOptionalSidebarSessionDnd, type SessionDropPlacement } from "./SidebarSessionDnd.js";
@@ -282,13 +282,9 @@ export type TaskRailProps = {
   repairTaskWorktree(params: TaskRepairWorktreeParams): Promise<string | undefined>;
   dismissTaskWorktreeRepair(taskId: string, operationId: string): Promise<string | undefined>;
   setTaskClosed(taskId: string, closed: boolean): Promise<void>;
-  inspectTaskArchive(taskId: string): Promise<TaskArchivePreviewDto>;
-  archiveTask(taskId: string, archiveTicket: string): Promise<string | undefined>;
-  /// Archive is initiated here but archived Tasks are rendered by the dedicated
-  /// Archived section, so this rail reports the count for its header breadcrumb
-  /// and announces a successful archive rather than owning the archived list.
+  /// Archived Tasks are rendered by the dedicated Archived section; this rail
+  /// only uses the count to pick its first-visit empty state.
   archivedTaskCount: number;
-  archivedTasksChanged(): void;
   closeTaskAndWorktree(taskId: string, review?: TaskDeleteWorktreeReview): Promise<TaskDeleteWorktreeResult>;
   openExternal(url: string, runSessionId?: string): Promise<void>;
   provisionRequestedTaskId?: string | undefined;
@@ -348,7 +344,6 @@ export function TaskRail(props: TaskRailProps) {
   }, [props.projectId]);
   const [cleanupTarget, setCleanupTarget] = useState<Task>();
   const [repairTarget, setRepairTarget] = useState<Task>();
-  const [archiveTarget, setArchiveTarget] = useState<Task>();
   /// Launches the create flow requested for a Task whose worktree is still
   /// provisioning. Client-local intent only — nothing here is durable, and a
   /// Task that lands anywhere other than launch-ready silently drops its entry
@@ -387,7 +382,7 @@ export function TaskRail(props: TaskRailProps) {
     : undefined;
   const overlayVisible = Boolean(
     menu || editor || currentCloseTarget || bindTarget || provisionTarget || cleanupTarget ||
-    repairTarget || archiveTarget,
+    repairTarget,
   );
   const renderTask = (task: Task, focused = false) => (
     <TaskGroup
@@ -473,7 +468,6 @@ export function TaskRail(props: TaskRailProps) {
     setProvisionTarget(undefined);
     setCleanupTarget(undefined);
     setRepairTarget(undefined);
-    setArchiveTarget(undefined);
     setPendingLaunches(new Map());
   }, [props.projectId]);
   useEffect(() => {
@@ -704,7 +698,6 @@ export function TaskRail(props: TaskRailProps) {
             ) : (
               <MenuButton icon="reopen" label="Reopen Task" detail="Return it to open work" action={() => perform(() => props.setTaskClosed(menuTask.id, false))} />
             )}
-            <MenuButton icon="archive" label="Archive Task" detail="Park safe context and remove it from active work" action={() => perform(() => setArchiveTarget(menuTask))} />
           </div>
         </div>
       ) : null}
@@ -734,16 +727,6 @@ export function TaskRail(props: TaskRailProps) {
       {provisionTarget ? <ProvisionWorktreeDialog task={provisionTarget} projectId={props.projectId} repositoryPath={props.projectFolder ?? ""} rememberedParentPath={lastWorktreeParentPath} rememberParentPath={rememberParentPath} rememberedBaseRef={lastWorktreeBaseRef} rememberBaseRef={rememberBaseRef} listBranches={props.listProjectLocalBranches} close={() => setProvisionTarget(undefined)} provision={props.provisionTaskWorktree} /> : null}
       {cleanupTarget ? <CleanupWorktreeDialog task={cleanupTarget} close={() => setCleanupTarget(undefined)} inspect={props.inspectTaskWorktreeCleanup} cleanup={props.cleanupTaskWorktree} /> : null}
       {repairTarget ? <RepairWorktreeDialog task={repairTarget} close={() => setRepairTarget(undefined)} inspect={props.inspectTaskWorktreeRepair} repair={props.repairTaskWorktree} /> : null}
-      {archiveTarget ? <ArchiveTaskDialog
-        task={archiveTarget}
-        close={() => setArchiveTarget(undefined)}
-        inspect={props.inspectTaskArchive}
-        archive={async (ticket) => {
-          const failure = await props.archiveTask(archiveTarget.id, ticket);
-          if (!failure) props.archivedTasksChanged();
-          return failure;
-        }}
-      /> : null}
       {currentCloseTarget ? <DeleteTaskDialog
         task={currentCloseTarget}
         inspect={props.inspectTaskWorktreeCleanup}
@@ -755,44 +738,6 @@ export function TaskRail(props: TaskRailProps) {
     </section>
   );
 }
-
-function ArchiveTaskDialog({ task, close, inspect, archive }: {
-  task: Task;
-  close(): void;
-  inspect(taskId: string): Promise<TaskArchivePreviewDto>;
-  archive(ticket: string): Promise<string | undefined>;
-}) {
-  const [preview, setPreview] = useState<TaskArchivePreviewDto>();
-  const [error, setError] = useState<string>();
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    let active = true;
-    void inspect(task.id).then((value) => { if (active) setPreview(value); }).catch((failure) => {
-      if (active) setError(failure instanceof Error ? failure.message : String(failure));
-    });
-    return () => { active = false; };
-  }, [inspect, task.id]);
-  const submit = async () => {
-    if (!preview?.can_archive) return;
-    setBusy(true); setError(undefined);
-    const failure = await archive(preview.archive_ticket);
-    if (failure) { setError(failure); setBusy(false); } else close();
-  };
-  return <div className="dialog-layer" onKeyDown={(event) => event.key === "Escape" && close()}>
-    <button className="dialog-backdrop" aria-label="Cancel Task archive" onClick={close} />
-    <section className="dialog-card task-dialog" role="dialog" aria-modal="true" aria-labelledby="archive-task-title">
-      <header className="dialog-header"><div><span className="dialog-eyebrow">Task archive</span><h2 id="archive-task-title">Archive “{task.title}”?</h2></div><button className="icon-button quiet" aria-label="Close dialog" onClick={close}><Icon name="close" /></button></header>
-      <div className="dialog-body">
-        <p className="confirm-copy">The Task leaves the active workflow. Its branch and worktree are kept; attached resumable Agents are parked for restore.</p>
-        {preview?.sessions.length ? <div className="field-help"><strong>Associated Project Sessions</strong><ul>{preview.sessions.map((session) => <li key={session.session_id}>{session.name?.trim() || session.agent_id || session.kind}: {session.disposition === "willParkAndResume" ? "park and resume on restore" : session.disposition === "willPreservePlaceholder" ? "preserve as stopped context" : session.blocker ?? "blocks archive"}</li>)}</ul></div> : <p className="field-help">No Project Sessions are associated with this Task worktree.</p>}
-        {preview?.blockers.length ? <div className="form-error" role="alert"><strong>Archive is blocked.</strong><ul>{preview.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul></div> : null}
-        {error ? <p className="form-error" role="alert">{error}</p> : null}
-      </div>
-      <footer className="dialog-actions"><button className="secondary-button" onClick={close}>Cancel</button><button className="danger-button" disabled={busy || !preview?.can_archive} onClick={() => void submit()}>{busy ? "Archiving…" : preview && !preview.can_archive ? "Archive blocked" : "Archive Task"}</button></footer>
-    </section>
-  </div>;
-}
-
 
 type TaskGroupProps = {
   projectId: string | undefined;

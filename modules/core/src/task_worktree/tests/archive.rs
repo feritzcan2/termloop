@@ -473,6 +473,11 @@ fn reopen_resumes_worktree_removed_agent_inside_recreated_worktree() {
     let plan = fixture.runtime.plan_task_reopen_worktree(&task_id).unwrap();
     assert_eq!(plan.branch_name, "feature/cleanup");
     assert_eq!(plan.worktree_leaf, "feature-cleanup_worktree");
+    assert_eq!(plan.destination_path, None);
+    assert!(matches!(
+        plan.base,
+        crate::task_worktree::TaskWorktreeRecreationBase::ExistingElseFreshFromBase { .. }
+    ));
     let destination = fixture.project_directory.with_file_name(format!(
         "{}-{}",
         plan.worktree_leaf,
@@ -520,16 +525,16 @@ fn reopen_resumes_worktree_removed_agent_inside_recreated_worktree() {
 }
 
 #[test]
-fn reopen_starts_a_fresh_branch_from_base_and_resumes_the_agent_inside_it() {
+fn reopen_falls_back_to_a_fresh_branch_from_base_and_resumes_the_agent_inside_it() {
     let mut fixture = Fixture::new();
     let (task_id, session_id) = close_with_worktree_removed(&mut fixture);
     let plan = fixture.runtime.plan_task_reopen_worktree(&task_id).unwrap();
-    let crate::task_worktree::TaskWorktreeRecreationBase::FreshFromBase {
+    let crate::task_worktree::TaskWorktreeRecreationBase::ExistingElseFreshFromBase {
         released,
         configured_base_ref,
     } = plan.base
     else {
-        panic!("reopen must start from the latest base");
+        panic!("reopen must be able to fall back to the latest base");
     };
     assert_eq!(released.name, "feature/cleanup");
     assert_eq!(configured_base_ref, None);
@@ -582,10 +587,12 @@ fn failed_fresh_checkout_rebinds_the_released_branch() {
     let mut fixture = Fixture::new();
     let (task_id, _) = close_with_worktree_removed(&mut fixture);
     let plan = fixture.runtime.plan_task_reopen_worktree(&task_id).unwrap();
-    let crate::task_worktree::TaskWorktreeRecreationBase::FreshFromBase { released, .. } =
-        plan.base
+    let crate::task_worktree::TaskWorktreeRecreationBase::ExistingElseFreshFromBase {
+        released,
+        ..
+    } = plan.base
     else {
-        panic!("reopen must start from the latest base");
+        panic!("reopen must be able to fall back to the latest base");
     };
     fixture
         .runtime

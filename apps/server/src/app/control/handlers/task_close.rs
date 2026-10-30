@@ -10,10 +10,12 @@ use super::super::super::invalidation::{
     CommitImpact, queue_changed_commit_invalidation, queue_durable_commit_invalidation,
 };
 
-/// Recreates the checkout a closed Task lost at close on a fresh branch from
-/// the latest base, before reopen resumes its parked Agents, so they come back
-/// inside the Task's worktree. Any failure keeps the original branch and
-/// leaves reopen's Project-root fallback in place.
+/// Recreates the checkout a closed Task lost at close, before reopen resumes
+/// its parked Agents, so they come back inside the Task's worktree. The Task's
+/// own branch is checked out again while it can be, which keeps its pull
+/// request; otherwise a fresh branch starts from the latest base. Any failure
+/// keeps the original branch and leaves reopen's Project-root fallback in
+/// place.
 pub(in crate::app) async fn recreate_reopened_task_worktree(params: &Value, state: &AppState) {
     let Some(task_id) = params.get("taskId").and_then(Value::as_str) else {
         return;
@@ -78,34 +80,41 @@ async fn recreate_task_worktree(
             .ok_or_else(|| CoreError::InvalidParams("projectId".into()))
             .map(str::to_owned)
     };
-    let (released, configured_base_ref) = match &plan.base {
-        TaskWorktreeRecreationBase::ExistingBranch => {
-            let branch_ref = format!("refs/heads/{}", plan.branch_name);
-            if !local_refs.contains(&branch_ref.as_str()) {
-                return Err(CoreError::InvalidParams("branchName".into()));
-            }
-            let destination = match &plan.destination_path {
-                Some(path) => path.clone(),
-                None => sibling(&plan.worktree_leaf)?,
-            };
-            return super::provision_task_worktree(
-                json!({
-                    "operationId": plan.operation_id,
-                    "taskId": plan.task_id,
-                    "repositoryPath": repository_path,
-                    "destinationPath": destination,
-                    "branchName": plan.branch_name,
-                    "branchMode": "existing",
-                }),
-                state,
-            )
-            .await
-            .map(drop);
+    let check_out_existing_branch = async || {
+        let branch_ref = format!("refs/heads/{}", plan.branch_name);
+        if !local_refs.contains(&branch_ref.as_str()) {
+            return Err(CoreError::InvalidParams("branchName".into()));
         }
-        TaskWorktreeRecreationBase::FreshFromBase {
+        let destination = match &plan.destination_path {
+            Some(path) => path.clone(),
+            None => sibling(&plan.worktree_leaf)?,
+        };
+        super::provision_task_worktree(
+            json!({
+                "operationId": plan.operation_id,
+                "taskId": plan.task_id,
+                "repositoryPath": repository_path,
+                "destinationPath": destination,
+                "branchName": plan.branch_name,
+                "branchMode": "existing",
+            }),
+            state,
+        )
+        .await
+        .map(drop)
+    };
+    let (released, configured_base_ref) = match &plan.base {
+        TaskWorktreeRecreationBase::ExistingBranch => return check_out_existing_branch().await,
+        TaskWorktreeRecreationBase::ExistingElseFreshFromBase {
             released,
             configured_base_ref,
-        } => (released, configured_base_ref),
+        } => match check_out_existing_branch().await {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                tracing::info!(%error, task_id = plan.task_id, "Task branch could not be checked out again; starting a fresh branch");
+                (released, configured_base_ref)
+            }
+        },
     };
     let base_ref =
         crate::app::task_automation::select_base_ref(&branches, configured_base_ref.as_deref())?;
