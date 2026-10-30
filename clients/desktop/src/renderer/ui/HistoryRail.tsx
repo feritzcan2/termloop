@@ -18,6 +18,9 @@ export type HistoryRailProps = {
   tasks: readonly Task[];
   /// Archived Tasks; restoring one recovers its resumable Agents.
   archivedTasks: readonly Task[];
+  /// Tasks whose close or delete is still removing the worktree; they cannot
+  /// be restored or reopened until it finishes.
+  deletingTaskIds?: ReadonlySet<string>;
   favoriteSessionIds: ReadonlySet<string>;
   termLoopHistoryLoading: boolean;
   selectedSessionId: string | undefined;
@@ -415,20 +418,23 @@ export function HistoryRail(props: HistoryRailProps) {
       {showTermLoopTasks(sourceFilter, stateFilter, locationFilter) ? <section className="history-section" aria-labelledby="task-history-label">
         <div className="rail-subhead" id="task-history-label"><span>Tasks</span><span>{visibleTasks.length}</span></div>
         <div className="history-list">
-          {visibleTasks.map(({ task, archived, closedAt }) => (
-            <article key={`task-${task.id}`} className={`history-row task${archived ? " archived" : ""}`}>
-              <span className="history-row-main" title={task.title}>
-                <span className="history-provider task" aria-hidden="true"><Icon name="archive" /></span>
-                <span className="history-copy">
-                  <strong>{task.title}</strong>
-                  <small>{task.branch ? `${task.branch.name} · ` : ""}{archived ? "archived" : "closed"}{closedAt === null ? "" : ` · ${historyDate(closedAt)}`}</small>
+          {visibleTasks.map(({ task, archived, closedAt }) => {
+            const deleting = props.deletingTaskIds?.has(task.id) ?? false;
+            return (
+              <article key={`task-${task.id}`} className={`history-row task${archived ? " archived" : ""}`}>
+                <span className="history-row-main" title={task.title}>
+                  <span className="history-provider task" aria-hidden="true"><Icon name="archive" /></span>
+                  <span className="history-copy">
+                    <strong>{task.title}</strong>
+                    <small>{task.branch ? `${task.branch.name} · ` : ""}{deleting ? "Deleting…" : archived ? "archived" : "closed"}{closedAt === null || deleting ? "" : ` · ${historyDate(closedAt)}`}</small>
+                  </span>
                 </span>
-              </span>
-              {archived
-                ? <button type="button" className="history-action" title="Restore this Task and recover its resumable Agents" aria-label={`Restore Task ${task.title}`} disabled={props.disabled} onClick={() => props.restoreTask(task.id)}>Restore</button>
-                : <button type="button" className="history-action" title="Reopen this Task" aria-label={`Reopen Task ${task.title}`} disabled={props.disabled} onClick={() => props.reopenTask(task.id)}>Reopen</button>}
-            </article>
-          ))}
+                {archived
+                  ? <button type="button" className="history-action" title={deleting ? "Wait until the worktree is removed" : "Restore this Task and recover its resumable Agents"} aria-label={`Restore Task ${task.title}`} disabled={props.disabled || deleting} onClick={() => props.restoreTask(task.id)}>Restore</button>
+                  : <button type="button" className="history-action" title={deleting ? "Wait until the worktree is removed" : "Reopen this Task"} aria-label={`Reopen Task ${task.title}`} disabled={props.disabled || deleting} onClick={() => props.reopenTask(task.id)}>Reopen</button>}
+              </article>
+            );
+          })}
           {!props.termLoopHistoryLoading && visibleTasks.length === 0 ? <p className="history-empty">{filtersActive ? "No matching closed Tasks." : "No closed Tasks."}</p> : null}
         </div>
       </section> : null}

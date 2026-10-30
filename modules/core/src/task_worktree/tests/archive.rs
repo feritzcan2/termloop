@@ -325,19 +325,14 @@ fn archived_task_reuses_cleanup_then_deletes_only_its_exact_suspension_cohort() 
     );
 }
 
-/// Parks one running Agent by archiving its Task, removes the checkout, and
-/// finalizes the Task as closed, the state close-with-worktree-removal leaves.
-fn close_with_worktree_removed(fixture: &mut Fixture) -> (String, &'static str) {
+/// Parks one running Agent by archiving its Task and removes the checkout,
+/// the state a close leaves when it stops before finalizing.
+fn archive_with_worktree_removed(fixture: &mut Fixture) -> (String, &'static str) {
     let (task_id, destination, proof_id, generation) = provision_cleanup_fixture(fixture);
     let worktree_cwd = termloop_platform::canonical_existing_directory_path(&destination)
         .unwrap()
         .to_string_lossy()
         .into_owned();
-    let project_cwd =
-        termloop_platform::canonical_existing_directory_path(&fixture.project_directory)
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
     let session_id = "parked-worktree-agent";
     fixture
         .runtime
@@ -426,6 +421,18 @@ fn close_with_worktree_removed(fixture: &mut Fixture) -> (String, &'static str) 
             generation,
         ))
         .unwrap();
+    (task_id, session_id)
+}
+
+/// Parks one running Agent by archiving its Task, removes the checkout, and
+/// finalizes the Task as closed, the state close-with-worktree-removal leaves.
+fn close_with_worktree_removed(fixture: &mut Fixture) -> (String, &'static str) {
+    let (task_id, session_id) = archive_with_worktree_removed(fixture);
+    let project_cwd =
+        termloop_platform::canonical_existing_directory_path(&fixture.project_directory)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
     let closed = fixture
         .runtime
         .finalize_closed_worktree_removal(json!({ "taskId": task_id }))
@@ -603,6 +610,115 @@ fn failed_fresh_checkout_rebinds_the_released_branch() {
             .plan_task_reopen_worktree(&task_id)
             .is_some()
     );
+}
+
+#[test]
+fn restoring_an_archived_task_without_its_checkout_settles_into_reopen() {
+    let mut fixture = Fixture::new();
+    let (task_id, session_id) = archive_with_worktree_removed(&mut fixture);
+    let settled = fixture
+        .runtime
+        .settle_archived_task_without_worktree(&json!({ "taskId": task_id }))
+        .unwrap();
+    assert!(settled);
+    let task = fixture
+        .runtime
+        .store
+        .tasks()
+        .iter()
+        .find(|task| task.id == task_id)
+        .unwrap();
+    assert!(task.archived_at_epoch_ms.is_none());
+    assert_eq!(task.status, termloop_domain::TaskStatus::Closed);
+    assert_eq!(
+        fixture.runtime.store.task_archive_suspensions()[0].reason,
+        termloop_domain::TaskSuspensionReason::ClosedWorktreeRemoved,
+    );
+    // Reopen now recreates the checkout and resumes the parked Agent there.
+    assert!(
+        fixture
+            .runtime
+            .plan_task_reopen_worktree(&task_id)
+            .is_some()
+    );
+    let (reopened, resume_session_ids) = fixture
+        .runtime
+        .reopen_task_with_resume_plan(json!({ "taskId": task_id }))
+        .unwrap();
+    assert_eq!(reopened["status"], "open");
+    assert_eq!(resume_session_ids, vec![session_id.to_owned()]);
+}
+
+#[test]
+fn restoring_an_archived_task_with_its_checkout_is_not_settled() {
+    let mut fixture = Fixture::new();
+    let (task_id, _, _, _) = provision_cleanup_fixture(&mut fixture);
+    let preview = fixture
+        .runtime
+        .inspect_task_archive(json!({ "taskId": task_id }))
+        .unwrap();
+    fixture
+        .runtime
+        .archive_task(json!({
+            "taskId": task_id,
+            "operationId": Uuid::new_v4().to_string(),
+            "archiveTicket": preview["archive_ticket"],
+        }))
+        .unwrap();
+    let revision = fixture.runtime.state_revision();
+    assert!(
+        !fixture
+            .runtime
+            .settle_archived_task_without_worktree(&json!({ "taskId": task_id }))
+            .unwrap()
+    );
+    assert_eq!(fixture.runtime.state_revision(), revision);
+}
+
+#[test]
+fn restore_waits_for_a_running_worktree_cleanup() {
+    let mut fixture = Fixture::new();
+    let (task_id, _, proof_id, generation) = provision_cleanup_fixture(&mut fixture);
+    let preview = fixture
+        .runtime
+        .inspect_task_archive(json!({ "taskId": task_id }))
+        .unwrap();
+    fixture
+        .runtime
+        .archive_task(json!({
+            "taskId": task_id,
+            "operationId": Uuid::new_v4().to_string(),
+            "archiveTicket": preview["archive_ticket"],
+        }))
+        .unwrap();
+    let operation_id = Uuid::new_v4().to_string();
+    let TaskWorktreeCleanupPlanning::Observe(plan) = fixture
+        .runtime
+        .plan_task_worktree_cleanup(cleanup_params(
+            &task_id,
+            &operation_id,
+            &proof_id,
+            generation,
+        ))
+        .unwrap()
+    else {
+        panic!("cleanup unexpectedly completed")
+    };
+    fixture
+        .runtime
+        .begin_task_worktree_cleanup(plan.observe().unwrap())
+        .unwrap();
+
+    assert!(matches!(
+        fixture
+            .runtime
+            .settle_archived_task_without_worktree(&json!({ "taskId": task_id })),
+        Ok(false)
+    ));
+    assert!(matches!(
+        fixture.runtime.restore_task(json!({ "taskId": task_id })),
+        Err(CoreError::CleanupInProgress { operation_id: running, .. }) if running == operation_id
+    ));
 }
 
 #[test]

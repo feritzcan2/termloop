@@ -425,6 +425,29 @@ async fn archive_session(
 }
 
 async fn restore_task(params: Value, state: &AppState) -> Result<Value, termloop_core::CoreError> {
+    let (settled, previous_revision, state_revision) = {
+        let mut core = state.core.lock().await;
+        let previous_revision = core.state_revision();
+        let settled = core.settle_archived_task_without_worktree(&params);
+        (settled, previous_revision, core.state_revision())
+    };
+    queue_changed_commit_invalidation(
+        state,
+        CommitImpact::TaskSessionAgent,
+        previous_revision,
+        state_revision,
+    )
+    .await;
+    if settled? {
+        // The close already removed the checkout, so restore continues as
+        // reopen: the checkout comes back and the parked Agents resume in it.
+        let (task, session_ids) = reopen_task_and_resume(params, state).await?;
+        return Ok(json!({
+            "task": task,
+            "restored_session_count": session_ids.len(),
+            "resume_session_ids": session_ids,
+        }));
+    }
     let (result, previous_revision, state_revision) = {
         let mut core = state.core.lock().await;
         let previous_revision = core.state_revision();
@@ -447,7 +470,7 @@ async fn restore_task(params: Value, state: &AppState) -> Result<Value, termloop
         .filter_map(Value::as_str)
         .map(str::to_owned)
         .collect::<Vec<_>>();
-    resume_task_sessions(session_ids, state).await;
+    resume_task_sessions(&session_ids, state).await;
     Ok(result)
 }
 
@@ -455,6 +478,15 @@ pub(in crate::app) async fn reopen_task(
     params: Value,
     state: &AppState,
 ) -> Result<Value, termloop_core::CoreError> {
+    reopen_task_and_resume(params, state)
+        .await
+        .map(|(task, _)| task)
+}
+
+async fn reopen_task_and_resume(
+    params: Value,
+    state: &AppState,
+) -> Result<(Value, Vec<String>), termloop_core::CoreError> {
     recreate_reopened_task_worktree(&params, state).await;
     let (result, previous_revision, state_revision) = {
         let mut core = state.core.lock().await;
@@ -470,11 +502,11 @@ pub(in crate::app) async fn reopen_task(
     )
     .await;
     let (result, session_ids) = result?;
-    resume_task_sessions(session_ids, state).await;
-    Ok(result)
+    resume_task_sessions(&session_ids, state).await;
+    Ok((result, session_ids))
 }
 
-async fn resume_task_sessions(session_ids: Vec<String>, state: &AppState) {
+async fn resume_task_sessions(session_ids: &[String], state: &AppState) {
     for session_id in session_ids {
         let preview =
             match preview_resume_agent_session(json!({ "sessionId": session_id }), state).await {

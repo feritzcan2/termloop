@@ -142,7 +142,8 @@ function harness(initialPreview: TaskWorktreeCleanupPreviewDto) {
 describe("Task delete orchestration", () => {
   it("finishes worktree removal by closing while retaining parked Agent descriptors", async () => {
     const initial = preview([]);
-    const { input, calls } = harness(initial);
+    const { input, calls, setTask } = harness(initial);
+    setTask({ ...task(), archived_at_epoch_ms: 1 });
     input.completion = "close";
     const result = await orchestrateTaskDelete(input);
     expect(result).toEqual({
@@ -150,6 +151,19 @@ describe("Task delete orchestration", () => {
       message: "Worktree removed and Task closed. Parked Agents will restore when the Task is reopened.",
     });
     expect(calls).toEqual({ terminate: 0, close: 0, cleanup: 1, forget: 0, discard: 0, delete: 1 });
+  });
+
+  it("keeps the worktree when the Task is restored before close removes it", async () => {
+    const initial = preview([]);
+    const { input, calls, setTask } = harness(initial);
+    setTask({ ...task(), archived_at_epoch_ms: 1 });
+    input.completion = "close";
+    input.refresh = async () => setTask(task());
+    expect(await orchestrateTaskDelete(input)).toEqual({
+      status: "completed",
+      message: "The Task was restored before its worktree was removed, so the worktree was kept.",
+    });
+    expect(calls).toEqual({ terminate: 0, close: 0, cleanup: 0, forget: 0, discard: 0, delete: 0 });
   });
 
   it("refuses keep-folder stale resolution when the requested outcome removes the worktree", async () => {

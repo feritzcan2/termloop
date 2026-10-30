@@ -494,14 +494,14 @@ describe("Session History rail", () => {
       updated_at_epoch_ms: 1,
     } as unknown as Task;
 
-    await act(async () => root.render(createElement(HistoryRail, {
+    const props = {
       projectId: "project-1",
       projectPath: "/repo",
       projectBranch: "main",
       currentCwd: "/repo",
       sessions: [agent("ordinary")],
       archivedSessions: [],
-      tasks: [{ ...closed, id: "task-3", title: "Closed but kept", status: "closed", archived_at_epoch_ms: null }, { ...closed, id: "task-4", title: "Still open", status: "open", archived_at_epoch_ms: null }],
+      tasks: [{ ...closed, id: "task-3", title: "Closed but kept", status: "closed", archived_at_epoch_ms: null }, { ...closed, id: "task-4", title: "Still open", status: "open", archived_at_epoch_ms: null }] as Task[],
       archivedTasks: [closed, { ...closed, id: "task-2", title: "Unrelated chore" }],
       deletedSessions: [],
       favoriteSessionIds: new Set<string>(),
@@ -518,7 +518,8 @@ describe("Session History rail", () => {
       restoreDeletedSession: vi.fn(),
       reopenTask,
       restoreTask,
-    })));
+    };
+    await act(async () => root.render(createElement(HistoryRail, props)));
 
     expect(container.querySelectorAll(".history-row.task")).toHaveLength(3);
     expect(container.textContent).not.toContain("Still open");
@@ -539,6 +540,12 @@ describe("Session History rail", () => {
     expect(container.querySelectorAll(".history-row.task")).toHaveLength(1);
     await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Restore Task Ship the history rail"]')!.click());
     expect(restoreTask).toHaveBeenCalledWith("task-1");
+
+    // A Task whose close is still removing its worktree cannot be restored yet.
+    await act(async () => root.render(createElement(HistoryRail, { ...props, deletingTaskIds: new Set(["task-1"]) })));
+    const busyRestore = container.querySelector<HTMLButtonElement>('[aria-label="Restore Task Ship the history rail"]')!;
+    expect(busyRestore.disabled).toBe(true);
+    expect(container.textContent).toContain("Deleting…");
 
     await act(async () => root.unmount());
     container.remove();

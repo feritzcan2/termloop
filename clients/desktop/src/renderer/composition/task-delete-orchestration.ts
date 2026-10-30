@@ -68,6 +68,17 @@ export async function orchestrateTaskDelete(input: TaskDeleteOrchestration): Pro
     preview,
     message,
   });
+  // Close removes the worktree of a Task it archived first. When the Task was
+  // restored in the meantime, its Agents are coming back, so keep the worktree.
+  const restoredBeforeRemoval = async (): Promise<boolean> => {
+    if (!closesTask) return false;
+    await input.refresh();
+    return input.currentTask()?.archived_at_epoch_ms === null;
+  };
+  const keptForRestore: TaskDeleteWorktreeResult = {
+    status: "completed",
+    message: "The Task was restored before its worktree was removed, so the worktree was kept.",
+  };
   let worktreeRemoved = false;
   let bindingForgotten = false;
   let retainedDescriptors = 0;
@@ -188,6 +199,7 @@ export async function orchestrateTaskDelete(input: TaskDeleteOrchestration): Pro
         && currentResolution.target_path === preview.target_path
         ? currentResolution.operation_id
         : undefined;
+      if (await restoredBeforeRemoval()) return keptForRestore;
       const outcome = await input.discardStale({
         operationId: retryOperationId ?? input.freshId(),
         taskId: input.taskId,
@@ -283,6 +295,7 @@ export async function orchestrateTaskDelete(input: TaskDeleteOrchestration): Pro
       cleanupMode: intent.mode,
       acknowledgedContentBlockers: intent.acknowledgedContentBlockers,
     };
+    if (await restoredBeforeRemoval()) return keptForRestore;
     try {
       const cleanup = await input.cleanup(cleanupParams);
       if (cleanup.outcome === "running") {

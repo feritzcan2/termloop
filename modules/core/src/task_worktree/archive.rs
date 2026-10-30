@@ -3,6 +3,7 @@ use std::path::Path;
 use serde_json::{Value, json};
 use termloop_domain::{
     SessionKind, TaskArchiveOperation, TaskArchiveOperationState, TaskArchiveTarget,
+    WorktreeCleanupOutcome, WorktreeStaleResolutionMode,
 };
 
 use super::health::comparison_key;
@@ -678,6 +679,7 @@ impl CoreRuntime {
                 "restored_session_count": 0,
             }));
         };
+        self.ensure_task_worktree_not_being_removed(&task_id)?;
         let session_ids = self
             .store
             .task_archive_suspensions()
@@ -726,6 +728,90 @@ impl CoreRuntime {
             "resume_session_ids": resume_session_ids,
             "restored_session_count": session_ids.len(),
         }))
+    }
+
+    /// A close that stopped after removing its checkout leaves an archived
+    /// Task without a worktree, where restore finds no Agent to bring back.
+    /// Settles that Task into the closed, worktree-removed state reopen
+    /// handles, so the caller can recreate the checkout and resume the parked
+    /// Agents inside it. Returns whether the Task was settled.
+    pub fn settle_archived_task_without_worktree(
+        &mut self,
+        params: &Value,
+    ) -> Result<bool, CoreError> {
+        let task_id = required_string(params, "taskId")?;
+        let task = self
+            .store
+            .tasks()
+            .iter()
+            .find(|task| task.id == task_id)
+            .ok_or(CoreError::NotFound)?;
+        if task.archived_at_epoch_ms.is_none() || task.worktree.is_some() {
+            return Ok(false);
+        }
+        self.ensure_task_worktree_not_being_removed(&task_id)?;
+        let generation = task.worktree_generation;
+        let removal_proven = self.store.cleanup_receipts().iter().any(|receipt| {
+            receipt.task_id == task_id
+                && receipt.worktree_generation == generation
+                && receipt.outcome == WorktreeCleanupOutcome::Removed
+        }) || self
+            .store
+            .stale_resolution_receipts()
+            .iter()
+            .any(|receipt| {
+                receipt.task_id == task_id
+                    && receipt.worktree_generation == generation
+                    && receipt.mode == WorktreeStaleResolutionMode::DiscardDirectory
+            });
+        let operation_pending = self
+            .store
+            .task_archive_operations()
+            .iter()
+            .any(|operation| operation.task_id == task_id)
+            || self
+                .store
+                .cleanup_operations()
+                .iter()
+                .any(|operation| operation.task_id == task_id)
+            || self
+                .store
+                .stale_resolution_operations()
+                .iter()
+                .any(|operation| operation.task_id == task_id);
+        if !removal_proven || operation_pending {
+            return Ok(false);
+        }
+        self.finalize_closed_worktree_removal(json!({ "taskId": task_id }))?;
+        Ok(true)
+    }
+
+    /// Refuses while the Task's checkout is being removed, so restore never
+    /// brings Agents back into a folder that is about to disappear.
+    fn ensure_task_worktree_not_being_removed(&self, task_id: &str) -> Result<(), CoreError> {
+        if let Some(operation) = self
+            .store
+            .cleanup_operations()
+            .iter()
+            .find(|operation| operation.task_id == task_id && operation.failure.is_none())
+        {
+            return Err(CoreError::CleanupInProgress {
+                task_id: task_id.to_owned(),
+                operation_id: operation.operation_id.clone(),
+            });
+        }
+        if let Some(operation) = self
+            .store
+            .stale_resolution_operations()
+            .iter()
+            .find(|operation| operation.task_id == task_id && operation.failure.is_none())
+        {
+            return Err(CoreError::StaleDisposalInProgress {
+                task_id: task_id.to_owned(),
+                operation_id: operation.operation_id.clone(),
+            });
+        }
+        Ok(())
     }
 
     pub(crate) fn archived_task_context(&self, params: Value) -> Result<Value, CoreError> {

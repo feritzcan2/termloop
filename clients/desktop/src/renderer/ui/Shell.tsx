@@ -1795,6 +1795,7 @@ export function Shell(props: ShellProps) {
             deletedSessions={deleted.sessions}
             tasks={props.projectTasks}
             archivedTasks={archived.tasks}
+            deletingTaskIds={props.deletingTaskIds}
             favoriteSessionIds={favoriteAgentSessionIds}
             termLoopHistoryLoading={archived.loading || deleted.loading}
             selectedSessionId={props.selectedSession?.id}
