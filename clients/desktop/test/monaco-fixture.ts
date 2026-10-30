@@ -6,8 +6,9 @@ type Model = { value: string; language: string; disposed: boolean; getValue(): s
 export function fakeMonaco() {
   const commands = new Map<number, () => void>();
   const contentListeners = new Set<() => void>();
+  const scrollListeners = new Set<() => void>();
   const models: Model[] = [];
-  const state = { model: undefined as Model | undefined, readOnly: false, theme: "" };
+  const state = { model: undefined as Model | undefined, readOnly: false, theme: "", topLine: 1 };
   const changed = () => contentListeners.forEach((listener) => listener());
   const monaco = {
     KeyMod: { CtrlCmd: 2048 },
@@ -31,6 +32,10 @@ export function fakeMonaco() {
         return {
           addCommand: (key: number, run: () => void) => { commands.set(key, run); },
           onDidChangeModelContent: (listener: () => void) => { contentListeners.add(listener); },
+          onDidScrollChange: (listener: () => void) => { scrollListeners.add(listener); },
+          getVisibleRanges: () => [{ startLineNumber: state.topLine }],
+          getTopForLineNumber: (line: number) => line,
+          setScrollTop: (top: number) => { state.topLine = top; },
           getModel: () => state.model,
           setModel: (model: Model | null) => { state.model = model ?? undefined; },
           saveViewState: () => null,
@@ -49,5 +54,7 @@ export function fakeMonaco() {
     /// Types into the shown model the way a user edit would.
     type(value: string) { state.model!.value = value; changed(); },
     save() { commands.get(2048 | 49)!(); },
+    /// Scrolls the view so `line` is the top visible line.
+    scrollTo(line: number) { state.topLine = line; scrollListeners.forEach((listener) => listener()); },
   };
 }

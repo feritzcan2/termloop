@@ -48,7 +48,11 @@ export function FileEditorOverlay({ subject, editor, snapshot, readOnly, hide, c
   </section>;
 }
 
-export function FileEditorBody({ editor, snapshot, tab, readOnly }: { editor: FileEditor; snapshot: FileEditorSnapshot; tab: FileEditorTab; readOnly: boolean }) {
+/// `scrollLine` opens a file without a saved view state at that line and
+/// reports the top visible line as the reader scrolls.
+export type EditorScrollLine = { initial: number | undefined; changed(line: number): void };
+
+export function FileEditorBody({ editor, snapshot, tab, readOnly, scrollLine }: { editor: FileEditor; snapshot: FileEditorSnapshot; tab: FileEditorTab; readOnly: boolean; scrollLine?: EditorScrollLine | undefined }) {
   const { dirty } = tab;
   const editable = tab.status === "ready" && !readOnly;
   return <div className="file-editor-body">
@@ -58,7 +62,7 @@ export function FileEditorBody({ editor, snapshot, tab, readOnly }: { editor: Fi
       {tab.conflict.version && editable ? <button type="button" className="danger-button" onClick={() => void editor.save(tab.path, true)}>Overwrite</button> : null}
     </div> : null}
     {tab.message && tab.status === "ready" ? <div className="file-editor-banner" role="alert"><span>{tab.message}</span></div> : null}
-    <MonacoSurface editor={editor} snapshot={snapshot} readOnly={!editable} hidden={tab.status !== "ready"} />
+    <MonacoSurface editor={editor} snapshot={snapshot} readOnly={!editable} hidden={tab.status !== "ready"} scrollLine={scrollLine} />
     {tab.status === "loading" ? <p className="file-editor-message" role="status">Loading file…</p>
       : tab.status === "unavailable" ? <p className="file-editor-message" role="alert">{tab.message}</p> : null}
     <footer className="file-editor-status">
@@ -71,7 +75,7 @@ export function FileEditorBody({ editor, snapshot, tab, readOnly }: { editor: Fi
 
 /// One Monaco instance for all tabs: each path keeps its own model, so undo
 /// history, selections and scroll survive switching tabs.
-function MonacoSurface({ editor, snapshot, readOnly, hidden }: { editor: FileEditor; snapshot: FileEditorSnapshot; readOnly: boolean; hidden: boolean }) {
+function MonacoSurface({ editor, snapshot, readOnly, hidden, scrollLine }: { editor: FileEditor; snapshot: FileEditorSnapshot; readOnly: boolean; hidden: boolean; scrollLine?: EditorScrollLine | undefined }) {
   const host = useRef<HTMLDivElement>(null);
   const [instance, setInstance] = useState<{ monaco: typeof Monaco; view: Monaco.editor.IStandaloneCodeEditor }>();
   const [failure, setFailure] = useState<string>();
@@ -80,6 +84,8 @@ function MonacoSurface({ editor, snapshot, readOnly, hidden }: { editor: FileEdi
   const shown = useRef<string | undefined>(undefined);
   const applying = useRef(false);
   const theme = useSyncExternalStore(subscribeAppearanceTheme, appearanceTheme, appearanceTheme);
+  const scrollLineRef = useRef(scrollLine);
+  scrollLineRef.current = scrollLine;
 
   useEffect(() => {
     let disposed = false;
@@ -98,6 +104,10 @@ function MonacoSurface({ editor, snapshot, readOnly, hidden }: { editor: FileEdi
       view.onDidChangeModelContent(() => {
         const model = view.getModel();
         if (!applying.current && model && shown.current) editor.edit(shown.current, model.getValue());
+      });
+      view.onDidScrollChange(() => {
+        const line = view.getVisibleRanges()[0]?.startLineNumber;
+        if (line !== undefined && shown.current) scrollLineRef.current?.changed(line);
       });
       created = view;
       setInstance({ monaco, view });
@@ -141,7 +151,9 @@ function MonacoSurface({ editor, snapshot, readOnly, hidden }: { editor: FileEdi
     view.setModel(path ? models.current.get(path)! : null);
     if (!path) return;
     const state = viewStates.current.get(path);
+    const initialLine = scrollLineRef.current?.initial;
     if (state) view.restoreViewState(state);
+    else if (initialLine !== undefined) view.setScrollTop(view.getTopForLineNumber(initialLine));
     view.focus();
   }, [editor, instance, snapshot]);
 

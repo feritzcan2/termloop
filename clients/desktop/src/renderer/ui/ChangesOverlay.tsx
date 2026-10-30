@@ -151,6 +151,12 @@ export function ChangesOverlay({
   const [viewType, setViewType] = useState<"unified" | "split">("unified");
   const [fullFile, setFullFile] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  // Switching between the diff and the editor keeps the reader on the same
+  // new-side line: the diff's top line opens the editor, and the editor's top
+  // line scrolls the re-listed diff once it renders.
+  const [editorInitialLine, setEditorInitialLine] = useState<number>();
+  const editorTopLine = useRef<number | undefined>(undefined);
+  const pendingDiffLine = useRef<number | undefined>(undefined);
   const [preImages, setPreImages] = useState<ReadonlyMap<string, CachedPreImage>>(new Map());
   const [loadingPreImage, setLoadingPreImage] = useState(false);
   const [preImageError, setPreImageError] = useState<string>();
@@ -432,17 +438,26 @@ export function ChangesOverlay({
   const showEditor = editMode && editPath !== undefined;
   // Saved edits move the worktree past this observation: list it again so the
   // diff shows them, keeping the edited file selected under its new entry ID.
+  const showEditorAtDiffLine = () => {
+    const line = diffTopLine(overlayRef.current);
+    editorTopLine.current = line;
+    setEditorInitialLine(line);
+    setEditMode(true);
+  };
   const showDiff = async () => {
     setEditMode(false);
     if (!selected || !("side" in selected)) return;
     const key = `${selected.side}:${selected.display_path}`;
+    const line = editorTopLine.current;
     try {
       const next = await readsRef.current.list(subject.id);
+      pendingDiffLine.current = line;
       setDiffs((current) => withoutKeyPrefix(current, "local:"));
       setPreImages((current) => withoutKeyPrefix(current, "local:"));
       setLocalChanges(next);
       const match = next.entries.find((candidate) => `${candidate.side}:${candidate.display_path}` === key);
       if (match) setSelectedId(match.entry_id);
+      else pendingDiffLine.current = undefined;
     } catch (failure) {
       setError(errorMessage(failure, "Local changes could not be loaded."));
     }
@@ -515,6 +530,12 @@ export function ChangesOverlay({
     : fullFileState?.state === "alreadyComplete"
       ? 0
       : undefined;
+
+  useEffect(() => {
+    const line = pendingDiffLine.current;
+    if (showEditor || line === undefined || !scrollDiffToLine(overlayRef.current, line)) return;
+    pendingDiffLine.current = undefined;
+  }, [renderedHunks, showEditor]);
 
   const fullFileStatus = fullFileStatusMessage({
     fullFile,
@@ -750,10 +771,10 @@ export function ChangesOverlay({
           {selected ? <div className="changes-file-heading"><ChangeBadge entry={selected} /><strong>{selected.display_path}</strong>{selected.path_encoding === "lossy" ? <span title="The exact path is represented by an opaque identifier.">lossy display</span> : null}
             {editPath ? <div className="changes-view-toggle changes-edit-toggle" role="group" aria-label="File view">
               <button type="button" aria-pressed={!showEditor} className={showEditor ? "" : "active"} onClick={() => { if (showEditor) void showDiff(); }}>Diff</button>
-              <button type="button" aria-pressed={showEditor} className={showEditor ? "active" : ""} title={editing?.readOnly ? "This computer is shared read-only" : "Edit the working-tree file"} onClick={() => setEditMode(true)}>Edit</button>
+              <button type="button" aria-pressed={showEditor} className={showEditor ? "active" : ""} title={editing?.readOnly ? "This computer is shared read-only" : "Edit the working-tree file"} onClick={() => { if (!showEditor) showEditorAtDiffLine(); }}>Edit</button>
             </div> : null}</div> : null}
           <div className="changes-diff-content">
-            {showEditor ? <ChangesFileEditor editing={editing!} path={editPath} /> : <>
+            {showEditor ? <ChangesFileEditor editing={editing!} path={editPath} scrollLine={{ initial: editorInitialLine, changed: (line) => { editorTopLine.current = line; } }} /> : <>
             {loadingDiff ? <p className="changes-placeholder">Loading diff…</p> : null}
             {!selected && !loadingSources && loadingSourceKey !== selectedSourceKey ? <p className="changes-placeholder">Select a changed file.</p> : null}
             {selectedDiff?.state === "binary" ? <DiffState title="Binary change" detail="Binary content is not sent over the control channel." /> : null}
@@ -950,7 +971,7 @@ function RenderedDiff({
                 event.stopPropagation();
                 openLineReview(change, side);
               }}
-            ><span>{renderDefault()}</span><b aria-hidden="true">+</b></button>
+            ><span data-new-line={side === "new" && change.type !== "delete" ? changeReviewLine(change, side).lineNumber : undefined}>{renderDefault()}</span><b aria-hidden="true">+</b></button>
           );
         }}
       >
@@ -1043,6 +1064,30 @@ function trapDialogFocus(event: ReactKeyboardEvent<HTMLElement>) {
     event.preventDefault();
     first.focus();
   }
+}
+
+function diffLines(overlay: HTMLElement | null): { scroll: HTMLElement; lines: HTMLElement[] } | undefined {
+  const scroll = overlay?.querySelector<HTMLElement>(".changes-diff-scroll");
+  const lines = scroll ? [...scroll.querySelectorAll<HTMLElement>("[data-new-line]")] : [];
+  return scroll && lines.length > 0 ? { scroll, lines } : undefined;
+}
+
+/// The first new-side line visible at the top of the diff.
+function diffTopLine(overlay: HTMLElement | null): number | undefined {
+  const diff = diffLines(overlay);
+  if (!diff) return undefined;
+  const top = diff.scroll.getBoundingClientRect().top;
+  const line = diff.lines.find((candidate) => candidate.getBoundingClientRect().bottom > top) ?? diff.lines.at(-1);
+  return line ? Number(line.dataset.newLine) : undefined;
+}
+
+/// Scrolls the diff so the last shown line at or before `line` is at its top.
+function scrollDiffToLine(overlay: HTMLElement | null, line: number): boolean {
+  const diff = diffLines(overlay);
+  if (!diff) return false;
+  const target = [...diff.lines].reverse().find((candidate) => Number(candidate.dataset.newLine) <= line) ?? diff.lines[0]!;
+  diff.scroll.scrollTop += target.getBoundingClientRect().top - diff.scroll.getBoundingClientRect().top;
+  return true;
 }
 
 function isTextEntryTarget(target: EventTarget | null): boolean {

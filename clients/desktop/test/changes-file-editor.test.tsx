@@ -15,6 +15,9 @@ function entry(entryId: string, displayPath: string, side: TaskWorktreeChangeEnt
   return { entry_id: entryId, display_path: displayPath, original_display_path: null, path_encoding: "utf8", side, kind, render_state: "available" };
 }
 
+/// A one-line change followed by unchanged context, `lines` new-side lines long.
+const longPatch = (lines: number) => `diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1,${lines} +1,${lines} @@\n-x\n+y\n${Array.from({ length: lines - 1 }, (_, index) => ` line ${index + 2}\n`).join("")}`;
+
 const changeList = (observationId: string, entries: TaskWorktreeChangeEntryDto[]): TaskWorktreeChangeListResult =>
   ({ task_id: "task-1", observation_id: observationId, worktree_generation: 1, entries, truncated: false });
 
@@ -35,16 +38,17 @@ describe("Editing files from the Changes review", () => {
     await act(async () => root.unmount());
     container.remove();
     vi.clearAllMocks();
+    vi.restoreAllMocks();
   });
 
-  function Harness({ editor, list }: { editor: FileEditor; list: ChangesOverlayProps["list"] }) {
+  function Harness({ editor, list, lines = 1 }: { editor: FileEditor; list: ChangesOverlayProps["list"]; lines?: number }) {
     const snapshot = useSyncExternalStore(editor.subscribe, editor.getSnapshot);
     return <ChangesOverlay
       subject={{ id: "task-1", title: "Task", kind: "task", hasWorktree: true, hasBranch: false }}
       initialSource={{ kind: "local" }}
       close={() => {}}
       list={list}
-      diff={async (taskId, observationId, entryId) => ({ task_id: taskId, observation_id: observationId, entry_id: entryId, state: "patch", patch: "diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1 +1 @@\n-x\n+y\n" })}
+      diff={async (taskId, observationId, entryId) => ({ task_id: taskId, observation_id: observationId, entry_id: entryId, state: "patch", patch: longPatch(lines) })}
       preImage={async (taskId, observationId, entryId) => ({ task_id: taskId, observation_id: observationId, entry_id: entryId, state: "notShown", revision: "head", content: null })}
       listCommits={async () => { throw new Error("no branch"); }}
       listCommitChanges={async () => { throw new Error("no branch"); }}
@@ -84,6 +88,34 @@ describe("Editing files from the Changes review", () => {
     expect(list).toHaveBeenCalledTimes(2);
     expect(container.querySelector(".changes-diff .file-editor-body")).toBeNull();
     expect(container.querySelector(".changes-file-heading strong")?.textContent).toBe("src/alpha.ts");
+  });
+
+  it("keeps the reader on the same line when switching between the diff and the editor", async () => {
+    // jsdom has no layout: each new-side line is 20px tall below its scroll container.
+    const scrollTops = new WeakMap<Element, number>();
+    vi.spyOn(HTMLElement.prototype, "scrollTop", "get").mockImplementation(function (this: HTMLElement) { return scrollTops.get(this) ?? 0; });
+    vi.spyOn(HTMLElement.prototype, "scrollTop", "set").mockImplementation(function (this: HTMLElement, value: number) { scrollTops.set(this, value); });
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const line = this.dataset.newLine;
+      const scroll = this.closest<HTMLElement>(".changes-diff-scroll");
+      const top = line ? Number(line) * 20 - (scroll?.scrollTop ?? 0) : 0;
+      return { top, bottom: top + 20, left: 0, right: 0, width: 0, height: 20, x: 0, y: top, toJSON: () => ({}) } as DOMRect;
+    });
+    const editor = new FileEditor({ read, write: (path) => write(path) });
+    const list = vi.fn<ChangesOverlayProps["list"]>(async () => changeList("local-1", [entry("a-1", "src/alpha.ts", "unstaged")]));
+    await act(async () => root.render(<Harness editor={editor} list={list} lines={30} />));
+    await settle();
+    const scroll = () => container.querySelector<HTMLElement>(".changes-diff-scroll")!;
+    scroll().scrollTop = 200;
+
+    await act(async () => toggle("Edit")!.click());
+    await settle();
+    expect(fake.current!.state.topLine).toBe(10);
+
+    await act(async () => fake.current!.scrollTo(20));
+    await act(async () => toggle("Diff")!.click());
+    await settle();
+    expect(scroll().scrollTop).toBe(400);
   });
 
   it("offers editing only for local changes with a working-tree file", () => {
