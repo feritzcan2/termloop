@@ -15,8 +15,9 @@ export type ArchivedTasksBinding = {
   /// How many Tasks are archived right now, for the Tasks header breadcrumb.
   count: number;
   /// Re-read the archived page after an archive succeeds.
-  reload(): void;
-  restore(taskId: string): void;
+  reload(): Promise<void>;
+  /// Settles once the restored Task has left the re-read archived page.
+  restore(taskId: string): Promise<void>;
   restoreSession(sessionId: string): void;
 };
 
@@ -39,9 +40,9 @@ export function useArchivedTasks(options: {
   const [loading, setLoading] = useState(false);
   const { list, projectId, restore: restoreTask } = options;
   const reload = useCallback(() => {
-    if (!projectId) { setTasks([]); setSessions([]); return; }
+    if (!projectId) { setTasks([]); setSessions([]); return Promise.resolve(); }
     setLoading(true);
-    void Promise.all([list(projectId), options.listSessions(projectId)])
+    return Promise.all([list(projectId), options.listSessions(projectId)])
       .then(([page, archivedSessions]) => {
         setTasks(page);
         setSessions(archivedSessions);
@@ -52,7 +53,7 @@ export function useArchivedTasks(options: {
   useEffect(() => { reload(); }, [reload, options.activeTaskCount]);
 
   const restore = useCallback((taskId: string) => {
-    void restoreTask(taskId).then((failure) => { if (!failure) reload(); });
+    return restoreTask(taskId).then((failure) => { if (!failure) return reload(); });
   }, [restoreTask, reload]);
 
   const restoreSession = useCallback((sessionId: string) => {

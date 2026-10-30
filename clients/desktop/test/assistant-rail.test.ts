@@ -274,6 +274,23 @@ describe("Assistant rail Session classification", () => {
     expect(markup).toContain("assistant-task-row processing");
   });
 
+  it("leads a Playbook Task row with its Jira key, as the Task rail card does", () => {
+    const markup = renderToStaticMarkup(AssistantTaskRow({
+      task: {
+        id: "task-1",
+        project_id: "project-1",
+        title: "UKIE-123: [Payments] Retry failed captures",
+        status: "open",
+        branch: null,
+        worktree: null,
+        jira_url: "https://example.atlassian.net/browse/UKIE-123",
+      } as Task,
+      processingTaskIds: [],
+      openTask: () => undefined,
+    }));
+    expect(markup).toContain('<strong><span class="assistant-task-key">UKIE-123</span>[Payments] Retry failed captures</strong>');
+  });
+
   it("positions a dropped Task at the chosen step before checking that exact Task", async () => {
     const calls: string[] = [];
     const playbook = {

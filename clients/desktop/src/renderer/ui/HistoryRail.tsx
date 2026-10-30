@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DeletedSessionDto, SessionHistoryEntryDto, SessionHistoryListResult, SessionHistoryPreviewResult } from "@termloop/contract/current";
 import type { Session, Task } from "../model.js";
-import { basename, isLiveSession, sessionIsImprover, sessionLabel } from "../model.js";
+import { basename, isLiveSession, sessionIsImprover, sessionLabel, taskJiraIssueKey } from "../model.js";
+import { taskCardTitle } from "../task-card-copy.js";
 import { isAssistantSession } from "./AssistantRail.js";
 import { deletedRetentionLabel } from "./DeletedRail.js";
 import { Icon } from "./Icon.js";
@@ -33,8 +34,10 @@ export type HistoryRailProps = {
   restoreArchivedSession(sessionId: string): void;
   deleteArchivedSession(sessionId: string): void;
   restoreDeletedSession(sessionId: string): void;
-  reopenTask(taskId: string): void;
-  restoreTask(taskId: string): void;
+  /// Both settle once the projection no longer lists the Task as closed, so
+  /// the row can show its pending state until it leaves the list.
+  reopenTask(taskId: string): void | Promise<unknown>;
+  restoreTask(taskId: string): void | Promise<unknown>;
 };
 
 type HistoryTask = { task: Task; archived: boolean; closedAt: number | null };
@@ -149,6 +152,19 @@ export function HistoryRail(props: HistoryRailProps) {
   const [expandedPreviewSessionId, setExpandedPreviewSessionId] = useState<string>();
   const [termLoopPreviews, setTermLoopPreviews] = useState<ReadonlyMap<string, TermLoopPreviewState>>(() => new Map());
   const [visibleExternalCount, setVisibleExternalCount] = useState(HISTORY_PAGE_SIZE);
+  /// Reopen and Restore provision a worktree and resume Agents before the row
+  /// leaves the list, so the row says so until the action settles.
+  const [pendingTaskIds, setPendingTaskIds] = useState<ReadonlySet<string>>(() => new Set());
+  const runTaskAction = useCallback((taskId: string, action: (taskId: string) => void | Promise<unknown>) => {
+    setPendingTaskIds((current) => new Set(current).add(taskId));
+    void Promise.resolve(action(taskId)).catch(() => undefined).finally(() => {
+      setPendingTaskIds((current) => {
+        const next = new Set(current);
+        next.delete(taskId);
+        return next;
+      });
+    });
+  }, []);
   const loadGenerationRef = useRef(0);
   const initialLoadProjectRef = useRef<string | undefined>(undefined);
   const inactive = useMemo(() => inactiveHistorySessions(props.sessions), [props.sessions]);
@@ -242,7 +258,7 @@ export function HistoryRail(props: HistoryRailProps) {
   // Closed Tasks carry no cwd or provider, so only search and time filter them.
   const visibleTasks = tab === "tasks"
     ? historyTasks.filter(({ task, closedAt }) => (
-      (!normalizedQuery || task.title.toLowerCase().includes(normalizedQuery) || task.branch?.name.toLowerCase().includes(normalizedQuery))
+      (!normalizedQuery || task.title.toLowerCase().includes(normalizedQuery) || task.jira_url?.toLowerCase().includes(normalizedQuery) || task.branch?.name.toLowerCase().includes(normalizedQuery))
       && (timeFilter === "all" || (closedAt !== null && externalTimeMatches(closedAt, timeFilter)))
     ))
     : [];
@@ -418,18 +434,24 @@ export function HistoryRail(props: HistoryRailProps) {
         <div className="history-list">
           {visibleTasks.map(({ task, archived, closedAt }) => {
             const deleting = props.deletingTaskIds?.has(task.id) ?? false;
+            const pending = pendingTaskIds.has(task.id);
+            const cardTitle = taskCardTitle(task.title, task.jira_url ? taskJiraIssueKey(task.jira_url) : undefined);
             return (
               <article key={`task-${task.id}`} className={`history-row task${archived ? " archived" : ""}`}>
                 <span className="history-row-main" title={task.title}>
                   <span className="history-provider task" aria-hidden="true"><Icon name="archive" /></span>
                   <span className="history-copy">
-                    <strong>{task.title}</strong>
-                    <small>{task.branch ? `${task.branch.name} · ` : ""}{deleting ? "Deleting…" : archived ? "archived" : "closed"}{closedAt === null || deleting ? "" : ` · ${historyDate(closedAt)}`}</small>
+                    <span className="history-title-line">
+                      {cardTitle.key ? <span className="task-card-key">{cardTitle.key}</span> : null}
+                      {cardTitle.scope ? <span className="task-card-scope" title={cardTitle.scope}>{cardTitle.scope}</span> : null}
+                      <strong>{cardTitle.title}</strong>
+                    </span>
+                    <small>{task.branch ? `${task.branch.name} · ` : ""}{deleting ? "Deleting…" : pending ? (archived ? "Restoring…" : "Reopening…") : archived ? "archived" : "closed"}{closedAt === null || deleting || pending ? "" : ` · ${historyDate(closedAt)}`}</small>
                   </span>
                 </span>
                 {archived
-                  ? <button type="button" className="history-action" title={deleting ? "Wait until the worktree is removed" : "Restore this Task and recover its resumable Agents"} aria-label={`Restore Task ${task.title}`} disabled={props.disabled || deleting} onClick={() => props.restoreTask(task.id)}>Restore</button>
-                  : <button type="button" className="history-action" title={deleting ? "Wait until the worktree is removed" : "Reopen this Task"} aria-label={`Reopen Task ${task.title}`} disabled={props.disabled || deleting} onClick={() => props.reopenTask(task.id)}>Reopen</button>}
+                  ? <button type="button" className="history-action" title={deleting ? "Wait until the worktree is removed" : "Restore this Task and recover its resumable Agents"} aria-label={`Restore Task ${task.title}`} aria-busy={pending} disabled={props.disabled || deleting || pending} onClick={() => runTaskAction(task.id, props.restoreTask)}>{pending ? "Restoring…" : "Restore"}</button>
+                  : <button type="button" className="history-action" title={deleting ? "Wait until the worktree is removed" : "Reopen this Task"} aria-label={`Reopen Task ${task.title}`} aria-busy={pending} disabled={props.disabled || deleting || pending} onClick={() => runTaskAction(task.id, props.reopenTask)}>{pending ? "Reopening…" : "Reopen"}</button>}
               </article>
             );
           })}

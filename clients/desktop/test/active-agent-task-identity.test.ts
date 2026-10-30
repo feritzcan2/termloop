@@ -160,6 +160,18 @@ describe("Active Agent rows inside a Task", () => {
     await view.dispose();
   });
 
+  it("reports its Task while pointed at so the Playbook can highlight it", async () => {
+    const hovered: (string | undefined)[] = [];
+    const view = await renderRail([agentSession("lead")], { taskHovered: (taskId) => hovered.push(taskId) });
+    const entry = view.container.querySelector<HTMLElement>('[data-session-id="lead"]')!.closest(".active-agent-entry")!;
+    await act(async () => {
+      entry.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, relatedTarget: document.body }));
+      entry.dispatchEvent(new MouseEvent("mouseout", { bubbles: true, relatedTarget: document.body }));
+    });
+    expect(hovered).toEqual(["task-1", undefined]);
+    await view.dispose();
+  });
+
   it("opens the Jira issue from the key without selecting the row", async () => {
     const opened: string[] = [];
     const selected: string[] = [];

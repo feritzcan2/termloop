@@ -260,7 +260,6 @@ function railProps(options: RailOptions = {}): TaskRailProps {
     provisionTaskWorktree: unused,
     dismissTaskWorktreeProvisioning: unused,
     inspectTaskWorktreeCleanup: unused,
-    cleanupTaskWorktree: unused,
     openTaskChanges: options.openTaskChanges ?? (() => {}),
     openTaskDetail: options.openTaskDetail ?? (() => {}),
     detailTaskId: options.detailTaskId,
@@ -1478,65 +1477,6 @@ describe("Task rail first-run UX", () => {
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
 
-  it("confirms before routing a worktree Task through cleanup and close", async () => {
-    const setTaskClosed = vi.fn(async () => {});
-    const closeTaskAndWorktree = vi.fn(async () => ({ status: "completed" } as const));
-    const container = document.createElement("div");
-    document.body.append(container);
-    const root = createRoot(container);
-    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    await act(async () => root.render(createElement(TaskRail, {
-      ...railProps(),
-      setTaskClosed,
-      closeTaskAndWorktree,
-    })));
-
-    const create = container.querySelector<HTMLButtonElement>('.task-board-head > [aria-label="Create Task"]');
-    const close = container.querySelector<HTMLButtonElement>('.task-close[aria-label="Close Compact launchers"]');
-    expect(create).not.toBeNull();
-    expect(close).not.toBeNull();
-    await act(async () => close!.click());
-    expect(setTaskClosed).not.toHaveBeenCalled();
-    expect(container.querySelector('[role="group"][aria-label="Close Compact launchers?"]')?.textContent).toContain("Close?");
-
-    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Cancel close Compact launchers"]')!.click());
-    expect(setTaskClosed).not.toHaveBeenCalled();
-    expect(container.querySelector('[aria-label="Confirm close Compact launchers"]')).toBeNull();
-
-    await act(async () => container.querySelector<HTMLButtonElement>('.task-close[aria-label="Close Compact launchers"]')!.click());
-    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Confirm close Compact launchers"]')!.click());
-    expect(setTaskClosed).not.toHaveBeenCalled();
-    expect(closeTaskAndWorktree).not.toHaveBeenCalled();
-    expect(document.querySelector('[aria-labelledby="delete-task-title"]')?.textContent).toContain("Delete worktree and close Task");
-
-    await act(async () => create!.click());
-    expect(document.querySelector(".task-create-dialog")?.textContent).toContain("Create a Task");
-
-    await act(async () => root.unmount());
-    container.remove();
-    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
-  });
-
-  it("closes a worktree-less Task directly after confirmation", async () => {
-    const setTaskClosed = vi.fn(async () => {});
-    const container = document.createElement("div");
-    document.body.append(container);
-    const root = createRoot(container);
-    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    await act(async () => root.render(createElement(TaskRail, {
-      ...railProps({ task: worktreeLessTask() }),
-      setTaskClosed,
-    })));
-
-    await act(async () => container.querySelector<HTMLButtonElement>('.task-close')!.click());
-    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Confirm close Compact launchers"]')!.click());
-    expect(setTaskClosed).toHaveBeenCalledWith("task-1", true);
-
-    await act(async () => root.unmount());
-    container.remove();
-    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
-  });
-
   it("favorites from the hover action, moves favorites up, and remembers them", async () => {
     const first = launchableTask();
     const second = { ...launchableTask(), id: "task-favorite", title: "Favorite candidate" };
@@ -1563,6 +1503,7 @@ describe("Task rail first-run UX", () => {
     container.remove();
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
+
   it("parks a Task into a folded title line at the end of the board and remembers it", async () => {
     const first = { ...launchableTask(), id: "task-park", title: "Park candidate" };
     const second = launchableTask();
@@ -1595,7 +1536,6 @@ describe("Task rail first-run UX", () => {
     container.remove();
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
-
 
   it.each([
     ["contextmenu", "Enter"], ["actions", "Enter"],

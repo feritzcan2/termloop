@@ -1,6 +1,7 @@
 import type { PlaybookRuntimeResult, TaskWorktreeCleanupPreviewDto } from "@termloop/contract/current";
 import { useState, type DragEvent } from "react";
-import type { Task, TaskDeleteWorktreeResult, TaskDeleteWorktreeReview } from "../model.js";
+import { taskJiraIssueKey, type Task, type TaskDeleteWorktreeResult, type TaskDeleteWorktreeReview } from "../model.js";
+import { taskCardTitle } from "../task-card-copy.js";
 import { OverlayPortal } from "./OverlayPortal.js";
 import { DeleteTaskDialog } from "./task-dialogs/delete-task-dialog.js";
 import { useOverlayLease } from "./overlay-lease.js";
@@ -112,6 +113,8 @@ export function AssistantTaskRow(props: {
   const decision = props.decision?.decision.taskIds.includes(props.task.id) ? props.decision : null;
   const processing = props.processingTaskIds.includes(props.task.id);
   const draggable = props.task.status === "open" && props.beginDrag !== undefined;
+  /** The ticket key leads the title, as on the Task rail's card. */
+  const title = taskCardTitle(props.task.title, props.task.jira_url ? taskJiraIssueKey(props.task.jira_url) : undefined);
   return <div className="assistant-task-item" role="listitem"><button
     type="button"
     className={`assistant-task-row${processing ? " processing" : ""}${props.dragging ? " dragging" : ""}${props.highlighted ? " highlighted" : ""}`}
@@ -126,7 +129,7 @@ export function AssistantTaskRow(props: {
   >
     <span className="assistant-task-icon" aria-hidden="true"><Icon name="task" /></span>
     <span className="assistant-task-copy">
-      <strong>{props.task.title}</strong>
+      <strong>{title.key ? <span className="assistant-task-key">{title.key}</span> : null}{title.scope ? `[${title.scope}] ` : ""}{title.title}</strong>
       <small>{props.task.branch?.name ?? (props.task.worktree ? "Worktree ready" : "No worktree")}</small>
     </span>
     {processing ? <em>Active</em> : null}

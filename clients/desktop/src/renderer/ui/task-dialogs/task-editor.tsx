@@ -4,7 +4,7 @@ import type { AgentCapabilityDto, LocalBranchDto, ProjectLocalBranchListResult, 
 import type { Task } from "../../model.js";
 import type { WorkflowConfigurationDto } from "@termloop/contract/current";
 import { workflowSummary, workflowLaunchSummary } from "../workflow-presentation.js";
-import { agentLaunchDefaults, DEFAULT_TASK_WORKTREE_PREFIX, permissionLabel } from "../../project-task-automation.js";
+import { agentLaunchDefaults, DEFAULT_TASK_WORKTREE_PREFIX, permissionLabel, permissionOptions } from "../../project-task-automation.js";
 import { Icon } from "../Icon.js";
 import {
   selectedWorktreeParent,
@@ -456,7 +456,7 @@ function CreateTaskDialog({ close, createTask, flow }: {
                   </label>
                   <label htmlFor={`create-agent-${agentId}-permission`}><span>Permission mode</span>
                     <select id={`create-agent-${agentId}-permission`} aria-label={`${label} permission mode`} value={selection.permission} disabled={busy || automationLoading} onChange={(event) => changeAgentStart(agentId, { permission: event.target.value as TaskAgentStartSelection["permission"] })}>
-                      {capability.permissions.map((permission) => <option key={permission} value={permission}>{permissionLabel(permission, agentId)}</option>)}
+                      {permissionOptions(capability.permissions, agentId).map((permission) => <option key={permission} value={permission}>{permissionLabel(permission, agentId)}</option>)}
                     </select>
                   </label>
                   <label htmlFor={`create-agent-${agentId}-reasoning`}><span>Reasoning</span>

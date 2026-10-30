@@ -42,7 +42,7 @@ import { ArchivedRail, archivedRailVisible, useArchivedTasks } from "./ArchivedR
 import { useDeletedSessions } from "./DeletedRail.js";
 import { ChangesOverlay, type ChangesSubject } from "./ChangesOverlay.js";
 import { taskReviewAgentSessions } from "../changes-review.js";
-import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget, GitHostPullRequestChangeListResult, GitHostPullRequestDiffResult, GitHostPullRequestIdentityDto, KeepAwakeSetParams, KeepAwakeStatusResult, McpToolDescriptionResetParams, McpToolDescriptionUpdateParams, McpToolSettingsResult, PlaybookRuntimeResult, ProjectLocalBranchListResult, ProjectWorktreeChangeListResult, ProjectWorktreeDiffResult, ProjectWorktreePreImageResult, QuickActionParams, QuickActionPreviewResult, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, SessionRelocationPreviewDto, SettingsImproverTarget, TaskBranchCommitChangeListResult, TaskBranchCommitDiffResult, TaskBranchCommitListResult, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, TaskWorktreeChangeListResult, TaskWorktreeCleanupPreviewDto, TaskWorktreeDiffResult, TaskWorktreePreImageResult, TaskWorktreeRepairPreviewDto, VoiceCredentialsSetParams, VoiceSettingsResult, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
+import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget, GitHostPullRequestChangeListResult, GitHostPullRequestDiffResult, GitHostPullRequestIdentityDto, KeepAwakeSetParams, KeepAwakeStatusResult, McpToolDescriptionResetParams, McpToolDescriptionUpdateParams, McpToolSettingsResult, PlaybookRuntimeResult, ProjectLocalBranchListResult, ProjectWorktreeChangeListResult, ProjectWorktreeDiffResult, ProjectWorktreePreImageResult, QuickActionParams, QuickActionPreviewResult, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, SessionRelocationPreviewDto, SettingsImproverTarget, TaskBranchCommitChangeListResult, TaskBranchCommitDiffResult, TaskBranchCommitListResult, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, TaskWorktreeChangeListResult, TaskWorktreeCleanupPreviewDto, TaskWorktreeDiffResult, TaskWorktreePreImageResult, TaskWorktreeRepairPreviewDto, VoiceCredentialsSetParams, VoiceSettingsResult, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
 import type { DeletedSessionDto, SessionHistoryPreviewResult } from "@termloop/contract/current";
 import type { ChangesOpenSource } from "../change-source.js";
 import { CommandPalette, KeyboardShortcutsDialog } from "./CommandPalette.js";
@@ -304,7 +304,6 @@ export type ShellProps = {
   provisionTaskWorktree(params: TaskProvisionWorktreeParams): Promise<string | undefined>;
   dismissTaskWorktreeProvisioning(taskId: string, operationId: string): Promise<string | undefined>;
   inspectTaskWorktreeCleanup(taskId: string): Promise<TaskWorktreeCleanupPreviewDto>;
-  cleanupTaskWorktree(params: TaskCleanupWorktreeParams): Promise<string | undefined>;
   listProjectWorktreeChanges(projectId: string): Promise<ProjectWorktreeChangeListResult>;
   sourceControlApi: SourceControlApi;
   getProjectWorktreeDiff(projectId: string, observationId: string, entryId: string): Promise<ProjectWorktreeDiffResult>;
@@ -954,6 +953,7 @@ export function Shell(props: ShellProps) {
         ? looseSessions.filter((session) => session.kind === "Agent" && isLiveSession(session))
         : [],
     [changesProject, changesTask, looseSessions, props.projectSessions],
+  );
   // Review edits share the Files editor's tabs and drafts when both show the
   // same root; another Task's worktree gets its own tabs while it is reviewed.
   const reviewEditorSubject = props.selectedProject && editorSubject && (changesTask?.worktree || changesProject)
@@ -971,7 +971,6 @@ export function Shell(props: ShellProps) {
       && !window.confirm("Closing the review discards unsaved edits made in it. Continue?")) return;
     setChangesPresentation(undefined);
   };
-  );
   const dismissChanges = useCallback(() => { setChangesPresentation(undefined); setEditorShown(false); }, []);
   const dismissStagePages = useCallback(() => {
     setAssistantSelection(undefined);
@@ -1722,7 +1721,6 @@ export function Shell(props: ShellProps) {
             provisionTaskWorktree={props.provisionTaskWorktree}
             dismissTaskWorktreeProvisioning={props.dismissTaskWorktreeProvisioning}
             inspectTaskWorktreeCleanup={props.inspectTaskWorktreeCleanup}
-            cleanupTaskWorktree={props.cleanupTaskWorktree}
             openTaskChanges={(taskId, source) => setChangesPresentation({ kind: "task", taskId, source })}
             openTaskDetail={openTaskDetail}
             detailTaskId={detailTask?.id}
@@ -1772,6 +1770,7 @@ export function Shell(props: ShellProps) {
             taskAttachedSessionIds={attachedSessionIds}
             worktreeChangesBySessionId={worktreeChangesBySessionId}
             taskIdentityBySessionId={taskIdentityBySessionId}
+            taskHovered={stewardSidebarOpen ? setHoveredRailTaskId : undefined}
             workflowsBySessionId={workflowsBySessionId}
             workflowAgentLabelsBySessionId={workflowAgentLabelsBySessionId}
             workflowGroupsBySessionId={workflowGroupsBySessionId}
@@ -1826,7 +1825,7 @@ export function Shell(props: ShellProps) {
               });
             }}
             restoreDeletedSession={deleted.restore}
-            reopenTask={(taskId) => void props.setTaskClosed(taskId, false)}
+            reopenTask={(taskId) => props.setTaskClosed(taskId, false)}
             restoreTask={archived.restore}
           /> : null}
           </div>
@@ -2134,8 +2133,8 @@ export function Shell(props: ShellProps) {
                 listPullRequestChanges={props.listTaskPullRequestChanges}
                 pullRequestDiff={props.getTaskPullRequestDiff}
                 agentSessions={changesAgentSessions}
-                editing={reviewEditorSubject ? { ...reviewEditor, readOnly: selectedComputer?.scope === "readOnly" } : undefined}
                 sendReviewNotes={changesSubject.kind === "project" ? props.sendProjectReviewNotes : props.sendTaskReviewNotes}
+                editing={reviewEditorSubject ? { ...reviewEditor, readOnly: selectedComputer?.scope === "readOnly" } : undefined}
               />
             ) : null}
           </main>

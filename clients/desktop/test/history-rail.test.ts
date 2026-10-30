@@ -478,7 +478,8 @@ describe("Session History rail", () => {
     const root = createRoot(container);
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     const restoreTask = vi.fn();
-    const reopenTask = vi.fn();
+    let finishReopen = () => {};
+    const reopenTask = vi.fn(() => new Promise<void>((resolve) => { finishReopen = resolve; }));
     const closed = {
       id: "task-1",
       project_id: "project-1",
@@ -502,7 +503,7 @@ describe("Session History rail", () => {
       sessions: [agent("ordinary")],
       archivedSessions: [],
       tasks: [{ ...closed, id: "task-3", title: "Closed but kept", status: "closed", archived_at_epoch_ms: null }, { ...closed, id: "task-4", title: "Still open", status: "open", archived_at_epoch_ms: null }] as Task[],
-      archivedTasks: [closed, { ...closed, id: "task-2", title: "Unrelated chore" }],
+      archivedTasks: [closed, { ...closed, id: "task-2", title: "[NUC-42] Unrelated chore", jira_url: "https://example.atlassian.net/browse/NUC-42" }],
       deletedSessions: [],
       favoriteSessionIds: new Set<string>(),
       termLoopHistoryLoading: false,
@@ -529,8 +530,20 @@ describe("Session History rail", () => {
     expect(tasksTab.getAttribute("aria-selected")).toBe("true");
     expect(container.querySelectorAll(".history-row.task")).toHaveLength(3);
     expect(container.textContent).not.toContain("Still open");
+    // A Jira-linked Task leads with its key as a separate token, as on the Tasks board.
+    const jiraRow = container.querySelector('[aria-label="Restore Task [NUC-42] Unrelated chore"]')!.closest(".history-row")!;
+    expect(jiraRow.querySelector(".task-card-key")?.textContent).toBe("NUC-42");
+    expect(jiraRow.querySelector("strong")?.textContent).toBe("Unrelated chore");
     await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Reopen Task Closed but kept"]')!.click());
     expect(reopenTask).toHaveBeenCalledWith("task-3");
+    // The row says the reopen is running until the daemon settles it.
+    const reopening = container.querySelector<HTMLButtonElement>('[aria-label="Reopen Task Closed but kept"]')!;
+    expect(reopening.disabled).toBe(true);
+    expect(reopening.textContent).toBe("Reopening…");
+    expect(reopening.closest(".history-row")!.textContent).toContain("Reopening…");
+    await act(async () => finishReopen());
+    expect(reopening.disabled).toBe(false);
+    expect(reopening.textContent).toBe("Reopen");
     expect(container.querySelector('[aria-label="Filter Session History by state"]')).toBeNull();
     expect(container.querySelector("#termloop-history-label")).toBeNull();
     expect(container.querySelector("#external-history-label")).toBeNull();

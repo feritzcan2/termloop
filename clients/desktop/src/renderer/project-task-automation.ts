@@ -198,6 +198,13 @@ export function agentLaunchDefaults(
   };
 }
 
+/// Claude's `auto` (`acceptEdits`) is its launch default, so it leads the
+/// options; the catalog itself keeps `default` first for every agent.
+export function permissionOptions<P extends string>(permissions: readonly P[], agentId: string | null): readonly P[] {
+  if (agentId !== "claude" || !permissions.includes("acceptEdits" as P)) return permissions;
+  return ["acceptEdits" as P, ...permissions.filter((permission) => permission !== "acceptEdits")];
+}
+
 /// Claude launches `acceptEdits` as its `auto` mode and `default` as manual
 /// approval, so its options carry the names Claude itself shows.
 export function permissionLabel(permission: NonNullable<ProjectTaskAutomationDraft["permission"]>, agentId: string | null): string {

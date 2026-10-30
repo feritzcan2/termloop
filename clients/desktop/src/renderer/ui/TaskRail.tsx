@@ -10,19 +10,18 @@ import { OverlayPortal } from "./OverlayPortal.js";
 import { AskToHelperRow, MenuButton, SessionRowButton, SessionRowClose, askToSessionGroups, sessionRelationshipLabel } from "./SessionRow.js";
 import { BindBranchDialog } from "./task-dialogs/bind-branch-dialog.js";
 import { ProvisionWorktreeDialog } from "./task-dialogs/provision-worktree-dialog.js";
-import { CleanupWorktreeDialog } from "./task-dialogs/cleanup-worktree-dialog.js";
 import { DeleteTaskDialog } from "./task-dialogs/delete-task-dialog.js";
 import { RepairWorktreeDialog } from "./task-dialogs/repair-worktree-dialog.js";
 import { TaskEditor, type EditorState, type TaskCreateOutcome, type TaskStartSelection } from "./task-dialogs/task-editor.js";
-import type { AgentCapabilityDto, AgentLibraryEntry, ProjectLocalBranchListResult, ProjectTaskAutomationGetResult, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, TaskCleanupWorktreeParams, TaskDeveloperNoteDto, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, TaskWorktreeCleanupPreviewDto, TaskWorktreeRepairPreviewDto } from "@termloop/contract/current";
+import type { AgentCapabilityDto, AgentLibraryEntry, ProjectLocalBranchListResult, ProjectTaskAutomationGetResult, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, TaskDeveloperNoteDto, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, TaskWorktreeCleanupPreviewDto, TaskWorktreeRepairPreviewDto } from "@termloop/contract/current";
 import { pullRequestIdentity, type ChangesOpenSource } from "../change-source.js";
 import { isAssistantSession } from "./AssistantRail.js";
 import { isProjectRelocationDragCandidate, isTaskRelocationDragCandidate, useOptionalSidebarSessionDnd, type SessionDropPlacement } from "./SidebarSessionDnd.js";
 import { readWorktreeParentPath, writeWorktreeParentPath } from "../worktree-parent-memory.js";
 import { readWorktreeBaseRef, writeWorktreeBaseRef } from "../worktree-base-ref-memory.js";
 import { readTaskCollapsed, writeTaskCollapsed } from "../task-collapse-memory.js";
-import { readParkedTaskIds, writeParkedTaskIds } from "../task-park-memory.js";
 import { readFavoriteTaskIds, writeFavoriteTaskIds } from "../task-favorite-memory.js";
+import { readParkedTaskIds, writeParkedTaskIds } from "../task-park-memory.js";
 import { RunSessionLine, TaskRunLaunchers, runCommandsBySessionId, runtimesBySessionId } from "./TaskRuns.js";
 import type { RunImprovement } from "./TaskRuns.js";
 import { TaskWorkflowLaunchers } from "./TaskWorkflows.js";
@@ -179,8 +178,8 @@ export function openTasksByActivity(
   sessionsById: ReadonlyMap<string, Session>,
   statusesById: ReadonlyMap<string, AgentStatus>,
   reviewReadySessionIds: ReadonlySet<string>,
-  parkedTaskIds: ReadonlySet<string> = new Set(),
   favoriteTaskIds: ReadonlySet<string> = new Set(),
+  parkedTaskIds: ReadonlySet<string> = new Set(),
 ): Task[] {
   const quiet = Number.MAX_SAFE_INTEGER;
   const priority = (task: Task): number => {
@@ -264,7 +263,6 @@ export type TaskRailProps = {
   provisionTaskWorktree(params: TaskProvisionWorktreeParams): Promise<string | undefined>;
   dismissTaskWorktreeProvisioning(taskId: string, operationId: string): Promise<string | undefined>;
   inspectTaskWorktreeCleanup(taskId: string): Promise<TaskWorktreeCleanupPreviewDto>;
-  cleanupTaskWorktree(params: TaskCleanupWorktreeParams): Promise<string | undefined>;
   openTaskChanges(taskId: string, source: ChangesOpenSource): void;
   /// Clicking a Task row puts it on the stage. The rail only raises the intent;
   /// the Shell owns which surface the stage is showing.
@@ -313,11 +311,10 @@ export function TaskRail(props: TaskRailProps) {
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveQuery, setArchiveQuery] = useState("");
   const [activeQuery, setActiveQuery] = useState("");
-  const [parkedTaskIds, setParkedTaskIds] = useState<ReadonlySet<string>>(() => readParkedTaskIds(props.projectId));
   const [archivePageCount, setArchivePageCount] = useState(1);
   const [favoriteTaskIds, setFavoriteTaskIds] = useState<ReadonlySet<string>>(() => readFavoriteTaskIds(props.projectId));
+  const [parkedTaskIds, setParkedTaskIds] = useState<ReadonlySet<string>>(() => readParkedTaskIds(props.projectId));
   const [renamingTaskTab, setRenamingTaskTab] = useState<{ taskId: string; title: string; busy: boolean; error: string | undefined }>();
-  const [closingTaskTab, setClosingTaskTab] = useState<{ taskId: string; busy: boolean }>();
   const taskListId = useId();
   const [editor, setEditor] = useState<EditorState>();
   const [menu, setMenu] = useState<MenuState>();
@@ -351,7 +348,6 @@ export function TaskRail(props: TaskRailProps) {
   const rememberBaseRef = useCallback((baseRef: string) => {
     writeWorktreeBaseRef(props.projectId, baseRef);
   }, [props.projectId]);
-  const [cleanupTarget, setCleanupTarget] = useState<Task>();
   const [repairTarget, setRepairTarget] = useState<Task>();
   /// Launches the create flow requested for a Task whose worktree is still
   /// provisioning. Client-local intent only — nothing here is durable, and a
@@ -371,10 +367,10 @@ export function TaskRail(props: TaskRailProps) {
   const allOpenTasks = openTasksByActivity(
     props.tasks.filter((task) => task.status === "open"),
     props.sessionsById,
-    parkedTaskIds,
     props.statusesById,
     props.reviewReadySessionIds,
     favoriteTaskIds,
+    parkedTaskIds,
   );
   const activeSearchVisible = allOpenTasks.length >= ACTIVE_SEARCH_THRESHOLD;
   const openTasks = activeSearchVisible ? filterTasks(allOpenTasks, activeQuery) : allOpenTasks;
@@ -391,27 +387,23 @@ export function TaskRail(props: TaskRailProps) {
     ? props.tasks.find((task) => task.id === closeTarget.id) ?? closeTarget
     : undefined;
   const overlayVisible = Boolean(
-    menu || editor || currentCloseTarget || bindTarget || provisionTarget || cleanupTarget ||
+    menu || editor || currentCloseTarget || bindTarget || provisionTarget ||
     repairTarget,
   );
   const renderTask = (task: Task, focused = false) => (
     <TaskGroup
       key={`${props.projectId ?? "unknown"}:${task.id}`}
       projectId={props.projectId}
-      parked={task.status === "open" && parkedTaskIds.has(task.id)}
-      togglePark={task.status === "open" ? toggleTaskPark : undefined}
       task={task}
       favorite={favoriteTaskIds.has(task.id)}
       toggleFavorite={task.status === "open" ? toggleTaskFavorite : undefined}
+      parked={task.status === "open" && parkedTaskIds.has(task.id)}
+      togglePark={task.status === "open" ? toggleTaskPark : undefined}
       renaming={renamingTaskTab?.taskId === task.id ? renamingTaskTab : undefined}
       changeRename={changeTaskRename}
       cancelRename={cancelTaskRename}
       commitRename={commitTaskTabRename}
       updateDeveloperNotes={props.updateTaskDeveloperNotes}
-      closing={closingTaskTab?.taskId === task.id ? closingTaskTab : undefined}
-      beginClose={task.status === "open" ? beginTaskClose : undefined}
-      cancelClose={cancelTaskClose}
-      confirmClose={confirmTaskTabClose}
       disabled={props.disabled ?? false}
       gitHostProjection={gitHostByTask.get(task.id)}
       branchCommitSummary={branchCommitsByTask.get(task.id)}
@@ -468,25 +460,19 @@ export function TaskRail(props: TaskRailProps) {
   useEffect(() => {
     setArchiveOpen(false);
     setArchiveQuery("");
-    setParkedTaskIds(readParkedTaskIds(props.projectId));
     setActiveQuery("");
     setArchivePageCount(1);
     setFavoriteTaskIds(readFavoriteTaskIds(props.projectId));
+    setParkedTaskIds(readParkedTaskIds(props.projectId));
     setRenamingTaskTab(undefined);
-    setClosingTaskTab(undefined);
     setEditor(undefined);
     setMenu(undefined);
     setCloseTarget(undefined);
     setBindTarget(undefined);
     setProvisionTarget(undefined);
-    setCleanupTarget(undefined);
     setRepairTarget(undefined);
     setPendingLaunches(new Map());
   }, [props.projectId]);
-  useEffect(() => {
-    if (!closingTaskTab || props.tasks.some((task) => task.id === closingTaskTab.taskId && task.status === "open")) return;
-    setClosingTaskTab(undefined);
-  }, [closingTaskTab, props.tasks]);
   useEffect(() => {
     if (pendingLaunches.size === 0) return;
     const settled: string[] = [];
@@ -571,6 +557,10 @@ export function TaskRail(props: TaskRailProps) {
       const next = new Set(current);
       if (next.has(taskId)) next.delete(taskId);
       else next.add(taskId);
+      writeFavoriteTaskIds(props.projectId, next);
+      return next;
+    });
+  }, [props.projectId]);
   const toggleTaskPark = useCallback((taskId: string) => {
     setParkedTaskIds((current) => {
       const next = new Set(current);
@@ -580,24 +570,6 @@ export function TaskRail(props: TaskRailProps) {
       return next;
     });
   }, [props.projectId]);
-      writeFavoriteTaskIds(props.projectId, next);
-      return next;
-    });
-  }, [props.projectId]);
-  const beginTaskClose = useCallback((taskId: string) => setClosingTaskTab({ taskId, busy: false }), []);
-  const cancelTaskClose = useCallback(() => setClosingTaskTab(undefined), []);
-  const confirmTaskTabClose = async (taskId: string) => {
-    if (closingTaskTab?.taskId !== taskId || closingTaskTab.busy) return;
-    const task = props.tasks.find((candidate) => candidate.id === taskId);
-    if (task?.worktree) {
-      setClosingTaskTab(undefined);
-      setCloseTarget(task);
-      return;
-    }
-    setClosingTaskTab({ taskId, busy: true });
-    await props.setTaskClosed(taskId, true);
-    setClosingTaskTab((current) => current?.taskId === taskId ? undefined : current);
-  };
   const beginTaskRename = useCallback((task: Task) => setRenamingTaskTab({ taskId: task.id, title: task.title, busy: false, error: undefined }), []);
   const changeTaskRename = useCallback((taskId: string, title: string) =>
     setRenamingTaskTab((current) => current?.taskId === taskId ? { ...current, title, error: undefined } : current), []);
@@ -713,7 +685,6 @@ export function TaskRail(props: TaskRailProps) {
             {!menuTask.branch ? <MenuButton icon="branch" label="Use existing branch" detail="Link a local branch to this Task" action={() => perform(() => setBindTarget(menuTask))} /> : null}
             {!menuTask.worktree ? <MenuButton icon="terminal" label="Create worktree" detail={menuTask.worktree_provisioning?.status === "failed" ? "Retry with reviewed values" : "A separate checkout for this Task"} action={() => perform(() => setProvisionTarget(menuTask))} /> : null}
             {canDismissTaskWorktreeProvisioning(menuTask) ? <MenuButton icon="close" label="Dismiss failure" detail="Clear the failed attempt" action={() => perform(() => props.dismissTaskWorktreeProvisioning(menuTask.id, menuTask.worktree_provisioning!.operation_id))} /> : null}
-            {menuTask.worktree && menuTask.worktree_generation !== undefined ? <MenuButton icon="trash" label="Cleanup worktree" detail="Review and remove this checkout" action={() => perform(() => setCleanupTarget(menuTask))} /> : null}
             {menuTask.worktree_repair?.dismissible ? <MenuButton icon="close" label="Dismiss repair" detail="No Git mutation was invoked" action={() => perform(() => props.dismissTaskWorktreeRepair(menuTask.id, menuTask.worktree_repair!.operation_id))} /> : null}
             {menuTask.status === "open" ? (
               <MenuButton icon="archive" label="Close Task" detail={menuTask.worktree ? "Remove its worktree, then close" : "Close completed work"} action={() => perform(() => menuTask.worktree ? setCloseTarget(menuTask) : props.setTaskClosed(menuTask.id, true))} />
@@ -747,7 +718,6 @@ export function TaskRail(props: TaskRailProps) {
       /> : null}
       {bindTarget ? <BindBranchDialog task={bindTarget} initialRepositoryPath={props.projectFolder ?? ""} close={() => setBindTarget(undefined)} bind={props.bindTaskBranch} /> : null}
       {provisionTarget ? <ProvisionWorktreeDialog task={provisionTarget} projectId={props.projectId} repositoryPath={props.projectFolder ?? ""} rememberedParentPath={lastWorktreeParentPath} rememberParentPath={rememberParentPath} rememberedBaseRef={lastWorktreeBaseRef} rememberBaseRef={rememberBaseRef} listBranches={props.listProjectLocalBranches} close={() => setProvisionTarget(undefined)} provision={props.provisionTaskWorktree} /> : null}
-      {cleanupTarget ? <CleanupWorktreeDialog task={cleanupTarget} close={() => setCleanupTarget(undefined)} inspect={props.inspectTaskWorktreeCleanup} cleanup={props.cleanupTaskWorktree} /> : null}
       {repairTarget ? <RepairWorktreeDialog task={repairTarget} close={() => setRepairTarget(undefined)} inspect={props.inspectTaskWorktreeRepair} repair={props.repairTaskWorktree} /> : null}
       {currentCloseTarget ? <DeleteTaskDialog
         task={currentCloseTarget}
@@ -809,24 +779,20 @@ type TaskGroupProps = {
   taskHovered: ((taskId: string | undefined) => void) | undefined;
   taskClicked: ((taskId: string) => void) | undefined;
   detailOpen: boolean;
-  /// A parked Task renders as its title line only, sunk below the active work.
-  parked: boolean;
-  togglePark: ((taskId: string) => void) | undefined;
   deleting: boolean;
   provisioning: boolean;
   nowEpochMs: number;
   focused: boolean;
   favorite: boolean;
   toggleFavorite: ((taskId: string) => void) | undefined;
+  /// A parked Task renders as its title line only, sunk below the active work.
+  parked: boolean;
+  togglePark: ((taskId: string) => void) | undefined;
   renaming: { title: string; busy: boolean; error: string | undefined } | undefined;
   changeRename(taskId: string, title: string): void;
   cancelRename(): void;
   commitRename(task: Task): Promise<void>;
   updateDeveloperNotes(taskId: string, expected: readonly TaskDeveloperNoteDto[], next: readonly TaskDeveloperNoteDto[]): Promise<string | undefined>;
-  closing: { busy: boolean } | undefined;
-  beginClose: ((taskId: string) => void) | undefined;
-  cancelClose(): void;
-  confirmClose(taskId: string): Promise<void>;
   disabled: boolean;
 };
 
@@ -891,18 +857,18 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
     : undefined;
   /// Closed Tasks stay quiet by design, so only an open Task self-discloses.
   const hasLiveAgent = task.status === "open" && liveAgents.length > 0;
-    /// A parked card has no folded preference of its own: the chevron is the
-    /// way back to the full card.
-    if (parked) {
-      props.togglePark?.(task.id);
-      return;
-    }
   useEffect(() => {
     if (!hasLiveAgent) setLiveCollapsed(undefined);
   }, [hasLiveAgent]);
   const parked = props.parked && !props.deleting;
   const collapsed = parked || (hasLiveAgent ? liveCollapsed ?? false : storedCollapsed);
   const toggleCollapsed = () => {
+    /// A parked card has no folded preference of its own: the chevron is the
+    /// way back to the full card.
+    if (parked) {
+      props.togglePark?.(task.id);
+      return;
+    }
     const next = !collapsed;
     if (hasLiveAgent) setLiveCollapsed(next);
     setStoredCollapsed(next);
@@ -1199,15 +1165,6 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
             {liveAgents.length > 4 ? <span className="task-agents-more" aria-hidden="true">+{liveAgents.length - 4}</span> : null}
           </span>
         ) : null}
-        {props.closing ? <div className="task-close-confirm" role="group" aria-label={`Close ${task.title}?`} onKeyDown={(event) => {
-          if (event.key !== "Escape" || props.closing!.busy) return;
-          event.preventDefault();
-          props.cancelClose();
-        }}>
-          <span>Close?</span>
-          <button type="button" autoFocus aria-label={`Confirm close ${task.title}`} disabled={props.closing.busy} onClick={() => { void props.confirmClose(task.id); }}>{props.closing.busy ? "…" : "Yes"}</button>
-          <button type="button" aria-label={`Cancel close ${task.title}`} disabled={props.closing.busy} onClick={props.cancelClose}>No</button>
-        </div> : null}
         <div className={`row-actions${props.favorite ? " has-favorite" : ""}${parked ? " has-parked" : ""}`}>
           {props.toggleFavorite && !props.deleting ? <button
             type="button"
@@ -1232,14 +1189,6 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
             title="Add developer note"
             onClick={() => setNoteAddRequest((current) => current + 1)}
           ><Icon name="edit" /></button> : null}
-          {props.beginClose && !props.deleting ? <button
-            type="button"
-            className="row-action task-close"
-            aria-label={`Close ${task.title}`}
-            title={task.worktree ? "Clean up worktree and close Task" : "Close Task"}
-            disabled={props.disabled}
-            onClick={() => props.beginClose!(task.id)}
-          ><Icon name="close" /></button> : null}
           <button
             type="button"
             className="row-action task-detail-open"
@@ -1417,15 +1366,14 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
   && left.visibleSessionIds === right.visibleSessionIds
   && left.menuSessionId === right.menuSessionId
   && left.deleting === right.deleting
-  && left.parked === right.parked
   && left.nowEpochMs === right.nowEpochMs
   && left.agentCapabilities === right.agentCapabilities
   && left.setupRunImprovement === right.setupRunImprovement
   && left.focused === right.focused
   && left.detailOpen === right.detailOpen
   && left.favorite === right.favorite
+  && left.parked === right.parked
   && left.renaming === right.renaming
-  && left.closing === right.closing
   && left.disabled === right.disabled);
 
 function TaskSessionRow({ session, dropPlacement, children }: {

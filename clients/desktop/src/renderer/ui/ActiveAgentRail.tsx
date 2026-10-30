@@ -302,6 +302,9 @@ export type ActiveAgentRailProps = {
   /// A Task Agent's row is titled by its Task, not by the provider name every
   /// row would otherwise share. Helpers nest under that row and keep their name.
   taskIdentityBySessionId?: ReadonlyMap<string, ActiveAgentTaskIdentity> | undefined;
+  /// Pointing at a Task Agent's row lets the Shell highlight its Task wherever
+  /// else it is shown, such as the Steward's Playbook, as a Task card does.
+  taskHovered?: ((taskId: string | undefined) => void) | undefined;
   workflowsBySessionId?: ReadonlyMap<string, readonly ActiveAgentWorkflow[]> | undefined;
   workflowAgentLabelsBySessionId?: ReadonlyMap<string, string> | undefined;
   workflowGroupsBySessionId?: ReadonlyMap<string, WorkflowAgentGroup> | undefined;
@@ -672,8 +675,11 @@ function ActiveAgentRow({ session, source, depth = 0, projectedSource, worktreeC
       else props.selectSession(session.id);
     }}
   >{compactWorkflow ? <Icon name={workflowAction.resume ? "play" : "arrowRight"} /> : <><span className="active-agent-workflow-action">{workflowAction.label}</span><span className="active-agent-workflow-step">{workflow.stepLabel}</span></>}</button>);
+  const hoveredTaskId = props.taskHovered ? props.taskIdentityBySessionId?.get(session.id)?.taskId : undefined;
   const row = (
-    <div ref={setNodeRef} className="active-agent-entry" role={source ? undefined : "listitem"} data-session-drop-target={session.id}>
+    <div ref={setNodeRef} className="active-agent-entry" role={source ? undefined : "listitem"} data-session-drop-target={session.id}
+      onMouseEnter={hoveredTaskId ? () => props.taskHovered?.(hoveredTaskId) : undefined}
+      onMouseLeave={hoveredTaskId ? () => props.taskHovered?.(undefined) : undefined}>
       {!compactWorkflow ? workflowActions : null}
       <div className={`session-row active-agent-row${delivery ? " has-worktree-changes" : ""}${draggable.isDragging ? " dragging" : ""}${dropPlacement ? ` drop-${dropPlacement}` : ""}`}>
         <SessionRowButton

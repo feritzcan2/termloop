@@ -10,7 +10,7 @@ import { emptyLayoutDocument, panes, type LayoutDocument, type SplitDirection, t
 import { desktopApi, type SourceDesktopApi } from "../transport/desktop-api.js";
 import { taskBindBranchFailureMessage } from "../transport/task-branch-binding.js";
 import { provisionTaskWorktree as submitTaskWorktreeProvisioning, taskProvisionWorktreeFailureMessage } from "../transport/task-worktree-provisioning.js";
-import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget, ConfigurationVersionDto, GitHostRepositoryPullRequestFilter, QuickActionParams, SettingsImproverTarget, ProjectLocalBranchListResult, ProtocolErrorDetails, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, TaskBranchCommitSummaryDto, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, VersionedConfigurationTarget, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
+import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget, ConfigurationVersionDto, GitHostRepositoryPullRequestFilter, QuickActionParams, SettingsImproverTarget, ProjectLocalBranchListResult, ProtocolErrorDetails, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, TaskBranchCommitSummaryDto, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, VersionedConfigurationTarget, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
 import { rememberPromptImproverSession } from "../prompt-improver-session-link.js";
 import { taskLaunchFailureMessage } from "../transport/task-launch.js";
 import { onGatewayState } from "../transport/terminal-port.js";
@@ -1926,20 +1926,6 @@ export function DesktopApp() {
     (taskId: string) => sourceApiForTask(taskId).taskInspectWorktreeCleanup(taskId),
     [],
   );
-  const cleanupTaskWorktree = useCallback(async (params: TaskCleanupWorktreeParams) => {
-    try {
-      const result = await sourceApiForTask(params.taskId).taskCleanupWorktree(params);
-      if (result.outcome === "running") {
-        await refreshProjection();
-        return `Worktree cleanup operation ${result.cleanup?.operation_id ?? params.operationId} is still running.`;
-      }
-      return undefined;
-    } catch (error) {
-      const message = controlErrorMessage(error);
-      projectionStore.setMessage(message);
-      return message;
-    }
-  }, []);
   const setTaskClosed = useCallback(async (taskId: string, closed: boolean) => {
     try {
       if (closed) await sourceApiForTask(taskId).taskClose(taskId);
@@ -2651,7 +2637,6 @@ export function DesktopApp() {
       provisionTaskWorktree={provisionTaskWorktree}
       dismissTaskWorktreeProvisioning={dismissTaskWorktreeProvisioning}
       inspectTaskWorktreeCleanup={inspectTaskWorktreeCleanup}
-      cleanupTaskWorktree={cleanupTaskWorktree}
       listProjectWorktreeChanges={(projectId) => sourceApiForProject(projectId).projectWorktreeChangeList(projectId)}
       sourceControlApi={sourceControlApi}
       getProjectWorktreeDiff={(projectId, observationId, entryId) => sourceApiForProject(projectId).projectWorktreeDiff(projectId, observationId, entryId)}

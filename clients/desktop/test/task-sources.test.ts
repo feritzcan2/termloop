@@ -30,6 +30,7 @@ import {
   agentChoiceOptions,
   agentLaunchDefaults,
   permissionLabel,
+  permissionOptions,
   projectTaskAutomationChanged,
   projectTaskAutomationDraftFrom,
   projectTaskAutomationError,
@@ -469,6 +470,9 @@ describe("Project New Task automation", () => {
     expect(agentLaunchDefaults(capabilities, "claude")).toEqual({ model: "default", permission: "acceptEdits", reasoning: "default" });
     expect(agentLaunchDefaults(capabilities, "codex")).toEqual({ model: "default", permission: "default", reasoning: "default" });
     expect(agentLaunchDefaults([fullAgentCapability("claude", { permissions: ["default", "plan"] })], "claude").permission).toBe("default");
+    expect(permissionOptions(fullAgentCapability("claude").permissions, "claude")).toEqual(["acceptEdits", "default", "plan", "bypassPermissions"]);
+    expect(permissionOptions(fullAgentCapability("codex").permissions, "codex")).toEqual(["default", "acceptEdits", "plan", "bypassPermissions"]);
+    expect(permissionOptions(["default", "plan"], "claude")).toEqual(["default", "plan"]);
     expect(permissionLabel("acceptEdits", "claude")).toBe("auto");
     expect(permissionLabel("default", "claude")).toBe("manual");
     expect(permissionLabel("acceptEdits", "codex")).toBe("accept edits");

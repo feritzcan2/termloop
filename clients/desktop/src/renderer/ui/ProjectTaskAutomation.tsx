@@ -12,6 +12,7 @@ import {
   agentChoiceOptions,
   DEFAULT_TASK_KICKOFF_MESSAGE,
   permissionLabel,
+  permissionOptions,
   type ProjectTaskAutomationDraft,
 } from "../project-task-automation.js";
 import { workflowSummary, workflowLaunchSummary } from "./workflow-presentation.js";
@@ -46,7 +47,7 @@ export function WorktreeAgentChoice({ idPrefix, value, busy, agentCapabilities, 
     ? undefined
     : agentCapabilities.find((capability) => capability.agent_id === value.agentId);
   const modelOptions = selectedCapability?.models ?? (value.model ? [value.model] : []);
-  const permissionOptions = selectedCapability?.permissions ?? (value.permission ? [value.permission] : []);
+  const permissions = selectedCapability ? permissionOptions(selectedCapability.permissions, value.agentId) : value.permission ? [value.permission] : [];
   const reasoningOptions = agentReasoningOptions(selectedCapability, value.model ?? "default");
   return <div className="task-automation-choices">
     <label className="checkbox-row">
@@ -136,7 +137,7 @@ export function WorktreeAgentChoice({ idPrefix, value, busy, agentCapabilities, 
         </label>
         <label htmlFor={`${idPrefix}-permission`}><span>Permission mode</span>
           <select id={`${idPrefix}-permission`} value={value.permission ?? ""} disabled={busy} onChange={(event) => change({ ...value, permission: event.target.value as ProjectTaskAutomationDraft["permission"] })}>
-            {permissionOptions.map((permission) => <option key={permission} value={permission}>{permissionLabel(permission, value.agentId)}</option>)}
+            {permissions.map((permission) => <option key={permission} value={permission}>{permissionLabel(permission, value.agentId)}</option>)}
           </select>
         </label>
         <label htmlFor={`${idPrefix}-reasoning`}><span>Reasoning</span>
