@@ -36,8 +36,6 @@ let taskRowRenderCount = 0;
 
 /// Archive paging keeps a Project with hundreds of closed Tasks from mounting
 /// every row at once; search appears once the list outgrows a single glance.
-const ARCHIVE_PAGE_SIZE = 30;
-const ARCHIVE_SEARCH_THRESHOLD = 8;
 /// The active board stays a glanceable stack of cards until it no longer fits
 /// one glance; past that a filter finds a Task faster than scrolling does.
 const ACTIVE_SEARCH_THRESHOLD = 4;
@@ -309,13 +307,7 @@ export type TaskRailProps = {
 };
 
 export function TaskRail(props: TaskRailProps) {
-  /// The rail is a board of every active Task plus a folded archive. Only the
-  /// archive keeps view state: whether it is open, the search text, and how
-  /// many of the (potentially hundreds of) closed rows have been paged in.
-  const [archiveOpen, setArchiveOpen] = useState(false);
-  const [archiveQuery, setArchiveQuery] = useState("");
   const [activeQuery, setActiveQuery] = useState("");
-  const [archivePageCount, setArchivePageCount] = useState(1);
   const [favoriteTaskIds, setFavoriteTaskIds] = useState<ReadonlySet<string>>(() => readFavoriteTaskIds(props.projectId));
   const [parkedTaskIds, setParkedTaskIds] = useState<ReadonlySet<string>>(() => readParkedTaskIds(props.projectId));
   const [renamingTaskTab, setRenamingTaskTab] = useState<{ taskId: string; title: string; busy: boolean; error: string | undefined }>();
@@ -389,14 +381,6 @@ export function TaskRail(props: TaskRailProps) {
   );
   const activeSearchVisible = allOpenTasks.length >= ACTIVE_SEARCH_THRESHOLD;
   const openTasks = activeSearchVisible ? filterTasks(allOpenTasks, activeQuery) : allOpenTasks;
-  /// Newest-closed first: `updated_at_epoch_ms` is the last write Core made to
-  /// the Task, and closing is that write for an archived-by-closing Task.
-  const closedTasks = useMemo(() => props.tasks
-    .filter((task) => task.status === "closed")
-    .sort((left, right) => right.updated_at_epoch_ms - left.updated_at_epoch_ms), [props.tasks]);
-  const archiveMatches = useMemo(() => filterTasks(closedTasks, archiveQuery), [closedTasks, archiveQuery]);
-  const archiveVisible = archiveMatches.slice(0, archivePageCount * ARCHIVE_PAGE_SIZE);
-  const archiveRemaining = archiveMatches.length - archiveVisible.length;
   const menuTask = menu ? props.tasks.find((task) => task.id === menu.taskId) : undefined;
   const currentCloseTarget = closeTarget
     ? props.tasks.find((task) => task.id === closeTarget.id) ?? closeTarget
@@ -473,10 +457,7 @@ export function TaskRail(props: TaskRailProps) {
   );
 
   useEffect(() => {
-    setArchiveOpen(false);
-    setArchiveQuery("");
     setActiveQuery("");
-    setArchivePageCount(1);
     setFavoriteTaskIds(readFavoriteTaskIds(props.projectId));
     setParkedTaskIds(readParkedTaskIds(props.projectId));
     setRenamingTaskTab(undefined);
@@ -643,47 +624,6 @@ export function TaskRail(props: TaskRailProps) {
           ) : <p className="rail-empty">No active Tasks. Create one to start.</p>
         ) : null}
       </div>
-      {/* Closed Tasks are an archive, not a second board: folded by default,
-          searchable once open, and paged so hundreds of rows never mount at
-          once. Nothing here is rendered while folded. */}
-      {closedTasks.length > 0 ? (
-        <div className={`task-archive${archiveOpen ? " open" : ""}`}>
-          <button
-            type="button"
-            className="task-archive-toggle"
-            aria-expanded={archiveOpen}
-            aria-controls={`${taskListId}-archive`}
-            onClick={() => setArchiveOpen((current) => !current)}
-          >
-            <Icon name="chevronDown" />
-            <span>Closed</span>
-            <span className="task-archive-count">{closedTasks.length}</span>
-          </button>
-          {archiveOpen ? (
-            <div id={`${taskListId}-archive`} className="task-archive-body">
-              {closedTasks.length > ARCHIVE_SEARCH_THRESHOLD ? (
-                <input
-                  type="search"
-                  className="task-archive-search"
-                  placeholder="Search closed Tasks"
-                  aria-label="Search closed Tasks"
-                  value={archiveQuery}
-                  onChange={(event) => { setArchiveQuery(event.target.value); setArchivePageCount(1); }}
-                />
-              ) : null}
-              <div className="task-list task-archive-list" role="list" aria-label="Closed Tasks">
-                {archiveVisible.map((task) => renderTask(task))}
-                {archiveMatches.length === 0 ? <p className="rail-empty">No closed Tasks match.</p> : null}
-              </div>
-              {archiveRemaining > 0 ? (
-                <button type="button" className="task-archive-more" onClick={() => setArchivePageCount((current) => current + 1)}>
-                  Show {Math.min(archiveRemaining, ARCHIVE_PAGE_SIZE)} more
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
       <OverlayPortal container={props.overlayContainer}>
       {menu && menuTask && !props.deletingTaskIds.has(menuTask.id) ? (
         <div className="context-menu-layer" onKeyDown={(event) => { if (event.key === "Escape") closeMenu(); }}>
@@ -869,8 +809,6 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
       priority: agentActivityPriority(session, props.statusesById.get(session.id), props.reviewReadySessionIds.has(session.id)),
     }))
     .sort((left, right) => left.priority - right.priority);
-  /// A closed Task outside a focused card is an archive row: one line, no meta.
-  const archiveRow = task.status === "closed" && !props.focused;
   /// The card's one click target: the loudest live agent, else any live
   /// Session, else nothing — and then the click falls through to the detail.
   const primarySession = liveAgents[0]?.session ?? sessions.find((session) => isLiveSession(session));
@@ -1155,16 +1093,6 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
               <strong className="task-title">{cardTitle.title}</strong>
               {cardBrief && !collapsed ? <small className="task-focus-brief">{cardBrief}</small> : null}
             </span> : <strong className="task-title">{task.title}</strong>}
-            {/* The lingering checkout still blocks Project deletion, so the
-                archive row keeps that one fact as a compact badge. */}
-            {archiveRow && task.worktree ? (
-              <span
-                className="task-archive-worktree"
-                role="img"
-                aria-label={`Worktree still attached at ${task.worktree.path}`}
-                title={`Worktree still attached: ${task.worktree.path}`}
-              ><Icon name="folder" /></span>
-            ) : null}
           </span>
         </button>}
         {/* One dot per live agent, loudest first, capped so the title keeps its
@@ -1239,7 +1167,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
         reviewReadySessionIds={props.reviewReadySessionIds}
         openSession={props.selectSession}
       /> : null}
-      {archiveRow || parked ? null : <TaskMetaLine
+      {parked ? null : <TaskMetaLine
         task={task}
         stage={stage}
         divergence={divergence}

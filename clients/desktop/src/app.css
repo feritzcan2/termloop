@@ -426,23 +426,9 @@ kbd { padding: 2px 5px; border: 1px solid light-dark(rgba(15,23,42,.07), rgba(25
 .task-board-create:hover:not(:disabled) { border-color: rgba(102,179,255,.3); background: var(--accent-wash); color: var(--sidebar-text); }
 .task-board-create:focus-visible { outline: 1px solid var(--accent-strong); outline-offset: -1px; }
 .task-board-create svg { width: 12px; height: 12px; }
-/* Closed Tasks are an archive folded under the board: one disclosure row with
-   the count, and inside it a search box plus a paged, single-line list. */
-.task-archive { margin: 2px 0 6px; padding-top: 4px; border-top: 1px solid light-dark(rgba(15,23,42,.05), rgba(255,255,255,.05)); }
-.task-archive-toggle { display: flex; width: calc(100% - 16px); align-items: center; gap: 5px; margin: 0 8px; padding: 5px 6px; border: 0; border-radius: 6px; background: transparent; color: var(--sidebar-dimmer); font: 700 9px/1 var(--font-mono); letter-spacing: .14em; text-align: left; text-transform: uppercase; }
-.task-archive-toggle:hover { background: var(--hover); color: var(--sidebar-text); }
-.task-archive-toggle:focus-visible { outline: 1px solid var(--accent-strong); outline-offset: -1px; }
-.task-archive-toggle svg { width: 11px; height: 11px; transition: transform 110ms ease; }
-.task-archive-toggle[aria-expanded="false"] svg { transform: rotate(-90deg); }
-.task-archive-count { margin-left: auto; color: var(--sidebar-dimmer); letter-spacing: 0; }
-.task-archive-body { display: grid; gap: 2px; }
 .task-archive-search { width: calc(100% - 24px); min-height: 24px; margin: 2px 12px 0; padding: 0 8px; border: 1px solid light-dark(rgba(15,23,42,.08), rgba(255,255,255,.08)); border-radius: 6px; background: rgba(0,0,0,.16); color: var(--sidebar-text); font: 10.5px/1 var(--font-ui); }
 .task-archive-search::placeholder { color: var(--sidebar-dimmer); }
 .task-archive-search:focus-visible { outline: 1px solid var(--accent-strong); outline-offset: -1px; }
-.task-archive-list { padding: 3px 0 2px; }
-.task-archive-list .task-group + .task-group { margin-top: 1px; }
-.task-archive-more { display: block; width: calc(100% - 24px); min-height: 24px; margin: 0 12px 4px; border: 1px dashed light-dark(rgba(15,23,42,.1), rgba(255,255,255,.1)); border-radius: 6px; background: transparent; color: var(--sidebar-dim); font: 600 9.5px/1 var(--font-ui); }
-.task-archive-more:hover { border-color: rgba(102,179,255,.35); background: var(--accent-wash); color: var(--sidebar-text); }
 /* Inline rename overlays the title inside the card. */
 .task-rename { min-width: 0; width: 100%; height: 27px; margin: 0; padding: 0 8px 0 22px; border: 1px solid rgba(102,179,255,.45); border-radius: 6px; outline: 0; background: rgba(0,0,0,.14); color: var(--sidebar-text); font: 600 12.5px/1 var(--font-ui); letter-spacing: -.01em; }
 .task-rename::selection { background: rgba(102,179,255,.3); }
@@ -3570,20 +3556,6 @@ button.history-row-main { cursor: pointer; }
    actions must match the card or it prints a darker smear over the title. */
 .task-group.focused .task-row .row-actions { padding-left: 22px; background: linear-gradient(90deg, transparent, var(--card-surface, #363b3e) 45%); }
 .task-group.focused .task-row .row-actions .row-action { background: light-dark(rgba(15,23,42,.08), rgba(255,255,255,.08)); }
-/* Archive rows are one dense line each: a dimmer, smaller title with no
-   strike-through, and a quieter meta line. Reading a list of a hundred struck
-   titles is worse than reading a hundred grey ones. */
-.task-archive-list .task-group { padding: 0 5px; }
-.task-archive-list .task-item { min-height: 26px; padding: 4px 8px; }
-.task-archive-list .task-item.closed { opacity: 1; }
-.task-archive-list .task-item.closed .task-title { color: var(--sidebar-dim); font-size: 11.5px; font-weight: 500; text-decoration: none; }
-.task-archive-list .task-item.closed:hover .task-title { color: var(--sidebar-text); }
-.task-archive-list .task-dot.quiet { background: light-dark(rgba(15,23,42,.18), rgba(255,255,255,.18)); }
-.task-archive-list .task-toggle { height: 26px; }
-/* One line per archived Task: the title truncates, and the only fact worth a
-   glyph — a checkout still on disk — rides beside it as an icon. */
-.task-archive-worktree { display: inline-flex; flex: none; align-items: center; color: var(--warning); opacity: .8; }
-.task-archive-worktree svg { width: 11px; height: 11px; }
 .workflow-creator {
   margin: 12px 24px;
   padding: 14px 16px;

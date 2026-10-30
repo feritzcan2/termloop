@@ -294,22 +294,6 @@ function renderRail(options: RailOptions = {}): string {
   return renderToStaticMarkup(createElement(TaskRail, railProps(options)));
 }
 
-async function renderRailTab(options: RailOptions, tab: "active" | "closed"): Promise<string> {
-  const container = document.createElement("div");
-  document.body.append(container);
-  const root = createRoot(container);
-  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  await act(async () => root.render(createElement(TaskRail, railProps(options))));
-  if (tab === "closed") {
-    await act(async () => container.querySelector<HTMLButtonElement>('.task-archive-toggle')!.click());
-  }
-  const markup = container.innerHTML;
-  await act(async () => root.unmount());
-  container.remove();
-  delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
-  return markup;
-}
-
 describe("Task rail native overlay", () => {
   it("keeps a tall Task menu inside the viewport", async () => {
     const container = document.createElement("div");
@@ -898,50 +882,6 @@ describe("Task rail row anatomy", () => {
     expect(markup).not.toContain("task-agents");
   });
 
-  it("keeps one uniform row anatomy and folds only the children while collapsed", async () => {
-    const task: Task = {
-      ...launchableTask(),
-      brief: "Secondary Task context",
-      archived_at_epoch_ms: null,
-      status: "closed",
-      worktree_health: { ...launchableTask().worktree_health!, change_count: 3, tracked_state: "changed" },
-    };
-    const branchCommitSummary: BranchCommitSummary = {
-      task_id: task.id,
-      count: 5,
-      base_ref: "refs/heads/main",
-      not_in_base: { count: 5, base_ref: "refs/heads/main", freshness: "fresh", reason: null },
-      freshness: "fresh",
-      reason: null,
-    };
-    const collapsed = await renderRailTab({ task, branchCommitSummary }, "closed");
-    expect(collapsed).toContain('aria-label="Expand Compact launchers"');
-    // The row is the way onto the Task's page; its name carries the whole row.
-    expect(collapsed).toContain('aria-label="Open Compact launchers, closed');
-    expect(collapsed).toContain('<strong class="task-title">Compact launchers</strong>');
-    // The single-line title and the brief stay recoverable from the row tooltip
-    // rather than spending a second line.
-    expect(collapsed).toContain('title="Compact launchers — Secondary Task context"');
-    expect(collapsed).not.toContain("task-brief");
-    expect(collapsed).not.toContain("task-note");
-    expect(collapsed).not.toContain("task-identity");
-    expect(collapsed).not.toContain("row-rail");
-    // An archive row is one line: the dot and title stay, the meta line and
-    // its signals do not exist on parked work at all.
-    expect(collapsed).toContain('class="task-dot quiet"');
-    expect(collapsed).not.toContain('class="task-meta"');
-    expect(collapsed).not.toContain("task-meta-branch");
-    expect(collapsed).not.toContain("3 changes");
-    expect(collapsed).not.toContain("5 unmerged");
-    expect(collapsed).not.toContain("task-children");
-
-    const expanded = renderRail({ task: { ...task, status: "open" }, branchCommitSummary });
-    expect(expanded).toContain("task-children");
-    expect(expanded).toContain('class="task-meta"');
-    expect(expanded).toContain(">3 changes</button>");
-    expect(expanded).toContain(">5 unmerged</button>");
-  });
-
   it("states an off-nominal stage once and leaves a healthy Task unlabelled", async () => {
     expect(renderRail()).not.toContain('class="task-meta-flag');
 
@@ -951,21 +891,6 @@ describe("Task rail row anatomy", () => {
     expect(noWorktreeMarkup).toContain('class="task-next-step optional"');
     expect(noWorktreeMarkup).toContain("Create worktree");
 
-    const closed = await renderRailTab({ task: { ...launchableTask(), status: "closed" } }, "closed");
-    expect(closed).not.toContain('class="task-meta-flag');
-    expect(closed).toContain('class="task-item closed"');
-  });
-
-  it("marks only closed Tasks that still retain a worktree", async () => {
-    const retained = { ...launchableTask(), status: "closed" as const };
-    const retainedMarkup = await renderRailTab({ task: retained }, "closed");
-    expect(retainedMarkup).toContain('class="task-archive-worktree"');
-    expect(retainedMarkup).toContain(`Worktree still attached: ${retained.worktree!.path}`);
-
-    const detached = { ...worktreeLessTask(), status: "closed" as const };
-    const detachedMarkup = await renderRailTab({ task: detached }, "closed");
-    expect(detachedMarkup).not.toContain("task-archive-worktree");
-    expect(detachedMarkup).not.toContain("Worktree still attached");
   });
 
   it("explains a failed worktree in words and offers the retry as a recovery step", () => {
@@ -1399,7 +1324,7 @@ describe("Task rail row anatomy", () => {
 });
 
 describe("Task rail first-run UX", () => {
-  it("boards every active Task as a card and folds closed Tasks into an archive", async () => {
+  it("boards every active Task as a card and leaves closed Tasks off the rail", async () => {
     const active = { ...launchableTask(), brief: "Keep the selected Task context visible in the sidebar." };
     const second = { ...launchableTask(), id: "task-2", title: "Second Task" };
     const closed = { ...launchableTask(), id: "task-closed", title: "Finished Task", status: "closed" as const, updated_at_epoch_ms: 200 };
@@ -1421,56 +1346,10 @@ describe("Task rail first-run UX", () => {
     expect(container.querySelector(".task-focus-facts")).toBeNull();
     expect(container.textContent).not.toContain("Ready to run agents");
 
-    // Closed Tasks stay folded and unmounted until asked for.
-    const toggle = container.querySelector<HTMLButtonElement>(".task-archive-toggle")!;
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(toggle.textContent).toContain("Closed");
-    expect(container.querySelector(".task-archive-count")?.textContent).toBe("2");
+    // Closed Tasks have no section on the rail at all.
     expect(container.querySelector('[data-task-id="task-closed"]')).toBeNull();
-
-    await act(async () => toggle.click());
-    expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    const archived = [...container.querySelectorAll<HTMLElement>('.task-archive-list [data-task-id]')].map((row) => row.dataset.taskId);
-    expect(archived).toEqual(["task-closed", "task-older-closed"]);
-    expect(container.querySelector('.task-archive-list .task-group.focused')).toBeNull();
-    // A short archive needs no search box.
-    expect(container.querySelector(".task-archive-search")).toBeNull();
-    // The board is untouched by the archive opening.
-    expect(container.querySelector('.task-board [data-task-id="task-1"]')).not.toBeNull();
-
-    await act(async () => root.unmount());
-    container.remove();
-    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
-  });
-
-  it("searches and pages a large archive instead of mounting every closed Task", async () => {
-    const closed = Array.from({ length: 45 }, (_, index) => ({
-      ...launchableTask(),
-      id: `closed-${index}`,
-      title: index === 7 ? "Welsh translations UKIE-7" : `Closed Task ${index}`,
-      status: "closed" as const,
-      updated_at_epoch_ms: 1_000 - index,
-    }));
-    const container = document.createElement("div");
-    document.body.append(container);
-    const root = createRoot(container);
-    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    await act(async () => root.render(createElement(TaskRail, railProps({ tasks: closed }))));
-
-    await act(async () => container.querySelector<HTMLButtonElement>(".task-archive-toggle")!.click());
-    expect(container.querySelectorAll('.task-archive-list [data-task-id]')).toHaveLength(30);
-    const more = container.querySelector<HTMLButtonElement>(".task-archive-more")!;
-    expect(more.textContent).toContain("Show 15 more");
-    await act(async () => more.click());
-    expect(container.querySelectorAll('.task-archive-list [data-task-id]')).toHaveLength(45);
-    expect(container.querySelector(".task-archive-more")).toBeNull();
-
-    const search = container.querySelector<HTMLInputElement>(".task-archive-search")!;
-    await act(async () => typeInto(search, "welsh ukie"));
-    const matches = [...container.querySelectorAll<HTMLElement>('.task-archive-list [data-task-id]')].map((row) => row.dataset.taskId);
-    expect(matches).toEqual(["closed-7"]);
-    await act(async () => typeInto(search, "nothing here"));
-    expect(container.textContent).toContain("No closed Tasks match.");
+    expect(container.querySelector('[data-task-id="task-older-closed"]')).toBeNull();
+    expect(container.textContent).not.toContain("Closed");
 
     await act(async () => root.unmount());
     container.remove();
@@ -2047,51 +1926,8 @@ describe("Task rail create flow", () => {
 });
 
 describe("Task rail agent cue", () => {
-  it("surfaces a waiting agent as the row's one action and opens its terminal without expanding", async () => {
-    const session = agentSession("waiting-agent");
-    const task: Task = { ...launchableTask(), status: "closed" };
-    const selectSession = vi.fn();
-    const container = document.createElement("div");
-    document.body.append(container);
-    const root = createRoot(container);
-    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    await act(async () => root.render(createElement(TaskRail, {
-      ...railProps({ task, sessions: [session], statuses: [agentStatus(session.id, "awaitingInput")] }),
-      selectSession,
-    })));
-    await act(async () => container.querySelector<HTMLButtonElement>('.task-archive-toggle')!.click());
-
-    const cue = container.querySelector<HTMLButtonElement>(".task-next-step.attention")!;
-    expect(cue).not.toBeNull();
-    expect(cue.textContent).toContain("Needs input · open Codex");
-    expect(cue.getAttribute("aria-label")).toContain("Open Codex terminal");
-    /// The row dot and the agent's own dot both carry the waiting tone.
-    expect(container.querySelector(".task-dot.attention")).not.toBeNull();
-    expect(container.querySelector('.task-agent-dot[data-tone="attention"]')).not.toBeNull();
-
-    await act(async () => cue.click());
-    expect(selectSession).toHaveBeenCalledWith("waiting-agent");
-    /// Opening the terminal must not expand the Task.
-    expect(container.querySelector(".task-children")).toBeNull();
-
-    await act(async () => root.unmount());
-    container.remove();
-    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
-  });
-
-  it("shows agents as dots on every row and reserves the action cue for folded rows", async () => {
+  it("states a waiting agent once on an expanded card", async () => {
     const session = agentSession("busy-agent");
-    const closedTask: Task = { ...launchableTask(), status: "closed" };
-    const collapsed = await renderRailTab({ task: closedTask, sessions: [session], statuses: [agentStatus(session.id, "working")] }, "closed");
-    /// A working agent is progress, not a request: dots only, no action button.
-    expect(collapsed).toContain('class="task-agent-dot agent-codex"');
-    expect(collapsed).toContain('data-tone="working"');
-    expect(collapsed).toContain('class="task-dot working"');
-    expect(collapsed).not.toContain("task-next-step");
-    /// The waiting cue exists only while the chevron hides the agent rows.
-    const collapsedWaiting = await renderRailTab({ task: closedTask, sessions: [session], statuses: [agentStatus(session.id, "awaitingInput")] }, "closed");
-    expect(collapsedWaiting).toContain('class="task-next-step attention"');
-    expect(collapsedWaiting).toContain("Needs input · open Codex");
     /// Expanded, the waiting agent's own row sits directly below — a cue would
     /// state the same fact twice, and the retired attention pill never returns.
     const expanded = renderRail({ sessions: [session], statuses: [agentStatus(session.id, "awaitingInput")] });
