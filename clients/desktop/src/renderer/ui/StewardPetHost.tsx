@@ -96,6 +96,8 @@ export function StewardPetHost(props: Props) {
         const baselineUtteranceId = latestStewardPetUtterance(transcript.messages)?.id;
         setSteward(configuration.configuration);
         setPresence(configuration.presence);
+        // Mount time can precede the presence observation by a millisecond.
+        setNowEpochMs(Date.now());
         setPlaybookMissing(playbook !== null
           && (playbook.playbook === null || playbook.playbook.milestones.length === 0));
         setMessages(transcript.messages);
