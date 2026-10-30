@@ -954,6 +954,23 @@ export function Shell(props: ShellProps) {
         ? looseSessions.filter((session) => session.kind === "Agent" && isLiveSession(session))
         : [],
     [changesProject, changesTask, looseSessions, props.projectSessions],
+  // Review edits share the Files editor's tabs and drafts when both show the
+  // same root; another Task's worktree gets its own tabs while it is reviewed.
+  const reviewEditorSubject = props.selectedProject && editorSubject && (changesTask?.worktree || changesProject)
+    ? { projectId: props.selectedProject.id, taskId: changesTask?.id ?? null, title: changesTask?.title ?? props.selectedProject.name } : undefined;
+  const reviewSharesEditor = reviewEditorSubject?.taskId === (editorSubject?.taskId ?? null);
+  const reviewOwnEditor = useFileEditor(
+    reviewSharesEditor ? undefined : reviewEditorSubject,
+    `${props.selectedProject?.folder_path}:${changesTask?.worktree_generation ?? 0}`,
+    props.readWorkspaceFile,
+    props.writeWorkspaceFile,
+  );
+  const reviewEditor = reviewSharesEditor ? fileEditor : reviewOwnEditor;
+  const closeChanges = () => {
+    if (!reviewSharesEditor && reviewOwnEditor.editor.dirty()
+      && !window.confirm("Closing the review discards unsaved edits made in it. Continue?")) return;
+    setChangesPresentation(undefined);
+  };
   );
   const dismissChanges = useCallback(() => { setChangesPresentation(undefined); setEditorShown(false); }, []);
   const dismissStagePages = useCallback(() => {
@@ -2106,7 +2123,7 @@ export function Shell(props: ShellProps) {
                 subject={changesSubject}
                 connectionProfileId={props.selectedProject?.connectionProfileId}
                 initialSource={changesPresentation?.source ?? { kind: "local" }}
-                close={() => setChangesPresentation(undefined)}
+                close={closeChanges}
                 list={changesSubject.kind === "project" ? props.listProjectWorktreeChanges : props.listTaskWorktreeChanges}
                 diff={changesSubject.kind === "project" ? props.getProjectWorktreeDiff : props.getTaskWorktreeDiff}
                 preImage={changesSubject.kind === "project" ? props.getProjectWorktreePreImage : props.getTaskWorktreePreImage}
@@ -2117,6 +2134,7 @@ export function Shell(props: ShellProps) {
                 listPullRequestChanges={props.listTaskPullRequestChanges}
                 pullRequestDiff={props.getTaskPullRequestDiff}
                 agentSessions={changesAgentSessions}
+                editing={reviewEditorSubject ? { ...reviewEditor, readOnly: selectedComputer?.scope === "readOnly" } : undefined}
                 sendReviewNotes={changesSubject.kind === "project" ? props.sendProjectReviewNotes : props.sendTaskReviewNotes}
               />
             ) : null}

@@ -48,7 +48,7 @@ export function FileEditorOverlay({ subject, editor, snapshot, readOnly, hide, c
   </section>;
 }
 
-function FileEditorBody({ editor, snapshot, tab, readOnly }: { editor: FileEditor; snapshot: FileEditorSnapshot; tab: FileEditorTab; readOnly: boolean }) {
+export function FileEditorBody({ editor, snapshot, tab, readOnly }: { editor: FileEditor; snapshot: FileEditorSnapshot; tab: FileEditorTab; readOnly: boolean }) {
   const { dirty } = tab;
   const editable = tab.status === "ready" && !readOnly;
   return <div className="file-editor-body">

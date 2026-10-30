@@ -1692,6 +1692,8 @@ button.workflow-tree-session:hover { background: var(--hover); }
 .changes-file-heading strong { overflow: hidden; font: 600 10.5px/1 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
 .changes-file-heading > span:last-child:not(.change-badge) { flex: none; margin-left: auto; color: light-dark(#75653b, #d1b46b); font: 8.5px/1 var(--font-mono); }
 .changes-diff-content { grid-row: 2; display: grid; min-width: 0; min-height: 0; overflow: hidden; }
+.changes-edit-toggle { flex: none; margin-left: auto; }
+.changes-diff-content > .file-editor-body { background: var(--editor-surface); }
 .changes-diff-scroll { min-width: 0; min-height: 0; overflow: auto; background: light-dark(#f8fafc, #202428); }
 .changes-diff-scroll .diff { font-size: 10.5px; }
 .changes-diff-scroll .diff-gutter-col { width: 9ch; }

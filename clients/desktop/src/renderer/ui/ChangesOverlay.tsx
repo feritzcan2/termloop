@@ -40,6 +40,7 @@ import {
   type ChangeEntry,
   type ChangeTreeSection,
 } from "./ChangeFileTree.js";
+import { ChangesFileEditor, editableChangePath, type ChangesEditing } from "./ChangesFileEditor.js";
 import {
   ALL_BRANCH_CHANGES_ID,
   cacheDiff,
@@ -101,6 +102,7 @@ export type ChangesOverlayProps = {
   pullRequestDiff(taskId: string, observationId: string, entryId: string): Promise<GitHostPullRequestDiffResult>;
   agentSessions: readonly Session[];
   sendReviewNotes(taskId: string, sessionId: string, message: string): Promise<string | undefined>;
+  editing?: ChangesEditing | undefined;
 };
 
 export function ChangesOverlay({
@@ -119,6 +121,7 @@ export function ChangesOverlay({
   pullRequestDiff,
   agentSessions,
   sendReviewNotes,
+  editing,
 }: ChangesOverlayProps) {
   const overlayRef = useRef<HTMLElement>(null);
   // Composition rebuilds these adapters on unrelated projection renders. Keep
@@ -147,6 +150,7 @@ export function ChangesOverlay({
   const [error, setError] = useState<string>();
   const [viewType, setViewType] = useState<"unified" | "split">("unified");
   const [fullFile, setFullFile] = useState(false);
+  const [editMode, setEditMode] = useState(false);
   const [preImages, setPreImages] = useState<ReadonlyMap<string, CachedPreImage>>(new Map());
   const [loadingPreImage, setLoadingPreImage] = useState(false);
   const [preImageError, setPreImageError] = useState<string>();
@@ -424,6 +428,26 @@ export function ChangesOverlay({
     return () => { active = false; };
   }, [applyRecoveredLocalChange, commitList?.observation_id, currentPullRequestChanges?.observation_id, diffKey, diffs, loadingSources, reviewing, localChanges, selected, selectedSource, subject.id]);
 
+  const editPath = selectedSource.kind === "local" && editing ? editableChangePath(selected) : undefined;
+  const showEditor = editMode && editPath !== undefined;
+  // Saved edits move the worktree past this observation: list it again so the
+  // diff shows them, keeping the edited file selected under its new entry ID.
+  const showDiff = async () => {
+    setEditMode(false);
+    if (!selected || !("side" in selected)) return;
+    const key = `${selected.side}:${selected.display_path}`;
+    try {
+      const next = await readsRef.current.list(subject.id);
+      setDiffs((current) => withoutKeyPrefix(current, "local:"));
+      setPreImages((current) => withoutKeyPrefix(current, "local:"));
+      setLocalChanges(next);
+      const match = next.entries.find((candidate) => `${candidate.side}:${candidate.display_path}` === key);
+      if (match) setSelectedId(match.entry_id);
+    } catch (failure) {
+      setError(errorMessage(failure, "Local changes could not be loaded."));
+    }
+  };
+
   const selectedDiff = diffKey
     && (selectedSource.kind !== "pullRequest" || selectedPullRequestIsCurrent)
     ? diffs.get(diffKey)
@@ -642,6 +666,8 @@ export function ChangesOverlay({
       role="dialog"
       tabIndex={-1}
       onKeyDown={(event) => {
+        // Monaco owns Escape (find, suggestions) and Tab (indentation) while it has focus.
+        if ((event.key === "Escape" || event.key === "Tab") && (event.target as Element).closest?.(".monaco-editor")) return;
         if (event.key === "Escape") {
           event.preventDefault();
           close();
@@ -721,8 +747,13 @@ export function ChangesOverlay({
           {currentListTruncated ? <p className="changes-warning">File list truncated at the safe limit.</p> : null}
         </aside>
         <main className="changes-diff" aria-label="Selected file diff">
-          {selected ? <div className="changes-file-heading"><ChangeBadge entry={selected} /><strong>{selected.display_path}</strong>{selected.path_encoding === "lossy" ? <span title="The exact path is represented by an opaque identifier.">lossy display</span> : null}</div> : null}
+          {selected ? <div className="changes-file-heading"><ChangeBadge entry={selected} /><strong>{selected.display_path}</strong>{selected.path_encoding === "lossy" ? <span title="The exact path is represented by an opaque identifier.">lossy display</span> : null}
+            {editPath ? <div className="changes-view-toggle changes-edit-toggle" role="group" aria-label="File view">
+              <button type="button" aria-pressed={!showEditor} className={showEditor ? "" : "active"} onClick={() => { if (showEditor) void showDiff(); }}>Diff</button>
+              <button type="button" aria-pressed={showEditor} className={showEditor ? "active" : ""} title={editing?.readOnly ? "This computer is shared read-only" : "Edit the working-tree file"} onClick={() => setEditMode(true)}>Edit</button>
+            </div> : null}</div> : null}
           <div className="changes-diff-content">
+            {showEditor ? <ChangesFileEditor editing={editing!} path={editPath} /> : <>
             {loadingDiff ? <p className="changes-placeholder">Loading diff…</p> : null}
             {!selected && !loadingSources && loadingSourceKey !== selectedSourceKey ? <p className="changes-placeholder">Select a changed file.</p> : null}
             {selectedDiff?.state === "binary" ? <DiffState title="Binary change" detail="Binary content is not sent over the control channel." /> : null}
@@ -749,6 +780,7 @@ export function ChangesOverlay({
                 removeLineReview={removeReviewNote}
               />
             ) : null}
+            </>}
           </div>
           <footer className="changes-review">
             <p className="changes-review-hint">Click <strong>+</strong> beside a diff line to add a comment.</p>
