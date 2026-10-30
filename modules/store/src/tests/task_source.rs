@@ -327,3 +327,69 @@ fn project_delete_cascades_task_source_configuration() {
     assert!(store.task_source_configurations().is_empty());
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn remote_task_update_is_atomic_and_durable() {
+    let path = std::env::temp_dir().join(format!(
+        "termloop-store-task-source-remote-{}-{}.json",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let authority = issue_core_write_authority_for_composition();
+    let mut store = Store::open(&path).unwrap();
+    store
+        .insert_project(
+            &authority,
+            ProjectRecord {
+                id: "project-1".into(),
+                name: "Project".into(),
+                folder_path: "/project".into(),
+            },
+        )
+        .unwrap();
+    store
+        .insert_task_source_configuration(&authority, source("source-1"))
+        .unwrap();
+    store
+        .insert_task_from_source(&authority, task("task-1"), link("task-1", "source-1"))
+        .unwrap();
+    let update = |task_id: &str| TaskSourceRemoteUpdate {
+        task_id: task_id.into(),
+        title: "Remote title".into(),
+        brief: Some("Remote body".into()),
+        external_updated_at: "2026-08-26T11:00:00.000+0000".into(),
+    };
+    let revision = store.revision();
+    assert!(matches!(
+        store.apply_task_source_remote_updates(
+            &authority,
+            vec![update("task-1"), update("task-missing")],
+            5
+        ),
+        Err(StoreError::NotFound)
+    ));
+    assert_eq!(store.revision(), revision);
+    assert_eq!(store.tasks()[0].title, "Imported");
+    assert_eq!(
+        store.issue_links()[0].external_updated_at.as_deref(),
+        Some("2026-08-26T10:00:00.000+0000"),
+        "a failed batch leaves no half-synced link"
+    );
+
+    store
+        .apply_task_source_remote_updates(&authority, vec![update("task-1")], 5)
+        .unwrap();
+    drop(store);
+    let reopened = Store::open(&path).unwrap();
+    assert_eq!(reopened.tasks()[0].title, "Remote title");
+    assert_eq!(reopened.tasks()[0].brief.as_deref(), Some("Remote body"));
+    assert_eq!(
+        reopened.issue_links()[0].external_updated_at.as_deref(),
+        Some("2026-08-26T11:00:00.000+0000")
+    );
+    drop(reopened);
+    let _ = std::fs::remove_file(path);
+}

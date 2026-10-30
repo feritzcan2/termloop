@@ -5,7 +5,7 @@ mod migration;
 mod provider_cache;
 mod records;
 
-pub use records::{PlaybookApply, ProjectAssistantReset};
+pub use records::{PlaybookApply, ProjectAssistantReset, TaskSourceRemoteUpdate};
 mod validation;
 
 pub use provider_cache::{

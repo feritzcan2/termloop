@@ -24,3 +24,4 @@ mod workflow;
 
 pub use playbook::PlaybookApply;
 pub use steward::ProjectAssistantReset;
+pub use task_source::TaskSourceRemoteUpdate;

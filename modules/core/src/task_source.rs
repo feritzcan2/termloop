@@ -6,6 +6,7 @@ use termloop_domain::{
     TaskSourceProvider, TaskSourceScope, TaskStatus,
 };
 use termloop_providers::{JiraIssueSnapshot, JiraSearchRequest, JiraSearchResult, JiraSearchScope};
+use termloop_store::TaskSourceRemoteUpdate;
 
 pub use termloop_domain::{
     TaskSourceBoardSelection, TaskSourceConfiguration, TaskSourceImportPolicy,
@@ -665,12 +666,64 @@ impl CoreRuntime {
                     .and_then(|delay| now_epoch_ms.checked_add(delay));
             }
         }
+        let candidate_count = entry.candidates.len();
+        let truncated = entry.truncated;
+        self.apply_remote_task_updates(&source, sequence, now_epoch_ms)?;
         Ok(TaskSourceRefreshApply {
             source_id: plan.source_id,
-            candidate_count: entry.candidates.len(),
-            truncated: entry.truncated,
+            candidate_count,
+            truncated,
             observation_sequence: sequence,
         })
+    }
+
+    /// Jira wins for imported Tasks: every Task linked to an issue this refresh
+    /// observed with a newer `updatedAt` takes the issue's current title and
+    /// description, which also clears its `changed` review state.
+    fn apply_remote_task_updates(
+        &mut self,
+        source: &TaskSourceConfiguration,
+        observation_sequence: u64,
+        now_epoch_ms: u64,
+    ) -> Result<(), CoreError> {
+        let Some(runtime) = self.task_source_runtime.entries.get(&source.id) else {
+            return Ok(());
+        };
+        let updates = runtime
+            .candidates
+            .iter()
+            .filter(|observation| {
+                observation.matches_scope
+                    && observation.observation_sequence == observation_sequence
+            })
+            .filter_map(|observation| {
+                let candidate = &observation.candidate;
+                let (link, task) = self.find_linked_issue(source, &candidate.external_id)?;
+                if link.source_id.is_none()
+                    || link.external_updated_at.as_deref() == Some(candidate.updated_at.as_str())
+                {
+                    return None;
+                }
+                let title = imported_title(candidate);
+                Some(TaskSourceRemoteUpdate {
+                    task_id: task.id.clone(),
+                    title: if title.is_empty() {
+                        task.title.clone()
+                    } else {
+                        title
+                    },
+                    brief: imported_brief(candidate),
+                    external_updated_at: candidate.updated_at.clone(),
+                })
+            })
+            .collect::<Vec<_>>();
+        if updates.is_empty() {
+            return Ok(());
+        }
+        self.store
+            .apply_task_source_remote_updates(&self.write_authority, updates, now_epoch_ms)
+            .map_err(store_error)?;
+        Ok(())
     }
 
     pub fn task_source_candidates(
@@ -1387,7 +1440,7 @@ mod tests {
     }
 
     #[test]
-    fn refresh_import_is_idempotent_and_remote_changes_do_not_overwrite_task() {
+    fn refresh_import_is_idempotent_and_remote_changes_overwrite_the_task() {
         let mut fixture = Fixture::new();
         fixture.create_source();
         let refresh = fixture.refresh("Initial summary", "Initial description");
@@ -1446,11 +1499,73 @@ mod tests {
             "2026-08-26T11:00:00.000+0000",
         );
         let candidate = fixture.runtime.task_source_candidates("source-1").unwrap()[0].clone();
-        assert_eq!(candidate.state, "changed");
         assert_eq!(
-            fixture.runtime.store.tasks()[0].title,
-            "Local title",
-            "remote refresh must not overwrite local Task authority"
+            candidate.state, "added",
+            "applying the remote change clears the changed review state"
+        );
+        let task = &fixture.runtime.store.tasks()[0];
+        assert_eq!(
+            task.title, "Remote rename",
+            "Jira wins over local Task edits"
+        );
+        assert_eq!(task.brief.as_deref(), Some("Changed remote description"));
+        assert_eq!(
+            fixture.runtime.store.issue_links()[0]
+                .external_updated_at
+                .as_deref(),
+            Some("2026-08-26T11:00:00.000+0000")
+        );
+
+        let revision = fixture.runtime.state_revision();
+        fixture.refresh_at(
+            "Remote rename",
+            "Changed remote description",
+            "2026-08-26T11:00:00.000+0000",
+        );
+        assert_eq!(
+            fixture.runtime.state_revision(),
+            revision,
+            "an unchanged issue does not write"
+        );
+    }
+
+    #[test]
+    fn remote_update_skips_issues_that_left_the_scope() {
+        let mut fixture = Fixture::new();
+        fixture.create_source();
+        let refresh = fixture.refresh("Initial summary", "Initial description");
+        let revision = fixture.runtime.state_revision();
+        fixture
+            .runtime
+            .import_task_source_candidate(
+                "source-1",
+                "10042",
+                1,
+                refresh.observation_sequence,
+                revision,
+                "task-imported".into(),
+                30,
+            )
+            .unwrap();
+        let plan = fixture
+            .runtime
+            .prepare_task_source_refresh("source-1", 1, 40)
+            .unwrap();
+        fixture
+            .runtime
+            .apply_task_source_refresh(
+                plan,
+                TaskSourceRefreshOutcome::Success(JiraSearchResult {
+                    issues: vec![],
+                    truncated: false,
+                }),
+                41,
+            )
+            .unwrap();
+        assert_eq!(fixture.runtime.store.tasks()[0].title, "Initial summary");
+        assert_eq!(
+            fixture.runtime.task_source_candidates("source-1").unwrap()[0].state,
+            "added"
         );
     }
 
