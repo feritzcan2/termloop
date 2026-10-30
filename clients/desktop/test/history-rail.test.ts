@@ -521,16 +521,19 @@ describe("Session History rail", () => {
     };
     await act(async () => root.render(createElement(HistoryRail, props)));
 
+    // The Agents tab is the default and lists no Tasks.
+    expect(container.querySelectorAll(".history-row.task")).toHaveLength(0);
+    expect(container.textContent).toContain("ordinary");
+    const tasksTab = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((tab) => tab.textContent === "Tasks")!;
+    await act(async () => tasksTab.click());
+    expect(tasksTab.getAttribute("aria-selected")).toBe("true");
     expect(container.querySelectorAll(".history-row.task")).toHaveLength(3);
     expect(container.textContent).not.toContain("Still open");
     await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Reopen Task Closed but kept"]')!.click());
     expect(reopenTask).toHaveBeenCalledWith("task-3");
-    const state = container.querySelector<HTMLSelectElement>('[aria-label="Filter Session History by state"]')!;
-    await act(async () => {
-      state.value = "tasks";
-      state.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    expect(container.querySelector('[aria-label="Filter Session History by state"]')).toBeNull();
     expect(container.querySelector("#termloop-history-label")).toBeNull();
+    expect(container.querySelector("#external-history-label")).toBeNull();
     expect(container.textContent).not.toContain("ordinary");
     const search = container.querySelector<HTMLInputElement>('[aria-label="Search Session History"]')!;
     await act(async () => {

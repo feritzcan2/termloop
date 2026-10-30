@@ -44,7 +44,8 @@ const DELETED_FOLDER_MISSING_HINT = "This Agent's folder is gone. Restore recrea
 const DAY_MS = 24 * 60 * 60 * 1_000;
 
 type HistorySourceFilter = "all" | "termloop" | "claude" | "codex";
-type HistoryStateFilter = "all" | "favorited" | "inactive" | "archived" | "deleted" | "tasks";
+type HistoryTab = "agents" | "tasks";
+type HistoryStateFilter = "all" | "favorited" | "inactive" | "archived" | "deleted";
 type HistoryTimeFilter = "all" | "today" | "7d" | "30d";
 type HistoryLocationFilter = "all" | "project" | "branch" | "cwd";
 type HistoryRelationship = "ask-to" | "fork";
@@ -132,17 +133,13 @@ function TermLoopConversationPreview(props: { preview: TermLoopPreviewState | un
   </>;
 }
 
-/// Closed Tasks carry no cwd, so a location filter hides them rather than guessing a match.
-function showTermLoopTasks(source: HistorySourceFilter, state: HistoryStateFilter, location: HistoryLocationFilter): boolean {
-  return (source === "all" || source === "termloop") && (state === "all" || state === "tasks") && location === "all";
-}
-
 export function HistoryRail(props: HistoryRailProps) {
   const [loaded, setLoaded] = useState<{ projectId: string; result: SessionHistoryListResult }>();
   const [loadingProjectId, setLoadingProjectId] = useState<string>();
   const [fillingProjectId, setFillingProjectId] = useState<string>();
   const [failure, setFailure] = useState<{ projectId: string; message: string }>();
   const [importingHandle, setImportingHandle] = useState<string>();
+  const [tab, setTab] = useState<HistoryTab>("agents");
   const [query, setQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState<HistorySourceFilter>("all");
   const [stateFilter, setStateFilter] = useState<HistoryStateFilter>("all");
@@ -223,7 +220,7 @@ export function HistoryRail(props: HistoryRailProps) {
   useEffect(() => {
     setExpandedRowKey(undefined);
     setExpandedPreviewSessionId(undefined);
-  }, [props.projectId, query, sourceFilter, stateFilter, timeFilter, locationFilter]);
+  }, [props.projectId, tab, query, sourceFilter, stateFilter, timeFilter, locationFilter]);
   useEffect(() => setTermLoopPreviews(new Map()), [props.projectId]);
 
   useEffect(() => {
@@ -242,19 +239,18 @@ export function HistoryRail(props: HistoryRailProps) {
       .map((task) => ({ task, archived: false, closedAt: task.updated_at_epoch_ms })),
     ...props.archivedTasks.map((task) => ({ task, archived: true, closedAt: task.archived_at_epoch_ms })),
   ].sort((left, right) => (right.closedAt ?? 0) - (left.closedAt ?? 0)), [props.archivedTasks, props.tasks]);
-  const visibleTasks = showTermLoopTasks(sourceFilter, stateFilter, locationFilter)
+  // Closed Tasks carry no cwd or provider, so only search and time filter them.
+  const visibleTasks = tab === "tasks"
     ? historyTasks.filter(({ task, closedAt }) => (
       (!normalizedQuery || task.title.toLowerCase().includes(normalizedQuery) || task.branch?.name.toLowerCase().includes(normalizedQuery))
       && (timeFilter === "all" || (closedAt !== null && externalTimeMatches(closedAt, timeFilter)))
     ))
     : [];
   const filtersActive = Boolean(normalizedQuery)
-    || sourceFilter !== "all"
-    || stateFilter !== "all"
     || timeFilter !== "all"
-    || locationFilter !== "all";
-  const showTermLoop = sourceFilter === "all" || sourceFilter === "termloop";
-  const showExternal = sourceFilter !== "termloop";
+    || (tab === "agents" && (sourceFilter !== "all" || stateFilter !== "all" || locationFilter !== "all"));
+  const showTermLoop = tab === "agents" && (sourceFilter === "all" || sourceFilter === "termloop");
+  const showExternal = tab === "agents" && sourceFilter !== "termloop";
   const matchesTermLoopSession = (session: Session, timestamp: number | undefined) => {
     const relationship = historyRelationship(session);
     const matchesQuery = !normalizedQuery
@@ -271,8 +267,7 @@ export function HistoryRail(props: HistoryRailProps) {
     const matchesFavorite = stateFilter !== "favorited" || props.favoriteSessionIds.has(session.id);
     return matchesQuery && matchesTime && matchesLocation && matchesFavorite;
   };
-  const showTermLoopSessions = stateFilter !== "tasks";
-  const visibleInactive = showTermLoop && showTermLoopSessions && (stateFilter === "all" || stateFilter === "favorited" || stateFilter === "inactive")
+  const visibleInactive = showTermLoop && (stateFilter === "all" || stateFilter === "favorited" || stateFilter === "inactive")
     ? inactive.filter((session) => matchesTermLoopSession(session, undefined))
     : [];
   const visibleArchived = showTermLoop && (stateFilter === "all" || stateFilter === "favorited" || stateFilter === "archived")
@@ -301,7 +296,7 @@ export function HistoryRail(props: HistoryRailProps) {
   const external = matchingExternal.slice(0, visibleExternalCount);
   const cachedMore = external.length < matchingExternal.length;
   const termLoopTotal = visibleInactive.length + visibleArchived.length + visibleDeleted.length;
-  const total = visibleTasks.length + termLoopTotal + matchingExternal.length;
+  const total = tab === "tasks" ? visibleTasks.length : termLoopTotal + matchingExternal.length;
   const issues = issueTotal(result);
   const toggleExpanded = (rowKey: string) => {
     setExpandedRowKey((current) => current === rowKey ? undefined : rowKey);
@@ -373,12 +368,16 @@ export function HistoryRail(props: HistoryRailProps) {
         <span className="count-badge">{total}</span>
         <button type="button" className="history-refresh" title="Refresh Session History" aria-label="Refresh Session History" disabled={loading || filling || props.disabled} onClick={() => void reload(true)}><Icon name="restart" /></button>
       </header>
+      <div className="history-tabs" role="tablist" aria-label="Session History view">
+        <button type="button" role="tab" aria-selected={tab === "agents"} className={tab === "agents" ? "selected" : undefined} onClick={() => setTab("agents")}>Agents</button>
+        <button type="button" role="tab" aria-selected={tab === "tasks"} className={tab === "tasks" ? "selected" : undefined} onClick={() => setTab("tasks")}>Tasks</button>
+      </div>
       <div className="history-search">
         <Icon name="search" />
-        <input type="search" value={query} aria-label="Search Session History" placeholder="Search history" spellCheck={false} onChange={(event) => setQuery(event.currentTarget.value)} />
+        <input type="search" value={query} aria-label="Search Session History" placeholder={tab === "tasks" ? "Search closed Tasks" : "Search history"} spellCheck={false} onChange={(event) => setQuery(event.currentTarget.value)} />
       </div>
       <div className="history-filters">
-        <select aria-label="Filter Session History by source" value={sourceFilter} onChange={(event) => {
+        {tab === "agents" ? <select aria-label="Filter Session History by source" value={sourceFilter} onChange={(event) => {
           const next = event.currentTarget.value as HistorySourceFilter;
           setSourceFilter(next);
           if (next !== "termloop") setStateFilter("all");
@@ -387,14 +386,14 @@ export function HistoryRail(props: HistoryRailProps) {
           <option value="termloop">TermLoop</option>
           <option value="claude">Claude</option>
           <option value="codex">Codex</option>
-        </select>
+        </select> : null}
         <select aria-label="Filter Session History by time" value={timeFilter} onChange={(event) => setTimeFilter(event.currentTarget.value as HistoryTimeFilter)}>
           <option value="all">Any time</option>
           <option value="today">Today</option>
           <option value="7d">Last 7 days</option>
           <option value="30d">Last 30 days</option>
         </select>
-        <select className="history-state-filter" aria-label="Filter Session History by state" value={stateFilter} onChange={(event) => {
+        {tab === "agents" ? <><select className="history-state-filter" aria-label="Filter Session History by state" value={stateFilter} onChange={(event) => {
           const next = event.currentTarget.value as HistoryStateFilter;
           setStateFilter(next);
           if (next !== "all") setSourceFilter("termloop");
@@ -404,18 +403,17 @@ export function HistoryRail(props: HistoryRailProps) {
           <option value="inactive">Inactive</option>
           <option value="archived">Archived</option>
           <option value="deleted">Deleted</option>
-          <option value="tasks">Closed Tasks</option>
         </select>
         <select className="history-location-filter" aria-label="Filter Session History by location" value={locationFilter} onChange={(event) => setLocationFilter(event.currentTarget.value as HistoryLocationFilter)}>
           <option value="all">Any location</option>
           <option value="project" disabled={!props.projectPath}>This project root</option>
           <option value="branch" disabled={!props.projectBranch || sourceFilter === "termloop"}>{props.projectBranch ? `Branch · ${props.projectBranch}` : "Current branch unavailable"}</option>
           <option value="cwd" disabled={!props.currentCwd}>{props.currentCwd ? `Folder · ${basename(props.currentCwd)}` : "Current folder unavailable"}</option>
-        </select>
+        </select></> : null}
       </div>
       {failureMessage ? <p className="history-notice error" role="alert">{failureMessage}</p> : null}
       {showExternal && issues > 0 ? <p className="history-notice">{issues} local history file{issues === 1 ? "" : "s"} could not be read.</p> : null}
-      {showTermLoopTasks(sourceFilter, stateFilter, locationFilter) ? <section className="history-section" aria-labelledby="task-history-label">
+      {tab === "tasks" ? <section className="history-section" aria-labelledby="task-history-label">
         <div className="rail-subhead" id="task-history-label"><span>Tasks</span><span>{visibleTasks.length}</span></div>
         <div className="history-list">
           {visibleTasks.map(({ task, archived, closedAt }) => {
@@ -438,7 +436,7 @@ export function HistoryRail(props: HistoryRailProps) {
           {!props.termLoopHistoryLoading && visibleTasks.length === 0 ? <p className="history-empty">{filtersActive ? "No matching closed Tasks." : "No closed Tasks."}</p> : null}
         </div>
       </section> : null}
-      {showTermLoop && showTermLoopSessions ? <section className="history-section" aria-labelledby="termloop-history-label">
+      {showTermLoop ? <section className="history-section" aria-labelledby="termloop-history-label">
         <div className="rail-subhead" id="termloop-history-label"><span>TermLoop</span><span>{termLoopTotal}</span></div>
         <div className="history-list">
           {visibleInactive.map((session) => {

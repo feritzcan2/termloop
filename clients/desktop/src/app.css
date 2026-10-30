@@ -2966,6 +2966,10 @@ button.folder-crumb:hover { background: light-dark(rgba(15,23,42,.07), rgba(255,
 .history-refresh { display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--sidebar-dimmer); }
 .history-refresh:hover:not(:disabled), .history-refresh:focus-visible { outline: 0; background: light-dark(rgba(15,23,42,.06), rgba(255,255,255,.06)); color: var(--sidebar-text); }
 .history-refresh svg { width: 12px; height: 12px; }
+.history-tabs { display: flex; gap: 2px; margin: 0 10px 7px 11px; padding: 2px; border: 1px solid var(--rule); border-radius: 7px; }
+.history-tabs button { flex: 1; height: 22px; padding: 0 9px; border: 0; border-radius: 5px; background: transparent; color: var(--sidebar-dimmer); font: 10.5px/1 var(--font-ui); cursor: pointer; }
+.history-tabs button:hover { color: var(--sidebar-text); }
+.history-tabs button.selected { background: light-dark(rgba(15,23,42,.07), rgba(255,255,255,.08)); color: var(--sidebar-text); }
 .history-search { position: relative; margin: 0 10px 7px 11px; }
 .history-search > svg { position: absolute; top: 7px; left: 8px; width: 11px; height: 11px; color: var(--sidebar-dimmer); pointer-events: none; }
 .history-search input { width: 100%; padding: 5px 8px 5px 25px; border: 1px solid var(--rule); border-radius: 6px; background: light-dark(rgba(15,23,42,.04), rgba(255,255,255,.04)); color: var(--sidebar-text); font: 10.5px/1.4 var(--font-ui); }
