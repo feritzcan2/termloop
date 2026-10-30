@@ -1563,6 +1563,39 @@ describe("Task rail first-run UX", () => {
     container.remove();
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
+  it("parks a Task into a folded title line at the end of the board and remembers it", async () => {
+    const first = { ...launchableTask(), id: "task-park", title: "Park candidate" };
+    const second = launchableTask();
+    const container = document.createElement("div");
+    document.body.append(container);
+    let root = createRoot(container);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const props = { ...railProps({ tasks: [first, second] }), projectId: "park-project" };
+    await act(async () => root.render(createElement(TaskRail, props)));
+
+    const boardOrder = () => [...container.querySelectorAll<HTMLElement>(".task-board [data-task-id]")].map((row) => row.dataset.taskId);
+    const parkedCard = () => container.querySelector<HTMLElement>('[data-task-id="task-park"]')!.closest<HTMLElement>(".task-group")!;
+    expect(boardOrder()).toEqual(["task-park", "task-1"]);
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Park Park candidate"]')!.click());
+    expect(boardOrder()).toEqual(["task-1", "task-park"]);
+    expect(parkedCard().classList.contains("parked")).toBe(true);
+    expect(parkedCard().dataset.disclosed).toBeUndefined();
+    expect(parkedCard().querySelector(".task-meta, .task-children, .task-developer-notes")).toBeNull();
+
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(createElement(TaskRail, props)));
+    expect(boardOrder()).toEqual(["task-1", "task-park"]);
+    await act(async () => container.querySelector<HTMLButtonElement>('.task-toggle[aria-label="Unpark Park candidate"]')!.click());
+    expect(boardOrder()).toEqual(["task-park", "task-1"]);
+    expect(parkedCard().classList.contains("parked")).toBe(false);
+
+    await act(async () => root.unmount());
+    window.localStorage.removeItem("termloop.taskParked.v1");
+    container.remove();
+    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+  });
+
 
   it.each([
     ["contextmenu", "Enter"], ["actions", "Enter"],

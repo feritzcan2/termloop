@@ -21,6 +21,7 @@ import { isProjectRelocationDragCandidate, isTaskRelocationDragCandidate, useOpt
 import { readWorktreeParentPath, writeWorktreeParentPath } from "../worktree-parent-memory.js";
 import { readWorktreeBaseRef, writeWorktreeBaseRef } from "../worktree-base-ref-memory.js";
 import { readTaskCollapsed, writeTaskCollapsed } from "../task-collapse-memory.js";
+import { readParkedTaskIds, writeParkedTaskIds } from "../task-park-memory.js";
 import { readFavoriteTaskIds, writeFavoriteTaskIds } from "../task-favorite-memory.js";
 import { RunSessionLine, TaskRunLaunchers, runCommandsBySessionId, runtimesBySessionId } from "./TaskRuns.js";
 import type { RunImprovement } from "./TaskRuns.js";
@@ -169,14 +170,16 @@ function taskSessionGroupsByActivity(
     : group);
 }
 
-/// Favorites form the leading group. Within favorite and ordinary groups, live
-/// work floats loudest-first using the same activity ranking as the row's agent
-/// dots. Equal entries retain their durable order.
+/// Favorites form the leading group and parked Tasks the trailing one; parking
+/// wins over favoriting. Within each group, live work floats loudest-first
+/// using the same activity ranking as the row's agent dots. Equal entries
+/// retain their durable order.
 export function openTasksByActivity(
   tasks: readonly Task[],
   sessionsById: ReadonlyMap<string, Session>,
   statusesById: ReadonlyMap<string, AgentStatus>,
   reviewReadySessionIds: ReadonlySet<string>,
+  parkedTaskIds: ReadonlySet<string> = new Set(),
   favoriteTaskIds: ReadonlySet<string> = new Set(),
 ): Task[] {
   const quiet = Number.MAX_SAFE_INTEGER;
@@ -188,9 +191,14 @@ export function openTasksByActivity(
       : agentGroupActivityPriority(liveAgents, statusesById, reviewReadySessionIds);
   };
   return tasks
-    .map((task, index) => ({ task, index, priority: priority(task), favorite: favoriteTaskIds.has(task.id) }))
-    .sort((left, right) => left.favorite !== right.favorite
-      ? left.favorite ? -1 : 1
+    .map((task, index) => ({
+      task,
+      index,
+      priority: priority(task),
+      group: parkedTaskIds.has(task.id) ? 2 : favoriteTaskIds.has(task.id) ? 0 : 1,
+    }))
+    .sort((left, right) => left.group !== right.group
+      ? left.group - right.group
       : left.priority === right.priority
         ? left.index - right.index
         : left.priority - right.priority)
@@ -305,6 +313,7 @@ export function TaskRail(props: TaskRailProps) {
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveQuery, setArchiveQuery] = useState("");
   const [activeQuery, setActiveQuery] = useState("");
+  const [parkedTaskIds, setParkedTaskIds] = useState<ReadonlySet<string>>(() => readParkedTaskIds(props.projectId));
   const [archivePageCount, setArchivePageCount] = useState(1);
   const [favoriteTaskIds, setFavoriteTaskIds] = useState<ReadonlySet<string>>(() => readFavoriteTaskIds(props.projectId));
   const [renamingTaskTab, setRenamingTaskTab] = useState<{ taskId: string; title: string; busy: boolean; error: string | undefined }>();
@@ -362,6 +371,7 @@ export function TaskRail(props: TaskRailProps) {
   const allOpenTasks = openTasksByActivity(
     props.tasks.filter((task) => task.status === "open"),
     props.sessionsById,
+    parkedTaskIds,
     props.statusesById,
     props.reviewReadySessionIds,
     favoriteTaskIds,
@@ -388,6 +398,8 @@ export function TaskRail(props: TaskRailProps) {
     <TaskGroup
       key={`${props.projectId ?? "unknown"}:${task.id}`}
       projectId={props.projectId}
+      parked={task.status === "open" && parkedTaskIds.has(task.id)}
+      togglePark={task.status === "open" ? toggleTaskPark : undefined}
       task={task}
       favorite={favoriteTaskIds.has(task.id)}
       toggleFavorite={task.status === "open" ? toggleTaskFavorite : undefined}
@@ -456,6 +468,7 @@ export function TaskRail(props: TaskRailProps) {
   useEffect(() => {
     setArchiveOpen(false);
     setArchiveQuery("");
+    setParkedTaskIds(readParkedTaskIds(props.projectId));
     setActiveQuery("");
     setArchivePageCount(1);
     setFavoriteTaskIds(readFavoriteTaskIds(props.projectId));
@@ -558,6 +571,15 @@ export function TaskRail(props: TaskRailProps) {
       const next = new Set(current);
       if (next.has(taskId)) next.delete(taskId);
       else next.add(taskId);
+  const toggleTaskPark = useCallback((taskId: string) => {
+    setParkedTaskIds((current) => {
+      const next = new Set(current);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      writeParkedTaskIds(props.projectId, next);
+      return next;
+    });
+  }, [props.projectId]);
       writeFavoriteTaskIds(props.projectId, next);
       return next;
     });
@@ -787,6 +809,9 @@ type TaskGroupProps = {
   taskHovered: ((taskId: string | undefined) => void) | undefined;
   taskClicked: ((taskId: string) => void) | undefined;
   detailOpen: boolean;
+  /// A parked Task renders as its title line only, sunk below the active work.
+  parked: boolean;
+  togglePark: ((taskId: string) => void) | undefined;
   deleting: boolean;
   provisioning: boolean;
   nowEpochMs: number;
@@ -866,10 +891,17 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
     : undefined;
   /// Closed Tasks stay quiet by design, so only an open Task self-discloses.
   const hasLiveAgent = task.status === "open" && liveAgents.length > 0;
+    /// A parked card has no folded preference of its own: the chevron is the
+    /// way back to the full card.
+    if (parked) {
+      props.togglePark?.(task.id);
+      return;
+    }
   useEffect(() => {
     if (!hasLiveAgent) setLiveCollapsed(undefined);
   }, [hasLiveAgent]);
-  const collapsed = hasLiveAgent ? liveCollapsed ?? false : storedCollapsed;
+  const parked = props.parked && !props.deleting;
+  const collapsed = parked || (hasLiveAgent ? liveCollapsed ?? false : storedCollapsed);
   const toggleCollapsed = () => {
     const next = !collapsed;
     if (hasLiveAgent) setLiveCollapsed(next);
@@ -886,7 +918,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
       props.selectSession(primarySession.id);
       return;
     }
-    if (collapsed) toggleCollapsed();
+    if (collapsed && !parked) toggleCollapsed();
     props.openDetail(task.id);
   };
   /// The execution owns these exact Sessions, so its progress card is their
@@ -1032,7 +1064,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
     <div
       ref={relocationDrop.setNodeRef}
       role="listitem"
-      className={`task-group${props.focused ? " focused" : ""}${relocationDrop.isOver ? " session-drop-target" : ""}`}
+      className={`task-group${props.focused ? " focused" : ""}${parked ? " parked" : ""}${relocationDrop.isOver ? " session-drop-target" : ""}`}
       data-task-stage={stage.id}
       data-status-tone={cardStatus?.tone}
       data-disclosed={!collapsed && !props.deleting ? "true" : undefined}
@@ -1067,7 +1099,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
           className="task-toggle"
           aria-expanded={!collapsed}
           disabled={props.deleting}
-          aria-label={`${collapsed ? "Expand" : "Collapse"} ${task.title}`}
+          aria-label={`${parked ? "Unpark" : collapsed ? "Expand" : "Collapse"} ${task.title}`}
           onClick={toggleCollapsed}
         ><Icon name="chevronDown" /></button>
         {/* Clicking the row opens the Task on the stage, where the pipeline and
@@ -1151,7 +1183,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
         {/* One dot per live agent, loudest first, capped so the title keeps its
             width. Clicking a dot opens that agent's terminal without expanding
             the Task; the full Session rows stay behind the chevron. */}
-        {liveAgents.length > 0 && !props.deleting && !props.focused ? (
+        {liveAgents.length > 0 && !props.deleting && (!props.focused || parked) ? (
           <span className="task-agents" role="group" aria-label={`${liveAgents.length} live ${liveAgents.length === 1 ? "agent" : "agents"} in ${task.title}`}>
             {liveAgents.slice(0, 4).map(({ session, state }) => (
               <button
@@ -1176,7 +1208,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
           <button type="button" autoFocus aria-label={`Confirm close ${task.title}`} disabled={props.closing.busy} onClick={() => { void props.confirmClose(task.id); }}>{props.closing.busy ? "…" : "Yes"}</button>
           <button type="button" aria-label={`Cancel close ${task.title}`} disabled={props.closing.busy} onClick={props.cancelClose}>No</button>
         </div> : null}
-        <div className={`row-actions${props.favorite ? " has-favorite" : ""}`}>
+        <div className={`row-actions${props.favorite ? " has-favorite" : ""}${parked ? " has-parked" : ""}`}>
           {props.toggleFavorite && !props.deleting ? <button
             type="button"
             className="row-action task-favorite"
@@ -1185,7 +1217,15 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
             title={props.favorite ? "Remove from favorites" : "Favorite Task"}
             onClick={() => props.toggleFavorite!(task.id)}
           ><Icon name="star" /></button> : null}
-          {props.focused && task.status === "open" && !props.deleting ? <button
+          {props.togglePark && !props.deleting ? <button
+            type="button"
+            className="row-action task-park"
+            aria-label={`${parked ? "Unpark" : "Park"} ${task.title}`}
+            aria-pressed={parked}
+            title={parked ? "Restore Task to the board" : "Park Task: shrink it and move it to the bottom"}
+            onClick={() => props.togglePark!(task.id)}
+          ><Icon name="minus" /></button> : null}
+          {props.focused && task.status === "open" && !props.deleting && !parked ? <button
             type="button"
             className="row-action task-note-add"
             aria-label={`Add a developer note to ${task.title}`}
@@ -1222,14 +1262,14 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
           ><Icon name="more" /></button>
         </div>
       </div>
-      {workflowExecution && !props.deleting ? <TaskWorkflowActivity
+      {workflowExecution && !props.deleting && !parked ? <TaskWorkflowActivity
         execution={workflowExecution}
         sessionsById={props.sessionsById}
         statusesById={props.statusesById}
         reviewReadySessionIds={props.reviewReadySessionIds}
         openSession={props.selectSession}
       /> : null}
-      {archiveRow ? null : <TaskMetaLine
+      {archiveRow || parked ? null : <TaskMetaLine
         task={task}
         stage={stage}
         divergence={divergence}
@@ -1242,7 +1282,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
         issueInHeadline={props.focused}
         compactBranch={props.focused}
       />}
-      {action ? (
+      {action && !parked ? (
         action.kind === "nextStep" ? (
           <button
             type="button"
@@ -1266,7 +1306,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
           </button>
         )
       ) : null}
-      {props.focused && task.status === "open" && !props.deleting ? <TaskDeveloperNotes
+      {props.focused && task.status === "open" && !props.deleting && !parked ? <TaskDeveloperNotes
         projectId={props.projectId}
         taskId={task.id}
         taskTitle={task.title}
@@ -1377,6 +1417,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
   && left.visibleSessionIds === right.visibleSessionIds
   && left.menuSessionId === right.menuSessionId
   && left.deleting === right.deleting
+  && left.parked === right.parked
   && left.nowEpochMs === right.nowEpochMs
   && left.agentCapabilities === right.agentCapabilities
   && left.setupRunImprovement === right.setupRunImprovement

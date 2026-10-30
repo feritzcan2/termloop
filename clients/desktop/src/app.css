@@ -462,9 +462,10 @@ kbd { padding: 2px 5px; border: 1px solid light-dark(rgba(15,23,42,.07), rgba(25
 .task-close-confirm > button:focus-visible { outline: 1px solid var(--accent-strong); outline-offset: 0; }
 .row-actions .task-favorite[aria-pressed="true"] { color: var(--accent-strong); }
 .row-actions .task-favorite[aria-pressed="true"] svg { fill: currentColor; }
-.task-row .row-actions.has-favorite { opacity: 1; pointer-events: auto; }
-.task-row .row-actions.has-favorite > :not(.task-favorite) { opacity: 0; pointer-events: none; }
-.task-row:hover .row-actions.has-favorite > :not(.task-favorite), .row-actions.has-favorite:focus-within > :not(.task-favorite) { opacity: 1; pointer-events: auto; }
+.task-row .row-actions:is(.has-favorite, .has-parked) { opacity: 1; pointer-events: auto; }
+.task-row .row-actions:is(.has-favorite, .has-parked) > :not(.task-favorite[aria-pressed="true"], .task-park[aria-pressed="true"]) { opacity: 0; pointer-events: none; }
+.task-row:hover .row-actions:is(.has-favorite, .has-parked) > :not(.task-favorite[aria-pressed="true"], .task-park[aria-pressed="true"]), .task-row .row-actions:is(.has-favorite, .has-parked):focus-within > :not(.task-favorite[aria-pressed="true"], .task-park[aria-pressed="true"]) { opacity: 1; pointer-events: auto; }
+.row-actions .task-park[aria-pressed="true"] { color: var(--accent-strong); }
 .task-list { padding: 5px 0 7px; }
 .task-group { padding: 0 7px; }
 .task-group + .task-group { margin-top: 7px; }
@@ -494,6 +495,12 @@ kbd { padding: 2px 5px; border: 1px solid light-dark(rgba(15,23,42,.07), rgba(25
 .task-group.focused .task-item.showing-detail { background: transparent; }
 .task-group.focused .task-next-step { margin-left: 28px; }
 .task-group.focused .task-launch { padding-left: 0; }
+/* A parked Task is a single quiet line at the foot of the board: title only,
+   one line, dimmed until pointed at. */
+.task-group.focused.parked { padding: 3px 7px 3px; opacity: .62; }
+.task-group.focused.parked:hover, .task-group.focused.parked:focus-within { opacity: 1; }
+.task-group.focused.parked .task-focus-copy .task-title { font-size: 12px; -webkit-line-clamp: 1; }
+.task-group.focused.parked .task-open-hint { display: none; }
 .task-developer-notes { display: grid; gap: 3px; margin: 7px 5px 1px 28px; padding-top: 6px; border-top: 1px solid light-dark(rgba(15,23,42,.055), rgba(255,255,255,.055)); cursor: default; }
 .task-developer-notes-head { display: flex; min-height: 19px; align-items: center; gap: 5px; color: var(--sidebar-dimmer); font: 700 8.5px/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
 .task-developer-notes-head > span { min-width: 0; flex: 1; }
