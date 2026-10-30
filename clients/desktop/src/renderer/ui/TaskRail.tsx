@@ -874,17 +874,16 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
     setStoredCollapsed(next);
     writeTaskCollapsed(props.projectId, task.id, next);
   };
-  /// A card click is "take me to this Task's work": with a live Session it
-  /// focuses the loudest one, and only a Task with nothing running opens its
-  /// detail page. Growing and folding stays on the chevron alone, so the click
-  /// never changes meaning based on hidden state.
+  /// A card click is "take me to this Task's work": a parked or folded card
+  /// grows back first, then a live Session takes focus, and only a Task with
+  /// nothing running opens its detail page. Folding stays on the chevron.
   const rowClick = () => {
     props.taskClicked?.(task.id);
+    if (collapsed) toggleCollapsed();
     if (primarySession) {
       props.selectSession(primarySession.id);
       return;
     }
-    if (collapsed && !parked) toggleCollapsed();
     props.openDetail(task.id);
   };
   /// The execution owns these exact Sessions, so its progress card is their

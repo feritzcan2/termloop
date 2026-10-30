@@ -1531,6 +1531,14 @@ describe("Task rail first-run UX", () => {
     expect(boardOrder()).toEqual(["task-park", "task-1"]);
     expect(parkedCard().classList.contains("parked")).toBe(false);
 
+    // A click anywhere on a parked card restores it, so the Park control is
+    // never the only way back.
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Park Park candidate"]')!.click());
+    expect(parkedCard().classList.contains("parked")).toBe(true);
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-task-id="task-park"]')!.click());
+    expect(parkedCard().classList.contains("parked")).toBe(false);
+    expect(boardOrder()).toEqual(["task-park", "task-1"]);
+
     await act(async () => root.unmount());
     window.localStorage.removeItem("termloop.taskParked.v1");
     container.remove();
@@ -1663,6 +1671,27 @@ describe("Task rail first-run UX", () => {
 
     await act(async () => root.unmount());
     container.remove();
+    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+  });
+
+  it("grows a folded Task back when its card is clicked", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    await act(async () => root.render(createElement(TaskRail, railProps())));
+
+    const chevron = () => container.querySelector<HTMLButtonElement>(".task-toggle")!;
+    await act(async () => chevron().click());
+    expect(chevron().getAttribute("aria-expanded")).toBe("false");
+
+    await act(async () => container.querySelector<HTMLButtonElement>(".task-item")!.click());
+    expect(chevron().getAttribute("aria-expanded")).toBe("true");
+    expect(container.querySelector(".task-children")).not.toBeNull();
+
+    await act(async () => root.unmount());
+    container.remove();
+    window.localStorage.removeItem("termloop.taskCollapse.v1");
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
 
