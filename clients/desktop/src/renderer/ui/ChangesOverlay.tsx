@@ -41,6 +41,7 @@ import {
   type ChangeTreeSection,
 } from "./ChangeFileTree.js";
 import { ChangesFileEditor, editableChangePath, type ChangesEditing } from "./ChangesFileEditor.js";
+import { useDiffSyntax } from "./useDiffSyntax.js";
 import {
   ALL_BRANCH_CHANGES_ID,
   cacheDiff,
@@ -790,6 +791,7 @@ export function ChangesOverlay({
             {parsed && renderedHunks ? (
               <RenderedDiff
                 file={parsed}
+                path={selected?.display_path}
                 hunks={renderedHunks}
                 hiddenLines={fullFile ? undefined : hiddenLineCount}
                 viewType={viewType}
@@ -906,6 +908,7 @@ function SourcePicker({ localChanges, commitList, gitHostProjection, selected, s
 
 function RenderedDiff({
   file,
+  path,
   hunks,
   hiddenLines,
   viewType,
@@ -917,6 +920,7 @@ function RenderedDiff({
   removeLineReview,
 }: {
   file: FileData;
+  path: string | undefined;
   hunks: HunkData[];
   hiddenLines: number | undefined;
   viewType: "unified" | "split";
@@ -927,6 +931,7 @@ function RenderedDiff({
   updateLineReview(draft: ChangeReviewDraft, body: string): void;
   removeLineReview(key: string): void;
 }) {
+  const tokens = useDiffSyntax(hunks, path);
   const notesByChange = new Map(notes.map((note) => [note.changeKey, note]));
   const reviewTargets = new Map(
     notes.map((note) => [note.changeKey, changeReviewDraft(note)] as const),
@@ -954,6 +959,7 @@ function RenderedDiff({
         viewType={viewType}
         diffType={file.type}
         hunks={hunks}
+        tokens={tokens ?? null}
         widgets={widgets}
         selectedChanges={[...reviewTargets.keys()]}
         renderGutter={({ change, side, renderDefault }) => {

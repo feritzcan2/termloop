@@ -1668,14 +1668,18 @@ button.workflow-tree-session:hover { background: var(--hover); }
 .changes-file-heading { grid-row: 1; display: flex; align-items: center; min-width: 0; gap: 8px; min-height: 39px; padding: 0 12px; border-bottom: 1px solid var(--border); background: light-dark(#ffffff, #202528); }
 .changes-file-heading strong { overflow: hidden; font: 600 10.5px/1 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
 .changes-file-heading > span:last-child:not(.change-badge) { flex: none; margin-left: auto; color: light-dark(#75653b, #d1b46b); font: 8.5px/1 var(--font-mono); }
-.changes-diff-content { grid-row: 2; display: grid; min-width: 0; min-height: 0; overflow: hidden; }
+.changes-diff-content { grid-row: 2; display: grid; min-width: 0; min-height: 0; overflow: hidden; background: light-dark(#ffffff, #1e1e1e); }
 .changes-edit-toggle { flex: none; margin-left: auto; }
-.changes-diff-content > .file-editor-body { background: var(--editor-surface); }
-.changes-diff-scroll { min-width: 0; min-height: 0; overflow: auto; background: light-dark(#f8fafc, #202428); }
-.changes-diff-scroll .diff { font-size: 10.5px; }
+.changes-diff-content > .file-editor-body { background: light-dark(#ffffff, #1e1e1e); }
+/* The diff reads like the Edit view's Monaco editor (vs / vs-dark): same
+   surface, 12px/19px type, line-number color and tab width, so switching
+   between Diff and Edit changes only the change highlighting. */
+.changes-diff-scroll { --diff-background-color: light-dark(#ffffff, #1e1e1e); --diff-text-color: light-dark(#000000, #d4d4d4); min-width: 0; min-height: 0; overflow: auto; background: var(--diff-background-color); }
+.changes-diff-scroll .diff { font-size: 12px; tab-size: 4; }
+.changes-diff-scroll .diff-line, .changes-diff-scroll .diff-decoration { line-height: 19px; }
 .changes-diff-scroll .diff-gutter-col { width: 9ch; }
-.changes-diff-scroll .diff-gutter { border-right: 1px solid light-dark(rgba(15,23,42,.035), rgba(255,255,255,.035)); color: #657074; }
-.changes-diff-scroll .diff-code { padding-right: 18px; }
+.changes-diff-scroll .diff-gutter { color: light-dark(#237893, #858585); }
+.changes-diff-scroll .diff-code { padding: 0 18px 0 16px; }
 .changes-line-comment-trigger { display: flex; align-items: center; justify-content: flex-end; gap: 5px; width: 100%; min-width: 0; border: 0; padding: 0; background: transparent; color: inherit; font: inherit; }
 .changes-line-comment-trigger b { display: grid; place-items: center; width: 14px; height: 14px; border-radius: 4px; background: transparent; color: transparent; font: 700 12px/1 var(--font-ui); }
 .diff-gutter:hover .changes-line-comment-trigger b, .changes-line-comment-trigger:focus-visible b { background: var(--accent); color: white; }
