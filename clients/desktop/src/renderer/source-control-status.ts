@@ -7,6 +7,7 @@ import type {
   SourceControlSyncResult,
   TaskWorktreeChangeEntryDto,
 } from "@termloop/contract/current";
+import { controlErrorMessage } from "./control-error.js";
 
 /// The Project checkout (`taskId: null`) or one managed Task worktree.
 export type SourceControlSubject = { projectId: string; taskId: string | null };
@@ -47,7 +48,9 @@ export type SourceControlPrimary =
   | { kind: "none" };
 
 const EMPTY: SourceControlSnapshot = { result: undefined, error: undefined, loading: false, busy: undefined, actionError: undefined };
-const errorMessage = (error: unknown, fallback: string) => error instanceof Error && error.message ? error.message : fallback;
+/// Electron's IPC wrapper and the error class are transport detail; show the
+/// daemon's own message.
+const errorMessage = (error: unknown, fallback: string) => error instanceof Error && error.message ? controlErrorMessage(error) : fallback;
 
 /** Status and explicit actions for one Project checkout or Task worktree.
  * Every action re-reads status afterwards, and responses that arrive after a

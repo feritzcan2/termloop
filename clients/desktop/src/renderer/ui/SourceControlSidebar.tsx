@@ -159,7 +159,10 @@ export function SourceControlSidebar({ subject, projectName, tasks, selectedTask
       {!subject ? <p className="files-sidebar-empty">{unavailable ? "Connect to this computer to see its changes." : "Select a Project to see its changes."}</p>
         : !snapshot.result && snapshot.loading ? <p className="files-sidebar-empty" role="status">Loading changes…</p>
           : <>
-            {snapshot.error ? <p className="files-tree-message error" role="alert">{snapshot.error}</p> : null}
+            {snapshot.error && snapshot.result
+              /* A failed refresh keeps the last good status visible; it is not a broken checkout. */
+              ? <p className="files-tree-message" role="status">Showing the last status. Refresh failed: {snapshot.error}</p>
+              : snapshot.error ? <p className="files-tree-message error" role="alert">{snapshot.error}</p> : null}
             {snapshot.result && !total ? <p className="files-sidebar-empty">No changes in this checkout.</p> : null}
             {sections.map((section) => {
               const open = !collapsed.has(section.id);

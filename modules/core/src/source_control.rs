@@ -149,9 +149,14 @@ impl SourceControlRootPlan {
 
     pub fn observe_status(self) -> ObservedSourceControlStatus {
         let observation = (|| {
-            let runner =
-                GitRunner::discover_with_timeout(termloop_gitio::SOURCE_CONTROL_STATUS_DEADLINE)
-                    .map_err(map_git_error)?;
+            // Executable discovery is cwd-independent and keeps its own bound,
+            // so a slow `git --version` on a loaded host cannot consume the
+            // interactive budget. Inspection and status each get a fresh one.
+            let runner = GitRunner::discover()
+                .and_then(|runner| {
+                    runner.with_absolute_timeout(termloop_gitio::SOURCE_CONTROL_STATUS_DEADLINE)
+                })
+                .map_err(map_git_error)?;
             let proof = inspect(&runner, &self.root)?;
             let status = runner
                 .observe_source_control_status(&proof.worktree_root)
