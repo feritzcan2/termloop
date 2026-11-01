@@ -85,6 +85,14 @@ describe("Quick Action draft", () => {
     expect([...container.querySelectorAll<HTMLImageElement>(".quick-action-attachment img")].map((img) => img.src))
       .toEqual([first.previewDataUrl, second.previewDataUrl]);
     expect(container.querySelector('button[aria-label="Remove pasted image 2"]')).not.toBeNull();
+
+    // A caller re-render passes a fresh restore port; a launch may already have consumed
+    // the images, so the saved draft must not be restored a second time.
+    const rerenderRestore = vi.fn(() => Promise.reject(new Error("quickActionImageNotFound")));
+    await act(async () => root.render(createElement(QuickActionComposer, composerProps(rerenderRestore))));
+    await act(async () => undefined);
+    expect(rerenderRestore).not.toHaveBeenCalled();
+    expect(container.querySelectorAll(".quick-action-attachment img")).toHaveLength(2);
   });
 
   it("keeps Agent Profile permission user-selectable", async () => {

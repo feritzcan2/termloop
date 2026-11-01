@@ -175,12 +175,16 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
 
   useEffect(() => { requestAnimationFrame(() => promptRef.current?.focus()); }, []);
   useEffect(() => { rememberQuickActionDraft(prompt); }, [prompt]);
-  // Restores the draft saved when this composer opened; later pastes own the list.
+  // Restores the draft saved when this composer opened, exactly once; later pastes own
+  // the list. The port is read through a ref because callers pass a fresh function on
+  // every render: rerunning would restore images a launch already consumed.
+  const restoreImageRef = useRef(restoreImage);
+  restoreImageRef.current = restoreImage;
   useEffect(() => {
     const saved = memory.draftAttachmentIds ?? [];
     if (!saved.length) return;
     let live = true;
-    void Promise.allSettled(saved.map((id) => restoreImage(id))).then((results) => {
+    void Promise.allSettled(saved.map((id) => restoreImageRef.current(id))).then((results) => {
       if (!live) return;
       const restored = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
       const failure = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
@@ -189,7 +193,7 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
       if (failure) setError(failure.reason instanceof Error ? failure.reason.message : String(failure.reason));
     });
     return () => { live = false; };
-  }, [memory.draftAttachmentIds, restoreImage]);
+  }, [memory.draftAttachmentIds]);
   useEffect(() => {
     if (priorAgentRef.current === agentId) return;
     priorAgentRef.current = agentId;
