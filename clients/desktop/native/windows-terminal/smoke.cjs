@@ -30,6 +30,18 @@ app.whenReady().then(async () => {
     addon.setVisible(second.surfaceId, true);
     window.showInactive();
     await new Promise(resolve => setTimeout(resolve, 200));
+    // Chromium raises its input window on show, resize and restore without
+    // changing pane geometry; a pane below it silently loses every mouse event.
+    const assertMouseRouted = (step) => {
+      for (const child of children) assert(driver.receivesMouse(child.handle), `Chromium input window took pane mouse input after ${step}`);
+    };
+    assertMouseRouted("show");
+    for (const [step, change] of [["resize", () => window.setSize(950, 650)], ["resize back", () => window.setSize(900, 600)],
+      ["hide/show", () => { window.hide(); window.showInactive(); }]]) {
+      change();
+      await new Promise(resolve => setTimeout(resolve, 400));
+      assertMouseRouted(step);
+    }
     for (const child of children) {
       assert.deepEqual(driver.cursor(child.handle, true), { handled: true, cursor: "text", parentRequests: 0 },
         "Terminal inherited the sidebar resize cursor from Chromium");

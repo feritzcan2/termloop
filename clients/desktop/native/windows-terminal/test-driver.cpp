@@ -118,6 +118,20 @@ Napi::Object Module(Napi::Env env, Napi::Object exports) {
     }
     return result;
   }));
+  exports.Set("receivesMouse", Napi::Function::New(env, [](const Napi::CallbackInfo& info) {
+    // Route like Win32 within one thread: the topmost visible sibling under
+    // the point wins unless it answers HTTRANSPARENT.
+    HWND window = Handle(info[0]), parent = GetParent(window);
+    RECT rect{}; GetWindowRect(window, &rect);
+    const POINT point{ (rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2 };
+    for (HWND child = GetWindow(parent, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {
+      RECT bounds{};
+      if (!IsWindowVisible(child) || !GetWindowRect(child, &bounds) || !PtInRect(&bounds, point)) continue;
+      if (static_cast<LRESULT>(SendMessageW(child, WM_NCHITTEST, 0, MAKELPARAM(point.x, point.y))) == HTTRANSPARENT) continue;
+      return Napi::Boolean::New(info.Env(), child == window);
+    }
+    return Napi::Boolean::New(info.Env(), false);
+  }));
   exports.Set("key", Napi::Function::New(env, [](const Napi::CallbackInfo& info) {
     HWND window = Handle(info[0]);
     auto key = info[1].As<Napi::Number>().Uint32Value();

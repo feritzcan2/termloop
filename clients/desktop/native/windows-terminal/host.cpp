@@ -241,6 +241,40 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM key, LPARAM flags,
   return DefSubclassProc(window, message, key, flags);
 }
 
+void Raise(HWND window) {
+  SetWindowPos(window, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+}
+
+// Chromium's transparent input window answers HTCLIENT across the whole web
+// view. It raises itself with HWND_TOP on resize and restore, and on show it
+// is reparented back from a hidden window, which also lands it on top without
+// a z-order notification. Once above a pane it takes every click, drag and
+// wheel while keyboard input still works, so put visible panes back above it.
+// The raise is posted so it runs after a reparent has completed.
+const UINT kRaisePanes = RegisterWindowMessageW(L"TermLoopRaiseTerminalPanes");
+LRESULT CALLBACK ChromiumInputProc(HWND window, UINT message, WPARAM key, LPARAM flags, UINT_PTR, DWORD_PTR) {
+  if (message == WM_NCDESTROY) RemoveWindowSubclass(window, ChromiumInputProc, 2);
+  if (message == kRaisePanes) {
+    const HWND parent = GetParent(window);
+    // Test the pane's own style: IsWindowVisible is false while the parent is still hidden.
+    for (auto& surface : surfaces) if (surface && surface->parent == parent && (GetWindowLongW(surface->window, GWL_STYLE) & WS_VISIBLE)) Raise(surface->window);
+    return 0;
+  }
+  if ((message == WM_SHOWWINDOW && key) || (message == WM_WINDOWPOSCHANGED &&
+      (reinterpret_cast<WINDOWPOS*>(flags)->flags & (SWP_NOZORDER | SWP_SHOWWINDOW | SWP_FRAMECHANGED)) != SWP_NOZORDER))
+    PostMessageW(window, kRaisePanes, 0, 0);
+  return DefSubclassProc(window, message, key, flags);
+}
+void TrackChromiumInput(HWND parent, bool track) {
+  for (HWND child = GetWindow(parent, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {
+    wchar_t name[32]{};
+    if (!GetClassNameW(child, name, 32) || wcscmp(name, L"Chrome_RenderWidgetHostHWND") != 0) continue;
+    // Chromium recreates this window with its renderer; re-subclassing is idempotent.
+    if (track) SetWindowSubclass(child, ChromiumInputProc, 2, 0);
+    else RemoveWindowSubclass(child, ChromiumInputProc, 2);
+  }
+}
+
 Surface& Get(const Napi::CallbackInfo& info) {
   const auto id = info[0].As<Napi::Number>().Uint32Value();
   for (auto& surface : surfaces) if (surface && surface->id == id) return *surface;
@@ -260,7 +294,10 @@ void Destroy(size_t slot) {
   surface->events->callback.Abort();
   surface.reset();
 }
-void Cleanup(void*) { for (size_t slot = 0; slot < kCapacity; ++slot) Destroy(slot); }
+void Cleanup(void*) {
+  for (auto& surface : surfaces) if (surface && IsWindow(surface->parent)) TrackChromiumInput(surface->parent, false);
+  for (size_t slot = 0; slot < kCapacity; ++slot) Destroy(slot);
+}
 
 template<typename Function> void Load(Function& target, const char* name, Napi::Env env) {
   target = reinterpret_cast<Function>(GetProcAddress(library, name));
@@ -322,6 +359,7 @@ void Frame(Surface& surface, double x, double y, double width, double height, Na
     SetWindowPos(surface.window, HWND_TOP, left, top, w, h, SWP_NOACTIVATE);
     surface.x = left; surface.y = top; surface.width = w; surface.height = h;
   }
+  TrackChromiumInput(surface.parent, true);
 }
 
 Napi::Value Create(const Napi::CallbackInfo& info) {
@@ -389,6 +427,7 @@ Napi::Object Module(Napi::Env env, Napi::Object exports) {
     const bool visible = info[1].As<Napi::Boolean>();
     if (!visible && GetFocus() == surface.window) SetFocus(surface.parent);
     ShowWindow(surface.window, visible ? SW_SHOWNA : SW_HIDE);
+    if (visible) { TrackChromiumInput(surface.parent, true); Raise(surface.window); }
   }));
   exports.Set("setColorScheme", Napi::Function::New(env, [](const Napi::CallbackInfo& info) { SetTheme(Get(info), info[1].As<Napi::String>().Utf8Value() == "light"); }));
   exports.Set("focus", Napi::Function::New(env, [](const Napi::CallbackInfo& info) { SetFocus(Get(info).window); }));
