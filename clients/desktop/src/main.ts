@@ -1,7 +1,7 @@
 import { registerAgentConnectionIpc } from "./main/agent-connections.js";
 import type { WorkflowCreatorParams, WorkflowCreatorLaunchParams, WorkflowCreatorDraftGetParams } from "@termloop/contract/current";
 import { registerSshSetupIpc } from "./main/ssh-setup.js";
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, Notification, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, Notification, screen, shell } from "electron";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
 import path from "node:path";
@@ -97,6 +97,7 @@ import {
 } from "./platform/daemon-runtime.js";
 import { applicationMenuTemplate, shouldRemoveApplicationMenu } from "./platform/application-menu.js";
 import { windowFrameOptions } from "./platform/window-frame.js";
+import { restorableWindowBounds, WindowBoundsFileStore } from "./platform/window-bounds-store.js";
 import { requestedTerminalRenderer, type TerminalRendererKind } from "./platform/terminal-renderer.js";
 import { loadGhosttyHostAddon } from "./platform/ghostty-host.js";
 import { loadWindowsTerminalAddon } from "./platform/windows-terminal.js";
@@ -1655,13 +1656,24 @@ if (ownsSingleInstance) void app.whenReady().then(async () => {
     process.env.TERMLOOP_DEV_PROFILE_TAG,
     path.join(directory, "termloop-main-icon.png"),
   );
+  const windowSizeLimits = { minWidth: 820, minHeight: 560 };
+  // Smoke runs keep the fixed default so they never read or overwrite the
+  // user's saved window geometry.
+  const windowBoundsStore = smokeRun
+    ? undefined
+    : new WindowBoundsFileStore(path.join(app.getPath("userData"), "window-bounds.v1.json"));
+  const savedWindow = windowBoundsStore?.load();
   const window = new BrowserWindow({
     title: applicationName,
     show: windowStartMode === "visible",
-    width: 1280,
-    height: 800,
-    minWidth: 820,
-    minHeight: 560,
+    ...(savedWindow
+      ? restorableWindowBounds(
+        savedWindow.bounds,
+        screen.getAllDisplays().map((display) => display.workArea),
+        windowSizeLimits,
+      )
+      : { width: 1280, height: 800 }),
+    ...windowSizeLimits,
     backgroundColor: "#1e2325",
     // macOS-only hiddenInset; Windows/Linux keep the native frame so the OS
     // provides window controls.
@@ -1674,6 +1686,23 @@ if (ownsSingleInstance) void app.whenReady().then(async () => {
     },
   });
   mainWindow = window;
+  // maximize()/setFullScreen() also show a hidden window, so a minimized or
+  // hidden start keeps the restored normal bounds only.
+  if (windowStartMode === "visible" && savedWindow?.maximized) window.maximize();
+  if (windowStartMode === "visible" && savedWindow?.fullScreen) window.setFullScreen(true);
+  if (windowBoundsStore) {
+    window.on("close", () => {
+      try {
+        windowBoundsStore.save({
+          bounds: window.getNormalBounds(),
+          maximized: window.isMaximized(),
+          fullScreen: window.isFullScreen(),
+        });
+      } catch (error) {
+        console.warn("[termloop] window bounds were not saved", error);
+      }
+    });
+  }
   if (requestedTerminalRenderer() === "ghostty") {
     const addon = loadGhosttyHostAddon(app.getAppPath());
     if (addon) {
