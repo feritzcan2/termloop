@@ -318,8 +318,9 @@ fn execute_no_index_diff(
     }
 }
 
-/// Whether content exceeds the accepted byte or line bound for one change.
-/// Shared so every content-producing primitive refuses at the same threshold.
+/// Whether a patch exceeds the accepted byte or line bound for one change.
+/// Shared so every patch-producing primitive refuses at the same threshold;
+/// pre-images carry their own wider whole-file bound.
 pub(crate) fn exceeds_change_bounds(bytes: &[u8]) -> bool {
     bytes.len() > CHANGE_DIFF_MAX_BYTES
         || bytes.iter().filter(|byte| **byte == b'\n').count() > CHANGE_DIFF_MAX_LINES

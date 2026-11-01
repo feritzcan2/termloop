@@ -225,7 +225,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:6f6419d73e3a875c106a0248d3a0cd8f2a1a05bb697edaeb1a856fddbe709f68";
+    "sha256:3093c3b4db1dae2c6d8479ac79ca39088a0f3ca82e0b6500cd82ee44c1f8b7ad";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -9887,7 +9887,7 @@ fn validate_workspace_file_read_result(value: &Value) -> bool {
         }) && object.get("content").is_some_and(|field| {
             (field
                 .as_str()
-                .is_some_and(|text| text.chars().count() <= 262144 && text.len() <= 262144)
+                .is_some_and(|text| text.chars().count() <= 1048576 && text.len() <= 1048576)
                 || field.is_null())
         }) && object.get("version").is_none_or(|field| {
             field
@@ -9926,7 +9926,7 @@ fn validate_workspace_file_write_params(value: &Value) -> bool {
         }) && object.get("content").is_some_and(|field| {
             field
                 .as_str()
-                .is_some_and(|text| text.chars().count() <= 262144 && text.len() <= 262144)
+                .is_some_and(|text| text.chars().count() <= 1048576 && text.len() <= 1048576)
         }) && object.get("expectedVersion").is_some_and(|field| {
             field
                 .as_str()
@@ -12040,7 +12040,7 @@ fn validate_project_worktree_pre_image_result(value: &Value) -> bool {
             && object.get("content").is_some_and(|field| {
                 (field
                     .as_str()
-                    .is_some_and(|text| text.chars().count() <= 262144)
+                    .is_some_and(|text| text.chars().count() <= 1048576)
                     || field.is_null())
             })
             && object.keys().all(|key| {
@@ -13661,7 +13661,7 @@ fn validate_task_worktree_pre_image_result(value: &Value) -> bool {
             && object.get("content").is_some_and(|field| {
                 (field
                     .as_str()
-                    .is_some_and(|text| text.chars().count() <= 262144)
+                    .is_some_and(|text| text.chars().count() <= 1048576)
                     || field.is_null())
             })
             && object.keys().all(|key| {

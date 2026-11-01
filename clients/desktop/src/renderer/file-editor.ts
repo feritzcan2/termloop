@@ -26,7 +26,7 @@ export function fileEditorMessage(state: WorkspaceFileReadResult["state"]): stri
   switch (state) {
     case "text": return "This file cannot be edited.";
     case "binary": return "Binary files and text that is not UTF-8 cannot be opened in the editor.";
-    case "tooLarge": return "This file exceeds the editor limit of 256 KiB or 20,000 lines.";
+    case "tooLarge": return "This file exceeds the editor limit of 1 MiB or 50,000 lines.";
     case "symlink": return "Symbolic links are shown without opening their targets.";
     case "unsupported": return "Only regular text files can be opened in the editor.";
   }

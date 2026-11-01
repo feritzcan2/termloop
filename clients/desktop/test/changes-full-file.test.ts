@@ -4,6 +4,7 @@ import type { TaskWorktreePreImageState } from "@termloop/contract/current";
 import {
   FULL_FILE_MAX_BYTES,
   FULL_FILE_MAX_LINES,
+  PRE_IMAGE_MAX_BYTES,
   collapsedLineCount,
   findSourceMismatch,
   fullFileStatusMessage,
@@ -165,7 +166,7 @@ describe("preImageRefusal", () => {
   });
 
   it("names the byte bound in the truncated message", () => {
-    expect(preImageRefusal("truncated")).toContain(FULL_FILE_MAX_BYTES.toLocaleString());
+    expect(preImageRefusal("truncated")).toContain(PRE_IMAGE_MAX_BYTES.toLocaleString());
   });
 });
 

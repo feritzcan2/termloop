@@ -42,7 +42,10 @@ pub use health::{
 };
 pub use mutation::{FETCH_GIT_DEADLINE, GitReflogMessage, RefRecoveryFacts, ReflogEntry};
 pub use path_history::{HistoryCommit, HistoryObservation, PATH_HISTORY_MAX_ENTRIES};
-pub use pre_image::{PreImageContent, PreImageObservation, PreImageRevision};
+pub use pre_image::{
+    PRE_IMAGE_MAX_BYTES, PRE_IMAGE_MAX_LINES, PreImageContent, PreImageObservation,
+    PreImageRevision,
+};
 pub use remote::{BranchRemoteFacts, RemoteBranchFact, RemoteFact};
 pub use repair::WorktreeRepairFacts;
 pub use repository::{

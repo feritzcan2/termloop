@@ -2,8 +2,9 @@
 //!
 //! A unified patch only carries the lines inside its hunks, so a client that
 //! wants to show the surrounding file needs the pre-image blob itself. This
-//! primitive returns that blob under the same byte/line bounds the diff
-//! primitive already applies, and refuses anything it cannot represent.
+//! primitive returns that blob under its own byte/line bounds, wider than the
+//! patch bounds because a whole file is larger than its change, and refuses
+//! anything it cannot represent.
 //!
 //! Resolution is exact-OID plumbing, never a `rev:path` revision expression:
 //! `ls-files -s` (index) or `ls-tree` (HEAD) yields a blob OID, and `cat-file`
@@ -15,14 +16,17 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::changes::{
-    CHANGE_DIFF_MAX_BYTES, WorktreeChangeEntry, WorktreeChangeKind, WorktreeChangeSide,
-    exceeds_change_bounds, literal_pathspec,
+    WorktreeChangeEntry, WorktreeChangeKind, WorktreeChangeSide, literal_pathspec,
 };
 use crate::command::GitCommandScope;
 use crate::repository::ObjectId;
 use crate::{GitError, GitOperation, GitRunner};
 
 const PRE_IMAGE_DEADLINE: Duration = Duration::from_millis(2_500);
+/// Largest pre-image returned, matching the workspace file editor's bound so a
+/// file that can be edited can also be compared against its old side.
+pub const PRE_IMAGE_MAX_BYTES: usize = 1024 * 1024;
+pub const PRE_IMAGE_MAX_LINES: usize = 50_000;
 /// Git's own binary heuristic window: a NUL byte near the start means binary.
 const BINARY_SNIFF_BYTES: usize = 8_000;
 
@@ -109,7 +113,7 @@ impl GitRunner {
         // size probe.
         let bounded = self
             .clone()
-            .with_limits(PRE_IMAGE_DEADLINE, CHANGE_DIFF_MAX_BYTES + 1)
+            .with_limits(PRE_IMAGE_DEADLINE, PRE_IMAGE_MAX_BYTES + 1)
             .with_absolute_timeout(PRE_IMAGE_DEADLINE)?;
         let mut scope = GitCommandScope::bounded(&bounded, PRE_IMAGE_DEADLINE)?;
         let path = pre_image_path(entry);
@@ -146,7 +150,9 @@ fn classify_pre_image(bytes: Vec<u8>) -> PreImageContent {
     if bytes.iter().take(BINARY_SNIFF_BYTES).any(|byte| *byte == 0) {
         return PreImageContent::Binary;
     }
-    if exceeds_change_bounds(&bytes) {
+    if bytes.len() > PRE_IMAGE_MAX_BYTES
+        || bytes.iter().filter(|byte| **byte == b'\n').count() > PRE_IMAGE_MAX_LINES
+    {
         return PreImageContent::Truncated;
     }
     PreImageContent::Content(bytes)
@@ -279,7 +285,6 @@ fn parse_failed() -> GitError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::changes::CHANGE_DIFF_MAX_LINES;
 
     const OID: &str = "0123456789abcdef0123456789abcdef01234567";
 
@@ -397,11 +402,11 @@ mod tests {
     #[test]
     fn oversized_line_and_byte_counts_are_truncated() {
         assert_eq!(
-            classify_pre_image(vec![b'\n'; CHANGE_DIFF_MAX_LINES + 1]),
+            classify_pre_image(vec![b'\n'; PRE_IMAGE_MAX_LINES + 1]),
             PreImageContent::Truncated
         );
         assert_eq!(
-            classify_pre_image(vec![b'a'; CHANGE_DIFF_MAX_BYTES + 1]),
+            classify_pre_image(vec![b'a'; PRE_IMAGE_MAX_BYTES + 1]),
             PreImageContent::Truncated
         );
     }

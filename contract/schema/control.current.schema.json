@@ -2257,8 +2257,8 @@
             "string",
             "null"
           ],
-          "maxLength": 262144,
-          "x-utf8-max-bytes": 262144
+          "maxLength": 1048576,
+          "x-utf8-max-bytes": 1048576
         },
         "version": {
           "type": "string",
@@ -2299,8 +2299,8 @@
         },
         "content": {
           "type": "string",
-          "maxLength": 262144,
-          "x-utf8-max-bytes": 262144
+          "maxLength": 1048576,
+          "x-utf8-max-bytes": 1048576
         },
         "expectedVersion": {
           "type": "string",
@@ -3597,7 +3597,7 @@
             "string",
             "null"
           ],
-          "maxLength": 262144
+          "maxLength": 1048576
         }
       }
     },
@@ -4933,7 +4933,7 @@
             "string",
             "null"
           ],
-          "maxLength": 262144
+          "maxLength": 1048576
         }
       }
     },

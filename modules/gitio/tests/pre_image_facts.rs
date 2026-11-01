@@ -3,7 +3,7 @@ mod support;
 use std::fs;
 
 use termloop_gitio::{
-    CHANGE_DIFF_MAX_BYTES, GitRunner, PreImageContent, PreImageRevision, WorktreeChangeKind,
+    GitRunner, PRE_IMAGE_MAX_BYTES, PreImageContent, PreImageRevision, WorktreeChangeKind,
     WorktreeChangeSide,
 };
 
@@ -178,7 +178,7 @@ fn a_binary_pre_image_is_refused_as_binary() {
 #[test]
 fn an_oversized_pre_image_is_truncated_rather_than_returned() {
     let repository = TestRepository::init("pre-image-oversized");
-    let oversized = "x".repeat(CHANGE_DIFF_MAX_BYTES + 1_024);
+    let oversized = "x".repeat(PRE_IMAGE_MAX_BYTES + 1_024);
     fs::write(repository.root().join("large.txt"), &oversized).unwrap();
     repository.git(["add", "--", "large.txt"]);
     repository.git(["commit", "-m", "fixture"]);

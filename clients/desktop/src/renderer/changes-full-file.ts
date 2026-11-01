@@ -21,6 +21,8 @@ import type { TaskWorktreePreImageState } from "@termloop/contract/current";
  */
 export const FULL_FILE_MAX_LINES = 20_000;
 export const FULL_FILE_MAX_BYTES = 262_144;
+/** The daemon's pre-image bound, shared with the workspace file editor. */
+export const PRE_IMAGE_MAX_BYTES = 1_048_576;
 
 const encoder = new TextEncoder();
 
@@ -143,7 +145,7 @@ export function preImageRefusal(state: TaskWorktreePreImageState): string | unde
     case "notShown":
       return "This content is outside the read-only viewer.";
     case "truncated":
-      return `The file exceeds the ${FULL_FILE_MAX_BYTES.toLocaleString()}-byte safety limit.`;
+      return `The file exceeds the ${PRE_IMAGE_MAX_BYTES.toLocaleString()}-byte safety limit.`;
     case "nonUtf8":
       return "The file cannot be shown without corrupting its bytes.";
   }

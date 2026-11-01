@@ -63,7 +63,7 @@ fn workspace_results_are_closed_and_bounded() {
     }
     assert!(!validate_method_result(
         "workspace.fileRead",
-        &json!({"path":"a", "state":"text", "content":"a".repeat(262145)})
+        &json!({"path":"a", "state":"text", "content":"a".repeat(1_048_577)})
     ));
 }
 
@@ -126,7 +126,7 @@ fn workspace_file_write_is_full_control_only_and_requires_a_read_version() {
     ));
     assert!(!validate_method_params(
         method,
-        &params("a.ts", "a".repeat(262145), &version)
+        &params("a.ts", "a".repeat(1_048_577), &version)
     ));
     assert!(!validate_method_params(
         method,

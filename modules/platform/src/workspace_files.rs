@@ -19,9 +19,9 @@ pub use write::{
 };
 
 pub const WORKSPACE_DIRECTORY_LIMIT: usize = 2_000;
-pub const WORKSPACE_CONTENT_LIMIT: usize = 256 * 1024;
+pub const WORKSPACE_CONTENT_LIMIT: usize = 1024 * 1024;
 const DIRECTORY_BYTES_LIMIT: usize = 256 * 1024;
-pub(crate) const CONTENT_LINE_LIMIT: usize = 20_000;
+pub(crate) const CONTENT_LINE_LIMIT: usize = 50_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
