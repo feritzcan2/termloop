@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { parseUpdateStatus, type UpdateStatus } from "../src/update-status.js";
-import { UpdateNotice, UpdateSettings, type AppUpdateControls } from "../src/renderer/ui/AppUpdate.js";
+import { UpdateNotice, UpdateSettings, updateStatusText, type AppUpdateControls } from "../src/renderer/ui/AppUpdate.js";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -34,7 +34,7 @@ function button(label: string): HTMLButtonElement {
 
 describe("application update presentation", () => {
   it("keeps quiet states out of the sidebar", () => {
-    for (const status of [{ state: "idle" }, { state: "checking" }, { state: "current" }, { state: "failed", version: null }] as UpdateStatus[]) {
+    for (const status of [{ state: "idle" }, { state: "checking" }, { state: "current" }, { state: "failed", version: null, reason: null }] as UpdateStatus[]) {
       act(() => root.render(createElement(UpdateNotice, { update: controls(status) })));
       expect(container.innerHTML).toBe("");
     }
@@ -60,7 +60,7 @@ describe("application update presentation", () => {
   });
 
   it("retries a failed download from the sidebar", () => {
-    const update = controls({ state: "failed", version: "2.0.11" });
+    const update = controls({ state: "failed", version: "2.0.11", reason: null });
     act(() => root.render(createElement(UpdateNotice, { update })));
 
     act(() => button("Retry").click());
@@ -77,6 +77,13 @@ describe("application update presentation", () => {
     expect(update.check).toHaveBeenCalledTimes(1);
   });
 
+  it("names the failure code and the automatic retry", () => {
+    expect(updateStatusText({ state: "failed", version: null, reason: "ENOENT" }))
+      .toBe("The update check failed (ENOENT). TermLoop retries in a few minutes.");
+    expect(updateStatusText({ state: "failed", version: "2.0.12", reason: null }))
+      .toBe("Downloading TermLoop 2.0.12 failed. TermLoop retries automatically.");
+  });
+
   it("offers no update actions in a build without an update feed", () => {
     act(() => root.render(createElement(UpdateSettings, { update: controls({ state: "unsupported" }) })));
 
@@ -87,7 +94,11 @@ describe("application update presentation", () => {
   it("accepts only well-formed status messages from the bridge", () => {
     expect(parseUpdateStatus({ state: "downloading", version: "2.0.11", percent: 5 }))
       .toEqual({ state: "downloading", version: "2.0.11", percent: 5 });
-    expect(parseUpdateStatus({ state: "failed" })).toEqual({ state: "failed", version: null });
+    expect(parseUpdateStatus({ state: "failed" })).toEqual({ state: "failed", version: null, reason: null });
+    expect(parseUpdateStatus({ state: "failed", reason: "net::ERR_NAME_NOT_RESOLVED" }))
+      .toEqual({ state: "failed", version: null, reason: "net::ERR_NAME_NOT_RESOLVED" });
+    expect(parseUpdateStatus({ state: "failed", reason: "https://updates.termloop.ai/stable/latest.yml failed" }))
+      .toEqual({ state: "failed", version: null, reason: null });
     expect(parseUpdateStatus({ state: "ready" })).toBeUndefined();
     expect(parseUpdateStatus({ state: "unknown" })).toBeUndefined();
     expect(parseUpdateStatus(null)).toBeUndefined();

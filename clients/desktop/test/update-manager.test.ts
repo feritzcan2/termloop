@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { DEFAULT_UPDATE_CHECK_INTERVAL_MS, UpdateManager } from "../src/main/update-manager.js";
+import { DEFAULT_UPDATE_CHECK_INTERVAL_MS, DEFAULT_UPDATE_RETRY_DELAYS_MS, UpdateManager } from "../src/main/update-manager.js";
 import type { UpdateCheck, UpdateDriverListeners } from "../src/platform/auto-update.js";
 import type { UpdateStatus } from "../src/update-status.js";
 
-function harness(options: { confirm?: boolean; checkFailure?: boolean; update?: UpdateCheck } = {}) {
+function harness(options: { confirm?: boolean; checkFailure?: boolean | (() => boolean); update?: UpdateCheck } = {}) {
   let listeners: UpdateDriverListeners | undefined;
   const scheduled: Array<{ delayMs: number; task: () => void }> = [];
   const order: string[] = [];
@@ -12,7 +12,8 @@ function harness(options: { confirm?: boolean; checkFailure?: boolean; update?: 
     listen(next: UpdateDriverListeners) { listeners = next; },
     check: vi.fn(async (): Promise<UpdateCheck | undefined> => {
       order.push("check");
-      if (options.checkFailure) throw new Error("offline");
+      const fail = typeof options.checkFailure === "function" ? options.checkFailure() : options.checkFailure;
+      if (fail) throw Object.assign(new Error("https://updates.example/stable failed"), { code: "net::ERR_NAME_NOT_RESOLVED" });
       return options.update;
     }),
     install: vi.fn(() => { order.push("install"); }),
@@ -31,6 +32,7 @@ function harness(options: { confirm?: boolean; checkFailure?: boolean; update?: 
     statusChanged(status) { statuses.push(status); },
     initialDelayMs: 10,
     checkIntervalMs: 20,
+    retryDelaysMs: [1, 2],
   });
   return { manager, driver, listeners: () => listeners, scheduled, confirmRestart, prepareForRestart, order, statuses };
 }
@@ -46,13 +48,30 @@ describe("desktop update manager", () => {
     await vi.waitFor(() => expect(test.scheduled.map(({ delayMs }) => delayMs)).toEqual([20]));
   });
 
-  it("keeps checking after a transient failure without surfacing raw errors", async () => {
+  it("retries a failed check on the short ladder, then falls back to the interval", async () => {
     const test = harness({ checkFailure: true });
     test.manager.start();
-    test.scheduled.shift()?.task();
+    const delays: number[] = [];
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      test.scheduled.shift()?.task();
+      await vi.waitFor(() => expect(test.driver.check).toHaveBeenCalledTimes(attempt));
+      await vi.waitFor(() => expect(test.scheduled).toHaveLength(1));
+      delays.push(test.scheduled[0]!.delayMs);
+    }
+    expect(delays).toEqual([1, 2, 20]);
+  });
 
-    await vi.waitFor(() => expect(test.driver.check).toHaveBeenCalledTimes(1));
+  it("returns to the interval once a retried check succeeds", async () => {
+    let failing = true;
+    const test = harness({ checkFailure: () => failing });
+    test.manager.start();
+    test.scheduled.shift()?.task();
+    await vi.waitFor(() => expect(test.scheduled.map(({ delayMs }) => delayMs)).toEqual([1]));
+
+    failing = false;
+    test.scheduled.shift()?.task();
     await vi.waitFor(() => expect(test.scheduled.map(({ delayMs }) => delayMs)).toEqual([20]));
+    expect(test.manager.status()).toEqual({ state: "current" });
   });
 
   it("prepares the application before installing a downloaded update", async () => {
@@ -110,18 +129,21 @@ describe("desktop update manager", () => {
     expect(test.manager.status()).toEqual({ state: "ready", version: "0.2.0" });
   });
 
-  it("reports a failed download with its version so it can be retried", async () => {
-    const test = harness({ update: { version: "0.2.0", download: Promise.reject(new Error("reset")) } });
+  it("reports a failed download with its version and code so it can be retried", async () => {
+    const download = Promise.reject(Object.assign(new Error("reset"), { code: "ERR_UPDATER_ZIP_FILE_NOT_FOUND" }));
+    const test = harness({ update: { version: "0.2.0", download } });
     await test.manager.checkNow();
 
-    await vi.waitFor(() => expect(test.manager.status()).toEqual({ state: "failed", version: "0.2.0" }));
+    await vi.waitFor(() => expect(test.manager.status())
+      .toEqual({ state: "failed", version: "0.2.0", reason: "ERR_UPDATER_ZIP_FILE_NOT_FOUND" }));
   });
 
-  it("reports a failed check without a version", async () => {
+  it("reports a failed check with its code but never the raw message", async () => {
     const test = harness({ checkFailure: true });
     await test.manager.checkNow();
 
-    expect(test.manager.status()).toEqual({ state: "failed", version: null });
+    expect(test.manager.status()).toEqual({ state: "failed", version: null, reason: "net::ERR_NAME_NOT_RESOLVED" });
+    expect(JSON.stringify(test.statuses)).not.toContain("updates.example");
   });
 
   it("does not open the restart dialog for a manual check of a downloaded update", async () => {
@@ -152,7 +174,8 @@ describe("desktop update manager", () => {
     expect(test.driver.install).not.toHaveBeenCalled();
   });
 
-  it("checks hourly while the application is in use", () => {
+  it("checks hourly while the application is in use and retries failures within minutes", () => {
     expect(DEFAULT_UPDATE_CHECK_INTERVAL_MS).toBe(60 * 60 * 1_000);
+    expect(DEFAULT_UPDATE_RETRY_DELAYS_MS).toEqual([60_000, 5 * 60_000, 15 * 60_000]);
   });
 });
