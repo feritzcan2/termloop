@@ -16,6 +16,7 @@ import type {
   GitHostPullRequestChangeListResult,
   GitHostPullRequestDiffResult,
   GitHostPullRequestIdentityDto,
+  TaskBranchSetDto,
 } from "@termloop/contract/current";
 import { sessionLabel, type GitHostProjection, type Session } from "../model.js";
 import { changesReviewOwner, changesReviewScope } from "../changes-reviewed-memory.js";
@@ -42,6 +43,14 @@ import {
 } from "./ChangeFileTree.js";
 import { ChangesFileEditor, editableChangePath, type ChangesEditing } from "./ChangesFileEditor.js";
 import { useDiffSyntax } from "./useDiffSyntax.js";
+import { ChangesBranchPicker, ChangesSourcePicker } from "./ChangesSourcePicker.js";
+import {
+  changesBranchScopes,
+  initialScopeKey,
+  scopeAllowsSource,
+  scopeDefaultSource,
+  scopeHasCommits,
+} from "../changes-branch-scope.js";
 import {
   ALL_BRANCH_CHANGES_ID,
   cacheDiff,
@@ -50,7 +59,6 @@ import {
   currentPullRequestSource,
   pullRequestIdentity,
   pullRequestKey,
-  sameSource,
   sourceKey,
   touchLruEntry,
   type CachedDiff,
@@ -85,6 +93,8 @@ export type ChangesSubject = {
   kind: "task" | "project";
   hasWorktree: boolean;
   hasBranch: boolean;
+  /** The daemon's Task branch set; the view scopes its sources to one branch. */
+  branches?: TaskBranchSetDto | undefined;
 };
 
 export type ChangesOverlayProps = {
@@ -169,6 +179,19 @@ export function ChangesOverlay({
   const [collapsedFolders, setCollapsedFolders] = useState<ReadonlySet<string>>(new Set());
   const hasWorktree = subject.hasWorktree;
   const hasBranch = subject.hasBranch;
+  const branchScopes = useMemo(() => subject.kind === "task"
+    ? changesBranchScopes({
+        branches: subject.branches,
+        primaryBranchName: subject.branchName,
+        hasWorktree,
+        pullRequests: gitHostProjection?.matches,
+      })
+    : [], [gitHostProjection?.matches, hasWorktree, subject.branchName, subject.branches, subject.kind]);
+  const [initialBranchScopeKey] = useState(() => initialScopeKey(branchScopes, initialSource, subject.branches));
+  const [branchScopeKey, setBranchScopeKey] = useState(initialBranchScopeKey);
+  const branchScope = branchScopes.find((scope) => scope.key === branchScopeKey) ?? branchScopes[0];
+  const branchScopeRef = useRef(branchScope);
+  branchScopeRef.current = branchScope;
   const clearPullRequestArtifacts = useCallback(() => {
     setPullRequestChanges((current) => withoutKeyPrefix(current, "pullRequest:"));
     setDiffs((current) => withoutKeyPrefix(current, "pullRequest:"));
@@ -190,6 +213,11 @@ export function ChangesOverlay({
   const refresh = useCallback(async () => {
     const { list, listCommits } = readsRef.current;
     const initialSource = initialSourceRef.current;
+    const scope = branchScopeRef.current;
+    const loadCommits = hasBranch && (!scope || scopeHasCommits(scope));
+    const commitBranchId = scope
+      ? scope.branchId
+      : initialSource.kind === "commits" ? initialSource.branchId : undefined;
     setLoadingSources(true);
     setError(undefined);
     setDiffs(new Map());
@@ -199,16 +227,18 @@ export function ChangesOverlay({
     setPullRequestChanges(new Map());
     const [localResult, commitResult] = await Promise.allSettled([
       hasWorktree ? list(subject.id) : Promise.resolve(undefined),
-      hasBranch ? listCommits(
-        subject.id,
-        initialSource.kind === "commits" ? initialSource.branchId : undefined,
-      ) : Promise.resolve(undefined),
+      loadCommits ? listCommits(subject.id, commitBranchId) : Promise.resolve(undefined),
     ]);
     const nextLocal = localResult.status === "fulfilled" ? localResult.value : undefined;
     const nextCommits = commitResult.status === "fulfilled" ? commitResult.value : undefined;
     setLocalChanges(nextLocal);
     setCommitList(nextCommits);
-    const preferred = refreshedInitialSelection(initialSource, nextLocal, nextCommits, gitHostProjectionRef.current);
+    // The source the view was opened for wins only on its own branch; another
+    // branch opens on that branch's most relevant source.
+    const opened = refreshedInitialSelection(initialSource, nextLocal, nextCommits, gitHostProjectionRef.current);
+    const preferred = scope && (scope.key !== initialBranchScopeKey || !scopeAllowsSource(scope, opened))
+      ? scopeDefaultSource(scope, Boolean(nextLocal?.entries.length), nextCommits, gitHostProjectionRef.current?.freshness_generation)
+      : opened;
     setSelectedSource(preferred);
     if (initialSource.kind === "local" && localResult.status === "rejected") {
       setError(errorMessage(localResult.reason, "Local changes could not be loaded."));
@@ -220,7 +250,7 @@ export function ChangesOverlay({
       setError(errorMessage(failure, "Git changes could not be loaded."));
     }
     setLoadingSources(false);
-  }, [hasBranch, hasWorktree, initialSourceKey, subject.id]);
+  }, [branchScope?.key, hasBranch, hasWorktree, initialBranchScopeKey, initialSourceKey, subject.id]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -705,7 +735,7 @@ export function ChangesOverlay({
         <div>
           <span className="dialog-eyebrow">{subject.kind === "project" ? "Project Git" : "Task Git"}</span>
           <h1>Changes · {subject.title}</h1>
-          <p>{subject.branchName ?? "No branch"} · {sourceLabel(selectedSource, selectedCommit?.short_oid, selectedCommit?.subject)}</p>
+          <p>{branchScope?.name ?? subject.branchName ?? "No branch"} · {sourceLabel(selectedSource, selectedCommit?.short_oid, selectedCommit?.subject)}</p>
         </div>
         <div className="changes-header-actions">
           <div className="changes-view-toggle" aria-label="Diff layout">
@@ -733,7 +763,14 @@ export function ChangesOverlay({
         </div>
       </header>
       <div className="changes-context">
-        <SourcePicker
+        <ChangesBranchPicker
+          scopes={branchScopes}
+          selected={branchScope}
+          select={setBranchScopeKey}
+          disabled={loadingSources}
+        />
+        <ChangesSourcePicker
+          scope={branchScope}
           localChanges={localChanges}
           commitList={commitList}
           gitHostProjection={gitHostProjection}
@@ -841,68 +878,6 @@ export function ChangesOverlay({
         </main>
       </div>
     </section>
-  );
-}
-
-function SourcePicker({ localChanges, commitList, gitHostProjection, selected, select }: {
-  localChanges: LocalChangeListResult | undefined;
-  commitList: TaskBranchCommitListResult | undefined;
-  gitHostProjection: GitHostProjection | undefined;
-  selected: ChangesSource;
-  select(source: ChangesSource): void;
-}) {
-  if (!localChanges && !commitList?.commits.length && !gitHostProjection?.matches.length) return null;
-  return (
-    <nav className="changes-sources" aria-label="Change source">
-      {localChanges ? (
-        <button type="button" className={selected.kind === "local" ? "selected" : ""} onClick={() => select({ kind: "local" })}>
-          <strong>Local changes</strong>
-          <small>{localChanges.entries.length} {localChanges.entries.length === 1 ? "file" : "files"}</small>
-        </button>
-      ) : null}
-      {commitList?.commits.length ? (
-        <button
-          type="button"
-          className={selected.kind === "commit" && selected.commitId === ALL_BRANCH_CHANGES_ID ? "selected" : ""}
-          onClick={() => select({ kind: "commit", commitId: ALL_BRANCH_CHANGES_ID })}
-        >
-          <strong>{commitList.branch_name}</strong>
-          <small>
-            {commitList.commits.length}{commitList.truncated ? "+" : ""} {commitList.commits.length === 1 && !commitList.truncated ? "commit" : "commits"}
-            {commitList.base_ref
-              ? ` · base ${commitList.base_ref}`
-              : commitList.base_oid
-                ? ` · base ${commitList.base_oid.slice(0, 12)}`
-                : ""}
-          </small>
-        </button>
-      ) : null}
-      {commitList?.commits.map((commit, index) => (
-        <button key={commit.commit_id} type="button" className={selected.kind === "commit" && selected.commitId === commit.commit_id ? "selected" : ""} onClick={() => select({ kind: "commit", commitId: commit.commit_id })}>
-          <strong>{commit.branch_name} · commit {index + 1}</strong>
-          <small>{commit.short_oid} · {commit.subject || "No subject"}</small>
-        </button>
-      ))}
-      {commitList?.truncated ? <span className="changes-warning">Newest 50 commits shown</span> : null}
-      {gitHostProjection?.matches.map((pullRequest) => {
-        const source: ChangesSource = {
-          kind: "pullRequest",
-          pullRequest: pullRequestIdentity(pullRequest),
-          freshnessGeneration: gitHostProjection.freshness_generation,
-        };
-        return (
-          <button
-            key={pullRequestKey(source.pullRequest)}
-            type="button"
-            className={sameSource(selected, source) ? "selected" : ""}
-            onClick={() => select(source)}
-          >
-            <strong>{pullRequest.provider === "azureDevOps" ? "Azure PR" : "PR"} #{pullRequest.number}</strong>
-            <small>{pullRequest.title}</small>
-          </button>
-        );
-      })}
-    </nav>
   );
 }
 

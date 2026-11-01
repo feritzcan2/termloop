@@ -538,7 +538,87 @@ describe("Changes reviewed files", () => {
     expect(listCommits).toHaveBeenCalledWith("task-1", "branch-secondary");
     await vi.waitFor(() => expect(listCommitChanges).toHaveBeenCalledWith("task-1", "commits-branch", "all"));
 
-    expect(container.querySelector(".changes-sources button.selected strong")?.textContent).toBe("feature/api");
+    expect(container.querySelector(".changes-sources button.selected strong")?.textContent).toBe("All branch changes");
     expect(container.querySelector(".changes-header p")?.textContent).toContain("Branch changes");
+  });
+
+  it("scopes sources to the chosen branch and reloads that branch's commits", async () => {
+    const commitsFor = (branchId: string, branchName: string, count: number) => ({
+      task_id: "task-1",
+      observation_id: `commits-${branchId}`,
+      branch_id: branchId,
+      branch_name: branchName,
+      branch_role: "associated" as const,
+      held_by_task_id: null,
+      base_ref: "development",
+      base_oid: null,
+      base_evidence: null,
+      commits: Array.from({ length: count }, (_, index) => ({
+        commit_id: `${branchId}-commit-${index}`,
+        branch_id: branchId,
+        branch_name: branchName,
+        short_oid: `${index}23456789ab`,
+        subject: `Commit ${index}`,
+        subject_encoding: "utf8" as const,
+        authored_at_epoch_ms: index,
+      })),
+      truncated: false,
+    });
+    const listCommits = vi.fn<ChangesOverlayProps["listCommits"]>(async (_taskId, branchId) => branchId === "b-other"
+      ? commitsFor("b-other", "feature/other", 1)
+      : commitsFor("b-work", "feature/work", 2));
+    const editorProps = props(async () => changeList("local-1"));
+    editorProps.listCommits = listCommits;
+    editorProps.subject = {
+      ...editorProps.subject,
+      hasBranch: true,
+      branchName: "feature/work",
+      branches: {
+        primary_branch_id: "b-work",
+        checked_out_branch_id: "b-work",
+        evidence_truncated: false,
+        items: ["b-work", "b-other"].map((branchId) => ({
+          branch_id: branchId,
+          name: branchId === "b-work" ? "feature/work" : "feature/other",
+          role: branchId === "b-work" ? "primary" as const : "associated" as const,
+          held_by_task_id: null,
+          checked_out: branchId === "b-work",
+          base_ref: null,
+          base_oid: null,
+          base_evidence: null,
+          first_observed_worktree_generation: 1,
+          rollup_eligible: true,
+        })),
+      },
+    };
+    editorProps.gitHostProjection = {
+      task_id: "task-1",
+      freshness_generation: 4,
+      matches: [{
+        provider: "azureDevOps",
+        repository_owner: "org",
+        repository_project: "project",
+        repository_name: "repo",
+        number: 77,
+        title: "Other branch PR",
+        state: "merged",
+        base_branch: "development",
+        head_branch: "feature/other",
+      }],
+    } as unknown as ChangesOverlayProps["gitHostProjection"];
+
+    ({ container, root } = await renderEditor(editorProps));
+    expect(listCommits).toHaveBeenLastCalledWith("task-1", "b-work");
+    const sourceTitles = () => [...container!.querySelectorAll(".changes-sources > button strong, .changes-commit-menu-trigger strong")]
+      .map((node) => node.textContent);
+    expect(sourceTitles()).toEqual(["Local changes", "All branch changes", "Commits"]);
+
+    await act(async () => container!.querySelector<HTMLButtonElement>(".changes-branch-current")!.click());
+    const other = [...document.querySelectorAll<HTMLButtonElement>(".changes-branch-option")]
+      .find((button) => button.textContent?.includes("feature/other"))!;
+    await act(async () => other.click());
+    await vi.waitFor(() => expect(listCommits).toHaveBeenLastCalledWith("task-1", "b-other"));
+    await vi.waitFor(() => expect(sourceTitles()).toEqual(["All branch changes", "Commits", "Azure PR #77merged"]));
+    expect(container.querySelector(".changes-header p")?.textContent).toContain("feature/other");
   });
 });

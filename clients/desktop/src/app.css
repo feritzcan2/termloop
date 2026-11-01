@@ -1614,6 +1614,39 @@ button.workflow-tree-session:hover { background: var(--hover); }
 .changes-sources button small { color: #697478; font: 9px/1.25 var(--font-mono); }
 .changes-sources button.selected small { color: light-dark(#5d6e80, #89a3bd); }
 .changes-sources > .changes-warning { flex: none; align-self: center; margin: 0 8px; }
+.changes-sources .changes-menu { flex: 0 0 220px; display: flex; min-width: 0; }
+.changes-sources .changes-commit-menu-trigger { position: relative; flex: 1 1 auto; padding-right: 24px; }
+.changes-sources .changes-commit-menu-trigger.selected { border-color: rgba(102,179,255,.52); background: rgba(102,179,255,.15); color: light-dark(#6d6a76, #e0edf9); }
+.changes-menu-caret { width: 11px; height: 11px; }
+.changes-sources .changes-menu-caret { position: absolute; top: 50%; right: 8px; transform: translateY(-50%); }
+.changes-pr-state { margin-left: 6px; padding: 0 4px; border-radius: 3px; font: 650 8.5px/1.4 var(--font-mono); text-transform: lowercase; }
+.changes-pr-state.open, .changes-pr-chip.open { background: rgba(57,145,100,.18); color: light-dark(#3f7556, #82d3aa); }
+.changes-pr-state.draft, .changes-pr-chip.draft { background: light-dark(rgba(15,23,42,.06), rgba(255,255,255,.08)); color: var(--text-secondary); }
+.changes-pr-state.merged, .changes-pr-chip.merged { background: rgba(102,179,255,.14); color: light-dark(#3d6a94, #a8cdf2); }
+.changes-pr-state.closed, .changes-pr-chip.closed { background: rgba(224,86,94,.14); color: light-dark(#9a4a4f, #efb4b8); }
+.changes-branch-scope { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 7px 10px 0; }
+.changes-branch-scope-label { color: #7d878b; font: 750 9px/1 var(--font-ui); letter-spacing: .08em; text-transform: uppercase; }
+.changes-branch-current { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; padding: 5px 9px; border: 1px solid rgba(102,179,255,.4); border-radius: 7px; background: rgba(102,179,255,.1); color: light-dark(#4f5f70, #e0edf9); font: 10px/1.2 var(--font-mono); }
+.changes-branch-current.static { border-color: var(--border); background: transparent; }
+button.changes-branch-current:hover:not(:disabled) { border-color: rgba(102,179,255,.6); background: rgba(102,179,255,.16); }
+.changes-branch-more { color: #697478; font-size: 9px; }
+.changes-branch-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.changes-branch-name svg { flex: none; width: 12px; height: 12px; }
+.changes-branch-name strong { overflow: hidden; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.changes-branch-tag { flex: none; padding: 1px 5px; border-radius: 4px; background: light-dark(rgba(15,23,42,.06), rgba(255,255,255,.08)); color: var(--text-secondary); font-size: 8.5px; }
+.changes-branch-tag.worktree { background: rgba(57,145,100,.18); color: light-dark(#3f7556, #82d3aa); }
+.changes-menu { position: relative; min-width: 0; }
+.changes-menu-popover { position: fixed; z-index: 40; display: grid; gap: 2px; min-width: 280px; max-width: min(560px, calc(100vw - 32px)); max-height: min(420px, calc(100vh - 120px)); overflow: auto; padding: 5px; border: 1px solid var(--border-strong); border-radius: 9px; background: light-dark(#ffffff, #1f2427); box-shadow: 0 14px 38px rgba(0,0,0,.35); }
+.changes-menu-popover .changes-branch-option, .changes-menu-popover .changes-commit-option { display: grid; gap: 5px; width: 100%; padding: 8px 9px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: light-dark(#4f5459, #c8ced2); font: 10px/1.3 var(--font-mono); text-align: left; }
+.changes-menu-popover .changes-branch-option:hover, .changes-menu-popover .changes-branch-option:focus-visible, .changes-menu-popover .changes-commit-option:hover, .changes-menu-popover .changes-commit-option:focus-visible { outline: 0; background: light-dark(rgba(15,23,42,.05), rgba(255,255,255,.05)); }
+.changes-menu-popover .changes-branch-option.selected, .changes-menu-popover .changes-commit-option.selected { border-color: rgba(102,179,255,.45); background: rgba(102,179,255,.13); }
+.changes-menu-popover .changes-branch-option small { color: #697478; font-size: 9px; }
+.changes-menu-popover .changes-branch-option-prs { display: flex; flex-wrap: wrap; gap: 4px; padding-left: 18px; }
+.changes-menu-popover .changes-pr-chip { padding: 1px 5px; border-radius: 4px; font-size: 9px; }
+.changes-menu-popover .changes-commit-option { grid-template-columns: 22px 64px minmax(0,1fr); align-items: center; }
+.changes-menu-popover .changes-commit-option > span:first-child { color: #697478; text-align: right; }
+.changes-menu-popover .changes-commit-option code { color: light-dark(#5d6e80, #89a3bd); font: inherit; }
+.changes-menu-popover .changes-commit-option > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .changes-error { padding: 7px 14px; border-bottom: 1px solid rgba(224,86,94,.25); background: rgba(224,86,94,.1); color: light-dark(#846566, #efb4b8); font-size: 10.5px; }
 .changes-body { display: grid; grid-template-columns: minmax(220px,300px) minmax(0,1fr); min-width: 0; min-height: 0; }
 .changes-files { min-width: 0; min-height: 0; overflow: auto; border-right: 1px solid var(--border); background: light-dark(#ffffff, #202528); }

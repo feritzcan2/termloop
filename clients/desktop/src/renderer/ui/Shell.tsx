@@ -939,6 +939,7 @@ export function Shell(props: ShellProps) {
     kind: "task",
     hasWorktree: Boolean(changesTask.worktree),
     hasBranch: Boolean(changesTask.branch),
+    branches: changesTask.branches,
   } : changesProject ? {
     id: changesProject.id,
     title: changesProject.name,
