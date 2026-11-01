@@ -242,3 +242,92 @@ fn paths_that_look_like_revision_or_pathspec_syntax_resolve_exactly() {
 // Symlink and gitlink modes are refused by `is_regular_blob_mode`, covered by the
 // unit tests in `src/pre_image.rs`. There is no integration test here because
 // creating a file symlink needs an OS conditional, and those belong to `platform`.
+
+/// A branch commit's old side is its first parent, and the whole branch's old
+/// side is the merge base; neither is the working tree nor the branch tip.
+#[test]
+fn branch_commit_and_range_read_their_exact_old_sides() {
+    let repository = TestRepository::init("pre-image-branch");
+    repository.create_commit_at("shared.txt", "base\n");
+    repository.create_commit_at("moved.txt", "moved body\n");
+    repository.create_commit_at("large.txt", &"x".repeat(PRE_IMAGE_MAX_BYTES + 1));
+    repository.git([
+        "remote",
+        "add",
+        "origin",
+        "https://example.invalid/repository.git",
+    ]);
+    repository.git(["update-ref", "refs/remotes/origin/main", "HEAD"]);
+    repository.git([
+        "symbolic-ref",
+        "refs/remotes/origin/HEAD",
+        "refs/remotes/origin/main",
+    ]);
+    repository.git(["checkout", "-b", "feature/pre-image"]);
+    fs::write(repository.root().join("shared.txt"), "one\n").unwrap();
+    fs::write(repository.root().join("added.txt"), "added\n").unwrap();
+    fs::write(repository.root().join("large.txt"), "small now\n").unwrap();
+    repository.git(["add", "-A"]);
+    repository.git(["commit", "-m", "first"]);
+    fs::write(repository.root().join("shared.txt"), "two\n").unwrap();
+    repository.git(["mv", "moved.txt", "renamed.txt"]);
+    repository.git(["add", "-A"]);
+    repository.git(["commit", "-m", "second"]);
+    fs::write(repository.root().join("shared.txt"), "working tree\n").unwrap();
+
+    let runner = GitRunner::discover().unwrap();
+    let before = repository.index_snapshot(repository.root());
+    let commits = runner
+        .list_branch_commits(repository.root(), b"feature/pre-image")
+        .unwrap();
+    let tip = commits.branch_tip_oid.as_ref().unwrap();
+    let range = runner
+        .list_branch_range_changes(repository.root(), &commits.base_oid, tip)
+        .unwrap();
+    let range_pre_image = |path: &str| {
+        let entry = range
+            .entries
+            .iter()
+            .find(|entry| entry.path().to_str() == Some(path))
+            .unwrap();
+        runner
+            .read_branch_range_change_pre_image(repository.root(), &commits.base_oid, tip, entry)
+            .unwrap()
+            .content
+    };
+    assert_eq!(content(&range_pre_image("shared.txt")), b"base\n");
+    assert_eq!(content(&range_pre_image("renamed.txt")), b"moved body\n");
+    assert_eq!(range_pre_image("added.txt"), PreImageContent::Absent);
+    assert_eq!(range_pre_image("large.txt"), PreImageContent::Truncated);
+
+    let latest = &commits.commits[0];
+    assert_eq!(latest.subject(), b"second");
+    let changes = runner
+        .list_commit_changes(repository.root(), latest)
+        .unwrap();
+    let shared = changes
+        .entries
+        .iter()
+        .find(|entry| entry.path().to_str() == Some("shared.txt"))
+        .unwrap();
+    let observed = runner
+        .read_commit_change_pre_image(repository.root(), latest, shared)
+        .unwrap();
+    assert_eq!(content(&observed.content), b"one\n");
+    assert!(observed.git_process_count <= 2);
+    let renamed = changes
+        .entries
+        .iter()
+        .find(|entry| entry.kind() == WorktreeChangeKind::Renamed)
+        .unwrap();
+    assert_eq!(
+        content(
+            &runner
+                .read_commit_change_pre_image(repository.root(), latest, renamed)
+                .unwrap()
+                .content
+        ),
+        b"moved body\n"
+    );
+    assert_eq!(before, repository.index_snapshot(repository.root()));
+}

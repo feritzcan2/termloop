@@ -8,7 +8,11 @@ export type ShellShortcutId =
   | "renameSession"
   | "forkSession"
   | "focusPreviousPane"
-  | "focusNextPane";
+  | "focusNextPane"
+  | "agentsView"
+  | "tasksView"
+  | "sourceControl"
+  | "steward";
 
 export type ShellCommandGroup = "Project" | "Launch" | "Session" | "Layout" | "Settings";
 
@@ -66,11 +70,18 @@ const SHORTCUTS: Record<ShellShortcutId, Shortcut> = {
   forkSession: { code: "KeyF" },
   focusPreviousPane: { code: "ArrowLeft", alt: true },
   focusNextPane: { code: "ArrowRight", alt: true },
+  // The macOS application menu deliberately has no Quit or Close item, so
+  // Cmd+Q and Cmd+W reach the renderer as tab shortcuts.
+  agentsView: { code: "KeyQ" },
+  tasksView: { code: "KeyW" },
+  sourceControl: { code: "KeyG" },
+  steward: { code: "KeyS" },
 };
 
 function shortcutFor(id: ShellShortcutId, platform: KeyboardPlatform): Shortcut {
-  // Preserve Ctrl+R history search and Ctrl+F cursor movement in terminals.
-  return (id === "renameSession" || id === "forkSession") && platform !== "mac"
+  // Preserve Ctrl+R history search, Ctrl+F cursor movement, Ctrl+G bell/abort
+  // and Ctrl+S flow control in terminals.
+  return (id === "renameSession" || id === "forkSession" || id === "sourceControl" || id === "steward") && platform !== "mac"
     ? { ...SHORTCUTS[id], shift: true }
     : SHORTCUTS[id];
 }
@@ -94,8 +105,12 @@ export function shortcutLabel(id: ShellShortcutId, platform: KeyboardPlatform): 
     : shortcut.code === "KeyT" ? "T"
       : shortcut.code === "KeyR" ? "R"
         : shortcut.code === "KeyF" ? "F"
-          : shortcut.code === "ArrowLeft" ? "←"
-            : "→";
+          : shortcut.code === "KeyQ" ? "Q"
+            : shortcut.code === "KeyW" ? "W"
+              : shortcut.code === "KeyG" ? "G"
+              : shortcut.code === "KeyS" ? "S"
+              : shortcut.code === "ArrowLeft" ? "←"
+                : "→";
   if (platform === "mac") {
     return `${shortcut.alt ? "⌥" : ""}${shortcut.shift ? "⇧" : ""}⌘${key}`;
   }
@@ -146,6 +161,10 @@ export function nativeShellCommandId(shortcut: GhosttyShellShortcut): ShellShort
     || shortcut === "forkSession"
     || shortcut === "focusPreviousPane"
     || shortcut === "focusNextPane"
+    || shortcut === "agentsView"
+    || shortcut === "tasksView"
+    || shortcut === "sourceControl"
+    || shortcut === "steward"
     ? shortcut
     : undefined;
 }

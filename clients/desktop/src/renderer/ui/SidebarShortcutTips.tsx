@@ -6,10 +6,13 @@ export type SidebarShortcutTip = { label: string; keys: string };
 export function sidebarShortcutTips(platform: KeyboardPlatform): SidebarShortcutTip[] {
   return [
     { label: "Quick Action", keys: "Shift Shift" },
+    { label: "Agents / Tasks", keys: `${shortcutLabel("agentsView", platform)} / ${shortcutLabel("tasksView", platform)}` },
     { label: "Fork agent", keys: shortcutLabel("forkSession", platform) },
     { label: "Rename session", keys: shortcutLabel("renameSession", platform) },
     { label: "Switch Project", keys: `${projectShortcutLabel(0, platform)!}–${PROJECT_SHORTCUT_LIMIT}` },
     { label: "New terminal", keys: shortcutLabel("newTerminal", platform) },
+    { label: "Source Control", keys: shortcutLabel("sourceControl", platform) },
+    { label: "Steward", keys: shortcutLabel("steward", platform) },
   ];
 }
 

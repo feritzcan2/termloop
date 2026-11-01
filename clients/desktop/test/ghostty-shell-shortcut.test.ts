@@ -7,6 +7,15 @@ describe("Ghostty shell shortcut boundary", () => {
     expect(parseGhosttyShellShortcut(binding?.action)).toBe("forkSession");
   });
 
+  it("routes native Cmd+Q and Cmd+W to the Agents and Tasks tabs", () => {
+    const action = (keyCode: number) => TERMLOOP_NATIVE_INPUT_POLICY.bindings.find((item) => item.keyCode === keyCode && item.modifiers === 8)?.action;
+    expect(parseGhosttyShellShortcut(action(0x0c))).toBe("agentsView");
+    expect(parseGhosttyShellShortcut(action(0x0d))).toBe("tasksView");
+    const command = (keyCode: number) => TERMLOOP_NATIVE_INPUT_POLICY.bindings.find((item) => item.keyCode === keyCode && item.modifiers === 8)?.action;
+    expect(parseGhosttyShellShortcut(command(0x05))).toBe("sourceControl");
+    expect(parseGhosttyShellShortcut(command(0x01))).toBe("steward");
+  });
+
   it.each([
     "pasteImage",
     "quickAction",

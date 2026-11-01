@@ -628,6 +628,11 @@ handleIpc(
   (_event, taskId: string, observationId: string, commitId: string, entryId: string) =>
     controlCall("task.branchCommitDiff", { taskId, observationId, commitId, entryId }),
 );
+handleIpc(
+  "termloop:task-branch-commit-pre-image",
+  (_event, taskId: string, observationId: string, commitId: string, entryId: string) =>
+    controlCall("task.branchCommitPreImage", { taskId, observationId, commitId, entryId }),
+);
 handleIpc("termloop:git-host-pull-request-list", (_event, projectId: string, taskIds: string[], refresh?: boolean) =>
   controlCall("gitHost.pullRequestList", { projectId, taskIds, ...(refresh ? { refresh: true } : {}) }),
 );

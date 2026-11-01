@@ -74,7 +74,7 @@ pub(super) use worktree::{
     bind_task_branch, cleanup_task_worktree, dismiss_task_worktree_provisioning,
     dismiss_task_worktree_repair, inspect_task_worktree_cleanup, inspect_task_worktree_repair,
     repair_task_worktree, resolve_stale_task_worktree, task_branch_commit_change_list,
-    task_branch_commit_diff, task_branch_commit_list, task_worktree_change_list,
-    task_worktree_diff, task_worktree_pre_image,
+    task_branch_commit_diff, task_branch_commit_list, task_branch_commit_pre_image,
+    task_worktree_change_list, task_worktree_diff, task_worktree_pre_image,
 };
 pub(in crate::app) use worktree::{provision_task_worktree, task_branch_commit_summary_list};

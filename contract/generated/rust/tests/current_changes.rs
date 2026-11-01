@@ -10,6 +10,7 @@ fn change_content_methods_are_full_control_only() {
         "task.branchCommitList",
         "task.branchCommitChangeList",
         "task.branchCommitDiff",
+        "task.branchCommitPreImage",
     ] {
         assert!(METHODS.contains(&method));
         assert!(!READ_ONLY_METHODS.contains(&method));
@@ -118,4 +119,45 @@ fn change_list_and_diff_shapes_are_strict_and_bounded() {
     let mut oversized = patch;
     oversized["patch"] = serde_json::json!("x".repeat(262_145));
     assert!(!validate_method_result("task.worktreeDiff", &oversized));
+}
+
+#[test]
+fn commit_pre_image_shape_is_opaque_strict_and_bounded() {
+    let params = serde_json::json!({
+        "taskId": "t1",
+        "observationId": "commits-1",
+        "commitId": "all",
+        "entryId": "entry-0"
+    });
+    assert!(validate_method_params("task.branchCommitPreImage", &params));
+    let mut with_path = params;
+    with_path["path"] = serde_json::json!("client-supplied");
+    assert!(!validate_method_params(
+        "task.branchCommitPreImage",
+        &with_path
+    ));
+    let content = serde_json::json!({
+        "task_id": "t1",
+        "observation_id": "commits-1",
+        "commit_id": "all",
+        "entry_id": "entry-0",
+        "state": "content",
+        "content": "fn main() {}\n"
+    });
+    assert!(validate_method_result(
+        "task.branchCommitPreImage",
+        &content
+    ));
+    let mut oversized = content.clone();
+    oversized["content"] = serde_json::json!("x".repeat(1_048_577));
+    assert!(!validate_method_result(
+        "task.branchCommitPreImage",
+        &oversized
+    ));
+    let mut with_revision = content;
+    with_revision["revision"] = serde_json::json!("head");
+    assert!(!validate_method_result(
+        "task.branchCommitPreImage",
+        &with_revision
+    ));
 }

@@ -251,6 +251,35 @@ fn managed_created_branch_tracks_its_exact_remote_base() {
         .unwrap();
     assert_eq!(all_diff["state"], "patch");
     assert!(all_diff["patch"].as_str().unwrap().contains("feature 2"));
+    // The branch added this file, so its whole-branch old side is absent
+    // rather than the branch tip.
+    let plan = fixture
+        .runtime
+        .plan_task_branch_commit_pre_image(json!({
+            "taskId": task_id,
+            "observationId": observation_id,
+            "commitId": "all",
+            "entryId": entry_id,
+        }))
+        .unwrap();
+    let all_pre_image = fixture
+        .runtime
+        .complete_task_branch_commit_pre_image(plan.observe())
+        .unwrap();
+    assert_eq!(all_changes["entries"][0]["kind"], "added");
+    assert_eq!(all_pre_image["state"], "absent");
+    assert_eq!(all_pre_image["content"], Value::Null);
+    assert!(
+        fixture
+            .runtime
+            .plan_task_branch_commit_pre_image(json!({
+                "taskId": task_id,
+                "observationId": observation_id,
+                "commitId": "all",
+                "entryId": "entry-99",
+            }))
+            .is_err()
+    );
 
     termloop_gitio::test_support::merge_fast_forward(
         &runner,

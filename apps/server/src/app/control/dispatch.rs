@@ -44,8 +44,8 @@ use super::handlers::{
     resume_agent_session, save_context_bank_file, save_skill_definition, session_history_preview,
     set_skill_deployment, set_steward_configuration, switch_agent_session_account,
     task_branch_commit_change_list, task_branch_commit_diff, task_branch_commit_list,
-    task_branch_commit_summary_list, task_worktree_change_list, task_worktree_diff,
-    task_worktree_pre_image, terminate_session,
+    task_branch_commit_pre_image, task_branch_commit_summary_list, task_worktree_change_list,
+    task_worktree_diff, task_worktree_pre_image, terminate_session,
 };
 use super::{
     ClientScope, ConnectionOrigin, constant_time_equal, origin_allows_method, scope_allows_method,
@@ -1687,6 +1687,9 @@ async fn dispatch_inner(
                 task_branch_commit_change_list(request.params, state).await
             }
             "task.branchCommitDiff" => task_branch_commit_diff(request.params, state).await,
+            "task.branchCommitPreImage" => {
+                task_branch_commit_pre_image(request.params, state).await
+            }
             "task.inspectWorktreeRepair" => {
                 inspect_task_worktree_repair(request.params, state).await
             }

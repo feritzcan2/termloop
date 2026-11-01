@@ -33,6 +33,28 @@ function key(
 }
 
 describe("keyboard command surface", () => {
+  it("binds Source Control and Steward to Cmd on macOS and Ctrl+Shift elsewhere", () => {
+    expect(matchesShellShortcut(key("mac", "KeyG"), "sourceControl", "mac")).toBe(true);
+    expect(matchesShellShortcut(key("mac", "KeyS"), "steward", "mac")).toBe(true);
+    expect(shortcutLabel("sourceControl", "mac")).toBe("⌘G");
+    expect(shortcutLabel("steward", "mac")).toBe("⌘S");
+    expect(matchesShellShortcut(key("windows", "KeyS"), "steward", "windows")).toBe(false);
+    expect(matchesShellShortcut(key("windows", "KeyS", { shiftKey: true }), "steward", "windows")).toBe(true);
+    expect(shortcutLabel("sourceControl", "linux")).toBe("Ctrl+Shift+G");
+  });
+
+  it.each(["mac", "windows", "linux"] as const)("binds the primary modifier with Q and W to the Agents and Tasks tabs on %s", (platform) => {
+    expect(matchesShellShortcut(key(platform, "KeyQ"), "agentsView", platform)).toBe(true);
+    expect(matchesShellShortcut(key(platform, "KeyW"), "tasksView", platform)).toBe(true);
+    expect(matchesShellShortcut(key(platform, "KeyQ", { shiftKey: true }), "agentsView", platform)).toBe(false);
+    expect(matchesShellShortcut(key(platform, "KeyF"), "agentsView", platform)).toBe(false);
+    expect(shortcutLabel("agentsView", platform)).toBe(platform === "mac" ? "⌘Q" : "Ctrl+Q");
+    expect(shortcutLabel("tasksView", platform)).toBe(platform === "mac" ? "⌘W" : "Ctrl+W");
+    expect(nativeShellCommandId("agentsView")).toBe("agentsView");
+    expect(nativeShellCommandId("tasksView")).toBe("tasksView");
+  });
+
+
   it.each([
     ["mac" as const, "Mozilla/5.0 (Macintosh; Intel Mac OS X)", "⇧⌘P", "⌥⌘←"],
     ["windows" as const, "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Ctrl+Shift+P", "Ctrl+Alt+←"],

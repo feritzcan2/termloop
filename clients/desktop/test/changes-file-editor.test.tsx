@@ -55,6 +55,7 @@ describe("Editing local changes in their diff", () => {
       listCommits={async () => { throw new Error("no branch"); }}
       listCommitChanges={async () => { throw new Error("no branch"); }}
       commitDiff={async () => { throw new Error("no branch"); }}
+      commitPreImage={async () => { throw new Error("no branch"); }}
       gitHostProjection={undefined}
       listPullRequestChanges={async () => { throw new Error("no pull request"); }}
       pullRequestDiff={async () => { throw new Error("no pull request"); }}

@@ -16,10 +16,13 @@ describe("Sidebar shortcut tips", () => {
   it("lists Quick Action first and Rename right under Fork with the real bindings", () => {
     expect(sidebarShortcutTips("mac")).toEqual([
       { label: "Quick Action", keys: "Shift Shift" },
+      { label: "Agents / Tasks", keys: "⌘Q / ⌘W" },
       { label: "Fork agent", keys: "⌘F" },
       { label: "Rename session", keys: "⌘R" },
       { label: "Switch Project", keys: "⌘1–9" },
       { label: "New terminal", keys: "⌘T" },
+      { label: "Source Control", keys: "⌘G" },
+      { label: "Steward", keys: "⌘S" },
     ]);
     const windows = new Map(sidebarShortcutTips("windows").map((tip) => [tip.label, tip.keys]));
     expect(windows.get("Fork agent")).toBe("Ctrl+Shift+F");

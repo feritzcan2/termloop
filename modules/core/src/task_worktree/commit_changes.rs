@@ -5,10 +5,10 @@ use serde_json::{Value, json};
 use termloop_domain::TaskBranchBinding;
 use termloop_gitio::{
     BranchCommit, BranchCommitListObservation, CommitChangeEntry, CommitChangesObservation,
-    GitRunner, ObjectId, WorktreeDiffObservation,
+    CommitPreImageObservation, GitRunner, ObjectId, WorktreeDiffObservation,
 };
 
-use super::changes::{display_path, kind_name, project_diff_content};
+use super::changes::{display_path, kind_name, project_diff_content, project_pre_image_content};
 use crate::{CoreError, CoreRuntime, required_string};
 
 const COMMIT_OBSERVATION_CAP: usize = 64;
@@ -241,6 +241,15 @@ pub struct ObservedTaskBranchCommitDiff {
     observation: Result<WorktreeDiffObservation, CoreError>,
 }
 
+/// One branch change entry's old side, for showing the whole file around it.
+/// It resolves the same cached entry and target as the entry's diff.
+pub struct TaskBranchCommitPreImagePlan(TaskBranchCommitDiffPlan);
+
+pub struct ObservedTaskBranchCommitPreImage {
+    plan: TaskBranchCommitDiffPlan,
+    observation: Result<CommitPreImageObservation, CoreError>,
+}
+
 impl TaskBranchCommitListPlan {
     pub fn project_id(&self) -> &str {
         &self.project_id
@@ -332,6 +341,36 @@ impl TaskBranchCommitDiffPlan {
             plan: self,
             observation,
         }
+    }
+}
+
+impl TaskBranchCommitPreImagePlan {
+    pub fn project_id(&self) -> &str {
+        &self.0.project_id
+    }
+
+    pub fn observe(self) -> ObservedTaskBranchCommitPreImage {
+        let plan = self.0;
+        let observation = observe_repository(&plan.selection.binding, &plan.repository_common_dir)
+            .and_then(|runner| {
+                let repository = Path::new(&plan.selection.binding.repository_root);
+                match &plan.target {
+                    BranchChangeTarget::All {
+                        base_oid,
+                        branch_tip_oid,
+                    } => runner.read_branch_range_change_pre_image(
+                        repository,
+                        base_oid,
+                        branch_tip_oid,
+                        &plan.entry,
+                    ),
+                    BranchChangeTarget::Commit(commit) => {
+                        runner.read_commit_change_pre_image(repository, commit, &plan.entry)
+                    }
+                }
+                .map_err(super::git_mapping::map_git_observation_error)
+            });
+        ObservedTaskBranchCommitPreImage { plan, observation }
     }
 }
 
@@ -517,6 +556,33 @@ impl CoreRuntime {
             "entry_id": observed.plan.entry_id,
             "state": state,
             "patch": patch,
+        }))
+    }
+
+    pub fn plan_task_branch_commit_pre_image(
+        &mut self,
+        params: Value,
+    ) -> Result<TaskBranchCommitPreImagePlan, CoreError> {
+        self.plan_task_branch_commit_diff(params)
+            .map(TaskBranchCommitPreImagePlan)
+    }
+
+    pub fn complete_task_branch_commit_pre_image(
+        &self,
+        observed: ObservedTaskBranchCommitPreImage,
+    ) -> Result<Value, CoreError> {
+        self.revalidate_task_commit_branch_selection(
+            &observed.plan.task_id,
+            &observed.plan.selection,
+        )?;
+        let (state, content) = project_pre_image_content(observed.observation?.content);
+        Ok(json!({
+            "task_id": observed.plan.task_id,
+            "observation_id": observed.plan.observation_id,
+            "commit_id": observed.plan.commit_id,
+            "entry_id": observed.plan.entry_id,
+            "state": state,
+            "content": content,
         }))
     }
 

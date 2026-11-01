@@ -58,6 +58,7 @@ export const PROFILED_DESKTOP_OPERATIONS = {
   taskBranchCommitList: "termloop:task-branch-commit-list",
   taskBranchCommitChangeList: "termloop:task-branch-commit-change-list",
   taskBranchCommitDiff: "termloop:task-branch-commit-diff",
+  taskBranchCommitPreImage: "termloop:task-branch-commit-pre-image",
   gitHostPullRequestList: "termloop:git-host-pull-request-list",
   gitHostPullRequestChangeList: "termloop:git-host-pull-request-change-list",
   gitHostPullRequestDiff: "termloop:git-host-pull-request-diff",

@@ -5,6 +5,7 @@ import type {
   ProjectWorktreeDiffResult,
   ProjectWorktreePreImageResult,
   TaskBranchCommitDiffResult,
+  TaskBranchCommitPreImageResult,
   TaskWorktreeChangeSide,
   TaskWorktreeDiffResult,
   TaskWorktreePreImageResult,
@@ -31,7 +32,7 @@ export type ChangesSource =
     };
 
 export type CachedDiff = TaskWorktreeDiffResult | ProjectWorktreeDiffResult | TaskBranchCommitDiffResult | GitHostPullRequestDiffResult;
-export type CachedPreImage = TaskWorktreePreImageResult | ProjectWorktreePreImageResult;
+export type CachedPreImage = TaskWorktreePreImageResult | ProjectWorktreePreImageResult | TaskBranchCommitPreImageResult;
 
 export const ALL_BRANCH_CHANGES_ID = "all";
 export const MAX_RENDERER_DIFFS = 16;

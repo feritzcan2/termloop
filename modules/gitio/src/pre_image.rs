@@ -1,4 +1,4 @@
-//! Bounded read of the old side (pre-image) of a worktree change.
+//! Bounded read of the old side (pre-image) of a worktree or branch change.
 //!
 //! A unified patch only carries the lines inside its hunks, so a client that
 //! wants to show the surrounding file needs the pre-image blob itself. This
@@ -7,7 +7,8 @@
 //! anything it cannot represent.
 //!
 //! Resolution is exact-OID plumbing, never a `rev:path` revision expression:
-//! `ls-files -s` (index) or `ls-tree` (HEAD) yields a blob OID, and `cat-file`
+//! `ls-files -s` (index) or `ls-tree` (HEAD, a commit's first parent, or a
+//! branch's merge base) yields a blob OID, and `cat-file`
 //! reads that OID. A path is therefore never parsed as revision syntax, and a
 //! path containing `:` cannot select a different object.
 
@@ -19,8 +20,9 @@ use crate::changes::{
     WorktreeChangeEntry, WorktreeChangeKind, WorktreeChangeSide, literal_pathspec,
 };
 use crate::command::GitCommandScope;
+use crate::commit_changes::observe_merge_base;
 use crate::repository::ObjectId;
-use crate::{GitError, GitOperation, GitRunner};
+use crate::{BranchCommit, CommitChangeEntry, GitError, GitOperation, GitRunner};
 
 const PRE_IMAGE_DEADLINE: Duration = Duration::from_millis(2_500);
 /// Largest pre-image returned, matching the workspace file editor's bound so a
@@ -78,6 +80,14 @@ pub struct PreImageObservation {
     pub git_process_count: usize,
 }
 
+/// The old side of one branch commit or branch-range change. Its revision is
+/// implied by the target: a commit's first parent, or the range's merge base.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommitPreImageObservation {
+    pub content: PreImageContent,
+    pub git_process_count: usize,
+}
+
 impl GitRunner {
     /// Read the old side of one worktree change entry.
     ///
@@ -108,26 +118,105 @@ impl GitRunner {
             _ => {}
         }
 
-        // The runner is capped at one byte past the accepted maximum, so an
-        // oversized blob is refused by the output limit instead of a separate
-        // size probe.
-        let bounded = self
-            .clone()
-            .with_limits(PRE_IMAGE_DEADLINE, PRE_IMAGE_MAX_BYTES + 1)
-            .with_absolute_timeout(PRE_IMAGE_DEADLINE)?;
+        let bounded = self.pre_image_runner()?;
         let mut scope = GitCommandScope::bounded(&bounded, PRE_IMAGE_DEADLINE)?;
         let path = pre_image_path(entry);
-        let Some(oid) = resolve_pre_image_oid(&mut scope, worktree_root, revision, &path)? else {
-            return Ok(observed(PreImageContent::Absent, scope.command_count()));
-        };
+        let oid = resolve_pre_image_oid(&mut scope, worktree_root, revision, &path)?;
+        let content = read_pre_image_content(&mut scope, worktree_root, oid)?;
+        Ok(observed(content, scope.command_count()))
+    }
 
-        match read_blob(&mut scope, worktree_root, &oid) {
-            Ok(bytes) => Ok(observed(classify_pre_image(bytes), scope.command_count())),
-            Err(GitError::OutputLimitExceeded {
-                operation: GitOperation::ReadPreImage,
-            }) => Ok(observed(PreImageContent::Truncated, scope.command_count())),
-            Err(error) => Err(error),
+    /// Read the old side of one change in a branch commit: the blob at the
+    /// commit's first parent. A merge commit stays outside the viewer, as its
+    /// diff does, and a root commit's files have no old side.
+    pub fn read_commit_change_pre_image(
+        &self,
+        repository_path: &Path,
+        commit: &BranchCommit,
+        entry: &CommitChangeEntry,
+    ) -> Result<CommitPreImageObservation, GitError> {
+        if commit.is_merge() {
+            return Ok(commit_observed(PreImageContent::NotShown, 0));
         }
+        let Some(parent) = commit.first_parent().filter(|_| has_old_side(entry)) else {
+            return Ok(commit_observed(PreImageContent::Absent, 0));
+        };
+        let bounded = self.pre_image_runner()?;
+        let mut scope = GitCommandScope::bounded(&bounded, PRE_IMAGE_DEADLINE)?;
+        let content = read_tree_pre_image(&mut scope, repository_path, parent, entry)?;
+        Ok(commit_observed(content, scope.command_count()))
+    }
+
+    /// Read the old side of one change across a whole branch: the blob at the
+    /// merge base the range's diff compares against.
+    pub fn read_branch_range_change_pre_image(
+        &self,
+        repository_path: &Path,
+        base_oid: &ObjectId,
+        branch_tip_oid: &ObjectId,
+        entry: &CommitChangeEntry,
+    ) -> Result<CommitPreImageObservation, GitError> {
+        if !has_old_side(entry) {
+            return Ok(commit_observed(PreImageContent::Absent, 0));
+        }
+        let bounded = self.pre_image_runner()?;
+        let mut scope = GitCommandScope::bounded(&bounded, PRE_IMAGE_DEADLINE)?;
+        let merge_base = observe_merge_base(&mut scope, repository_path, base_oid, branch_tip_oid)?;
+        let content = read_tree_pre_image(&mut scope, repository_path, &merge_base, entry)?;
+        Ok(commit_observed(content, scope.command_count()))
+    }
+
+    /// The runner is capped at one byte past the accepted maximum, so an
+    /// oversized blob is refused by the output limit instead of a separate
+    /// size probe.
+    fn pre_image_runner(&self) -> Result<GitRunner, GitError> {
+        self.clone()
+            .with_limits(PRE_IMAGE_DEADLINE, PRE_IMAGE_MAX_BYTES + 1)
+            .with_absolute_timeout(PRE_IMAGE_DEADLINE)
+    }
+}
+
+fn commit_observed(
+    content: PreImageContent,
+    git_process_count: usize,
+) -> CommitPreImageObservation {
+    CommitPreImageObservation {
+        content,
+        git_process_count,
+    }
+}
+
+/// An added file's patch already carries every line.
+fn has_old_side(entry: &CommitChangeEntry) -> bool {
+    entry.kind() != WorktreeChangeKind::Added
+}
+
+fn read_tree_pre_image(
+    scope: &mut GitCommandScope<'_>,
+    repository_path: &Path,
+    tree: &ObjectId,
+    entry: &CommitChangeEntry,
+) -> Result<PreImageContent, GitError> {
+    // A rename's old side lives at the original path.
+    let path = entry.original_path().unwrap_or_else(|| entry.path());
+    let oid = resolve_tree_blob(scope, repository_path, object_argument(tree)?, path)?;
+    read_pre_image_content(scope, repository_path, oid)
+}
+
+fn read_pre_image_content(
+    scope: &mut GitCommandScope<'_>,
+    root: &Path,
+    oid: Option<ObjectId>,
+) -> Result<PreImageContent, GitError> {
+    let Some(oid) = oid else {
+        return Ok(PreImageContent::Absent);
+    };
+    match read_blob(scope, root, &oid) {
+        Ok(bytes) => Ok(classify_pre_image(bytes)),
+        Err(GitError::OutputLimitExceeded {
+            operation: GitOperation::ReadPreImage,
+        }) => Ok(PreImageContent::Truncated),
+        Err(error) => Err(error),
     }
 }
 
@@ -164,28 +253,46 @@ fn resolve_pre_image_oid(
     revision: PreImageRevision,
     path: &Path,
 ) -> Result<Option<ObjectId>, GitError> {
-    let pathspec = literal_pathspec(path)?;
-    let args: Vec<OsString> = match revision {
-        PreImageRevision::Index => vec![
-            OsString::from("ls-files"),
-            OsString::from("--stage"),
-            OsString::from("-z"),
-            OsString::from("--"),
-            pathspec,
-        ],
-        PreImageRevision::Head => vec![
+    match revision {
+        PreImageRevision::Index => {
+            let output = scope.checked(
+                GitOperation::ReadPreImage,
+                worktree_root,
+                [
+                    OsString::from("ls-files"),
+                    OsString::from("--stage"),
+                    OsString::from("-z"),
+                    OsString::from("--"),
+                    literal_pathspec(path)?,
+                ],
+            )?;
+            parse_ls_files_stage_zero(&output.stdout)
+        }
+        PreImageRevision::Head => {
+            resolve_tree_blob(scope, worktree_root, OsString::from("HEAD"), path)
+        }
+    }
+}
+
+/// `tree` is `HEAD` or an exact commit OID, never a composed revision.
+fn resolve_tree_blob(
+    scope: &mut GitCommandScope<'_>,
+    root: &Path,
+    tree: OsString,
+    path: &Path,
+) -> Result<Option<ObjectId>, GitError> {
+    let output = scope.checked(
+        GitOperation::ReadPreImage,
+        root,
+        [
             OsString::from("ls-tree"),
             OsString::from("-z"),
-            OsString::from("HEAD"),
+            tree,
             OsString::from("--"),
-            pathspec,
+            literal_pathspec(path)?,
         ],
-    };
-    let output = scope.checked(GitOperation::ReadPreImage, worktree_root, args)?;
-    match revision {
-        PreImageRevision::Index => parse_ls_files_stage_zero(&output.stdout),
-        PreImageRevision::Head => parse_ls_tree_blob(&output.stdout),
-    }
+    )?;
+    parse_ls_tree_blob(&output.stdout)
 }
 
 /// Both listings frame a record the same way: NUL-delimited, with three

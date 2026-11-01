@@ -43,7 +43,7 @@ import { ArchivedRail, archivedRailVisible, useArchivedTasks } from "./ArchivedR
 import { useDeletedSessions } from "./DeletedRail.js";
 import { ChangesOverlay, type ChangesSubject } from "./ChangesOverlay.js";
 import { taskReviewAgentSessions } from "../changes-review.js";
-import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget, GitHostPullRequestChangeListResult, GitHostPullRequestDiffResult, GitHostPullRequestIdentityDto, KeepAwakeSetParams, KeepAwakeStatusResult, McpToolDescriptionResetParams, McpToolDescriptionUpdateParams, McpToolSettingsResult, PlaybookRuntimeResult, ProjectLocalBranchListResult, ProjectWorktreeChangeListResult, ProjectWorktreeDiffResult, ProjectWorktreePreImageResult, QuickActionParams, QuickActionPreviewResult, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, SessionRelocationPreviewDto, SettingsImproverTarget, TaskBranchCommitChangeListResult, TaskBranchCommitDiffResult, TaskBranchCommitListResult, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, TaskWorktreeChangeListResult, TaskWorktreeCleanupPreviewDto, TaskWorktreeDiffResult, TaskWorktreePreImageResult, TaskWorktreeRepairPreviewDto, VoiceCredentialsSetParams, VoiceSettingsResult, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
+import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget, GitHostPullRequestChangeListResult, GitHostPullRequestDiffResult, GitHostPullRequestIdentityDto, KeepAwakeSetParams, KeepAwakeStatusResult, McpToolDescriptionResetParams, McpToolDescriptionUpdateParams, McpToolSettingsResult, PlaybookRuntimeResult, ProjectLocalBranchListResult, ProjectWorktreeChangeListResult, ProjectWorktreeDiffResult, ProjectWorktreePreImageResult, QuickActionParams, QuickActionPreviewResult, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, SessionRelocationPreviewDto, SettingsImproverTarget, TaskBranchCommitChangeListResult, TaskBranchCommitDiffResult, TaskBranchCommitListResult, TaskBranchCommitPreImageResult, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, TaskWorktreeChangeListResult, TaskWorktreeCleanupPreviewDto, TaskWorktreeDiffResult, TaskWorktreePreImageResult, TaskWorktreeRepairPreviewDto, VoiceCredentialsSetParams, VoiceSettingsResult, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
 import type { DeletedSessionDto, SessionHistoryPreviewResult } from "@termloop/contract/current";
 import type { ChangesOpenSource } from "../change-source.js";
 import { CommandPalette, KeyboardShortcutsDialog } from "./CommandPalette.js";
@@ -319,6 +319,7 @@ export type ShellProps = {
   listTaskBranchCommits(taskId: string, branchId?: string): Promise<TaskBranchCommitListResult>;
   listTaskBranchCommitChanges(taskId: string, observationId: string, commitId: string): Promise<TaskBranchCommitChangeListResult>;
   getTaskBranchCommitDiff(taskId: string, observationId: string, commitId: string, entryId: string): Promise<TaskBranchCommitDiffResult>;
+  getTaskBranchCommitPreImage(taskId: string, observationId: string, commitId: string, entryId: string): Promise<TaskBranchCommitPreImageResult>;
   listTaskPullRequestChanges(taskId: string, expectedFreshnessGeneration: number, pullRequest: GitHostPullRequestIdentityDto): Promise<GitHostPullRequestChangeListResult>;
   getTaskPullRequestDiff(taskId: string, observationId: string, entryId: string): Promise<GitHostPullRequestDiffResult>;
   sendTaskReviewNotes(taskId: string, sessionId: string, message: string): Promise<string | undefined>;
@@ -1332,6 +1333,23 @@ export function Shell(props: ShellProps) {
       disabled, perform: () => launchOrConfigureAgent("codex"),
     },
     {
+      id: "view.agents", title: "Agents", detail: "Show all active agents in the sidebar.", group: "Session", keywords: ["active", "tab"], shortcutId: "agentsView",
+      disabled: !props.selectedProject, perform: () => setWorkspaceView("agents"),
+    },
+    {
+      id: "view.tasks", title: "Tasks", detail: "Show Tasks and Sessions in the sidebar.", group: "Session", keywords: ["overview", "tab"], shortcutId: "tasksView",
+      disabled: !props.selectedProject, perform: () => setWorkspaceView("overview"),
+    },
+    {
+      id: "view.steward", title: stewardSidebarOpen ? "Hide Steward" : "Show Steward", detail: "Open the Project Steward on the right while it is enabled.", group: "Session", keywords: ["assistant", "workers"], shortcutId: "steward",
+      disabled: !props.selectedProject,
+      // The shortcut only opens a Steward that is enabled for this Project.
+      perform: async () => {
+        const result = await props.assistantActions.getConfiguration().catch(() => undefined);
+        if (result?.configuration?.enabled) toggleRightSidebar("steward");
+      },
+    },
+    {
       id: "view.history", title: "Session History", detail: "Open inactive TermLoop Agents and local Claude or Codex conversations.", group: "Session", keywords: ["resume", "vault", "past"],
       disabled: !props.selectedProject, perform: () => setWorkspaceView("history"),
     },
@@ -1340,7 +1358,7 @@ export function Shell(props: ShellProps) {
       perform: toggleFilesSidebar,
     },
     {
-      id: "view.sourceControl", title: filesSidebar.open && filesSidebar.view === "sourceControl" ? "Hide Source Control" : "Show Source Control", detail: "See staged, unstaged, and untracked changes on the right.", group: "Session", keywords: ["git", "changes", "status", "staged", "branch", "scm"],
+      id: "view.sourceControl", title: filesSidebar.open && filesSidebar.view === "sourceControl" ? "Hide Source Control" : "Show Source Control", detail: "See staged, unstaged, and untracked changes on the right.", group: "Session", keywords: ["git", "changes", "status", "staged", "branch", "scm"], shortcutId: "sourceControl",
       perform: () => toggleRightSidebar("sourceControl"),
     },
     ...(props.pullRequestsAvailable ? [{
@@ -1410,7 +1428,7 @@ export function Shell(props: ShellProps) {
   selectProjectRef.current = selectProject;
 
   useEffect(() => {
-    const shortcutIds: readonly ShellShortcutId[] = ["newTerminal", "renameSession", "forkSession", "focusPreviousPane", "focusNextPane"];
+    const shortcutIds: readonly ShellShortcutId[] = ["newTerminal", "renameSession", "forkSession", "focusPreviousPane", "focusNextPane", "agentsView", "tasksView", "sourceControl", "steward"];
     const keyDown = (event: KeyboardEvent) => {
       if (event.isComposing) return;
       if (matchesShellShortcut(event, "commandPalette", platform)) {
@@ -2146,6 +2164,7 @@ export function Shell(props: ShellProps) {
                 listCommits={props.listTaskBranchCommits}
                 listCommitChanges={props.listTaskBranchCommitChanges}
                 commitDiff={props.getTaskBranchCommitDiff}
+                commitPreImage={props.getTaskBranchCommitPreImage}
                 gitHostProjection={changesGitHostProjection}
                 listPullRequestChanges={props.listTaskPullRequestChanges}
                 pullRequestDiff={props.getTaskPullRequestDiff}

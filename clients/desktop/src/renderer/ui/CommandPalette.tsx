@@ -101,6 +101,10 @@ const SHORTCUT_ROWS: readonly { id: ShellShortcutId; label: string; detail: stri
   { id: "forkSession", label: "Fork selected Agent", detail: "Starts a new Agent from the selected conversation." },
   { id: "focusPreviousPane", label: "Focus previous pane", detail: "Cycles without changing Session lifecycle." },
   { id: "focusNextPane", label: "Focus next pane", detail: "Cycles without changing Session lifecycle." },
+  { id: "agentsView", label: "Agents tab", detail: "Shows all active agents in the sidebar." },
+  { id: "tasksView", label: "Tasks tab", detail: "Shows Tasks and Sessions in the sidebar." },
+  { id: "sourceControl", label: "Source Control", detail: "Toggles the Source Control sidebar." },
+  { id: "steward", label: "Steward", detail: "Toggles the Steward sidebar while the Steward is enabled." },
 ];
 
 export function KeyboardShortcutsDialog({ platform, close }: { platform: KeyboardPlatform; close(): void }) {

@@ -162,7 +162,7 @@ describe("Source Control sidebar", () => {
   it("lists the branch and grouped changes and opens the selected file for review", async () => {
     await render(PROJECT);
     expect(api.status).toHaveBeenCalledWith({ projectId: "project", taskId: null });
-    expect(container.querySelector('[aria-label="Branch"]')?.textContent).toBe("feature/panel↑1");
+    expect(container.querySelector('[aria-label="Branch"]')?.textContent).toBe("feature/panel↑1Auto pull");
     const titles = [...container.querySelectorAll(".source-control-section h3 > button span")].map((node) => node.textContent);
     expect(titles).toEqual(["Merge Changes", "Changes", "Staged Changes", "Untracked"]);
     const staged = container.querySelector('ul[aria-label="Staged Changes"]')!;
@@ -221,7 +221,7 @@ describe("Source Control sidebar", () => {
   it("offers publish, push, and pull from the primary button and fetch from the menu", async () => {
     api.status.mockResolvedValue(status([], "obs-1", branchOf({ upstream: null, ahead: null, behind: null })));
     await render(PROJECT);
-    expect(container.querySelector('[aria-label="Branch"]')?.textContent).toBe("feature/panelNot published");
+    expect(container.querySelector('[aria-label="Branch"]')?.textContent).toBe("feature/panelNot publishedAuto pull");
     expect(primary().textContent).toBe("Publish Branch");
     await click(".source-control-primary-main");
     expect(api.push).toHaveBeenCalledOnce();
@@ -273,12 +273,11 @@ describe("Source Control sidebar", () => {
     expect(container.textContent).toContain("No changes in this checkout.");
   });
 
-  it("toggles Auto Pull from the menu and fast-forwards only a branch that is behind and not ahead", async () => {
+  it("toggles Auto Pull from the branch row and fast-forwards only a branch that is behind and not ahead", async () => {
     vi.useFakeTimers();
     api.status.mockResolvedValue(status([], "obs-1", branchOf({ ahead: 0, behind: 2 })));
     await render(PROJECT);
-    await click('[aria-label="More Source Control actions"]');
-    const toggle = button('[role="menuitemcheckbox"]');
+    const toggle = button('[role="switch"]');
     expect(toggle.getAttribute("aria-checked")).toBe("false");
     await act(async () => toggle.click());
     expect(setAutoPull).toHaveBeenCalledWith(true);
@@ -337,6 +336,7 @@ describe("Changes review opened from Source Control", () => {
       listCommits={vi.fn()}
       listCommitChanges={vi.fn()}
       commitDiff={vi.fn()}
+      commitPreImage={vi.fn()}
       gitHostProjection={undefined}
       listPullRequestChanges={vi.fn()}
       pullRequestDiff={vi.fn()}

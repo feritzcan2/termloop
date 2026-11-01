@@ -225,7 +225,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:7a5527a17a9283a904d90f182daff5e8b0d992c24b0f8159b733f03dd9388e44";
+    "sha256:990cc12fc7a841fdd3fd068b859682d95be84c59049a21d6f33a8896f537f0c2";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -285,6 +285,7 @@ pub const METHODS: &[&str] = &[
     "task.branchCommitList",
     "task.branchCommitChangeList",
     "task.branchCommitDiff",
+    "task.branchCommitPreImage",
     "task.bindBranch",
     "task.provisionWorktree",
     "task.inspectWorktreeRepair",
@@ -2067,6 +2068,31 @@ pub struct TaskBranchCommitDiffResult {
     pub state: TaskWorktreeDiffState,
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub patch: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct TaskBranchCommitPreImageParams {
+    #[serde(rename = "taskId")]
+    pub task_id: String,
+    #[serde(rename = "observationId")]
+    pub observation_id: String,
+    #[serde(rename = "commitId")]
+    pub commit_id: String,
+    #[serde(rename = "entryId")]
+    pub entry_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct TaskBranchCommitPreImageResult {
+    pub task_id: String,
+    pub observation_id: String,
+    pub commit_id: String,
+    pub entry_id: String,
+    pub state: TaskWorktreePreImageState,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub content: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -10060,6 +10086,7 @@ fn validate_method(value: &Value) -> bool {
             "task.branchCommitList",
             "task.branchCommitChangeList",
             "task.branchCommitDiff",
+            "task.branchCommitPreImage",
             "task.bindBranch",
             "task.provisionWorktree",
             "task.inspectWorktreeRepair",
@@ -13446,6 +13473,93 @@ fn validate_task_branch_commit_diff_result(value: &Value) -> bool {
                     "entry_id",
                     "state",
                     "patch",
+                ]
+                .contains(&key.as_str())
+            })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_task_branch_commit_pre_image_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("taskId")
+            .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
+            && object.get("observationId").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+            })
+            && object.get("commitId").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+            })
+            && object.get("entryId").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+            })
+            && object.keys().all(|key| {
+                ["taskId", "observationId", "commitId", "entryId"].contains(&key.as_str())
+            })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_task_branch_commit_pre_image_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("task_id")
+            .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
+            && object.get("observation_id").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+            })
+            && object.get("commit_id").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+            })
+            && object.get("entry_id").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+            })
+            && object
+                .get("state")
+                .is_some_and(|field| validate_task_worktree_pre_image_state(field))
+            && object.get("content").is_some_and(|field| {
+                (field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() <= 1048576)
+                    || field.is_null())
+            })
+            && object.keys().all(|key| {
+                [
+                    "task_id",
+                    "observation_id",
+                    "commit_id",
+                    "entry_id",
+                    "state",
+                    "content",
                 ]
                 .contains(&key.as_str())
             })
@@ -33880,6 +33994,10 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<TaskBranchCommitDiffParams>(params.clone()).is_ok()
                 && validate_task_branch_commit_diff_params(params)
         }
+        "task.branchCommitPreImage" => {
+            serde_json::from_value::<TaskBranchCommitPreImageParams>(params.clone()).is_ok()
+                && validate_task_branch_commit_pre_image_params(params)
+        }
         "task.bindBranch" => {
             serde_json::from_value::<TaskBindBranchParams>(params.clone()).is_ok()
                 && validate_task_bind_branch_params(params)
@@ -34792,6 +34910,10 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         "task.branchCommitDiff" => {
             serde_json::from_value::<TaskBranchCommitDiffResult>(result.clone()).is_ok()
                 && validate_task_branch_commit_diff_result(result)
+        }
+        "task.branchCommitPreImage" => {
+            serde_json::from_value::<TaskBranchCommitPreImageResult>(result.clone()).is_ok()
+                && validate_task_branch_commit_pre_image_result(result)
         }
         "task.bindBranch" => {
             serde_json::from_value::<TaskBindBranchResult>(result.clone()).is_ok()

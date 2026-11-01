@@ -110,6 +110,10 @@ export function SourceControlSidebar({ subject, projectName, tasks, selectedTask
       <Icon name="branch" />
       <span className="source-control-branch-name">{branch.name ?? "Detached HEAD"}</span>
       <BranchSync branch={branch} />
+      {setAutoPull ? <button type="button" role="switch" className="source-control-auto-pull" aria-checked={autoPull}
+        title={autoPull ? "Auto Pull is on: fetches every minute and fast-forwards when only behind" : "Turn on Auto Pull"}
+        onClick={() => setAutoPull(!autoPull)}
+      ><span>Auto pull</span><i className="source-control-switch" aria-hidden="true" /></button> : null}
     </p> : null}
     {subject && snapshot.result ? <div className="source-control-commit">
       <textarea
@@ -143,13 +147,6 @@ export function SourceControlSidebar({ subject, projectName, tasks, selectedTask
             <MenuItem icon="upload" label={hasUpstream ? "Push" : "Publish Branch"} disabled={branch?.head_state !== "attached"} run={menu(() => actions.sync("push"))} />
             <MenuItem icon="download" label="Pull" disabled={!hasUpstream} run={menu(() => actions.sync("pull"))} />
             <MenuItem icon="restart" label="Fetch" run={menu(() => actions.sync("fetch"))} />
-            {setAutoPull ? <>
-              <div className="context-menu-divider" role="separator" />
-              <button type="button" role="menuitemcheckbox" aria-checked={autoPull}
-                title="Fetch every minute and fast-forward when the branch is only behind its upstream"
-                onClick={() => { setMenuOpen(false); setAutoPull(!autoPull); }}
-              ><Icon name="check" className={autoPull ? undefined : "source-control-menu-unchecked"} /><span>Auto Pull</span></button>
-            </> : null}
           </div>
         </> : null}
       </div>

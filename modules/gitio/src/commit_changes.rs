@@ -21,6 +21,8 @@ pub struct BranchCommit {
     subject: Vec<u8>,
     authored_at_epoch_ms: Option<u64>,
     parent_count: usize,
+    /// The old side of a non-merge commit's changes; `None` for a root commit.
+    first_parent: Option<ObjectId>,
 }
 
 impl std::fmt::Debug for BranchCommit {
@@ -50,6 +52,10 @@ impl BranchCommit {
 
     pub fn is_merge(&self) -> bool {
         self.parent_count > 1
+    }
+
+    pub(crate) fn first_parent(&self) -> Option<&ObjectId> {
+        self.first_parent.as_ref()
     }
 }
 
@@ -488,17 +494,25 @@ impl GitRunner {
 fn parse_commits(bytes: &[u8]) -> Result<(Vec<BranchCommit>, bool), GitError> {
     let mut commits = parse_log_records(bytes, GitOperation::CommitChanges)?
         .into_iter()
-        .map(|record| BranchCommit {
-            parent_count: if record.second.is_empty() {
-                0
-            } else {
-                record.second.split(|byte| *byte == b' ').count()
-            },
-            oid: record.oid,
-            subject: record.subject.to_vec(),
-            authored_at_epoch_ms: Some(record.authored_at_epoch_ms),
+        .map(|record| {
+            let parents = record
+                .second
+                .split(|byte| *byte == b' ')
+                .filter(|parent| !parent.is_empty())
+                .collect::<Vec<_>>();
+            let first_parent = parents
+                .first()
+                .map(|parent| ObjectId::from_hex(parent.to_vec()).map_err(|_| parse_error()))
+                .transpose()?;
+            Ok(BranchCommit {
+                parent_count: parents.len(),
+                first_parent,
+                oid: record.oid,
+                subject: record.subject.to_vec(),
+                authored_at_epoch_ms: Some(record.authored_at_epoch_ms),
+            })
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, GitError>>()?;
     let truncated = commits.len() > BRANCH_COMMIT_LIST_MAX_ENTRIES;
     commits.truncate(BRANCH_COMMIT_LIST_MAX_ENTRIES);
     Ok((commits, truncated))
@@ -621,7 +635,7 @@ fn numstat_contains_binary(bytes: &[u8]) -> Result<bool, GitError> {
     Ok(added == b"-" && deleted == b"-")
 }
 
-fn observe_merge_base(
+pub(crate) fn observe_merge_base(
     scope: &mut GitCommandScope<'_>,
     repository_path: &Path,
     base_oid: &ObjectId,
@@ -679,6 +693,7 @@ mod tests {
             subject: b"SECRET_SUBJECT".to_vec(),
             authored_at_epoch_ms: Some(1_000),
             parent_count: 1,
+            first_parent: None,
         };
         assert!(!format!("{commit:?}").contains("SECRET_SUBJECT"));
         let entry = CommitChangeEntry {

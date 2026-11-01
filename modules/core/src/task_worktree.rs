@@ -111,7 +111,8 @@ pub use cleanup::{
 pub(crate) use commit_changes::BranchCommitObservationCache;
 pub use commit_changes::{
     ObservedTaskBranchCommitChanges, ObservedTaskBranchCommitDiff, ObservedTaskBranchCommitList,
-    TaskBranchCommitChangeListPlan, TaskBranchCommitDiffPlan, TaskBranchCommitListPlan,
+    ObservedTaskBranchCommitPreImage, TaskBranchCommitChangeListPlan, TaskBranchCommitDiffPlan,
+    TaskBranchCommitListPlan, TaskBranchCommitPreImagePlan,
 };
 pub(crate) use health::WorktreeProjectionCache;
 pub use health::{

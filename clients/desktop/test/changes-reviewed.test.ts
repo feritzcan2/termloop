@@ -63,6 +63,7 @@ function props(list: ChangesOverlayProps["list"]): ChangesOverlayProps {
     listCommits: async (taskId) => ({ task_id: taskId, observation_id: "commits-1", branch_id: "primary", branch_name: "feature/task", branch_role: "primary", held_by_task_id: null, base_ref: "main", base_oid: null, base_evidence: null, commits: [], truncated: false }),
     listCommitChanges: async (taskId, observationId, commitId) => ({ task_id: taskId, observation_id: observationId, commit_id: commitId, state: "available", entries: [], truncated: false }),
     commitDiff: async (taskId, observationId, commitId, entryId) => ({ task_id: taskId, observation_id: observationId, commit_id: commitId, entry_id: entryId, state: "notShown", patch: null }),
+    commitPreImage: async (taskId, observationId, commitId, entryId) => ({ task_id: taskId, observation_id: observationId, commit_id: commitId, entry_id: entryId, state: "notShown", content: null }),
     gitHostProjection: undefined,
     listPullRequestChanges: async (taskId, _generation, pullRequest) => ({ task_id: taskId, pull_request: pullRequest, state: "available", reason: null, observation_id: "pr-1", entries: [], truncated: false }),
     pullRequestDiff: async (taskId, observationId, entryId) => ({ task_id: taskId, observation_id: observationId, entry_id: entryId, state: "notShown", reason: null, patch: null }),

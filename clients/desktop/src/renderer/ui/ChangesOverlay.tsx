@@ -12,6 +12,7 @@ import "react-diff-view/style/index.css";
 import type {
   TaskBranchCommitChangeListResult,
   TaskBranchCommitDiffResult,
+  TaskBranchCommitPreImageResult,
   TaskBranchCommitListResult,
   GitHostPullRequestChangeListResult,
   GitHostPullRequestDiffResult,
@@ -109,6 +110,7 @@ export type ChangesOverlayProps = {
   listCommits(taskId: string, branchId?: string): Promise<TaskBranchCommitListResult>;
   listCommitChanges(taskId: string, observationId: string, commitId: string): Promise<TaskBranchCommitChangeListResult>;
   commitDiff(taskId: string, observationId: string, commitId: string, entryId: string): Promise<TaskBranchCommitDiffResult>;
+  commitPreImage(taskId: string, observationId: string, commitId: string, entryId: string): Promise<TaskBranchCommitPreImageResult>;
   gitHostProjection: GitHostProjection | undefined;
   listPullRequestChanges(taskId: string, expectedFreshnessGeneration: number, pullRequest: GitHostPullRequestIdentityDto): Promise<GitHostPullRequestChangeListResult>;
   pullRequestDiff(taskId: string, observationId: string, entryId: string): Promise<GitHostPullRequestDiffResult>;
@@ -128,6 +130,7 @@ export function ChangesOverlay({
   listCommits,
   listCommitChanges,
   commitDiff,
+  commitPreImage,
   gitHostProjection,
   listPullRequestChanges,
   pullRequestDiff,
@@ -138,8 +141,8 @@ export function ChangesOverlay({
   const overlayRef = useRef<HTMLElement>(null);
   // Composition rebuilds these adapters on unrelated projection renders. Keep
   // effects keyed to the change source while still invoking the newest adapter.
-  const readsRef = useRef({ list, diff, preImage, listCommits, listCommitChanges, commitDiff, listPullRequestChanges, pullRequestDiff });
-  readsRef.current = { list, diff, preImage, listCommits, listCommitChanges, commitDiff, listPullRequestChanges, pullRequestDiff };
+  const readsRef = useRef({ list, diff, preImage, listCommits, listCommitChanges, commitDiff, commitPreImage, listPullRequestChanges, pullRequestDiff });
+  readsRef.current = { list, diff, preImage, listCommits, listCommitChanges, commitDiff, commitPreImage, listPullRequestChanges, pullRequestDiff };
   const initialSourceRef = useRef(initialSource);
   initialSourceRef.current = initialSource;
   const initialSourceKey = initialSource.kind === "pullRequest"
@@ -475,12 +478,12 @@ export function ChangesOverlay({
     setDiffs((current) => touchLruEntry(current, diffKey));
   }, [diffKey, selectedDiff]);
   const parsed = useMemo(() => parsePatch(selectedDiff), [selectedDiff]);
-  // Full-file mode needs the old-side blob, which only the worktree source can
-  // supply today. Other sources keep the change-focused view and say why, from
-  // this one string so the control and the status line cannot drift.
-  const fullFileUnsupportedReason = selectedSource.kind === "local"
-    ? undefined
-    : "The whole file is only available for local worktree changes.";
+  // Full-file mode needs the old-side blob, which the worktree and the Task
+  // branch can supply. A pull request keeps the change-focused view and says
+  // why, from this one string so the control and the status line cannot drift.
+  const fullFileUnsupportedReason = selectedSource.kind === "pullRequest"
+    ? "The whole file is not available for pull request changes."
+    : undefined;
   const fullFileSupported = fullFileUnsupportedReason === undefined;
   const selectedPreImage = fullFileSupported && diffKey ? preImages.get(diffKey) : undefined;
   // The editable diff compares against the pre-image; a refused pre-image
@@ -496,17 +499,20 @@ export function ChangesOverlay({
 
   useEffect(() => {
     if (loadingSources || !diffKey || (editPath === undefined && (!fullFile || !fullFileSupported || !parsed))) return;
-    if (preImages.has(diffKey)) return;
-    const { preImage } = readsRef.current;
-    const observationId = localChanges?.observation_id;
+    if (preImages.has(diffKey) || selectedSource.kind === "pullRequest") return;
+    const { preImage, commitPreImage } = readsRef.current;
+    const observationId = selectedSource.kind === "local" ? localChanges?.observation_id : commitList?.observation_id;
     const entryId = selected?.entry_id;
     if (!observationId || !entryId) return;
     let active = true;
     setLoadingPreImage(true);
     setPreImageError(undefined);
-    void preImage(subject.id, observationId, entryId)
+    const request: Promise<CachedPreImage> = selectedSource.kind === "local"
+      ? preImage(subject.id, observationId, entryId)
+      : commitPreImage(subject.id, observationId, selectedSource.commitId, entryId);
+    void request
       .catch(async (failure) => {
-        if (!localChanges || !selected || !("side" in selected)) throw failure;
+        if (selectedSource.kind !== "local" || !localChanges || !selected || !("side" in selected)) throw failure;
         const recovered = await recoverLocalChange(failure, readsRef.current, subject.id, localChanges, selected, true, () => active);
         if (recovered) applyRecoveredLocalChange(recovered);
         return undefined;
@@ -520,7 +526,7 @@ export function ChangesOverlay({
       })
       .finally(() => { if (active) setLoadingPreImage(false); });
     return () => { active = false; };
-  }, [applyRecoveredLocalChange, diffKey, editPath, fullFile, fullFileSupported, loadingSources, localChanges, parsed, preImages, selected, subject.id]);
+  }, [applyRecoveredLocalChange, commitList?.observation_id, diffKey, editPath, fullFile, fullFileSupported, loadingSources, localChanges, parsed, preImages, selected, selectedSource, subject.id]);
 
   const fullFileState: FullFileView | undefined = useMemo(() => {
     if (!fullFile || !parsed) return undefined;

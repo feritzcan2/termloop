@@ -492,6 +492,14 @@
         "$ref": "#/$defs/taskBranchCommitDiffResult"
       }
     },
+    "task.branchCommitPreImage": {
+      "params": {
+        "$ref": "#/$defs/taskBranchCommitPreImageParams"
+      },
+      "result": {
+        "$ref": "#/$defs/taskBranchCommitPreImageResult"
+      }
+    },
     "task.bindBranch": {
       "params": {
         "$ref": "#/$defs/taskBindBranchParams"
@@ -2400,6 +2408,7 @@
         "task.branchCommitList",
         "task.branchCommitChangeList",
         "task.branchCommitDiff",
+        "task.branchCommitPreImage",
         "task.bindBranch",
         "task.provisionWorktree",
         "task.inspectWorktreeRepair",
@@ -4725,6 +4734,84 @@
             "null"
           ],
           "maxLength": 262144
+        }
+      }
+    },
+    "taskBranchCommitPreImageParams": {
+      "x-codegen": true,
+      "x-codegen-name": "TaskBranchCommitPreImageParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskId",
+        "observationId",
+        "commitId",
+        "entryId"
+      ],
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "observationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "commitId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "entryId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    },
+    "taskBranchCommitPreImageResult": {
+      "x-codegen": true,
+      "x-codegen-name": "TaskBranchCommitPreImageResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "task_id",
+        "observation_id",
+        "commit_id",
+        "entry_id",
+        "state",
+        "content"
+      ],
+      "properties": {
+        "task_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "observation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "commit_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "entry_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "state": {
+          "$ref": "#/$defs/taskWorktreePreImageState"
+        },
+        "content": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 1048576
         }
       }
     },

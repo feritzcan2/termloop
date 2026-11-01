@@ -1060,6 +1060,8 @@ mod tests {
         assert!(!read_only_method("task.branchCommitList"));
         assert!(!read_only_method("task.branchCommitChangeList"));
         assert!(!read_only_method("task.branchCommitDiff"));
+        assert!(!read_only_method("task.branchCommitPreImage"));
+        assert!(!companion_method("task.branchCommitPreImage"));
         assert!(!read_only_method("task.inspectWorktreeRepair"));
         assert!(!read_only_method("project.create"));
         assert!(!read_only_method("task.create"));

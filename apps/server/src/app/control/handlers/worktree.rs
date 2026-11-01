@@ -288,6 +288,27 @@ pub(in crate::app::control) async fn task_branch_commit_diff(
     core.complete_task_branch_commit_diff(observed)
 }
 
+pub(in crate::app::control) async fn task_branch_commit_pre_image(
+    params: serde_json::Value,
+    state: &AppState,
+) -> Result<serde_json::Value, CoreError> {
+    let plan = {
+        let mut core = state.core.lock().await;
+        core.plan_task_branch_commit_pre_image(params)?
+    };
+    let project_id = plan.project_id().to_owned();
+    let permit = state
+        .git_observation_gate
+        .acquire(project_id, ObservationPriority::Explicit)
+        .await?;
+    let observed = tokio::task::spawn_blocking(move || plan.observe())
+        .await
+        .map_err(|error| CoreError::Store(format!("commit pre-image worker failed: {error}")))?;
+    drop(permit);
+    let core = state.core.lock().await;
+    core.complete_task_branch_commit_pre_image(observed)
+}
+
 pub(in crate::app::control) async fn inspect_task_worktree_repair(
     params: serde_json::Value,
     state: &AppState,

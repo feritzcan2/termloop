@@ -2692,6 +2692,7 @@ export function DesktopApp() {
       listTaskBranchCommits={(taskId, branchId) => sourceApiForTask(taskId).taskBranchCommitList(taskId, branchId)}
       listTaskBranchCommitChanges={(taskId, observationId, commitId) => sourceApiForTask(taskId).taskBranchCommitChangeList(taskId, observationId, commitId)}
       getTaskBranchCommitDiff={(taskId, observationId, commitId, entryId) => sourceApiForTask(taskId).taskBranchCommitDiff(taskId, observationId, commitId, entryId)}
+      getTaskBranchCommitPreImage={(taskId, observationId, commitId, entryId) => sourceApiForTask(taskId).taskBranchCommitPreImage(taskId, observationId, commitId, entryId)}
       listTaskPullRequestChanges={(taskId, expectedFreshnessGeneration, pullRequest) => sourceApiForTask(taskId).gitHostPullRequestChangeList(taskId, expectedFreshnessGeneration, pullRequest)}
       getTaskPullRequestDiff={(taskId, observationId, entryId) => sourceApiForTask(taskId).gitHostPullRequestDiff(taskId, observationId, entryId)}
       sendTaskReviewNotes={sendTaskReviewNotes}
