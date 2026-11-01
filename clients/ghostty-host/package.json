@@ -1,6 +1,6 @@
 {
   "name": "@termloop/ghostty-host",
-  "version": "2.0.12",
+  "version": "2.0.13",
   "type": "module",
   "license": "GPL-3.0-or-later",
   "files": [
