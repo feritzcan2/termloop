@@ -95,8 +95,11 @@ export function updateStatusText(status: UpdateStatus): string {
     case "downloading": return `Downloading TermLoop ${status.version}${status.percent === null ? "…" : ` (${status.percent}%)`}`;
     case "ready": return `TermLoop ${status.version} is ready to install.`;
     case "installing": return `Restarting to install TermLoop ${status.version}…`;
-    case "failed": return status.version
-      ? `Downloading TermLoop ${status.version} failed.`
-      : "The update server could not be reached.";
+    case "failed": {
+      const reason = status.reason ? ` (${status.reason})` : "";
+      return status.version
+        ? `Downloading TermLoop ${status.version} failed${reason}. TermLoop retries automatically.`
+        : `The update check failed${reason}. TermLoop retries in a few minutes.`;
+    }
   }
 }
