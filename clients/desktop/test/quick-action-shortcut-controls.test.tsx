@@ -145,4 +145,46 @@ describe("Quick Action shortcut controls", () => {
       expect(container.querySelector<HTMLButtonElement>('.remove-agent-shortcut')!.disabled).toBe(false);
     }
   });
+
+  it("does not preview again while a submitted launch is still settling", async () => {
+    vi.useFakeTimers();
+    try {
+      rememberQuickActionDraft("Inspect the screenshot");
+      const ticket = { launch_ticket: "ticket-1", manifest: {} };
+      let finishLaunch!: (message: string | undefined) => void;
+      const launch = vi.fn(() => new Promise<string | undefined>((resolve) => { finishLaunch = resolve; }));
+      const firstPreview = vi.fn().mockResolvedValue(ticket);
+      const render = (preview: typeof firstPreview) => root.render(<QuickActionComposer {...composerProps()} preview={preview} launch={launch} />);
+      await act(async () => render(firstPreview));
+      await act(async () => vi.advanceTimersByTime(200));
+      firstPreview.mockClear();
+      await act(async () => container.querySelector("form")!.requestSubmit());
+      expect(launch).toHaveBeenCalledTimes(1);
+      // Launch consumed the attachment; a re-render while activation settles must not preview it again.
+      const laterPreview = vi.fn().mockRejectedValue(new Error("quickActionImageNotFound"));
+      await act(async () => render(laterPreview));
+      await act(async () => vi.advanceTimersByTime(500));
+      expect(laterPreview).not.toHaveBeenCalled();
+      expect(container.querySelector('[role="alert"]')).toBeNull();
+      await act(async () => finishLaunch(undefined));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a launch failure visible after the submit settles", async () => {
+    vi.useFakeTimers();
+    try {
+      rememberQuickActionDraft("Inspect the screenshot");
+      const preview = vi.fn().mockResolvedValue({ launch_ticket: "ticket-1", manifest: {} });
+      const launch = vi.fn().mockResolvedValue("Launch failed");
+      await act(async () => root.render(<QuickActionComposer {...composerProps()} preview={preview} launch={launch} />));
+      await act(async () => vi.advanceTimersByTime(200));
+      await act(async () => container.querySelector("form")!.requestSubmit());
+      await act(async () => vi.advanceTimersByTime(500));
+      expect(container.querySelector('[role="alert"]')?.textContent).toBe("Launch failed");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

@@ -139,6 +139,7 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
   const [previewResult, setPreviewResult] = useState<QuickActionPreviewResult>();
   const [error, setError] = useState<string>();
   const [running, setRunning] = useState(false);
+  const submittingRef = useRef(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [shortcutOpen, setShortcutOpen] = useState(false);
   const [shortcutCreated, setShortcutCreated] = useState(false);
@@ -204,12 +205,15 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
     if (!projectId || !prompt || !attachmentReady || profileUnavailable || targetUnavailable) { setPreviewResult(undefined); if (attachmentReady) setError(undefined); return; }
     let live = true;
     const timer = window.setTimeout(() => {
+      // A submit owns preview and launch; a successful launch consumes the attachment, so a
+      // background preview racing it would report quickActionImageNotFound before close.
+      if (submittingRef.current) return;
       void preview(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId, taskId)
         .then((value) => {
           const result = requireQuickActionPreview(value);
-          if (live) { setPreviewResult(result); setError(undefined); }
+          if (live && !submittingRef.current) { setPreviewResult(result); setError(undefined); }
         })
-        .catch((cause) => { if (live) { setPreviewResult(undefined); setError(cause instanceof Error ? cause.message : String(cause)); } });
+        .catch((cause) => { if (live && !submittingRef.current) { setPreviewResult(undefined); setError(cause instanceof Error ? cause.message : String(cause)); } });
     }, 180);
     return () => { live = false; window.clearTimeout(timer); };
   }, [accountId, agentId, attachmentIds, attachmentReady, model, permission, preview, profileUnavailable, projectId, prompt, reasoning, selectedProfile?.version, targetUnavailable, taskId, templateRef]);
@@ -218,6 +222,7 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
     event?.preventDefault();
     if (!projectId || !prompt || !attachmentReady || running || profileUnavailable || targetUnavailable || shortcutOpen) return;
     setRunning(true);
+    submittingRef.current = true;
     try {
       const inspected = requireQuickActionPreview(await preview(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId, taskId));
       setPreviewResult(inspected);
@@ -229,6 +234,7 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
+      submittingRef.current = false;
       setRunning(false);
     }
   };
