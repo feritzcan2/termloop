@@ -10,8 +10,8 @@
 // not be able to hide an incorrect initial VT grid.
 static void wakeup(void *unused) {}
 static bool action(ghostty_app_t app, ghostty_target_s target, ghostty_action_s value) { return false; }
-static bool read_clipboard(void *u, ghostty_clipboard_e c, void *state) { return false; }
-static void confirm_clipboard(void *u, const char *text, void *state, ghostty_clipboard_request_e request) {}
+static ghostty_clipboard_read_result_e read_clipboard(void *u, ghostty_clipboard_e c, void *state, const char *const *mimes, size_t count, bool list) { return GHOSTTY_CLIPBOARD_READ_UNAVAILABLE; }
+static void confirm_clipboard(void *u, const ghostty_clipboard_confirm_s *confirm, void *state, ghostty_clipboard_request_e request) {}
 static void write_clipboard(void *u, ghostty_clipboard_e c, const ghostty_clipboard_content_s *data, size_t count, bool confirm) {}
 static void close_surface(void *u, bool alive) {}
 static void consumed(void *context, size_t count) { atomic_fetch_add((_Atomic size_t *)context, count); }

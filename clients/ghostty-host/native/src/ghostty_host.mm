@@ -110,31 +110,56 @@ static ghostty_surface_t surfaceFromUserdata(void *userdata);
 static void notifySurfaceClosed(TLGhosttyView *view);
 static void notifyFileDrop(TLGhosttyView *view, NSArray<NSURL *> *urls);
 
-static bool readClipboardCallback(void *userdata,
-                                  ghostty_clipboard_e,
-                                  void *state) {
+// TermLoop only exchanges plain text with the pasteboard.
+static constexpr const char *kTextMime = "text/plain";
+
+static ghostty_clipboard_read_result_e readClipboardCallback(void *userdata,
+                                                             ghostty_clipboard_e,
+                                                             void *state,
+                                                             const char *const *mimes,
+                                                             size_t mimeCount,
+                                                             bool list) {
   ghostty_surface_t surface = surfaceFromUserdata(userdata);
-  if (surface == nullptr) return false;
-  // Complete synchronously from the general pasteboard.
+  if (surface == nullptr) return GHOSTTY_CLIPBOARD_READ_UNAVAILABLE;
+  bool wantsText = false;
+  for (size_t i = 0; i < mimeCount; i++) {
+    if (mimes[i] != nullptr && strcmp(mimes[i], kTextMime) == 0) wantsText = true;
+  }
+  if (!wantsText && !list) return GHOSTTY_CLIPBOARD_READ_UNSUPPORTED;
   NSString *str = [[NSPasteboard generalPasteboard]
       stringForType:NSPasteboardTypeString];
-  const char *utf8 = str ? str.UTF8String : "";
-  ghostty_surface_complete_clipboard_request(surface, utf8, state, true);
-  return true;
+  if (str == nil) return GHOSTTY_CLIPBOARD_READ_UNAVAILABLE;
+  // Complete synchronously from the general pasteboard. The completion may
+  // divert into confirmReadClipboardCallback before this returns.
+  NSData *bytes = [str dataUsingEncoding:NSUTF8StringEncoding] ?: [NSData data];
+  const ghostty_clipboard_content_s content = {
+      kTextMime, static_cast<const char *>(bytes.bytes), bytes.length};
+  const char *const available[] = {kTextMime};
+  const ghostty_clipboard_complete_s complete = {
+      wantsText ? &content : nullptr, wantsText ? size_t{1} : size_t{0},
+      list ? available : nullptr, list ? size_t{1} : size_t{0},
+      false, false};
+  ghostty_surface_complete_clipboard_request(surface, &complete, state);
+  return GHOSTTY_CLIPBOARD_READ_STARTED;
 }
 
 static void confirmReadClipboardCallback(void *userdata,
-                                         const char *str,
+                                         const ghostty_clipboard_confirm_s *confirm,
                                          void *state,
                                          ghostty_clipboard_request_e request) {
   ghostty_surface_t surface = surfaceFromUserdata(userdata);
   if (surface == nullptr) return;
   // Phase 1 has no confirmation sheet. Preserve explicit paste while denying
-  // terminal-initiated OSC 52 reads by completing them empty.
-  const char *result = request == GHOSTTY_CLIPBOARD_REQUEST_PASTE && str
-                           ? str
-                           : "";
-  ghostty_surface_complete_clipboard_request(surface, result, state, true);
+  // terminal-initiated OSC 52 and Kitty clipboard reads and writes.
+  if (request != GHOSTTY_CLIPBOARD_REQUEST_PASTE || confirm == nullptr) {
+    ghostty_surface_deny_clipboard_request(surface, state);
+    return;
+  }
+  const ghostty_clipboard_complete_s complete = {
+      confirm->contents, confirm->contents_len,
+      confirm->available, confirm->available_len,
+      true, false};
+  ghostty_surface_complete_clipboard_request(surface, &complete, state);
 }
 
 static void writeClipboardCallback(void *,
@@ -148,11 +173,15 @@ static void writeClipboardCallback(void *,
   for (size_t i = 0; i < count; i++) {
     const ghostty_clipboard_content_s &c = contents[i];
     if (c.mime == nullptr || c.data == nullptr) continue;
-    if (strcmp(c.mime, "text/plain") != 0) continue;
+    if (strcmp(c.mime, kTextMime) != 0) continue;
+    // Contents are length-delimited and not necessarily NUL-terminated.
+    NSString *text = [[NSString alloc] initWithBytes:c.data
+                                              length:c.len
+                                            encoding:NSUTF8StringEncoding];
+    if (text == nil) return;
     NSPasteboard *pb = [NSPasteboard generalPasteboard];
     [pb clearContents];
-    [pb setString:[NSString stringWithUTF8String:c.data]
-          forType:NSPasteboardTypeString];
+    [pb setString:text forType:NSPasteboardTypeString];
     return;
   }
 }

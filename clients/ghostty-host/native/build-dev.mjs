@@ -97,8 +97,8 @@ if (actualGhosttyCommit !== expectedGhosttyCommit) {
 }
 
 const zigVersion = execute("zig", ["version"], repositoryDir, true);
-if (zigVersion !== "0.15.2") {
-  throw new Error(`Ghostty requires Zig 0.15.2, found ${zigVersion}`);
+if (zigVersion !== "0.17.0") {
+  throw new Error(`Ghostty requires Zig 0.17.0, found ${zigVersion}`);
 }
 if (!existsSync(nodeGyp)) {
   throw new Error("the pinned node-gyp dependency is unavailable; run pnpm install");

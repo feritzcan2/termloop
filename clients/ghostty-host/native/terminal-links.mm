@@ -23,8 +23,8 @@ static bool action(ghostty_app_t, ghostty_target_s target, ghostty_action_s valu
   }
   return true;
 }
-static bool readClipboard(void *, ghostty_clipboard_e, void *) { return false; }
-static void confirmClipboard(void *, const char *, void *, ghostty_clipboard_request_e) {}
+static ghostty_clipboard_read_result_e readClipboard(void *, ghostty_clipboard_e, void *, const char *const *, size_t, bool) { return GHOSTTY_CLIPBOARD_READ_UNAVAILABLE; }
+static void confirmClipboard(void *, const ghostty_clipboard_confirm_s *, void *, ghostty_clipboard_request_e) {}
 static void writeClipboard(void *, ghostty_clipboard_e, const ghostty_clipboard_content_s *, size_t, bool) {}
 static void closeSurface(void *, bool) {}
 static void consumed(void *context, size_t count) { static_cast<std::atomic<size_t> *>(context)->fetch_add(count); }

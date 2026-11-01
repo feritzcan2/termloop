@@ -46,13 +46,13 @@ runs:
     - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
       if: runner.os == 'macOS'
       with:
-        version: 0.15.2
+        version: 0.17.0
         # Persistent runners retain these directories without a remote cache upload.
         use-cache: ${{ runner.environment == 'github-hosted' }}
     - name: Verify pinned Zig for Ghostty
       if: runner.os == 'macOS'
       shell: bash
-      run: test "$(zig version)" = "0.15.2"
+      run: test "$(zig version)" = "0.17.0"
     - name: Install pinned Rust
       shell: bash
       run: rustup toolchain install 1.90.0 --profile minimal --component clippy,rustfmt
