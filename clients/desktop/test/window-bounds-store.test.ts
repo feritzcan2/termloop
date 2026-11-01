@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -32,29 +32,29 @@ describe("window bounds restore", () => {
 
 describe("window bounds file store", () => {
   let directory: string | undefined;
-  afterEach(() => {
-    if (directory) rmSync(directory, { recursive: true, force: true });
+  afterEach(async () => {
+    if (directory) await rm(directory, { recursive: true, force: true });
     directory = undefined;
   });
 
-  it("round-trips saved geometry", () => {
-    directory = mkdtempSync(path.join(tmpdir(), "termloop-window-bounds-"));
+  it("round-trips saved geometry", async () => {
+    directory = await mkdtemp(path.join(tmpdir(), "termloop-window-bounds-"));
     const store = new WindowBoundsFileStore(path.join(directory, "window-bounds.v1.json"));
     expect(store.load()).toBeUndefined();
     store.save({ bounds: { x: 12, y: 40, width: 1400, height: 900 }, maximized: true, fullScreen: false });
     expect(store.load()).toEqual({ bounds: { x: 12, y: 40, width: 1400, height: 900 }, maximized: true, fullScreen: false });
-    expect(JSON.parse(readFileSync(path.join(directory, "window-bounds.v1.json"), "utf8")).version).toBe(1);
+    expect(JSON.parse(await readFile(path.join(directory, "window-bounds.v1.json"), "utf8")).version).toBe(1);
   });
 
-  it("ignores corrupt or invalid documents", () => {
-    directory = mkdtempSync(path.join(tmpdir(), "termloop-window-bounds-"));
+  it("ignores corrupt or invalid documents", async () => {
+    directory = await mkdtemp(path.join(tmpdir(), "termloop-window-bounds-"));
     const file = path.join(directory, "window-bounds.v1.json");
     const store = new WindowBoundsFileStore(file);
-    writeFileSync(file, "{not json");
+    await writeFile(file, "{not json");
     expect(store.load()).toBeUndefined();
-    writeFileSync(file, JSON.stringify({ version: 1, window: { bounds: { x: 0, y: 0, width: -5, height: 10 } } }));
+    await writeFile(file, JSON.stringify({ version: 1, window: { bounds: { x: 0, y: 0, width: -5, height: 10 } } }));
     expect(store.load()).toBeUndefined();
-    writeFileSync(file, JSON.stringify({ version: 2, window: { bounds: { x: 0, y: 0, width: 900, height: 700 } } }));
+    await writeFile(file, JSON.stringify({ version: 2, window: { bounds: { x: 0, y: 0, width: 900, height: 700 } } }));
     expect(store.load()).toBeUndefined();
   });
 });
