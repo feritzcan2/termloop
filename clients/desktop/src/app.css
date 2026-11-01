@@ -1266,7 +1266,6 @@ button.workflow-tree-session:hover { background: var(--hover); }
 .agent-account-options button:hover:not(:disabled) { background: var(--hover-bg, light-dark(rgba(0,0,0,.05), rgba(255,255,255,.06))); }
 .agent-account-prompt { display: grid; gap: 7px; margin: 8px 12px 0; padding: 9px; border: 1px solid var(--border); border-radius: 7px; font-size: 11px; }
 .agent-account-prompt p { margin: 0; color: var(--sidebar-text); }
-.agent-account-prompt label { display: flex; align-items: center; gap: 5px; }
 .agent-account-prompt-actions { display: flex; justify-content: flex-end; gap: 6px; }
 .agent-account-failure { margin: 8px 12px 0; color: var(--danger, #d14b4b); font-size: 11px; }
 .agent-account-panel > footer { padding: 8px 12px; }
@@ -1947,9 +1946,9 @@ button.changes-branch-current:hover:not(:disabled) { border-color: rgba(102,179,
 .quick-action-body { display: grid; grid-template-rows: 14px minmax(0,1fr) auto; row-gap: 6px; height: 141px; padding: 6px 12px; border-bottom: 1px solid var(--qa-rule); }
 .quick-action-body label { padding: 0 2px; color: rgba(222,223,224,.75); font-size: 11px; line-height: 14px; }
 .quick-action-body textarea { width: 100%; height: 100%; resize: none; padding: 1px 2px 0 7px; border: 0; outline: 0; background: transparent; color: var(--qa-text); font: 15.5px/1.4 var(--qa-font); }
+.quick-action-body textarea::placeholder { color: rgba(235,237,240,.36); }
 .quick-action-attachments { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
 .quick-action-attachments .quick-action-attachment { flex: 1 1 180px; max-width: 100%; }
-.quick-action-body textarea::placeholder { color: rgba(235,237,240,.36); }
 .quick-action-attachment { display: flex; align-items: center; gap: 8px; min-width: 0; height: 36px; padding: 3px 5px; border: 1px solid rgba(110,168,255,.28); border-radius: 7px; background: rgba(76,157,255,.08); }
 .quick-action-attachment img { width: 28px; height: 28px; flex: none; border-radius: 4px; object-fit: cover; }
 .quick-action-attachment > span { display: flex; min-width: 0; flex: 1; flex-direction: column; }

@@ -931,8 +931,10 @@ impl CoreRuntime {
         // Any other outcome answers it authoritatively, so the watch retires
         // rather than lingering to be re-asked every ten seconds. Compaction is
         // not an outcome: an auto compact happens inside the turn, which
-        // resumes and can still be interrupted afterwards.
-        if !turn_is_running(next.state) {
+        // resumes and can still be interrupted afterwards. A permission prompt
+        // is not an outcome either: the same turn resumes once it is answered
+        // and fires no new `UserPromptSubmit` to re-arm the watch.
+        if !turn_is_running(next.state) && next.state != AgentState::AwaitingInput {
             self.claude_turn_watches.remove(session_id);
         }
         if (session_started
@@ -2243,7 +2245,7 @@ impl CoreRuntime {
                     .agent_observations
                     .get(session_id)?
                     .observation
-                    .filter(|observation| observation.state == AgentState::Working)?;
+                    .filter(|observation| claude_turn_can_be_interrupted(observation.state))?;
                 let native_session_id = self
                     .running_claude_agent_session(session_id)?
                     .resume_ref
@@ -2297,7 +2299,7 @@ impl CoreRuntime {
         // A hook received during the read supersedes the planned question,
         // including a compact that has already returned to working by now.
         if previous.is_none_or(|observation| {
-            observation.state != AgentState::Working
+            !claude_turn_can_be_interrupted(observation.state)
                 || observation.sequence != check.observation_sequence
                 || sequence <= observation.sequence
         }) {
@@ -2414,8 +2416,6 @@ impl CoreRuntime {
                         serde_json::json!({
                             "backgroundTasks": pending.background_tasks,
                             "scheduledWakes": pending.scheduled_wakes,
-                        })
-                    });
                             "waitingOn": pending
                                 .waiting_on
                                 .iter()
@@ -2424,6 +2424,8 @@ impl CoreRuntime {
                                     "label": wake.label,
                                 }))
                                 .collect::<Vec<_>>(),
+                        })
+                    });
                 let subagents: Vec<Value> = live
                     .then(|| self.agent_observations.get(&session.id))
                     .flatten()
@@ -2663,6 +2665,14 @@ impl CoreRuntime {
 /// turn afterwards and the user can interrupt either side of it.
 fn turn_is_running(state: AgentState) -> bool {
     matches!(state, AgentState::Working | AgentState::Compacting)
+}
+
+/// States whose turn the transcript poll may prove interrupted. `Esc` at a
+/// permission prompt ends the turn exactly like `Esc` during work, and neither
+/// fires a hook. Compacting stays excluded: manual `/compact` submits no new
+/// prompt, so the watched prompt may already carry an older interruption.
+fn claude_turn_can_be_interrupted(state: AgentState) -> bool {
+    matches!(state, AgentState::Working | AgentState::AwaitingInput)
 }
 
 /// Signals after `PromptSubmitted` that prove the provider advanced that turn.
@@ -3222,6 +3232,79 @@ mod tests {
         );
         assert_eq!(runtime.agent_status_list().unwrap()[0]["status"], "idle");
         assert!(runtime.plan_claude_interrupt_checks().is_empty());
+
+        // An answered permission prompt resumes the same turn without a new
+        // `UserPromptSubmit`; `Esc` afterwards must still be caught.
+        runtime
+            .record_claude_turn_watch(
+                "token-live",
+                "claude-live",
+                &transcript.display().to_string(),
+                "prompt-3",
+            )
+            .unwrap();
+        for (sequence, event) in [
+            (13, "UserPromptSubmit"),
+            (14, "PermissionRequest"),
+            (15, "PostToolUse"),
+        ] {
+            runtime
+                .record_agent_observation(
+                    "token-live",
+                    "claude-live",
+                    event,
+                    None,
+                    None,
+                    sequence,
+                    sequence,
+                )
+                .unwrap();
+        }
+        let after_permission = runtime.plan_claude_interrupt_checks().remove(0);
+        assert_eq!(after_permission.prompt_id, "prompt-3");
+        assert!(
+            runtime
+                .apply_claude_interrupt_observation(&after_permission, 16, 16)
+                .unwrap()
+        );
+        assert_eq!(
+            runtime.agent_status_list().unwrap()[0]["status"],
+            "interrupted"
+        );
+
+        // `Esc` at the permission prompt itself ends the turn the same way.
+        runtime
+            .record_claude_turn_watch(
+                "token-live",
+                "claude-live",
+                &transcript.display().to_string(),
+                "prompt-4",
+            )
+            .unwrap();
+        for (sequence, event) in [(17, "UserPromptSubmit"), (18, "PermissionRequest")] {
+            runtime
+                .record_agent_observation(
+                    "token-live",
+                    "claude-live",
+                    event,
+                    None,
+                    None,
+                    sequence,
+                    sequence,
+                )
+                .unwrap();
+        }
+        let at_permission = runtime.plan_claude_interrupt_checks().remove(0);
+        assert!(
+            runtime
+                .apply_claude_interrupt_observation(&at_permission, 19, 19)
+                .unwrap()
+        );
+        assert_eq!(
+            runtime.agent_status_list().unwrap()[0]["status"],
+            "interrupted"
+        );
+        assert!(runtime.plan_claude_interrupt_checks().is_empty());
         let _ = std::fs::remove_file(path);
     }
 
@@ -3315,6 +3398,10 @@ mod tests {
         let waiting = AgentPendingWakes {
             background_tasks: 2,
             scheduled_wakes: 1,
+            waiting_on: vec![AgentPendingWake {
+                kind: AgentPendingWakeKind::Shell,
+                label: "Run desktop tests".into(),
+            }],
         };
 
         observe(&mut runtime, "UserPromptSubmit", None, 1);
@@ -3323,6 +3410,10 @@ mod tests {
         assert_eq!(projected[0]["status"], "idle");
         assert_eq!(projected[0]["pendingWakes"]["backgroundTasks"], 2);
         assert_eq!(projected[0]["pendingWakes"]["scheduledWakes"], 1);
+        assert_eq!(
+            projected[0]["pendingWakes"]["waitingOn"],
+            serde_json::json!([{ "kind": "shell", "label": "Run desktop tests" }])
+        );
 
         // The completion notice starts a new turn; a working Session already
         // says what it is doing, so the snapshot is not projected.
@@ -3398,10 +3489,6 @@ mod tests {
         assert_eq!(projected[0]["status"], "working");
         assert_eq!(projected[0]["subagents"][0]["agentType"], "code-reviewer");
         assert_eq!(
-            waiting_on: vec![AgentPendingWake {
-                kind: AgentPendingWakeKind::Shell,
-                label: "Run desktop tests".into(),
-            }],
             projected[0]["subagents"][0]["description"],
             "Review the diff"
         );
@@ -3410,10 +3497,6 @@ mod tests {
             &mut runtime,
             "SubagentStop",
             AgentSubagentUpdate::Stopped {
-        assert_eq!(
-            projected[0]["pendingWakes"]["waitingOn"],
-            serde_json::json!([{ "kind": "shell", "label": "Run desktop tests" }])
-        );
                 key: "0123456789abcdef".into(),
             },
             12

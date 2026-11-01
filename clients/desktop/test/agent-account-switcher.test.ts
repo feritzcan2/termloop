@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentAccountSwitcher } from "../src/renderer/ui/AgentAccountSwitcher.js";
 import type { AgentConnectionActions } from "../src/renderer/ui/AgentConnectionsPanel.js";
 import type { AgentStatus, Session } from "../src/renderer/model.js";
-import { readAgentAccountSwitchPolicy, sessionsOnOtherAccounts, writeAgentAccountSwitchPolicy } from "../src/renderer/agent-account-switch-preference.js";
+import { sessionsOnOtherAccounts } from "../src/renderer/agent-account-switch-preference.js";
 
 const work = "8f0c3c2e-1111-4222-8333-944455556666";
 const accounts = (defaultId: string) => ({ revision: defaultId === "default" ? 3 : 4, accounts: [
@@ -47,22 +47,23 @@ describe("sidebar agent account switcher", () => {
     await act(async () => button("Work").click());
     expect(api.setDefault).toHaveBeenCalledWith("local", { agentId: "claude", accountId: work, expectedRevision: 3 });
     expect(container.textContent).toContain("2 running Claude Session(s) still use another account");
-    await act(async () => container.querySelector<HTMLInputElement>(".agent-account-prompt input")!.click());
+    expect(container.querySelector(".agent-account-prompt input")).toBeNull();
     await act(async () => button("Restart Sessions").click());
     expect(switchSession).toHaveBeenCalledTimes(1);
     expect(switchSession).toHaveBeenCalledWith("idle", work);
-    expect(readAgentAccountSwitchPolicy()).toBe("restart");
     await act(async () => root.render(createElement(AgentAccountSwitcher, { ...props, agentStatuses: [status("idle", "idle"), status("busy", "idle")] })));
     expect(switchSession).toHaveBeenCalledWith("busy", work);
   });
 
-  it("keeps running Sessions when that is the remembered choice", async () => {
-    writeAgentAccountSwitchPolicy("keep");
+  it("asks even when an older build remembered a choice, and Keep leaves Sessions running", async () => {
+    window.localStorage.setItem("termloop.agentAccountSwitch.v1", "keep");
     const api = actions();
     const switchSession = vi.fn(async () => undefined);
     await act(async () => root.render(createElement(AgentAccountSwitcher, { profileId: "local", actions: api, sessions: [session("idle", "default")], agentStatuses: [], switchSession, openSettings: vi.fn() })));
     await act(async () => container.querySelector<HTMLButtonElement>(".agent-account-trigger")!.click());
     await act(async () => button("Work").click());
+    expect(container.querySelector(".agent-account-prompt")).not.toBeNull();
+    await act(async () => button("Keep running").click());
     expect(container.querySelector(".agent-account-prompt")).toBeNull();
     expect(switchSession).not.toHaveBeenCalled();
   });

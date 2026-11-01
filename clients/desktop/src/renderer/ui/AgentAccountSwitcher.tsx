@@ -1,13 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { AgentAccountListResult, AgentAccountUsageDto } from "@termloop/contract/current";
 import type { AgentStatus, Session } from "../model.js";
-import {
-  agentSessionBusy,
-  readAgentAccountSwitchPolicy,
-  sessionsOnOtherAccounts,
-  writeAgentAccountSwitchPolicy,
-  type AgentAccountSwitchPolicy,
-} from "../agent-account-switch-preference.js";
+import { agentSessionBusy, sessionsOnOtherAccounts } from "../agent-account-switch-preference.js";
 import { identityLabel, UsageWindows, type AgentConnectionActions } from "./AgentConnectionsPanel.js";
 import { Icon } from "./Icon.js";
 import { SidebarFooterHoverCard } from "./SidebarFooterHoverCard.js";
@@ -20,8 +14,8 @@ type Pending = { agentId: ProviderId; accountId: string; accountName: string; se
  * Sidebar-footer switcher for the server's default Claude and Codex accounts.
  *
  * Switching changes only which account new Agents use. Running Sessions on
- * another account follow the remembered policy: ask, restart them on the new
- * account (a busy Agent finishes its turn first), or keep them as they are.
+ * another account always prompt: restart them on the new account (a busy Agent
+ * finishes its turn first), or keep them as they are.
  */
 export function AgentAccountSwitcher({ profileId, actions, sessions, agentStatuses, switchSession, openSettings, disabled = false }: {
   profileId: string;
@@ -38,7 +32,6 @@ export function AgentAccountSwitcher({ profileId, actions, sessions, agentStatus
   const [failure, setFailure] = useState<string>();
   const [saving, setSaving] = useState(false);
   const [prompt, setPrompt] = useState<Pending>();
-  const [remember, setRemember] = useState(false);
   const [waiting, setWaiting] = useState<ReadonlyMap<string, string>>(new Map());
   const rootRef = useRef<HTMLDivElement>(null);
   const hoverCardId = useId();
@@ -96,12 +89,10 @@ export function AgentAccountSwitcher({ profileId, actions, sessions, agentStatus
     });
   };
 
-  const choose = (policy: Exclude<AgentAccountSwitchPolicy, "ask">) => {
+  const choose = (choice: "restart" | "keep") => {
     if (!prompt) return;
-    if (remember) writeAgentAccountSwitchPolicy(policy);
-    if (policy === "restart") apply(prompt);
+    if (choice === "restart") apply(prompt);
     setPrompt(undefined);
-    setRemember(false);
   };
 
   const switchTo = (agentId: ProviderId, accountId: string, accountName: string) => {
@@ -113,10 +104,7 @@ export function AgentAccountSwitcher({ profileId, actions, sessions, agentStatus
         setAccounts(next);
         const affected = sessionsOnOtherAccounts(sessions, agentId, accountId).map((session) => session.id);
         if (affected.length === 0) return;
-        const pending = { agentId, accountId, accountName, sessionIds: affected };
-        const policy = readAgentAccountSwitchPolicy();
-        if (policy === "restart") apply(pending);
-        else if (policy === "ask") setPrompt(pending);
+        setPrompt({ agentId, accountId, accountName, sessionIds: affected });
       })
       .catch(() => setFailure("The daemon rejected that change. Reopen to try again."))
       .finally(() => setSaving(false));
@@ -180,7 +168,6 @@ export function AgentAccountSwitcher({ profileId, actions, sessions, agentStatus
         })}
         {prompt ? <div className="agent-account-prompt" role="alertdialog" aria-label="Running Sessions">
           <p>{prompt.sessionIds.length} running {PROVIDERS.find((provider) => provider.id === prompt.agentId)?.label} Session(s) still use another account. Restart them on {prompt.accountName}? Their conversations continue; busy Agents finish their turn first.</p>
-          <label><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} /> Don't ask again</label>
           <div className="agent-account-prompt-actions">
             <button type="button" onClick={() => choose("keep")}>Keep running</button>
             <button type="button" className="primary" onClick={() => choose("restart")}>Restart Sessions</button>
