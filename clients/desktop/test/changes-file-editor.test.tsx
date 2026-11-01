@@ -122,6 +122,7 @@ describe("Editing local changes in their diff", () => {
     await settle();
     expect(container.querySelector(".changes-diff-scroll")).not.toBeNull();
     expect(fake.current!.state.diff).toBeUndefined();
+    expect(container.querySelector(".changes-full-file-status")?.textContent).toMatch(/^Read-only here: The file exceeds the .*-byte safety limit\.$/);
   });
 
   it("comments on a diff line from the editor gutter and keeps the note across a save", async () => {

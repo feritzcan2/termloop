@@ -490,6 +490,9 @@ export function ChangesOverlay({
       : selectedPreImage.state === "content" ? selectedPreImage.content ?? undefined : undefined;
   const editableDiff = editOriginal !== undefined;
   const awaitingEditableDiff = editPath !== undefined && !selectedPreImage && !preImageError;
+  // A working-tree change that falls back to the read-only diff says why.
+  const editRefusal = editPath === undefined || editableDiff || awaitingEditableDiff ? undefined
+    : `Read-only here: ${preImageError ?? (selectedPreImage && preImageRefusal(selectedPreImage.state)) ?? "the original file could not be read."}`;
 
   useEffect(() => {
     if (loadingSources || !diffKey || (editPath === undefined && (!fullFile || !fullFileSupported || !parsed))) return;
@@ -830,8 +833,8 @@ export function ChangesOverlay({
             {selectedDiff?.state === "nonUtf8" ? <DiffState title="Non-UTF-8 diff" detail="The patch cannot be rendered without corrupting its bytes." /> : null}
             {selectedDiff?.state === "unavailable" ? <DiffState title="Diff unavailable" detail={selectedDiff.reason ? `The provider reported ${selectedDiff.reason}. Refresh and try again.` : "Refresh and try again."} /> : null}
             {selectedDiff?.state === "patch" && !parsed ? <DiffState title="Diff unavailable" detail="The bounded Git patch could not be parsed safely." /> : null}
-            {fullFileStatus ? (
-              <p className="changes-full-file-status" role="status" aria-live="polite">{fullFileStatus}</p>
+            {fullFileStatus || editRefusal ? (
+              <p className="changes-full-file-status" role="status" aria-live="polite">{fullFileStatus ?? editRefusal}</p>
             ) : null}
             {parsed && renderedHunks && !awaitingEditableDiff ? (
               <RenderedDiff
