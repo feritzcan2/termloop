@@ -17,6 +17,19 @@ impl AgentPendingWakes {
 /// Matches the contract bound on each count.
 const MAX_PENDING_WAKES: usize = 1024;
 
+/// Publishing an Artifact makes Claude watch it for comments with a monitor
+/// that stays running for the rest of the Session. A comment would wake the
+/// turn, but that watch is ambient and never finishes, so counting it would
+/// leave every Session that published an Artifact waiting forever. Claude
+/// describes that task as `live updates for artifact <slug> (...)`.
+fn is_artifact_comment_watch(task: &serde_json::Value) -> bool {
+    task.get("type").and_then(serde_json::Value::as_str) == Some("monitor")
+        && task
+            .get("description")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|description| description.starts_with("live updates for artifact "))
+}
+
 /// Only a turn boundary reports the complete current snapshot, so any other
 /// event carries no pending-wake fact at all.
 pub fn normalize_claude_pending_wakes(payload: &serde_json::Value) -> Option<AgentPendingWakes> {
@@ -35,6 +48,7 @@ pub fn normalize_claude_pending_wakes(payload: &serde_json::Value) -> Option<Age
                 .iter()
                 .filter(|task| {
                     task.get("status").and_then(serde_json::Value::as_str) == Some("running")
+                        && !is_artifact_comment_watch(task)
                 })
                 .take(MAX_PENDING_WAKES)
                 .count()
@@ -70,6 +84,34 @@ mod tests {
             Some(AgentPendingWakes {
                 background_tasks: 2,
                 scheduled_wakes: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn an_artifact_comment_watch_is_not_pending_work() {
+        let payload = json!({
+            "hook_event_name": "Stop",
+            "background_tasks": [
+                {
+                    "id": "w1",
+                    "type": "monitor",
+                    "status": "running",
+                    "description": "live updates for artifact c3522e28 (comments)",
+                },
+                {
+                    "id": "m1",
+                    "type": "monitor",
+                    "status": "running",
+                    "description": "tail deploy log",
+                },
+            ],
+        });
+        assert_eq!(
+            normalize_claude_pending_wakes(&payload),
+            Some(AgentPendingWakes {
+                background_tasks: 1,
+                scheduled_wakes: 0,
             })
         );
     }
