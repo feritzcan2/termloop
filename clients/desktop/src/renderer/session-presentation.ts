@@ -98,15 +98,40 @@ function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
-function waitingState(pending: NonNullable<AgentStatus["pendingWakes"]>): SessionState {
-  const parts = [
+type PendingWakes = NonNullable<AgentStatus["pendingWakes"]>;
+
+/// The row has room for a few words; the tooltip carries the whole list.
+const WAITING_LABEL_MAX_CHARS = 32;
+
+function clipped(text: string, max: number): string {
+  const chars = Array.from(text);
+  return chars.length <= max ? text : `${chars.slice(0, max - 1).join("").trimEnd()}\u2026`;
+}
+
+function waitingState(pending: PendingWakes): SessionState {
+  const counts = [
     pending.backgroundTasks > 0 ? plural(pending.backgroundTasks, "background task") : undefined,
     pending.scheduledWakes > 0 ? plural(pending.scheduledWakes, "scheduled wake") : undefined,
   ].filter((part): part is string => part !== undefined);
+  const named = pending.waitingOn ?? [];
+  const first = named[0];
+  if (!first) {
+    return {
+      ...stateOf("waiting"),
+      label: pending.backgroundTasks > 0 ? "Waiting on tasks" : "Waiting on trigger",
+      summary: `Waiting on ${counts.join(" and ")}.`,
+    };
+  }
+  /// Every count names one wake, so whatever the first name leaves out is the
+  /// rest of the total, named or not.
+  const rest = pending.backgroundTasks + pending.scheduledWakes - 1;
+  const names = named.map((wake) => `${wake.kind} \u201c${wake.label}\u201d`);
+  const unnamed = pending.backgroundTasks + pending.scheduledWakes - named.length;
+  if (unnamed > 0) names.push(`${unnamed} more`);
   return {
     ...stateOf("waiting"),
-    label: pending.backgroundTasks > 0 ? "Waiting on tasks" : "Waiting on trigger",
-    summary: `Waiting on ${parts.join(" and ")}.`,
+    label: `Waiting \u00b7 ${clipped(first.label, WAITING_LABEL_MAX_CHARS)}${rest > 0 ? ` +${rest}` : ""}`,
+    summary: `Waiting on ${counts.join(" and ")}: ${names.join(", ")}.`,
   };
 }
 

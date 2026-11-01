@@ -620,6 +620,24 @@ fn agent_plan_update(
     }
 }
 
+fn agent_pending_wake(
+    wake: termloop_contract::current::AgentPendingWakeDto,
+) -> termloop_core::AgentPendingWake {
+    use termloop_contract::current::AgentPendingWakeKind as Wire;
+    use termloop_core::AgentPendingWakeKind as Kind;
+    termloop_core::AgentPendingWake {
+        kind: match wake.kind {
+            Wire::Shell => Kind::Shell,
+            Wire::Subagent => Kind::Subagent,
+            Wire::Monitor => Kind::Monitor,
+            Wire::Workflow => Kind::Workflow,
+            Wire::Task => Kind::Task,
+            Wire::Scheduled => Kind::Scheduled,
+        },
+        label: wake.label,
+    }
+}
+
 fn agent_subagent_update(
     subagent: termloop_contract::current::AgentSubagentObservation,
 ) -> termloop_core::AgentSubagentUpdate {
@@ -1055,6 +1073,12 @@ async fn dispatch_inner(
                         termloop_core::AgentPendingWakes {
                             background_tasks: pending.background_tasks,
                             scheduled_wakes: pending.scheduled_wakes,
+                            waiting_on: pending
+                                .waiting_on
+                                .unwrap_or_default()
+                                .into_iter()
+                                .map(agent_pending_wake)
+                                .collect(),
                         }
                     }),
                 };

@@ -218,6 +218,31 @@ describe("Session state", () => {
       summary: "Waiting on 1 scheduled wake.",
     });
     expect(sessionState(session(), waiting(0, 0), true)).toMatchObject({ id: "review" });
+    expect(sessionState(session(), {
+      ...waiting(3, 1),
+      pendingWakes: {
+        backgroundTasks: 3,
+        scheduledWakes: 1,
+        waitingOn: [
+          { kind: "shell", label: "Run desktop tests" },
+          { kind: "subagent", label: "Review the Changes overlay diff end to end" },
+          { kind: "scheduled", label: "check the deploy" },
+        ],
+      },
+    }, false)).toEqual({
+      id: "waiting",
+      tone: "working",
+      label: "Waiting \u00b7 Run desktop tests +3",
+      summary: "Waiting on 3 background tasks and 1 scheduled wake: shell \u201cRun desktop tests\u201d, "
+        + "subagent \u201cReview the Changes overlay diff end to end\u201d, scheduled \u201ccheck the deploy\u201d, 1 more.",
+    });
+    expect(sessionState(session(), {
+      ...waiting(1, 0),
+      pendingWakes: { backgroundTasks: 1, scheduledWakes: 0, waitingOn: [{ kind: "subagent", label: "Review the Changes overlay diff end to end" }] },
+    }, false)).toMatchObject({
+      label: "Waiting \u00b7 Review the Changes overlay diff\u2026",
+      summary: "Waiting on 1 background task: subagent \u201cReview the Changes overlay diff end to end\u201d.",
+    });
     expect(sessionState(session(), { ...waiting(1, 0), status: "working" }, false)).toMatchObject({ id: "working" });
     expect(agentActivityPriority(session(), waiting(1, 0), true)).toBe(3);
     expect(agentActivityIsOlder(session(), { ...waiting(1, 0), observedAtEpochMs: 0 }, 60 * 60 * 1_000)).toBe(false);

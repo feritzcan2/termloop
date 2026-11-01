@@ -18,7 +18,9 @@ pub use conversation::{
     claude_conversation_transcript_exists, read_agent_conversation,
 };
 pub use opencode::opencode_uses_server_configuration;
-pub use pending_wakes::{AgentPendingWakes, normalize_claude_pending_wakes};
+pub use pending_wakes::{
+    AgentPendingWake, AgentPendingWakeKind, AgentPendingWakes, normalize_claude_pending_wakes,
+};
 mod provider_hooks;
 mod provider_observation;
 mod session_history;

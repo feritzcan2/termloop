@@ -123,6 +123,8 @@ pub type AgentPlanStepStatus = termloop_agents::AgentPlanStepStatus;
 pub type ObservationCapability = termloop_agents::ObservationCapability;
 pub type ProviderHookObservationInput = termloop_agents::ProviderHookObservationInput;
 pub type AgentPendingWakes = termloop_agents::AgentPendingWakes;
+pub type AgentPendingWake = termloop_agents::AgentPendingWake;
+pub type AgentPendingWakeKind = termloop_agents::AgentPendingWakeKind;
 pub type AgentSubagentUpdate = termloop_agents::AgentSubagentUpdate;
 pub type AgentSubagentListing = termloop_agents::AgentSubagentListing;
 pub type ProviderHookSettings = termloop_agents::ProviderHookSettings;
@@ -885,7 +887,7 @@ impl CoreRuntime {
         capability.last_notification_type = hook_notification_type;
         // Only a turn boundary reports the pending-wake snapshot; every other
         // event keeps the last one, which the projection shows only at rest.
-        let previous_pending_wakes = capability.pending_wakes;
+        let previous_pending_wakes = capability.pending_wakes.clone();
         if signal == termloop_agents::AgentSignal::SessionEnded {
             capability.pending_wakes = AgentPendingWakes::default();
         }
@@ -2406,7 +2408,7 @@ impl CoreRuntime {
                 let pending_wakes = (live && state == AgentState::Idle)
                     .then(|| self.agent_observations.get(&session.id))
                     .flatten()
-                    .map(|capability| capability.pending_wakes)
+                    .map(|capability| &capability.pending_wakes)
                     .filter(|pending| !pending.is_empty())
                     .map(|pending| {
                         serde_json::json!({
@@ -2414,6 +2416,14 @@ impl CoreRuntime {
                             "scheduledWakes": pending.scheduled_wakes,
                         })
                     });
+                            "waitingOn": pending
+                                .waiting_on
+                                .iter()
+                                .map(|wake| serde_json::json!({
+                                    "kind": wake.kind.as_str(),
+                                    "label": wake.label,
+                                }))
+                                .collect::<Vec<_>>(),
                 let subagents: Vec<Value> = live
                     .then(|| self.agent_observations.get(&session.id))
                     .flatten()
@@ -3308,7 +3318,7 @@ mod tests {
         };
 
         observe(&mut runtime, "UserPromptSubmit", None, 1);
-        assert!(observe(&mut runtime, "Stop", Some(waiting), 2));
+        assert!(observe(&mut runtime, "Stop", Some(waiting.clone()), 2));
         let projected = runtime.agent_status_list().unwrap();
         assert_eq!(projected[0]["status"], "idle");
         assert_eq!(projected[0]["pendingWakes"]["backgroundTasks"], 2);
@@ -3322,7 +3332,7 @@ mod tests {
         assert!(projected[0]["pendingWakes"].is_null());
 
         // The same state with a new snapshot is still a projection change.
-        observe(&mut runtime, "Stop", Some(waiting), 4);
+        observe(&mut runtime, "Stop", Some(waiting.clone()), 4);
         assert!(observe(
             &mut runtime,
             "Stop",
@@ -3388,6 +3398,10 @@ mod tests {
         assert_eq!(projected[0]["status"], "working");
         assert_eq!(projected[0]["subagents"][0]["agentType"], "code-reviewer");
         assert_eq!(
+            waiting_on: vec![AgentPendingWake {
+                kind: AgentPendingWakeKind::Shell,
+                label: "Run desktop tests".into(),
+            }],
             projected[0]["subagents"][0]["description"],
             "Review the diff"
         );
@@ -3396,6 +3410,10 @@ mod tests {
             &mut runtime,
             "SubagentStop",
             AgentSubagentUpdate::Stopped {
+        assert_eq!(
+            projected[0]["pendingWakes"]["waitingOn"],
+            serde_json::json!([{ "kind": "shell", "label": "Run desktop tests" }])
+        );
                 key: "0123456789abcdef".into(),
             },
             12

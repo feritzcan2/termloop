@@ -168,6 +168,11 @@ where
         params["pendingWakes"] = json!({
             "backgroundTasks": pending_wakes.background_tasks,
             "scheduledWakes": pending_wakes.scheduled_wakes,
+            "waitingOn": pending_wakes
+                .waiting_on
+                .iter()
+                .map(|wake| json!({ "kind": wake.kind.as_str(), "label": wake.label }))
+                .collect::<Vec<_>>(),
         });
     }
     if let Some(subagent) = subagent {
