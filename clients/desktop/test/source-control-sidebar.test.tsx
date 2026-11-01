@@ -6,7 +6,8 @@ import type { ProjectWorktreeChangeListResult, SourceControlBranchDto, SourceCon
 import { SourceControlStatus, sourceControlPrimary, sourceControlSections, type SourceControlApi, type SourceControlSubject } from "../src/renderer/source-control-status.js";
 import { ChangesOverlay } from "../src/renderer/ui/ChangesOverlay.js";
 import { SourceControlSidebar } from "../src/renderer/ui/SourceControlSidebar.js";
-import { SOURCE_CONTROL_POLL_MS, useSourceControl } from "../src/renderer/ui/use-source-control.js";
+import { readSourceControlAutoPull, writeSourceControlAutoPull } from "../src/renderer/source-control-auto-pull-preference.js";
+import { SOURCE_CONTROL_AUTO_PULL_MS, SOURCE_CONTROL_POLL_MS, useSourceControl } from "../src/renderer/ui/use-source-control.js";
 
 const entry = (id: string, path: string, side: TaskWorktreeChangeEntryDto["side"], kind: TaskWorktreeChangeEntryDto["kind"]): TaskWorktreeChangeEntryDto => ({
   entry_id: id, display_path: path, original_display_path: null, path_encoding: "utf8", side, kind, render_state: "available",
@@ -118,10 +119,11 @@ describe("Source Control sidebar", () => {
   const openAll = vi.fn();
   const selectRoot = vi.fn();
 
-  function Harness({ subject, signal = "1" }: { subject: SourceControlSubject | undefined; signal?: string }) {
-    const { status: model, snapshot } = useSourceControl(subject, signal, api as SourceControlApi);
+  const setAutoPull = vi.fn();
+  function Harness({ subject, signal = "1", autoPull = false }: { subject: SourceControlSubject | undefined; signal?: string; autoPull?: boolean }) {
+    const { status: model, snapshot } = useSourceControl(subject, signal, api as SourceControlApi, autoPull);
     return <SourceControlSidebar subject={subject} projectName="Project" tasks={[{ id: "task", title: "Task" }]}
-      selectedTaskId={subject?.taskId ?? null} snapshot={snapshot} actions={model}
+      selectedTaskId={subject?.taskId ?? null} snapshot={snapshot} actions={model} autoPull={autoPull} setAutoPull={setAutoPull}
       selectRoot={selectRoot} openChange={openChange} openAll={openAll} close={() => {}}
       unavailable={!subject} />;
   }
@@ -269,6 +271,41 @@ describe("Source Control sidebar", () => {
     expect(api.status).toHaveBeenLastCalledWith({ projectId: "project", taskId: "task" });
     expect(api.status).toHaveBeenCalledTimes(5);
     expect(container.textContent).toContain("No changes in this checkout.");
+  });
+
+  it("toggles Auto Pull from the menu and fast-forwards only a branch that is behind and not ahead", async () => {
+    vi.useFakeTimers();
+    api.status.mockResolvedValue(status([], "obs-1", branchOf({ ahead: 0, behind: 2 })));
+    await render(PROJECT);
+    await click('[aria-label="More Source Control actions"]');
+    const toggle = button('[role="menuitemcheckbox"]');
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    await act(async () => toggle.click());
+    expect(setAutoPull).toHaveBeenCalledWith(true);
+    expect(api.fetch).not.toHaveBeenCalled();
+
+    await act(async () => root.render(<Harness subject={PROJECT} autoPull />));
+    await vi.waitFor(() => expect(api.pull).toHaveBeenCalledTimes(1));
+    expect(api.fetch).toHaveBeenCalledTimes(1);
+    expect(api.fetch.mock.invocationCallOrder[0]!).toBeLessThan(api.pull.mock.invocationCallOrder[0]!);
+
+    api.status.mockResolvedValue(status([], "obs-2", branchOf({ ahead: 1, behind: 2 })));
+    await act(async () => { await vi.advanceTimersByTimeAsync(SOURCE_CONTROL_AUTO_PULL_MS); });
+    expect(api.fetch).toHaveBeenCalledTimes(2);
+    expect(api.pull).toHaveBeenCalledTimes(1);
+
+    await act(async () => root.render(<Harness subject={PROJECT} />));
+    await act(async () => { await vi.advanceTimersByTimeAsync(SOURCE_CONTROL_AUTO_PULL_MS); });
+    expect(api.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("remembers the Auto Pull choice and defaults to off", () => {
+    const store = new Map<string, string>();
+    const storage = { getItem: (key: string) => store.get(key) ?? null, setItem: (key: string, value: string) => { store.set(key, value); } };
+    expect(readSourceControlAutoPull(storage)).toBe(false);
+    writeSourceControlAutoPull(true, storage);
+    expect(readSourceControlAutoPull(storage)).toBe(true);
+    expect(readSourceControlAutoPull({ getItem: () => { throw new Error("blocked"); } })).toBe(false);
   });
 
   it("explains an unavailable root and shows a failed read", async () => {

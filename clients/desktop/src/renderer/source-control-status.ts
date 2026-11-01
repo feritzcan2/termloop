@@ -111,6 +111,15 @@ export class SourceControlStatus {
     return this.perform(action, () => this.api()[action](this.root));
   }
 
+  /// Fetches, then pulls only when the fresh status says the branch can
+  /// fast-forward: attached, tracking a live upstream, behind and not ahead.
+  /// A diverged or unpublished branch is left for the user to sync.
+  async autoPull(): Promise<boolean> {
+    if (!this.active || this.snapshot.busy) return false;
+    if (!(await this.sync("fetch"))) return false;
+    return canFastForward(this.snapshot.result?.branch) ? this.sync("pull") : false;
+  }
+
   private entries(
     action: "stage" | "unstage" | "discard",
     entries: readonly TaskWorktreeChangeEntryDto[],
@@ -157,6 +166,11 @@ export function sourceControlSections(entries: readonly TaskWorktreeChangeEntryD
     { id: "staged" as const, title: "Staged Changes", entries: rest.filter((entry) => entry.side === "staged").sort(byPath) },
     { id: "untracked" as const, title: "Untracked", entries: rest.filter((entry) => entry.side === "untracked").sort(byPath) },
   ].filter((section) => section.entries.length > 0);
+}
+
+export function canFastForward(branch: SourceControlBranchDto | undefined): boolean {
+  return Boolean(branch && branch.head_state === "attached" && branch.upstream && !branch.upstream_gone
+    && (branch.behind ?? 0) > 0 && !(branch.ahead ?? 0));
 }
 
 /// Commit while anything is staged or a message is being written; otherwise

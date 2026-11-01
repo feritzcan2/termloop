@@ -31,13 +31,16 @@ const isMac = () => typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(n
 /// The right-hand Source Control panel: the checkout's branch, a commit box,
 /// and its changes grouped the way Orca groups them, each with the actions
 /// Git allows on it. Selecting a file opens the Changes review on that file.
-export function SourceControlSidebar({ subject, projectName, tasks, selectedTaskId, snapshot, actions, selectRoot, openChange, openAll, close, unavailable }: {
+export function SourceControlSidebar({ subject, projectName, tasks, selectedTaskId, snapshot, actions, autoPull = false, setAutoPull, selectRoot, openChange, openAll, close, unavailable }: {
   subject: SourceControlSubject | undefined;
   projectName: string | undefined;
   tasks: readonly { id: string; title: string }[];
   selectedTaskId: string | null;
   snapshot: SourceControlSnapshot;
   actions: SourceControlActions;
+  /// Whether the checkout fetches and fast-forwards on its own.
+  autoPull?: boolean;
+  setAutoPull?(enabled: boolean): void;
   selectRoot(taskId: string | null): void;
   openChange(entry: TaskWorktreeChangeEntryDto): void;
   openAll(): void;
@@ -140,6 +143,13 @@ export function SourceControlSidebar({ subject, projectName, tasks, selectedTask
             <MenuItem icon="upload" label={hasUpstream ? "Push" : "Publish Branch"} disabled={branch?.head_state !== "attached"} run={menu(() => actions.sync("push"))} />
             <MenuItem icon="download" label="Pull" disabled={!hasUpstream} run={menu(() => actions.sync("pull"))} />
             <MenuItem icon="restart" label="Fetch" run={menu(() => actions.sync("fetch"))} />
+            {setAutoPull ? <>
+              <div className="context-menu-divider" role="separator" />
+              <button type="button" role="menuitemcheckbox" aria-checked={autoPull}
+                title="Fetch every minute and fast-forward when the branch is only behind its upstream"
+                onClick={() => { setMenuOpen(false); setAutoPull(!autoPull); }}
+              ><Icon name="check" className={autoPull ? undefined : "source-control-menu-unchecked"} /><span>Auto Pull</span></button>
+            </> : null}
           </div>
         </> : null}
       </div>

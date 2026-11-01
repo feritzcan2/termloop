@@ -3,6 +3,7 @@ import { useOverlayLeaseCount } from "./overlay-lease.js";
 import { FilesSidebar, FilesSidebarResizeHandle } from "./FilesSidebar.js";
 import { RightActivityBar, rightSidebarLabel } from "./RightActivityBar.js";
 import { SourceControlSidebar } from "./SourceControlSidebar.js";
+import { readSourceControlAutoPull, writeSourceControlAutoPull } from "../source-control-auto-pull-preference.js";
 import { PullRequestsSidebar } from "./PullRequestsSidebar.js";
 import { useSourceControl } from "./use-source-control.js";
 import type { SourceControlApi, SourceControlSubject } from "../source-control-status.js";
@@ -917,12 +918,18 @@ export function Shell(props: ShellProps) {
   // Source Control shares the Files root: the Project checkout or one Task worktree.
   const sourceControlSubject: SourceControlSubject | undefined = filesSidebar.open && filesSidebar.view === "sourceControl" && editorSubject
     ? { projectId: editorSubject.projectId, taskId: editorSubject.taskId ?? null } : undefined;
+  const [sourceControlAutoPull, setSourceControlAutoPullState] = useState(readSourceControlAutoPull);
+  const setSourceControlAutoPull = (enabled: boolean) => {
+    setSourceControlAutoPullState(enabled);
+    writeSourceControlAutoPull(enabled);
+  };
   const sourceControl = useSourceControl(
     sourceControlSubject,
     filesTask
       ? `${filesTask.worktree_health?.observation_sequence ?? ""}`
       : `${props.projectWorktreeSummary?.change_count ?? ""}:${props.projectWorktreeSummary?.checked_out_branch ?? ""}`,
     props.sourceControlApi,
+    sourceControlAutoPull,
   );
   const openSourceControlChanges = (source: ChangesOpenSource) => setChangesPresentation(filesTask
     ? { kind: "task", taskId: filesTask.id, source }
@@ -2265,6 +2272,8 @@ export function Shell(props: ShellProps) {
             selectedTaskId={filesTask?.id ?? null}
             snapshot={sourceControl.snapshot}
             actions={sourceControl.status}
+            autoPull={sourceControlAutoPull}
+            setAutoPull={setSourceControlAutoPull}
             selectRoot={(taskId) => openFiles(taskId, "sourceControl")}
             openChange={(entry) => openSourceControlChanges({ kind: "local", entry: { path: entry.display_path, side: entry.side } })}
             openAll={() => openSourceControlChanges({ kind: "local" })}

@@ -4,6 +4,8 @@ import { SourceControlStatus, type SourceControlApi, type SourceControlSubject }
 /// Safety poll while the panel is visible. Window focus and a changed
 /// daemon summary refresh sooner, so this only catches edits made elsewhere.
 export const SOURCE_CONTROL_POLL_MS = 15_000;
+/// Auto Pull cadence: each tick fetches, then fast-forwards when possible.
+export const SOURCE_CONTROL_AUTO_PULL_MS = 60_000;
 
 const DETACHED = new SourceControlStatus({ projectId: "", taskId: null }, () => { throw new Error("Source Control is unavailable."); });
 
@@ -14,6 +16,8 @@ export function useSourceControl(
   /// worktree health observation sequence or the Project change count.
   refreshSignal: string,
   api: SourceControlApi,
+  /// Fetch and fast-forward the visible checkout on its own while enabled.
+  autoPull = false,
 ) {
   const current = useRef(api);
   current.current = api;
@@ -44,5 +48,12 @@ export function useSourceControl(
     lastSignal.current = { status, refreshSignal };
     if (last.status === status && last.refreshSignal !== refreshSignal && !status.getSnapshot().busy) void status.refresh();
   }, [refreshSignal, status]);
+  useEffect(() => {
+    if (status === DETACHED || !autoPull) return;
+    const pullVisible = () => { if (document.visibilityState === "visible") void status.autoPull(); };
+    pullVisible();
+    const timer = window.setInterval(pullVisible, SOURCE_CONTROL_AUTO_PULL_MS);
+    return () => window.clearInterval(timer);
+  }, [autoPull, status]);
   return { status, snapshot };
 }
