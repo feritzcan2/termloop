@@ -17,6 +17,7 @@ publish:
   provider: generic
   url: https://updates.termloop.ai/stable
   channel: latest
+afterPack: build/write-app-update-config.mjs
 # Bundled daemon flavor: the Rust daemon and its sibling companion binary are
 # copied outside the asar into <resources>/daemon. The server resolves
 # termloop-companion as a sibling executable, so both must share one directory.
