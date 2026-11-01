@@ -21,7 +21,7 @@ set -euo pipefail
 SCRIPT_DIR="$(CDPATH= cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 TERMLOOP_DIR="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 
-export PATH="/opt/homebrew/opt/zig@0.15/bin:$HOME/.local/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export LANG="en_US.UTF-8"
 export LC_ALL="en_US.UTF-8"
 
