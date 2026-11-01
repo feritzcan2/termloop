@@ -3,6 +3,7 @@ import {
   MAX_DROPPED_PATHS,
   dropTargetShell,
   droppedPathsText,
+  insertDroppedText,
   shellEscapeDroppedPath,
 } from "../src/renderer/terminal-file-drop.js";
 
@@ -41,5 +42,12 @@ describe("terminal file drop", () => {
   it("chooses the target shell from the renderer platform", () => {
     expect(dropTargetShell("Mozilla/5.0 (Windows NT 10.0; Win64; x64)")).toBe("windows");
     expect(dropTargetShell("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)")).toBe("posix");
+  });
+
+  it("inserts dropped paths over the selection without gluing onto a typed word", () => {
+    expect(insertDroppedText("look at", 7, 7, "/tmp/a.png ")).toEqual({ value: "look at /tmp/a.png ", caret: 19 });
+    expect(insertDroppedText("look at ", 8, 8, "/tmp/a.png ")).toEqual({ value: "look at /tmp/a.png ", caret: 19 });
+    expect(insertDroppedText("", 0, 0, "/tmp/a.png ")).toEqual({ value: "/tmp/a.png ", caret: 11 });
+    expect(insertDroppedText("fix X now", 4, 5, "/tmp/b.ts ")).toEqual({ value: "fix /tmp/b.ts  now", caret: 14 });
   });
 });

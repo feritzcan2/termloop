@@ -27,6 +27,14 @@ export function shellEscapeDroppedPath(path: string, shell: DropTargetShell): st
   return PLAIN_POSIX_PATH.test(path) ? path : path.replace(POSIX_SPECIAL, (character) => `\\${character}`);
 }
 
+/// Inserts dropped path text over the field's selection, separating it from a
+/// preceding word so a path never glues onto text already typed.
+export function insertDroppedText(value: string, start: number, end: number, text: string): { value: string; caret: number } {
+  const before = value.slice(0, start);
+  const inserted = before.length > 0 && !/\s$/.test(before) ? ` ${text}` : text;
+  return { value: before + inserted + value.slice(end), caret: start + inserted.length };
+}
+
 export type DroppedPathsText = { text: string; skipped: number };
 
 export function droppedPathsText(paths: readonly string[], shell: DropTargetShell): DroppedPathsText {

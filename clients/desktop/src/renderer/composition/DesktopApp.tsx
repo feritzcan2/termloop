@@ -2717,6 +2717,7 @@ export function DesktopApp() {
       resumeHistorySession={resumeHistorySession}
       loadAgentAccounts={loadAgentAccounts}
       previewQuickAction={(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId, taskId) => sourceApiForProject(projectId).quickActionPreview(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId, taskId)}
+      droppedFilePath={(file) => desktopApi.droppedFilePath(file)}
       pasteQuickActionImage={(projectId) => sourceApiForProject(projectId).quickActionPasteImage()}
       restoreQuickActionImage={createQuickActionImageRestore({
         selectedProfileId: () => connectionProfileIdOf(selectedProject),

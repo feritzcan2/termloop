@@ -228,4 +228,24 @@ describe("Quick Action draft", () => {
     expect(container.querySelector('[role="status"]')).toBeNull();
   });
 
+
+  it("writes the paths of files dropped on the prompt for a local project", async () => {
+    const droppedFilePath = vi.fn((file: File) => `/Users/me/Desktop/${file.name}`);
+    await act(async () => root.render(createElement(QuickActionComposer, { ...composerProps(), droppedFilePath })));
+    const prompt = container.querySelector<HTMLTextAreaElement>("#quick-action-prompt")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(prompt, "check");
+      prompt.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    prompt.setSelectionRange(5, 5);
+    const drop = new Event("drop", { bubbles: true, cancelable: true });
+    Object.defineProperty(drop, "dataTransfer", {
+      value: { types: ["Files"], files: [new File(["a"], "shot 1.png"), new File(["b"], "notes.md")] },
+    });
+    await act(async () => { prompt.dispatchEvent(drop); });
+
+    expect(drop.defaultPrevented).toBe(true);
+    expect(prompt.value).toBe("check /Users/me/Desktop/shot\\ 1.png /Users/me/Desktop/notes.md ");
+  });
 });
+

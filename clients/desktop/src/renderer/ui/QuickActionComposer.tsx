@@ -1,9 +1,11 @@
 import { agentReasoningOptions } from "../agent-reasoning.js";
 import type { AgentAccountDto } from "@termloop/contract/current";
-import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { AgentCapabilityDto, AgentLibraryEntry, AgentProfileDto, QuickActionParams, QuickActionPreviewResult } from "@termloop/contract/current";
 import type { QuickActionImageHandle } from "../../quick-action-image.js";
 import type { Project, Task } from "../model.js";
+import { connectionProfileIdOf } from "../../connection-scope.js";
+import { droppedPathsText, dropTargetShell, insertDroppedText } from "../terminal-file-drop.js";
 import {
   defaultAgentPermission,
   permissionLabel,
@@ -59,7 +61,7 @@ const PuzzleGlyph = () => <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M
 const profileSupportsCapability = (profile: AgentProfileDto, capability: AgentCapabilityDto) =>
   profile.agent_ids.includes(capability.agent_id) && capability.permissions.length > 0;
 
-export function QuickActionComposer({ projects, selectedProject, tasks = [], capabilities, profiles, libraryProfiles = [], initialTemplateRef, manageAgents, initialAgent, loadAccounts, pasteImage, restoreImage, discardImage, preview, launch, createShortcut, close }: {
+export function QuickActionComposer({ projects, selectedProject, tasks = [], capabilities, profiles, libraryProfiles = [], initialTemplateRef, manageAgents, initialAgent, loadAccounts, droppedFilePath, pasteImage, restoreImage, discardImage, preview, launch, createShortcut, close }: {
   projects: readonly Project[];
   selectedProject: Project | undefined;
   tasks?: readonly Task[];
@@ -71,6 +73,7 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
   initialAgent?: AgentId;
   createShortcut?: ((draft: QuickActionShortcutDraft) => void) | undefined;
   loadAccounts?: ((projectId: string) => Promise<AgentAccountDto[]>) | undefined;
+  droppedFilePath?: ((file: File) => string) | undefined;
   pasteImage(projectId: string): Promise<QuickActionImageHandle>;
   restoreImage(attachmentId: string): Promise<QuickActionImageHandle>;
   discardImage(attachmentId: string): Promise<void>;
@@ -244,6 +247,28 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
     if (event.key === "Escape") { event.preventDefault(); close(); }
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); setAdvancedOpen((open) => !open); }
   };
+  const acceptsDroppedFiles = (event: DragEvent<HTMLTextAreaElement>) => (
+    droppedFilePath !== undefined && event.dataTransfer.types.includes("Files")
+  );
+  // Dropped files are paths on this computer, so they are written into the
+  // prompt only for a project on the local daemon, like a terminal drop.
+  const dropFiles = (event: DragEvent<HTMLTextAreaElement>) => {
+    if (!droppedFilePath || !acceptsDroppedFiles(event)) return;
+    event.preventDefault();
+    const project = projects.find((candidate) => candidate.id === projectId);
+    if (!project || connectionProfileIdOf(project) !== "local") {
+      setError("Dropped files can only be added for a project on this computer.");
+      return;
+    }
+    const paths = [...event.dataTransfer.files].map(droppedFilePath).filter((path) => path.length > 0);
+    const { text, skipped } = droppedPathsText(paths, dropTargetShell(navigator.userAgent));
+    if (skipped > 0) setError(`${skipped} dropped ${skipped === 1 ? "path was" : "paths were"} not added because ${skipped === 1 ? "it" : "they"} cannot be pasted safely.`);
+    if (!text) return;
+    const field = event.currentTarget;
+    const next = insertDroppedText(prompt, field.selectionStart, field.selectionEnd, text);
+    setPrompt(next.value);
+    requestAnimationFrame(() => { field.focus(); field.setSelectionRange(next.caret, next.caret); });
+  };
   const paste = async (event: ClipboardEvent<HTMLTextAreaElement>) => {
     if (event.clipboardData.getData("text/plain")) return;
     if (![...event.clipboardData.items].some((item) => item.kind === "file" && item.type.startsWith("image/"))) return;
@@ -326,7 +351,7 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
         </div>
         <main className="quick-action-body">
           <label htmlFor="quick-action-prompt">{selectedProfile ? "Scope / task" : "Prompt"}</label>
-          <textarea ref={promptRef} id="quick-action-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} onPaste={(event) => { void paste(event); }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.ctrlKey) { event.preventDefault(); void submit(); } }} placeholder={selectedProfile?.description ?? "What would you like to run? Paste an image with ⌘V."} spellCheck={false} />
+          <textarea ref={promptRef} id="quick-action-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} onPaste={(event) => { void paste(event); }} onDragOver={(event) => { if (acceptsDroppedFiles(event)) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } }} onDrop={dropFiles} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.ctrlKey) { event.preventDefault(); void submit(); } }} placeholder={selectedProfile?.description ?? "What would you like to run? Paste an image with ⌘V."} spellCheck={false} />
           {attachments.length ? <div className="quick-action-attachments">
             {attachments.map((image, index) => <div key={image.id} className="quick-action-attachment">
               <img src={image.previewDataUrl} alt={`Pasted Quick Action attachment ${index + 1}`} />

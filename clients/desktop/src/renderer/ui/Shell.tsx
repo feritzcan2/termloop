@@ -342,6 +342,7 @@ export type ShellProps = {
   loadSessionHistory(projectId: string, force?: boolean, fillCache?: boolean): Promise<SessionHistoryListResult>;
   loadSessionHistoryPreview(projectId: string, sessionId: string): Promise<SessionHistoryPreviewResult>;
   resumeHistorySession(projectId: string, historyHandle: string): Promise<string | undefined>;
+  droppedFilePath?(file: File): string;
   pasteQuickActionImage(projectId: string): Promise<QuickActionImageHandle>;
   restoreQuickActionImage(attachmentId: string): Promise<QuickActionImageHandle>;
   discardQuickActionImage(attachmentId: string): Promise<void>;
@@ -2384,6 +2385,7 @@ export function Shell(props: ShellProps) {
         initialTemplateRef={quickActionProfile}
         manageAgents={() => { setQuickActionOpen(false); setQuickActionProfile(undefined); updateFilesSidebar({ open: true, view: "agents" }); props.agentLibrary?.reload(); }}
         {...(quickActionAgent ? { initialAgent: quickActionAgent } : {})}
+        droppedFilePath={props.droppedFilePath}
         pasteImage={props.pasteQuickActionImage}
         restoreImage={props.restoreQuickActionImage}
         discardImage={props.discardQuickActionImage}
