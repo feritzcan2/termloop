@@ -1702,11 +1702,15 @@ button.changes-branch-current:hover:not(:disabled) { border-color: rgba(102,179,
 .changes-file-heading strong { overflow: hidden; font: 600 10.5px/1 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
 .changes-file-heading > span:last-child:not(.change-badge) { flex: none; margin-left: auto; color: light-dark(#75653b, #d1b46b); font: 8.5px/1 var(--font-mono); }
 .changes-diff-content { grid-row: 2; display: grid; min-width: 0; min-height: 0; overflow: hidden; background: light-dark(#ffffff, #1e1e1e); }
-.changes-edit-toggle { flex: none; margin-left: auto; }
+.changes-file-heading > span.changes-edit-hint:last-child { flex: none; margin-left: auto; color: #6f797d; font: 9px/1 var(--font-mono); }
+.changes-diff-editor .monaco-editor .changes-monaco-comment-add::before, .changes-diff-editor .monaco-editor .changes-monaco-comment-note::before { display: grid; place-items: center; width: 14px; height: 14px; margin: 2px 0 0 3px; border-radius: 4px; font: 700 12px/1 var(--font-ui); cursor: pointer; }
+.changes-diff-editor .monaco-editor .changes-monaco-comment-add::before { content: "+"; background: var(--accent); color: white; }
+.changes-diff-editor .monaco-editor .changes-monaco-comment-note::before { content: ""; width: 4px; margin-left: 8px; background: var(--accent); }
+.changes-diff-editor .monaco-editor .changes-monaco-comment-line { background: rgba(102,179,255,.08); }
+.changes-monaco-zone > div { padding-right: 14px; }
 .changes-diff-content > .file-editor-body { background: light-dark(#ffffff, #1e1e1e); }
-/* The diff reads like the Edit view's Monaco editor (vs / vs-dark): same
-   surface, 12px/19px type, line-number color and tab width, so switching
-   between Diff and Edit changes only the change highlighting. */
+/* The read-only diff reads like the editable Monaco diff (vs / vs-dark):
+   same surface, 12px/19px type, line-number color and tab width. */
 .changes-diff-scroll { --diff-background-color: light-dark(#ffffff, #1e1e1e); --diff-text-color: light-dark(#000000, #d4d4d4); min-width: 0; min-height: 0; overflow: auto; background: var(--diff-background-color); }
 .changes-diff-scroll .diff { font-size: 12px; tab-size: 4; }
 .changes-diff-scroll .diff-line, .changes-diff-scroll .diff-decoration { line-height: 19px; }

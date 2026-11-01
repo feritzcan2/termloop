@@ -41,7 +41,9 @@ import {
   type ChangeEntry,
   type ChangeTreeSection,
 } from "./ChangeFileTree.js";
-import { ChangesFileEditor, editableChangePath, type ChangesEditing } from "./ChangesFileEditor.js";
+import { editableChangePath, type ChangesEditing } from "./ChangesFileEditor.js";
+import { ChangesDiffEditor } from "./ChangesDiffEditor.js";
+import { LineReviewWidget, changeReviewDraft, type ChangeReviewDraft } from "./ChangesLineReview.js";
 import { useDiffSyntax } from "./useDiffSyntax.js";
 import { ChangesBranchPicker, ChangesSourcePicker } from "./ChangesSourcePicker.js";
 import {
@@ -69,10 +71,10 @@ import {
 import {
   MAX_CHANGE_REVIEW_MESSAGE_BYTES,
   MAX_CHANGE_REVIEW_NOTES,
-  MAX_CHANGE_REVIEW_NOTE_CHARS,
   buildChangeReviewMessage,
   changeReviewLine,
   reviewMessageByteLength,
+  type ChangeReviewLine,
   type ChangeReviewNote,
 } from "../changes-review.js";
 import {
@@ -84,7 +86,6 @@ import {
 } from "../changes-full-file.js";
 
 type DiffResult = LocalDiffResult | TaskBranchCommitDiffResult | GitHostPullRequestDiffResult;
-type ChangeReviewDraft = Omit<ChangeReviewNote, "body">;
 
 export type ChangesSubject = {
   id: string;
@@ -161,13 +162,6 @@ export function ChangesOverlay({
   const [error, setError] = useState<string>();
   const [viewType, setViewType] = useState<"unified" | "split">("unified");
   const [fullFile, setFullFile] = useState(false);
-  const [editMode, setEditMode] = useState(false);
-  // Switching between the diff and the editor keeps the reader on the same
-  // new-side line: the diff's top line opens the editor, and the editor's top
-  // line scrolls the re-listed diff once it renders.
-  const [editorInitialLine, setEditorInitialLine] = useState<number>();
-  const editorTopLine = useRef<number | undefined>(undefined);
-  const pendingDiffLine = useRef<number | undefined>(undefined);
   const [preImages, setPreImages] = useState<ReadonlyMap<string, CachedPreImage>>(new Map());
   const [loadingPreImage, setLoadingPreImage] = useState(false);
   const [preImageError, setPreImageError] = useState<string>();
@@ -465,34 +459,12 @@ export function ChangesOverlay({
     return () => { active = false; };
   }, [applyRecoveredLocalChange, commitList?.observation_id, currentPullRequestChanges?.observation_id, diffKey, diffs, loadingSources, reviewing, localChanges, selected, selectedSource, subject.id]);
 
-  const editPath = selectedSource.kind === "local" && editing ? editableChangePath(selected) : undefined;
-  const showEditor = editMode && editPath !== undefined;
-  // Saved edits move the worktree past this observation: list it again so the
-  // diff shows them, keeping the edited file selected under its new entry ID.
-  const showEditorAtDiffLine = () => {
-    const line = diffTopLine(overlayRef.current);
-    editorTopLine.current = line;
-    setEditorInitialLine(line);
-    setEditMode(true);
-  };
-  const showDiff = async () => {
-    setEditMode(false);
-    if (!selected || !("side" in selected)) return;
-    const key = `${selected.side}:${selected.display_path}`;
-    const line = editorTopLine.current;
-    try {
-      const next = await readsRef.current.list(subject.id);
-      pendingDiffLine.current = line;
-      setDiffs((current) => withoutKeyPrefix(current, "local:"));
-      setPreImages((current) => withoutKeyPrefix(current, "local:"));
-      setLocalChanges(next);
-      const match = next.entries.find((candidate) => `${candidate.side}:${candidate.display_path}` === key);
-      if (match) setSelectedId(match.entry_id);
-      else pendingDiffLine.current = undefined;
-    } catch (failure) {
-      setError(errorMessage(failure, "Local changes could not be loaded."));
-    }
-  };
+  // Unstaged and untracked files are edited in their diff; staged changes
+  // stay read-only because the working-tree file is not what they show.
+  const editPath = selectedSource.kind === "local" && editing
+    && selected && "side" in selected && selected.side !== "staged" && selected.render_state !== "notShown"
+    ? editableChangePath(selected)
+    : undefined;
 
   const selectedDiff = diffKey
     && (selectedSource.kind !== "pullRequest" || selectedPullRequestIsCurrent)
@@ -511,9 +483,16 @@ export function ChangesOverlay({
     : "The whole file is only available for local worktree changes.";
   const fullFileSupported = fullFileUnsupportedReason === undefined;
   const selectedPreImage = fullFileSupported && diffKey ? preImages.get(diffKey) : undefined;
+  // The editable diff compares against the pre-image; a refused pre-image
+  // falls back to the read-only patch view.
+  const editOriginal = editPath === undefined || !selectedPreImage ? undefined
+    : selectedPreImage.state === "absent" ? ""
+      : selectedPreImage.state === "content" ? selectedPreImage.content ?? undefined : undefined;
+  const editableDiff = editOriginal !== undefined;
+  const awaitingEditableDiff = editPath !== undefined && !selectedPreImage && !preImageError;
 
   useEffect(() => {
-    if (loadingSources || !fullFile || !fullFileSupported || !diffKey || !parsed) return;
+    if (loadingSources || !diffKey || (editPath === undefined && (!fullFile || !fullFileSupported || !parsed))) return;
     if (preImages.has(diffKey)) return;
     const { preImage } = readsRef.current;
     const observationId = localChanges?.observation_id;
@@ -538,7 +517,7 @@ export function ChangesOverlay({
       })
       .finally(() => { if (active) setLoadingPreImage(false); });
     return () => { active = false; };
-  }, [applyRecoveredLocalChange, diffKey, fullFile, fullFileSupported, loadingSources, localChanges, parsed, preImages, selected, subject.id]);
+  }, [applyRecoveredLocalChange, diffKey, editPath, fullFile, fullFileSupported, loadingSources, localChanges, parsed, preImages, selected, subject.id]);
 
   const fullFileState: FullFileView | undefined = useMemo(() => {
     if (!fullFile || !parsed) return undefined;
@@ -562,12 +541,6 @@ export function ChangesOverlay({
       ? 0
       : undefined;
 
-  useEffect(() => {
-    const line = pendingDiffLine.current;
-    if (showEditor || line === undefined || !scrollDiffToLine(overlayRef.current, line)) return;
-    pendingDiffLine.current = undefined;
-  }, [renderedHunks, showEditor]);
-
   const fullFileStatus = fullFileStatusMessage({
     fullFile,
     unsupportedReason: fullFileUnsupportedReason,
@@ -583,7 +556,10 @@ export function ChangesOverlay({
     : selectedSource.kind === "commit"
       ? currentCommitChanges?.truncated
       : currentPullRequestChanges?.truncated;
-  const selectedReviewPrefix = selected && diffKey ? `${diffKey}:` : undefined;
+  // Editable diff comments name the file, not the observation, so they
+  // survive the re-list that follows each save.
+  const selectedReviewPrefix = !selected || !diffKey ? undefined
+    : editableDiff && "side" in selected ? `localFile:${selected.side}:${selected.display_path}:` : `${diffKey}:`;
   const activeReviewNotes = useMemo(
     () => [...reviewNotes.values()].filter(
       (note) => note.body.trim().length > 0
@@ -613,9 +589,8 @@ export function ChangesOverlay({
     });
   }, [agentSessions]);
 
-  const openLineReview = (change: ChangeData, side: "old" | "new") => {
+  const openLineReview = (line: ChangeReviewLine) => {
     if (!selected || !selectedReviewPrefix) return;
-    const line = changeReviewLine(change, side);
     const key = `${selectedReviewPrefix}${line.changeKey}`;
     if (!reviewNotes.has(key) && reviewNotes.size >= MAX_CHANGE_REVIEW_NOTES) {
       setReviewError(`Only ${MAX_CHANGE_REVIEW_NOTES} line comments can be sent at once.`);
@@ -635,6 +610,28 @@ export function ChangesOverlay({
       pathEncoding: selected.path_encoding,
       ...line,
     });
+  };
+
+  // A save moves the worktree past this observation: list it again so the
+  // tree shows it, keeping the edited file selected under its new entry ID.
+  // Its pre-image is the index or HEAD, which an edit does not change.
+  const relistAfterSave = async () => {
+    if (!selected || !("side" in selected)) return;
+    const key = `${selected.side}:${selected.display_path}`;
+    const preImage = diffKey ? preImages.get(diffKey) : undefined;
+    try {
+      const next = await readsRef.current.list(subject.id);
+      const match = next.entries.find((candidate) => `${candidate.side}:${candidate.display_path}` === key);
+      setDiffs((current) => withoutKeyPrefix(current, "local:"));
+      setPreImages((current) => {
+        const cleared = withoutKeyPrefix(current, "local:");
+        return match && preImage ? cachePreImage(cleared, localChangeKey(next.observation_id, match.entry_id), preImage) : cleared;
+      });
+      setLocalChanges(next);
+      if (match) setSelectedId(match.entry_id);
+    } catch (failure) {
+      setError(errorMessage(failure, "Local changes could not be loaded."));
+    }
   };
 
   const updateReviewNote = (draft: ChangeReviewDraft, body: string) => {
@@ -718,8 +715,8 @@ export function ChangesOverlay({
       role="dialog"
       tabIndex={-1}
       onKeyDown={(event) => {
-        // Monaco owns Escape (find, suggestions) and Tab (indentation) while it has focus.
-        if ((event.key === "Escape" || event.key === "Tab") && (event.target as Element).closest?.(".monaco-editor")) return;
+        // Monaco owns Escape (find, suggestions), Tab (indentation) and arrows while it has focus.
+        if ((event.key === "Escape" || event.key === "Tab" || event.key === "ArrowUp" || event.key === "ArrowDown") && (event.target as Element).closest?.(".monaco-editor")) return;
         if (event.key === "Escape") {
           event.preventDefault();
           close();
@@ -807,13 +804,24 @@ export function ChangesOverlay({
         </aside>
         <main className="changes-diff" aria-label="Selected file diff">
           {selected ? <div className="changes-file-heading"><ChangeBadge entry={selected} /><strong>{selected.display_path}</strong>{selected.path_encoding === "lossy" ? <span title="The exact path is represented by an opaque identifier.">lossy display</span> : null}
-            {editPath ? <div className="changes-view-toggle changes-edit-toggle" role="group" aria-label="File view">
-              <button type="button" aria-pressed={!showEditor} className={showEditor ? "" : "active"} onClick={() => { if (showEditor) void showDiff(); }}>Diff</button>
-              <button type="button" aria-pressed={showEditor} className={showEditor ? "active" : ""} title={editing?.readOnly ? "This computer is shared read-only" : "Edit the working-tree file"} onClick={() => { if (!showEditor) showEditorAtDiffLine(); }}>Edit</button>
-            </div> : null}</div> : null}
+            {editableDiff ? <span className="changes-edit-hint">{editing?.readOnly ? "Read-only on this computer" : "Edit the right side · ⌘S saves"}</span> : null}</div> : null}
           <div className="changes-diff-content">
-            {showEditor ? <ChangesFileEditor editing={editing!} path={editPath} scrollLine={{ initial: editorInitialLine, changed: (line) => { editorTopLine.current = line; } }} /> : <>
-            {loadingDiff ? <p className="changes-placeholder">Loading diff…</p> : null}
+            {editableDiff && editing && editPath && selected && "side" in selected ? <ChangesDiffEditor
+              key={`${selected.side}:${editPath}`}
+              editing={editing}
+              path={editPath}
+              original={editOriginal}
+              viewType={viewType}
+              fullFile={fullFile}
+              notes={currentReviewNotes}
+              draft={reviewDraft?.key.startsWith(selectedReviewPrefix ?? "\u0000") ? reviewDraft : undefined}
+              openLineReview={openLineReview}
+              editLineReview={setReviewDraft}
+              updateLineReview={updateReviewNote}
+              removeLineReview={removeReviewNote}
+              saved={() => void relistAfterSave()}
+            /> : <>
+            {loadingDiff || awaitingEditableDiff ? <p className="changes-placeholder">Loading diff…</p> : null}
             {!selected && !loadingSources && loadingSourceKey !== selectedSourceKey ? <p className="changes-placeholder">Select a changed file.</p> : null}
             {selectedDiff?.state === "binary" ? <DiffState title="Binary change" detail="Binary content is not sent over the control channel." /> : null}
             {selected?.render_state === "notShown" ? <DiffState title="Content not shown" detail={"side" in selected && selected.kind === "unmerged" ? "Unmerged changes are outside the read-only viewer." : "This content is outside the read-only viewer."} /> : null}
@@ -825,7 +833,7 @@ export function ChangesOverlay({
             {fullFileStatus ? (
               <p className="changes-full-file-status" role="status" aria-live="polite">{fullFileStatus}</p>
             ) : null}
-            {parsed && renderedHunks ? (
+            {parsed && renderedHunks && !awaitingEditableDiff ? (
               <RenderedDiff
                 file={parsed}
                 path={selected?.display_path}
@@ -834,7 +842,7 @@ export function ChangesOverlay({
                 viewType={viewType}
                 notes={currentReviewNotes}
                 draft={reviewDraft?.key.startsWith(selectedReviewPrefix ?? "\u0000") ? reviewDraft : undefined}
-                openLineReview={openLineReview}
+                openLineReview={(change, side) => openLineReview(changeReviewLine(change, side))}
                 editLineReview={setReviewDraft}
                 updateLineReview={updateReviewNote}
                 removeLineReview={removeReviewNote}
@@ -952,7 +960,7 @@ function RenderedDiff({
                 event.stopPropagation();
                 openLineReview(change, side);
               }}
-            ><span data-new-line={side === "new" && change.type !== "delete" ? changeReviewLine(change, side).lineNumber : undefined}>{renderDefault()}</span><b aria-hidden="true">+</b></button>
+            ><span>{renderDefault()}</span><b aria-hidden="true">+</b></button>
           );
         }}
       >
@@ -977,53 +985,6 @@ function RenderedDiff({
   );
 }
 
-function LineReviewWidget({ draft, body, editing, edit, change, close, remove }: {
-  draft: ChangeReviewDraft;
-  body: string;
-  editing: boolean;
-  edit(): void;
-  change(body: string): void;
-  close(): void;
-  remove(): void;
-}) {
-  if (!editing) {
-    return (
-      <button type="button" className="changes-line-comment-summary" onClick={edit}>
-        <strong>{draft.lineSide} line {draft.lineNumber}</strong><span>{body}</span>
-      </button>
-    );
-  }
-  return (
-    <div className="changes-line-comment-editor">
-      <label><span>{draft.lineSide} line {draft.lineNumber}</span>
-        <textarea
-          autoFocus
-          value={body}
-          maxLength={MAX_CHANGE_REVIEW_NOTE_CHARS}
-          placeholder="Write a comment for this line…"
-          onChange={(event) => change(event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.preventDefault();
-              event.stopPropagation();
-              close();
-            }
-          }}
-        />
-      </label>
-      <div>
-        {body ? <button type="button" className="quiet-button" onClick={remove}>Delete</button> : null}
-        <button type="button" className="secondary-button" onClick={close}>Done</button>
-      </div>
-    </div>
-  );
-}
-
-function changeReviewDraft(note: ChangeReviewNote): ChangeReviewDraft {
-  const { body: _body, ...draft } = note;
-  return draft;
-}
-
 function DiffState({ title, detail }: { title: string; detail: string }) {
   return <div className="changes-diff-state"><Icon name="focus" /><h2>{title}</h2><p>{detail}</p></div>;
 }
@@ -1045,30 +1006,6 @@ function trapDialogFocus(event: ReactKeyboardEvent<HTMLElement>) {
     event.preventDefault();
     first.focus();
   }
-}
-
-function diffLines(overlay: HTMLElement | null): { scroll: HTMLElement; lines: HTMLElement[] } | undefined {
-  const scroll = overlay?.querySelector<HTMLElement>(".changes-diff-scroll");
-  const lines = scroll ? [...scroll.querySelectorAll<HTMLElement>("[data-new-line]")] : [];
-  return scroll && lines.length > 0 ? { scroll, lines } : undefined;
-}
-
-/// The first new-side line visible at the top of the diff.
-function diffTopLine(overlay: HTMLElement | null): number | undefined {
-  const diff = diffLines(overlay);
-  if (!diff) return undefined;
-  const top = diff.scroll.getBoundingClientRect().top;
-  const line = diff.lines.find((candidate) => candidate.getBoundingClientRect().bottom > top) ?? diff.lines.at(-1);
-  return line ? Number(line.dataset.newLine) : undefined;
-}
-
-/// Scrolls the diff so the last shown line at or before `line` is at its top.
-function scrollDiffToLine(overlay: HTMLElement | null, line: number): boolean {
-  const diff = diffLines(overlay);
-  if (!diff) return false;
-  const target = [...diff.lines].reverse().find((candidate) => Number(candidate.dataset.newLine) <= line) ?? diff.lines[0]!;
-  diff.scroll.scrollTop += target.getBoundingClientRect().top - diff.scroll.getBoundingClientRect().top;
-  return true;
 }
 
 function isTextEntryTarget(target: EventTarget | null): boolean {

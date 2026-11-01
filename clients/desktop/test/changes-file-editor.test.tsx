@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TaskWorktreeChangeEntryDto, TaskWorktreeChangeListResult, WorkspaceFileWriteResult } from "@termloop/contract/current";
 import { FileEditor } from "../src/renderer/file-editor.js";
+import type { LocalPreImageResult } from "../src/renderer/changes-local-recovery.js";
 import { ChangesOverlay, type ChangesOverlayProps } from "../src/renderer/ui/ChangesOverlay.js";
 import { editableChangePath } from "../src/renderer/ui/ChangesFileEditor.js";
 import { fakeMonaco } from "./monaco-fixture.js";
@@ -15,13 +16,14 @@ function entry(entryId: string, displayPath: string, side: TaskWorktreeChangeEnt
   return { entry_id: entryId, display_path: displayPath, original_display_path: null, path_encoding: "utf8", side, kind, render_state: "available" };
 }
 
-/// A one-line change followed by unchanged context, `lines` new-side lines long.
-const longPatch = (lines: number) => `diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1,${lines} +1,${lines} @@\n-x\n+y\n${Array.from({ length: lines - 1 }, (_, index) => ` line ${index + 2}\n`).join("")}`;
+const patch = "diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1,2 +1,2 @@\n-x\n+y\n line 2\n";
 
 const changeList = (observationId: string, entries: TaskWorktreeChangeEntryDto[]): TaskWorktreeChangeListResult =>
   ({ task_id: "task-1", observation_id: observationId, worktree_generation: 1, entries, truncated: false });
 
-describe("Editing files from the Changes review", () => {
+type PreImage = Pick<LocalPreImageResult, "state" | "content">;
+
+describe("Editing local changes in their diff", () => {
   let container: HTMLDivElement;
   let root: Root;
   const read = vi.fn(async (path: string) => ({ path, state: "text" as const, content: "before", version: "1".repeat(64) }));
@@ -41,15 +43,15 @@ describe("Editing files from the Changes review", () => {
     vi.restoreAllMocks();
   });
 
-  function Harness({ editor, list, lines = 1 }: { editor: FileEditor; list: ChangesOverlayProps["list"]; lines?: number }) {
+  function Harness({ editor, list, preImage = { state: "content", content: "x\nline 2\n" } }: { editor: FileEditor; list: ChangesOverlayProps["list"]; preImage?: PreImage }) {
     const snapshot = useSyncExternalStore(editor.subscribe, editor.getSnapshot);
     return <ChangesOverlay
       subject={{ id: "task-1", title: "Task", kind: "task", hasWorktree: true, hasBranch: false }}
       initialSource={{ kind: "local" }}
       close={() => {}}
       list={list}
-      diff={async (taskId, observationId, entryId) => ({ task_id: taskId, observation_id: observationId, entry_id: entryId, state: "patch", patch: longPatch(lines) })}
-      preImage={async (taskId, observationId, entryId) => ({ task_id: taskId, observation_id: observationId, entry_id: entryId, state: "notShown", revision: "head", content: null })}
+      diff={async (taskId, observationId, entryId) => ({ task_id: taskId, observation_id: observationId, entry_id: entryId, state: "patch", patch })}
+      preImage={async (taskId, observationId, entryId) => ({ task_id: taskId, observation_id: observationId, entry_id: entryId, revision: "index", ...preImage })}
       listCommits={async () => { throw new Error("no branch"); }}
       listCommitChanges={async () => { throw new Error("no branch"); }}
       commitDiff={async () => { throw new Error("no branch"); }}
@@ -61,61 +63,93 @@ describe("Editing files from the Changes review", () => {
       editing={{ editor, snapshot, readOnly: false }}
     />;
   }
-  const settle = async () => { for (let i = 0; i < 5; i++) await act(async () => { await new Promise((done) => setTimeout(done, 0)); }); };
-  const toggle = (label: "Diff" | "Edit") => [...container.querySelectorAll<HTMLButtonElement>(".changes-edit-toggle button")].find((button) => button.textContent === label);
+  const settle = async () => { for (let i = 0; i < 6; i++) await act(async () => { await new Promise((done) => setTimeout(done, 0)); }); };
+  const button = (label: string) => [...container.querySelectorAll<HTMLButtonElement>("button")].find((candidate) => candidate.textContent === label)!;
 
-  it("edits the selected working-tree file in place of its diff and re-lists changes on return", async () => {
+  it("edits an unstaged file in its diff and re-lists changes after each save", async () => {
     const editor = new FileEditor({ read, write: (path) => write(path) });
     const list = vi.fn<ChangesOverlayProps["list"]>()
       .mockResolvedValueOnce(changeList("local-1", [entry("a-1", "src/alpha.ts", "unstaged")]))
       .mockResolvedValueOnce(changeList("local-2", [entry("z-0", "src/zulu.ts", "unstaged"), entry("a-2", "src/alpha.ts", "unstaged")]));
+    const createDiffEditor = vi.spyOn(fake.current!.monaco.editor, "createDiffEditor");
     await act(async () => root.render(<Harness editor={editor} list={list} />));
     await settle();
-    expect(container.querySelector(".changes-diff-scroll")).not.toBeNull();
 
-    await act(async () => toggle("Edit")!.click());
-    await settle();
+    const diff = fake.current!.state.diff!;
     expect(read).toHaveBeenCalledWith("src/alpha.ts");
-    expect(container.querySelector(".changes-diff .file-editor-body")).not.toBeNull();
     expect(container.querySelector(".changes-diff-scroll")).toBeNull();
+    expect(container.querySelector(".changes-edit-toggle")).toBeNull();
+    expect(diff.original.model?.value).toBe("x\nline 2\n");
+    expect(diff.modified.model?.value).toBe("before");
+    expect(diff.modified.readOnly).toBe(false);
+    expect(diff.options).toMatchObject({ originalEditable: false, renderSideBySide: false, hideUnchangedRegions: { enabled: true } });
 
-    await act(async () => fake.current!.type("after"));
-    await act(async () => fake.current!.save());
-    expect(write).toHaveBeenCalledWith("src/alpha.ts");
+    await act(async () => { button("Split").click(); button("Full file").click(); });
+    expect(diff.options).toMatchObject({ renderSideBySide: true, hideUnchangedRegions: { enabled: false } });
 
-    await act(async () => toggle("Diff")!.click());
+    await act(async () => fake.current!.typeInDiff("after"));
+    await act(async () => fake.current!.saveDiff());
     await settle();
+    expect(write).toHaveBeenCalledWith("src/alpha.ts");
     expect(list).toHaveBeenCalledTimes(2);
-    expect(container.querySelector(".changes-diff .file-editor-body")).toBeNull();
+    // The edited file stays selected under its new entry ID, in the same diff view.
     expect(container.querySelector(".changes-file-heading strong")?.textContent).toBe("src/alpha.ts");
+    expect(createDiffEditor).toHaveBeenCalledTimes(1);
+    expect(diff.modified.model?.value).toBe("after");
   });
 
-  it("keeps the reader on the same line when switching between the diff and the editor", async () => {
-    // jsdom has no layout: each new-side line is 20px tall below its scroll container.
-    const scrollTops = new WeakMap<Element, number>();
-    vi.spyOn(HTMLElement.prototype, "scrollTop", "get").mockImplementation(function (this: HTMLElement) { return scrollTops.get(this) ?? 0; });
-    vi.spyOn(HTMLElement.prototype, "scrollTop", "set").mockImplementation(function (this: HTMLElement, value: number) { scrollTops.set(this, value); });
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
-      const line = this.dataset.newLine;
-      const scroll = this.closest<HTMLElement>(".changes-diff-scroll");
-      const top = line ? Number(line) * 20 - (scroll?.scrollTop ?? 0) : 0;
-      return { top, bottom: top + 20, left: 0, right: 0, width: 0, height: 20, x: 0, y: top, toJSON: () => ({}) } as DOMRect;
-    });
+  it("compares an untracked file against an empty original", async () => {
     const editor = new FileEditor({ read, write: (path) => write(path) });
-    const list = vi.fn<ChangesOverlayProps["list"]>(async () => changeList("local-1", [entry("a-1", "src/alpha.ts", "unstaged")]));
-    await act(async () => root.render(<Harness editor={editor} list={list} lines={30} />));
+    const list = vi.fn<ChangesOverlayProps["list"]>(async () => changeList("local-1", [entry("n-1", "src/new.ts", "untracked", "untracked")]));
+    await act(async () => root.render(<Harness editor={editor} list={list} preImage={{ state: "absent", content: null }} />));
     await settle();
-    const scroll = () => container.querySelector<HTMLElement>(".changes-diff-scroll")!;
-    scroll().scrollTop = 200;
+    expect(fake.current!.state.diff?.original.model?.value).toBe("");
+    expect(fake.current!.state.diff?.modified.model?.value).toBe("before");
+  });
 
-    await act(async () => toggle("Edit")!.click());
+  it("keeps staged changes and refused pre-images in the read-only diff", async () => {
+    const editor = new FileEditor({ read, write: (path) => write(path) });
+    const staged = vi.fn<ChangesOverlayProps["list"]>(async () => changeList("local-1", [entry("s-1", "src/staged.ts", "staged")]));
+    await act(async () => root.render(<Harness editor={editor} list={staged} />));
     await settle();
-    expect(fake.current!.state.topLine).toBe(10);
+    expect(container.querySelector(".changes-diff-scroll")).not.toBeNull();
+    expect(fake.current!.state.diff).toBeUndefined();
+    expect(read).not.toHaveBeenCalled();
 
-    await act(async () => fake.current!.scrollTo(20));
-    await act(async () => toggle("Diff")!.click());
+    const unstaged = vi.fn<ChangesOverlayProps["list"]>(async () => changeList("local-1", [entry("u-1", "src/big.ts", "unstaged")]));
+    await act(async () => root.render(<Harness editor={editor} list={unstaged} preImage={{ state: "truncated", content: null }} />));
+    await act(async () => button("Refresh").click());
     await settle();
-    expect(scroll().scrollTop).toBe(400);
+    expect(container.querySelector(".changes-diff-scroll")).not.toBeNull();
+    expect(fake.current!.state.diff).toBeUndefined();
+  });
+
+  it("comments on a diff line from the editor gutter and keeps the note across a save", async () => {
+    const editor = new FileEditor({ read, write: (path) => write(path) });
+    const list = vi.fn<ChangesOverlayProps["list"]>()
+      .mockResolvedValueOnce(changeList("local-1", [entry("a-1", "src/alpha.ts", "unstaged")]))
+      .mockResolvedValueOnce(changeList("local-2", [entry("a-2", "src/alpha.ts", "unstaged")]));
+    await act(async () => root.render(<Harness editor={editor} list={list} />));
+    await settle();
+    const { modified } = fake.current!.state.diff!;
+
+    await act(async () => modified.clickGutter(2));
+    const zone = [...modified.zones.values()][0]!;
+    expect(zone.afterLineNumber).toBe(2);
+    const textarea = zone.domNode.querySelector("textarea")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(textarea, "Rename this");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(container.querySelector(".changes-review-actions span")?.textContent).toBe("1 note");
+    expect(modified.decorations.flat()).toContainEqual(expect.objectContaining({ range: expect.objectContaining({ startLineNumber: 2 }) }));
+
+    await act(async () => fake.current!.typeInDiff("after"));
+    await act(async () => fake.current!.saveDiff());
+    await settle();
+    expect(list).toHaveBeenCalledTimes(2);
+    expect([...modified.zones.values()].map((candidate) => candidate.domNode.textContent)).toEqual([expect.stringContaining("Rename this")]);
+    expect(container.querySelector(".changes-review-preview pre")?.textContent).toContain("src/alpha.ts:2 (new)");
   });
 
   it("offers editing only for local changes with a working-tree file", () => {

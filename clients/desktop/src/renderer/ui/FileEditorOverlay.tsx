@@ -10,6 +10,16 @@ import "../../files.css";
 
 const fileName = (path: string) => path.split("/").at(-1)!;
 
+export const monacoTheme = (theme: string) => theme === "light" ? "vs" : "vs-dark";
+
+/// The type and theme every Monaco surface in the app shares.
+export function monacoAppearance(host: HTMLElement) {
+  return {
+    fontFamily: getComputedStyle(host).getPropertyValue("--font-mono") || "monospace",
+    fontSize: 12, lineHeight: 19, theme: monacoTheme(appearanceTheme()),
+  };
+}
+
 /// Editor tabs over the terminal stage. Terminal hosts stay mounted beneath it.
 export function FileEditorOverlay({ subject, editor, snapshot, readOnly, hide, closeTab }: {
   subject: FilesSubject;
@@ -48,34 +58,45 @@ export function FileEditorOverlay({ subject, editor, snapshot, readOnly, hide, c
   </section>;
 }
 
-/// `scrollLine` opens a file without a saved view state at that line and
-/// reports the top visible line as the reader scrolls.
-export type EditorScrollLine = { initial: number | undefined; changed(line: number): void };
-
-export function FileEditorBody({ editor, snapshot, tab, readOnly, scrollLine }: { editor: FileEditor; snapshot: FileEditorSnapshot; tab: FileEditorTab; readOnly: boolean; scrollLine?: EditorScrollLine | undefined }) {
-  const { dirty } = tab;
-  const editable = tab.status === "ready" && !readOnly;
+export function FileEditorBody({ editor, snapshot, tab, readOnly }: { editor: FileEditor; snapshot: FileEditorSnapshot; tab: FileEditorTab; readOnly: boolean }) {
   return <div className="file-editor-body">
+    <FileEditorBanners editor={editor} tab={tab} readOnly={readOnly} />
+    <MonacoSurface editor={editor} snapshot={snapshot} readOnly={tab.status !== "ready" || readOnly} hidden={tab.status !== "ready"} />
+    <FileEditorState tab={tab} />
+    <FileEditorStatus tab={tab} readOnly={readOnly} />
+  </div>;
+}
+
+/// The on-disk conflict and save failure banners above an editor.
+export function FileEditorBanners({ editor, tab, readOnly }: { editor: FileEditor; tab: FileEditorTab; readOnly: boolean }) {
+  const editable = tab.status === "ready" && !readOnly;
+  return <>
     {tab.conflict ? <div className="file-editor-banner" role="alert">
       <span>{tab.conflict.version ? "This file changed on disk since it was opened." : "This file changed on disk and is now too large to compare."}</span>
       <button type="button" className="secondary-button" onClick={() => editor.reload(tab.path)}>Reload from disk</button>
       {tab.conflict.version && editable ? <button type="button" className="danger-button" onClick={() => void editor.save(tab.path, true)}>Overwrite</button> : null}
     </div> : null}
     {tab.message && tab.status === "ready" ? <div className="file-editor-banner" role="alert"><span>{tab.message}</span></div> : null}
-    <MonacoSurface editor={editor} snapshot={snapshot} readOnly={!editable} hidden={tab.status !== "ready"} scrollLine={scrollLine} />
-    {tab.status === "loading" ? <p className="file-editor-message" role="status">Loading file…</p>
-      : tab.status === "unavailable" ? <p className="file-editor-message" role="alert">{tab.message}</p> : null}
-    <footer className="file-editor-status">
-      <span title={tab.path}>{tab.path}</span>
-      <span>{fileLanguage(tab.path)?.label ?? "Plain text"}</span>
-      <span role="status">{tab.status !== "ready" ? "" : readOnly ? "Read-only" : tab.saving ? "Saving…" : dirty ? "Unsaved · ⌘S to save" : "Saved"}</span>
-    </footer>
-  </div>;
+  </>;
+}
+
+/// Loading and unavailable states shown in place of the editor surface.
+export function FileEditorState({ tab }: { tab: FileEditorTab }) {
+  return tab.status === "loading" ? <p className="file-editor-message" role="status">Loading file…</p>
+    : tab.status === "unavailable" ? <p className="file-editor-message" role="alert">{tab.message}</p> : null;
+}
+
+export function FileEditorStatus({ tab, readOnly }: { tab: FileEditorTab; readOnly: boolean }) {
+  return <footer className="file-editor-status">
+    <span title={tab.path}>{tab.path}</span>
+    <span>{fileLanguage(tab.path)?.label ?? "Plain text"}</span>
+    <span role="status">{tab.status !== "ready" ? "" : readOnly ? "Read-only" : tab.saving ? "Saving…" : tab.dirty ? "Unsaved · ⌘S to save" : "Saved"}</span>
+  </footer>;
 }
 
 /// One Monaco instance for all tabs: each path keeps its own model, so undo
 /// history, selections and scroll survive switching tabs.
-function MonacoSurface({ editor, snapshot, readOnly, hidden, scrollLine }: { editor: FileEditor; snapshot: FileEditorSnapshot; readOnly: boolean; hidden: boolean; scrollLine?: EditorScrollLine | undefined }) {
+function MonacoSurface({ editor, snapshot, readOnly, hidden }: { editor: FileEditor; snapshot: FileEditorSnapshot; readOnly: boolean; hidden: boolean }) {
   const host = useRef<HTMLDivElement>(null);
   const [instance, setInstance] = useState<{ monaco: typeof Monaco; view: Monaco.editor.IStandaloneCodeEditor }>();
   const [failure, setFailure] = useState<string>();
@@ -84,8 +105,6 @@ function MonacoSurface({ editor, snapshot, readOnly, hidden, scrollLine }: { edi
   const shown = useRef<string | undefined>(undefined);
   const applying = useRef(false);
   const theme = useSyncExternalStore(subscribeAppearanceTheme, appearanceTheme, appearanceTheme);
-  const scrollLineRef = useRef(scrollLine);
-  scrollLineRef.current = scrollLine;
 
   useEffect(() => {
     let disposed = false;
@@ -93,10 +112,9 @@ function MonacoSurface({ editor, snapshot, readOnly, hidden, scrollLine }: { edi
     import("../monaco-editor.js").then(({ monaco }) => {
       if (disposed || !host.current) return;
       const view = monaco.editor.create(host.current, {
-        automaticLayout: true, fontFamily: getComputedStyle(host.current).getPropertyValue("--font-mono") || "monospace",
-        fontSize: 12, lineHeight: 19, minimap: { enabled: true }, scrollBeyondLastLine: false,
+        ...monacoAppearance(host.current), automaticLayout: true, minimap: { enabled: true }, scrollBeyondLastLine: false,
         renderWhitespace: "selection", stickyScroll: { enabled: true }, smoothScrolling: true,
-        model: null, theme: appearanceTheme() === "light" ? "vs" : "vs-dark",
+        model: null,
       });
       view.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
         if (shown.current) void editor.save(shown.current);
@@ -104,10 +122,6 @@ function MonacoSurface({ editor, snapshot, readOnly, hidden, scrollLine }: { edi
       view.onDidChangeModelContent(() => {
         const model = view.getModel();
         if (!applying.current && model && shown.current) editor.edit(shown.current, model.getValue());
-      });
-      view.onDidScrollChange(() => {
-        const line = view.getVisibleRanges()[0]?.startLineNumber;
-        if (line !== undefined && shown.current) scrollLineRef.current?.changed(line);
       });
       created = view;
       setInstance({ monaco, view });
@@ -122,7 +136,7 @@ function MonacoSurface({ editor, snapshot, readOnly, hidden, scrollLine }: { edi
     };
   }, [editor]);
 
-  useEffect(() => { instance?.monaco.editor.setTheme(theme === "light" ? "vs" : "vs-dark"); }, [instance, theme]);
+  useEffect(() => { instance?.monaco.editor.setTheme(monacoTheme(theme)); }, [instance, theme]);
   useEffect(() => { instance?.view.updateOptions({ readOnly }); }, [instance, readOnly]);
 
   // Bring models in line with the store: create on first load, apply reloads
@@ -151,9 +165,7 @@ function MonacoSurface({ editor, snapshot, readOnly, hidden, scrollLine }: { edi
     view.setModel(path ? models.current.get(path)! : null);
     if (!path) return;
     const state = viewStates.current.get(path);
-    const initialLine = scrollLineRef.current?.initial;
     if (state) view.restoreViewState(state);
-    else if (initialLine !== undefined) view.setScrollTop(view.getTopForLineNumber(initialLine));
     view.focus();
   }, [editor, instance, snapshot]);
 
