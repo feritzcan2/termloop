@@ -45,7 +45,7 @@ const CODEX_DISABLE_STARTUP_UPDATE_CHECK: &str = "check_for_update_on_startup=fa
 pub const QUICK_ACTION_FREE_PROMPT_TEMPLATE_REF: &str = "builtin.quick-action.free-prompt";
 const QUICK_ACTION_TEMPLATE: PromptTemplate = PromptTemplate {
     id: QUICK_ACTION_FREE_PROMPT_TEMPLATE_REF,
-    version: 2,
+    version: 3,
     authored_body: include_str!("../../../resources/prompts/builtin.quick-action.free-prompt.md"),
 };
 

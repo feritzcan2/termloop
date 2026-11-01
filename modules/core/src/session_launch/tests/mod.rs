@@ -2458,7 +2458,7 @@ async fn assert_quick_action_initial_input_delivery(
         projected_delivery["templateRef"],
         "builtin.quick-action.free-prompt"
     );
-    assert_eq!(projected_delivery["templateVersion"], 2);
+    assert_eq!(projected_delivery["templateVersion"], 3);
     assert!(!status_projection.to_string().contains("Review this diff"));
     assert!(
         runtime.agent_observations["quick-action-ready"]
@@ -6249,4 +6249,30 @@ fn client_launch_restart_snapshot_is_exact_fair_and_larger_than_one_wave() {
 
     terminal.terminate_all().unwrap();
     let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn quick_action_attachments_accept_up_to_the_invocation_limit() {
+    let image = |index: usize| {
+        serde_json::json!({
+            "attachmentId": format!("{index}23e4567-e89b-42d3-a456-426614174000"),
+            "filePath": format!("/tmp/termloop-quick-action-images/{index}23e4567-e89b-42d3-a456-426614174000/image.png"),
+            "mediaType": "image/png",
+            "byteLength": 1,
+            "sha256": format!("sha256:{}", "a".repeat(64)),
+            "width": 1,
+            "height": 1,
+        })
+    };
+    let limit = termloop_invocation::MAX_QUICK_ACTION_IMAGE_ATTACHMENTS;
+    let within = serde_json::json!({ "attachments": (0..limit).map(image).collect::<Vec<_>>() });
+    assert_eq!(
+        super::quick_action_attachments(&within).unwrap().len(),
+        limit
+    );
+    let beyond = serde_json::json!({ "attachments": (0..=limit).map(image).collect::<Vec<_>>() });
+    assert!(matches!(
+        super::quick_action_attachments(&beyond),
+        Err(CoreError::InvalidParams(field)) if field == "attachments"
+    ));
 }

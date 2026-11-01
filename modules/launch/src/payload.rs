@@ -50,6 +50,22 @@ impl InitialInputDelivery {
             .map_err(|_| InvocationError::InvalidPromptBinding)?,
         })
     }
+
+    /// Writes every image reference paste and the prompt paste as one atomic
+    /// paste input, so delivery keeps its single paste-settle-Enter sequence.
+    fn submitted_after_image_references(
+        attachments: &[ImageAttachment],
+        content: &str,
+    ) -> Result<Self, InvocationError> {
+        let mut delivery = Self::submitted(content)?;
+        let mut paste = Vec::new();
+        for attachment in attachments {
+            paste.extend(attachment.terminal_reference_paste()?);
+        }
+        paste.extend_from_slice(&delivery.sequence[0]);
+        delivery.sequence[0] = paste;
+        Ok(delivery)
+    }
 }
 
 impl ResolvedLaunchManifest {

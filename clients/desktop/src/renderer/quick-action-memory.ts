@@ -1,4 +1,4 @@
-import type { QuickActionImageHandle } from "../quick-action-image.js";
+import { QUICK_ACTION_IMAGE_LIMIT } from "../quick-action-image.js";
 import { connectionAttachmentIdentity } from "../connection-scope.js";
 
 export type QuickActionAgentId = string;
@@ -19,15 +19,15 @@ type QuickActionMemory = {
   projectId?: string;
   lastAgentId?: QuickActionAgentId;
   draft?: string;
-  draftAttachment?: QuickActionImageHandle;
+  /** Ids only: each restore reloads its preview, which can be megabytes. */
+  draftAttachmentIds?: string[];
   presets: Partial<Record<QuickActionAgentId, QuickActionAgentPreset>>;
 };
 
 const QUICK_ACTION_MEMORY_KEY = "termloop.quickAction.lastRun.v2";
 const QUICK_ACTION_PROMPT_LIMIT = 32_768;
-const QUICK_ACTION_PREVIEW_LIMIT = 2 * 1024 * 1024;
+export { QUICK_ACTION_IMAGE_LIMIT };
 const QUICK_ACTION_IMAGE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
-const QUICK_ACTION_IMAGE_SHA256 = /^sha256:[0-9a-f]{64}$/u;
 const AGENT_ID = /^[a-z](?:[a-z0-9]|-[a-z0-9])*$/u;
 const MAX_REMEMBERED_AGENT_PRESETS = 32;
 export const QUICK_ACTION_AGENT_MODELS: Readonly<Record<QuickActionAgentId, readonly string[]>> = {
@@ -46,12 +46,13 @@ export function readQuickActionMemory(storage?: Pick<Storage, "getItem">): Quick
     if (!source) return { presets: {} };
     const parsed = JSON.parse(source.getItem(QUICK_ACTION_MEMORY_KEY) ?? "null") as unknown;
     if (!parsed || typeof parsed !== "object") return { presets: {} };
-    const candidate = parsed as { projectId?: unknown; lastAgentId?: unknown; draft?: unknown; draftAttachment?: unknown; presets?: unknown };
+    const candidate = parsed as { projectId?: unknown; lastAgentId?: unknown; draft?: unknown; draftAttachmentIds?: unknown; draftAttachment?: unknown; presets?: unknown };
     const memory: QuickActionMemory = { presets: {} };
     if (typeof candidate.projectId === "string") memory.projectId = candidate.projectId;
     if (typeof candidate.lastAgentId === "string" && validAgentId(candidate.lastAgentId)) memory.lastAgentId = candidate.lastAgentId;
     if (typeof candidate.draft === "string" && candidate.draft.length <= QUICK_ACTION_PROMPT_LIMIT) memory.draft = candidate.draft;
-    if (validDraftAttachment(candidate.draftAttachment)) memory.draftAttachment = candidate.draftAttachment;
+    const draftAttachmentIds = savedDraftAttachmentIds(candidate.draftAttachmentIds, candidate.draftAttachment);
+    if (draftAttachmentIds.length) memory.draftAttachmentIds = draftAttachmentIds;
     if (candidate.presets && typeof candidate.presets === "object") {
       for (const [agentId, preset] of Object.entries(candidate.presets).slice(0, MAX_REMEMBERED_AGENT_PRESETS)) {
         if (!validAgentId(agentId)) continue;
@@ -132,16 +133,17 @@ export function rememberQuickActionDraft(
   }
 }
 
-export function rememberQuickActionAttachment(
-  draftAttachment: QuickActionImageHandle | undefined,
+export function rememberQuickActionAttachments(
+  draftAttachmentIds: readonly string[],
   storage: Pick<Storage, "getItem" | "setItem"> = window.localStorage,
 ): void {
   try {
     const memory = readQuickActionMemory(storage);
-    const { draftAttachment: _priorAttachment, ...rest } = memory;
+    const { draftAttachmentIds: _priorAttachments, ...rest } = memory;
+    const ids = draftAttachmentIds.filter(validDraftAttachmentId).slice(0, QUICK_ACTION_IMAGE_LIMIT);
     storage.setItem(QUICK_ACTION_MEMORY_KEY, JSON.stringify({
       ...rest,
-      ...(draftAttachment ? { draftAttachment } : {}),
+      ...(ids.length ? { draftAttachmentIds: ids } : {}),
     } satisfies QuickActionMemory));
   } catch {
     // Attachment persistence must never interrupt the composer.
@@ -179,20 +181,18 @@ export function rememberAgentSetupSelection(
   } satisfies QuickActionMemory));
 }
 
-function validDraftAttachment(value: unknown): value is QuickActionImageHandle {
-  if (!value || typeof value !== "object") return false;
-  const handle = value as Partial<QuickActionImageHandle>;
-  const identity = typeof handle.id === "string" ? connectionAttachmentIdentity(handle.id) : undefined;
-  return Boolean((identity && QUICK_ACTION_IMAGE_ID.test(identity.entityId))
-      || (typeof handle.id === "string" && QUICK_ACTION_IMAGE_ID.test(handle.id)))
-    && handle.mediaType === "image/png"
-    && typeof handle.byteLength === "number" && Number.isInteger(handle.byteLength) && handle.byteLength > 0 && handle.byteLength <= 10 * 1024 * 1024
-    && typeof handle.sha256 === "string" && QUICK_ACTION_IMAGE_SHA256.test(handle.sha256)
-    && typeof handle.width === "number" && Number.isInteger(handle.width) && handle.width > 0 && handle.width <= 16_384
-    && typeof handle.height === "number" && Number.isInteger(handle.height) && handle.height > 0 && handle.height <= 16_384
-    && typeof handle.previewDataUrl === "string"
-    && handle.previewDataUrl.startsWith("data:image/png;base64,")
-    && handle.previewDataUrl.length <= QUICK_ACTION_PREVIEW_LIMIT;
+/** Reads the saved id list, or the single handle an older composer saved. */
+function savedDraftAttachmentIds(ids: unknown, legacy: unknown): string[] {
+  const candidates = Array.isArray(ids)
+    ? ids
+    : legacy && typeof legacy === "object" ? [(legacy as { id?: unknown }).id] : [];
+  const valid = candidates.filter((id): id is string => typeof id === "string" && validDraftAttachmentId(id));
+  return [...new Set(valid)].slice(0, QUICK_ACTION_IMAGE_LIMIT);
+}
+
+function validDraftAttachmentId(id: string): boolean {
+  const identity = connectionAttachmentIdentity(id);
+  return Boolean(identity && QUICK_ACTION_IMAGE_ID.test(identity.entityId)) || QUICK_ACTION_IMAGE_ID.test(id);
 }
 
 function validAgentId(value: string): boolean {

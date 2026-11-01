@@ -225,7 +225,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:3093c3b4db1dae2c6d8479ac79ca39088a0f3ca82e0b6500cd82ee44c1f8b7ad";
+    "sha256:7a5527a17a9283a904d90f182daff5e8b0d992c24b0f8159b733f03dd9388e44";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -4246,6 +4246,31 @@ pub struct AgentPendingWakes {
     pub background_tasks: u32,
     #[serde(rename = "scheduledWakes")]
     pub scheduled_wakes: u32,
+    #[serde(rename = "waitingOn", skip_serializing_if = "Option::is_none")]
+    pub waiting_on: Option<Vec<AgentPendingWakeDto>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct AgentPendingWakeDto {
+    pub kind: AgentPendingWakeKind,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum AgentPendingWakeKind {
+    #[serde(rename = "shell")]
+    Shell,
+    #[serde(rename = "subagent")]
+    Subagent,
+    #[serde(rename = "monitor")]
+    Monitor,
+    #[serde(rename = "workflow")]
+    Workflow,
+    #[serde(rename = "task")]
+    Task,
+    #[serde(rename = "scheduled")]
+    Scheduled,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -17978,7 +18003,7 @@ fn validate_agent_coordination_delivery_result(value: &Value) -> bool {
     clippy::redundant_closure
 )]
 fn validate_quick_action_params(value: &Value) -> bool {
-    value.as_object().is_some_and(|object| object.get("projectId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("cwd").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("agentId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64 && contract_pattern_matches("^[a-z](?:[a-z0-9]|-[a-z0-9])*$", text))) && object.get("model").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)) && object.get("permission").is_some_and(|field| field.as_str().is_some_and(|text| ["default", "acceptEdits", "plan", "bypassPermissions"].contains(&text))) && object.get("reasoning").is_some_and(|field| field.as_str().is_some_and(|text| ["default", "low", "medium", "high", "xhigh", "max", "none", "thinking"].contains(&text))) && object.get("templateRef").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128 && contract_pattern_matches("^(?:builtin\\.quick-action\\.free-prompt|(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*)$", text))) && object.get("bindings").is_some_and(|field| field.as_object().is_some_and(|object| object.get("prompt").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 32768)) && object.keys().all(|key| ["prompt"].contains(&key.as_str())))) && object.get("attachments").is_some_and(|field| field.as_array().is_some_and(|items| items.len() <= 1 && items.iter().all(|item| validate_quick_action_image_attachment(item)))) && object.get("accountId").is_none_or(|field| field.as_str().is_some_and(|text| contract_pattern_matches("^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$", text))) && object.keys().all(|key| ["projectId", "cwd", "agentId", "model", "permission", "reasoning", "templateRef", "bindings", "attachments", "accountId"].contains(&key.as_str())))
+    value.as_object().is_some_and(|object| object.get("projectId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("cwd").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("agentId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64 && contract_pattern_matches("^[a-z](?:[a-z0-9]|-[a-z0-9])*$", text))) && object.get("model").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)) && object.get("permission").is_some_and(|field| field.as_str().is_some_and(|text| ["default", "acceptEdits", "plan", "bypassPermissions"].contains(&text))) && object.get("reasoning").is_some_and(|field| field.as_str().is_some_and(|text| ["default", "low", "medium", "high", "xhigh", "max", "none", "thinking"].contains(&text))) && object.get("templateRef").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128 && contract_pattern_matches("^(?:builtin\\.quick-action\\.free-prompt|(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*)$", text))) && object.get("bindings").is_some_and(|field| field.as_object().is_some_and(|object| object.get("prompt").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 32768)) && object.keys().all(|key| ["prompt"].contains(&key.as_str())))) && object.get("attachments").is_some_and(|field| field.as_array().is_some_and(|items| items.len() <= 8 && items.iter().all(|item| validate_quick_action_image_attachment(item)))) && object.get("accountId").is_none_or(|field| field.as_str().is_some_and(|text| contract_pattern_matches("^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$", text))) && object.keys().all(|key| ["projectId", "cwd", "agentId", "model", "permission", "reasoning", "templateRef", "bindings", "attachments", "accountId"].contains(&key.as_str())))
 }
 
 #[allow(
@@ -17991,7 +18016,7 @@ fn validate_quick_action_params(value: &Value) -> bool {
     clippy::redundant_closure
 )]
 fn validate_quick_action_launch_params(value: &Value) -> bool {
-    value.as_object().is_some_and(|object| object.get("projectId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("cwd").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("agentId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64 && contract_pattern_matches("^[a-z](?:[a-z0-9]|-[a-z0-9])*$", text))) && object.get("model").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)) && object.get("permission").is_some_and(|field| field.as_str().is_some_and(|text| ["default", "acceptEdits", "plan", "bypassPermissions"].contains(&text))) && object.get("reasoning").is_some_and(|field| field.as_str().is_some_and(|text| ["default", "low", "medium", "high", "xhigh", "max", "none", "thinking"].contains(&text))) && object.get("templateRef").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128 && contract_pattern_matches("^(?:builtin\\.quick-action\\.free-prompt|(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*)$", text))) && object.get("bindings").is_some_and(|field| field.as_object().is_some_and(|object| object.get("prompt").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 32768)) && object.keys().all(|key| ["prompt"].contains(&key.as_str())))) && object.get("attachments").is_some_and(|field| field.as_array().is_some_and(|items| items.len() <= 1 && items.iter().all(|item| validate_quick_action_image_attachment(item)))) && object.get("launchTicket").is_some_and(|field| field.as_str().is_some_and(|text| contract_pattern_matches("^[0-9a-f]{64}$", text))) && object.get("accountId").is_none_or(|field| field.as_str().is_some_and(|text| contract_pattern_matches("^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$", text))) && object.keys().all(|key| ["projectId", "cwd", "agentId", "model", "permission", "reasoning", "templateRef", "bindings", "attachments", "launchTicket", "accountId"].contains(&key.as_str())))
+    value.as_object().is_some_and(|object| object.get("projectId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("cwd").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("agentId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64 && contract_pattern_matches("^[a-z](?:[a-z0-9]|-[a-z0-9])*$", text))) && object.get("model").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)) && object.get("permission").is_some_and(|field| field.as_str().is_some_and(|text| ["default", "acceptEdits", "plan", "bypassPermissions"].contains(&text))) && object.get("reasoning").is_some_and(|field| field.as_str().is_some_and(|text| ["default", "low", "medium", "high", "xhigh", "max", "none", "thinking"].contains(&text))) && object.get("templateRef").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128 && contract_pattern_matches("^(?:builtin\\.quick-action\\.free-prompt|(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*)$", text))) && object.get("bindings").is_some_and(|field| field.as_object().is_some_and(|object| object.get("prompt").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 32768)) && object.keys().all(|key| ["prompt"].contains(&key.as_str())))) && object.get("attachments").is_some_and(|field| field.as_array().is_some_and(|items| items.len() <= 8 && items.iter().all(|item| validate_quick_action_image_attachment(item)))) && object.get("launchTicket").is_some_and(|field| field.as_str().is_some_and(|text| contract_pattern_matches("^[0-9a-f]{64}$", text))) && object.get("accountId").is_none_or(|field| field.as_str().is_some_and(|text| contract_pattern_matches("^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$", text))) && object.keys().all(|key| ["projectId", "cwd", "agentId", "model", "permission", "reasoning", "templateRef", "bindings", "attachments", "launchTicket", "accountId"].contains(&key.as_str())))
 }
 
 #[allow(
@@ -19488,9 +19513,64 @@ fn validate_agent_pending_wakes(value: &Value) -> bool {
                     && (number.as_u64().is_some_and(|number| number >= 0_u64))
                     && (number.as_u64().is_some_and(|number| number <= 1024_u64))
             })
+        }) && object.get("waitingOn").is_none_or(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() <= 3
+                    && items
+                        .iter()
+                        .all(|item| validate_agent_pending_wake_dto(item))
+            })
         }) && object
             .keys()
-            .all(|key| ["backgroundTasks", "scheduledWakes"].contains(&key.as_str()))
+            .all(|key| ["backgroundTasks", "scheduledWakes", "waitingOn"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_agent_pending_wake_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("kind")
+            .is_some_and(|field| validate_agent_pending_wake_kind(field))
+            && object.get("label").is_some_and(|field| {
+                field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 1 && text.chars().count() <= 120 && text.len() <= 480
+                })
+            })
+            && object
+                .keys()
+                .all(|key| ["kind", "label"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_agent_pending_wake_kind(value: &Value) -> bool {
+    value.as_str().is_some_and(|text| {
+        [
+            "shell",
+            "subagent",
+            "monitor",
+            "workflow",
+            "task",
+            "scheduled",
+        ]
+        .contains(&text)
     })
 }
 

@@ -5,6 +5,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { QuickActionImageStore } from "../src/platform/quick-action-image-store.js";
 import { connectionAttachmentIdentity } from "../src/connection-scope.js";
+import { QUICK_ACTION_IMAGE_LIMIT } from "../src/quick-action-image.js";
 
 const LOCAL_PROFILE_ID = "local";
 const REMOTE_PROFILE_ID = "123e4567-e89b-42d3-a456-426614174000";
@@ -36,6 +37,26 @@ function uploaded(png: Uint8Array, width: number, height: number) {
 }
 
 describe("Quick Action image store", () => {
+  it("resolves every distinct image up to the Quick Action limit in order", async () => {
+    const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "termloop-quick-action-image-test-"));
+    try {
+      const store = new QuickActionImageStore(temporaryDirectory);
+      const png = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3]);
+      const handles = [];
+      for (let index = 0; index <= QUICK_ACTION_IMAGE_LIMIT; index += 1) {
+        handles.push(await store.stage(png, 4, 5, "data:image/png;base64,AA==", uploaded(png, 4, 5), LOCAL_PROFILE_ID));
+      }
+      const ids = handles.map((handle) => handle.id);
+      const resolved = await store.resolve(ids.slice(0, QUICK_ACTION_IMAGE_LIMIT), LOCAL_PROFILE_ID);
+      expect(resolved.map((attachment) => attachment.attachmentId))
+        .toEqual(ids.slice(0, QUICK_ACTION_IMAGE_LIMIT).map(rawAttachmentId));
+      await expect(store.resolve(ids, LOCAL_PROFILE_ID)).rejects.toThrow("quickActionImageSelectionInvalid");
+      await expect(store.resolve([ids[0]!, ids[0]!], LOCAL_PROFILE_ID)).rejects.toThrow("quickActionImageSelectionInvalid");
+    } finally {
+      await rm(temporaryDirectory, { recursive: true, force: true });
+    }
+  });
+
   it("keeps identical server attachment ids isolated by connection source", async () => {
     const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "termloop-quick-action-image-test-"));
     try {

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { chmod, lstat, mkdir, readdir, readFile, rmdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { QuickActionImageAttachment } from "@termloop/contract/current";
-import type { QuickActionImageHandle } from "../quick-action-image.js";
+import { QUICK_ACTION_IMAGE_LIMIT, type QuickActionImageHandle } from "../quick-action-image.js";
 import {
   connectionAttachmentIdentity,
   connectionAttachmentKey,
@@ -145,7 +145,7 @@ export class QuickActionImageStore {
   }
 
   async resolve(ids: readonly string[], expectedProfileId: string): Promise<QuickActionImageAttachment[]> {
-    if (ids.length > 1 || new Set(ids).size !== ids.length) throw new Error("quickActionImageSelectionInvalid");
+    if (ids.length > QUICK_ACTION_IMAGE_LIMIT || new Set(ids).size !== ids.length) throw new Error("quickActionImageSelectionInvalid");
     await this.#prepareDirectory();
     await this.#removeExpiredFiles();
     const attachments: QuickActionImageAttachment[] = [];

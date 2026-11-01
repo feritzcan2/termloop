@@ -167,6 +167,7 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
             _ => return Err(InvocationError::UnsupportedAgent(agent_id.to_owned())),
         }
     }
+    let native_image_paste = pastes_image_attachments_natively(agent_id, attachments);
     if agent_id == "codex" {
         for attachment in attachments {
             arguments.push(ResolvedArgument::exact(
@@ -178,7 +179,7 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
                 "Quick Action image attachment path",
             ));
         }
-    } else if agent_id == "claude" {
+    } else if agent_id == "claude" && !native_image_paste {
         for attachment in attachments {
             let directory = Path::new(&attachment.file_path)
                 .parent()
@@ -366,6 +367,8 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
             scope: "launch",
             delivery: if agent_id == "codex" {
                 "providerImageArgument"
+            } else if native_image_paste {
+                "terminalImagePaste"
             } else {
                 "terminalPathReference"
             },
@@ -505,7 +508,13 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
         },
         initial_input: prompt
             .filter(|_| !prompt_argument)
-            .map(|_| InitialInputDelivery::submitted(&delivered))
+            .map(|_| {
+                if native_image_paste {
+                    InitialInputDelivery::submitted_after_image_references(attachments, &delivered)
+                } else {
+                    InitialInputDelivery::submitted(&delivered)
+                }
+            })
             .transpose()?,
         inspectable,
         bindings: vec![],

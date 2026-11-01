@@ -2398,7 +2398,7 @@ fn quick_action_attachments(
         .get("attachments")
         .and_then(Value::as_array)
         .ok_or_else(|| CoreError::InvalidParams("attachments".into()))?;
-    if values.len() > 1 {
+    if values.len() > termloop_invocation::MAX_QUICK_ACTION_IMAGE_ATTACHMENTS {
         return Err(CoreError::InvalidParams("attachments".into()));
     }
     values

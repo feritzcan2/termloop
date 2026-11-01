@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultAgentPermission, permissionLabel, readLastQuickActionAgentSelection, readQuickActionMemory, readTaskAgentPreset, rememberQuickActionAttachment, rememberQuickActionDraft, rememberQuickActionRun } from "../src/renderer/quick-action-memory.js";
+import { defaultAgentPermission, permissionLabel, readLastQuickActionAgentSelection, readQuickActionMemory, readTaskAgentPreset, rememberQuickActionAttachments, rememberQuickActionDraft, rememberQuickActionRun } from "../src/renderer/quick-action-memory.js";
 
 function memoryStorage() {
   let value: string | null = null;
@@ -41,21 +41,28 @@ describe("Quick Action launch memory", () => {
     expect(readQuickActionMemory(storage).draft).toBeUndefined();
   });
 
-  it("keeps an unsent image handle and clears it after a successful run", () => {
+  it("keeps unsent image ids and clears them after a successful run", () => {
     const storage = memoryStorage();
-    rememberQuickActionAttachment({
-      id: "58df9988-2939-4d63-a546-6ebbd0c15f16",
-      mediaType: "image/png",
-      byteLength: 128,
-      sha256: `sha256:${"a".repeat(64)}`,
-      width: 40,
-      height: 30,
-      previewDataUrl: "data:image/png;base64,cHJldmlldw==",
-    }, storage);
-    expect(readQuickActionMemory(storage).draftAttachment?.width).toBe(40);
+    const first = "58df9988-2939-4d63-a546-6ebbd0c15f16";
+    const second = "68df9988-2939-4d63-a546-6ebbd0c15f16";
+    rememberQuickActionAttachments([first, second, first, "not-an-id"], storage);
+    expect(readQuickActionMemory(storage).draftAttachmentIds).toEqual([first, second]);
 
     rememberQuickActionRun("project-1", "codex", { model: "default", permission: "default", reasoning: "default" }, storage);
-    expect(readQuickActionMemory(storage).draftAttachment).toBeUndefined();
+    expect(readQuickActionMemory(storage).draftAttachmentIds).toBeUndefined();
+  });
+
+  it("reads the single image handle an older composer saved as one id", () => {
+    const id = "58df9988-2939-4d63-a546-6ebbd0c15f16";
+    const storage = { getItem: () => JSON.stringify({ draftAttachment: { id, previewDataUrl: "data:image/png;base64,AA==" } }) };
+    expect(readQuickActionMemory(storage).draftAttachmentIds).toEqual([id]);
+  });
+
+  it("bounds saved image ids to the Quick Action limit", () => {
+    const storage = memoryStorage();
+    const ids = Array.from({ length: 10 }, (_, index) => `${index}8df9988-2939-4d63-a546-6ebbd0c15f16`);
+    rememberQuickActionAttachments(ids, storage);
+    expect(readQuickActionMemory(storage).draftAttachmentIds).toEqual(ids.slice(0, 8));
   });
 
   it("retains only bounded provider-shaped presets and leaves catalog validation to launch", () => {

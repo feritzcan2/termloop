@@ -22,6 +22,28 @@ pub struct ImageAttachment {
     pub height: u32,
 }
 
+impl ImageAttachment {
+    /// The provider-neutral terminal reference an agent TUI expands into its own
+    /// native image attachment: one paste of the JSON-quoted absolute path and a
+    /// separating space. Callers validate the attachment's owned path shape.
+    pub fn terminal_reference_paste(&self) -> Result<Vec<u8>, InvocationError> {
+        let mut reference = serde_json::to_string(&self.file_path)
+            .map_err(|_| InvocationError::InvalidImageAttachment)?;
+        reference.push(' ');
+        Ok(termloop_platform::terminal_paste_input(reference.as_bytes()))
+    }
+}
+
+/// Claude has no launch argument for an initial image. Where the host PTY keeps
+/// bracketed-paste framing, each image is pasted as its own path reference ahead
+/// of the prompt, which Claude turns into a native `[Image #N]` attachment.
+/// Unframed hosts keep the visible additional-directory instruction instead.
+pub fn pastes_image_attachments_natively(agent_id: &str, attachments: &[ImageAttachment]) -> bool {
+    agent_id == "claude"
+        && !attachments.is_empty()
+        && termloop_platform::host_uses_bracketed_paste_framing()
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum InvocationError {
     #[error("launch payload has no visible template provenance")]

@@ -1,22 +1,19 @@
+/// Claude pastes each image ahead of the prompt where the host keeps
+/// bracketed-paste framing, so the authored prompt is delivered unchanged.
+/// Only an unframed host falls back to the visible additional-directory
+/// instruction.
 fn compose_quick_action_delivery(
     agent_id: &str,
     prompt: &str,
     attachments: &[QuickActionImageAttachment],
 ) -> String {
-    if agent_id != "claude" || attachments.is_empty() {
+    if agent_id != "claude"
+        || attachments.is_empty()
+        || termloop_launch::pastes_image_attachments_natively(agent_id, attachments)
+    {
         return prompt.to_owned();
     }
-    let mut delivered = String::with_capacity(
-        prompt.len()
-            + attachments
-                .iter()
-                .map(|attachment| attachment.file_path.len() + 4)
-                .sum::<usize>()
-            + 52,
-    );
-    delivered.push_str(prompt);
-    delivered.push_str(
-        "\n\nTermLoop Quick Action image attachment: inspect `image.png` in the additional directory supplied for this launch.",
-    );
-    delivered
+    format!("{prompt}{QUICK_ACTION_IMAGE_DIRECTORY_INSTRUCTION}")
 }
+
+const QUICK_ACTION_IMAGE_DIRECTORY_INSTRUCTION: &str = "\n\nTermLoop Quick Action image attachments: inspect `image.png` in each additional directory supplied for this launch.";

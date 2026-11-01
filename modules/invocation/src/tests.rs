@@ -839,23 +839,139 @@ fn quick_action_image_attachment_uses_provider_delivery_from_one_manifest() {
         None,
     )
     .unwrap();
-    assert!(claude.args().windows(2).any(|arguments| {
+    let grants_directory = claude.args().windows(2).any(|arguments| {
         arguments[0] == "--add-dir" && arguments[1] == attachment_directory.to_string_lossy()
-    }));
-    assert!(
-        claude
-            .delivered_prompt()
-            .is_some_and(|prompt| prompt.contains("inspect `image.png`"))
-    );
-    assert!(!claude.delivered_prompt().unwrap().contains("/tmp/"));
-    assert_eq!(
-        claude.inspectable_manifest().content_parts[1].delivery,
-        "terminalPathReference"
-    );
+    });
+    if termloop_platform::host_uses_bracketed_paste_framing() {
+        assert!(!grants_directory);
+        assert_eq!(claude.delivered_prompt(), Some("Inspect this image"));
+        assert_eq!(
+            claude.inspectable_manifest().content_parts[1].delivery,
+            "terminalImagePaste"
+        );
+    } else {
+        assert!(grants_directory);
+        assert!(
+            claude
+                .delivered_prompt()
+                .is_some_and(|prompt| prompt.contains("inspect `image.png`"))
+        );
+        assert!(!claude.delivered_prompt().unwrap().contains("/tmp/"));
+        assert_eq!(
+            claude.inspectable_manifest().content_parts[1].delivery,
+            "terminalPathReference"
+        );
+    }
     assert_ne!(
         codex.inspectable_manifest().digest,
         claude.inspectable_manifest().digest
     );
+}
+
+fn owned_test_image(attachment_id: &str, sha_digit: char) -> QuickActionImageAttachment {
+    QuickActionImageAttachment {
+        attachment_id: attachment_id.into(),
+        file_path: std::env::temp_dir()
+            .join("termloop-quick-action-images")
+            .join(attachment_id)
+            .join("image.png")
+            .to_string_lossy()
+            .into_owned(),
+        media_type: "image/png".into(),
+        byte_length: 4_096,
+        sha256: format!("sha256:{}", sha_digit.to_string().repeat(64)),
+        width: 800,
+        height: 600,
+    }
+}
+
+#[test]
+fn claude_quick_action_pastes_every_image_ahead_of_the_unchanged_prompt() {
+    let attachments = [
+        owned_test_image("123e4567-e89b-42d3-a456-426614174000", 'a'),
+        owned_test_image("223e4567-e89b-42d3-a456-426614174000", 'b'),
+    ];
+    let claude = quick_action_agent_with_attachments_for_conversation(
+        "claude",
+        "/tmp/project",
+        "default",
+        "default",
+        "default",
+        "Compare these screens",
+        &attachments,
+        AgentConversationLaunch::Fresh { resume_ref: None },
+        None,
+        None,
+    )
+    .unwrap();
+    let image_parts = claude
+        .inspectable_manifest()
+        .content_parts
+        .iter()
+        .filter(|part| part.kind == "imageAttachment")
+        .collect::<Vec<_>>();
+    assert_eq!(image_parts.len(), 2);
+    assert_eq!(image_parts[0].digest, attachments[0].sha256);
+    assert_eq!(image_parts[1].digest, attachments[1].sha256);
+    let sequence = claude.initial_input_sequence().unwrap();
+    assert_eq!(sequence.len(), 2);
+    assert_eq!(sequence[1], b"\r");
+    if !termloop_platform::host_uses_bracketed_paste_framing() {
+        assert!(
+            claude
+                .delivered_prompt()
+                .unwrap()
+                .contains("inspect `image.png` in each additional directory")
+        );
+        return;
+    }
+    assert_eq!(claude.delivered_prompt(), Some("Compare these screens"));
+    assert!(!claude.args().iter().any(|argument| argument == "--add-dir"));
+    assert!(
+        image_parts
+            .iter()
+            .all(|part| part.delivery == "terminalImagePaste")
+    );
+    let mut expected = image_attachment_terminal_paste(&attachments[0]).unwrap();
+    expected.extend(image_attachment_terminal_paste(&attachments[1]).unwrap());
+    expected.extend(termloop_platform::terminal_paste_input(
+        b"Compare these screens",
+    ));
+    assert_eq!(sequence[0], expected);
+    assert_eq!(
+        claude.initial_input_submission().unwrap().paste_input(),
+        expected.as_slice()
+    );
+}
+
+#[test]
+fn quick_action_accepts_up_to_eight_distinct_images() {
+    let ids = (0..9)
+        .map(|index| format!("{index}23e4567-e89b-42d3-a456-426614174000"))
+        .collect::<Vec<_>>();
+    let images = ids
+        .iter()
+        .map(|id| owned_test_image(id, 'c'))
+        .collect::<Vec<_>>();
+    let validate = |attachments: &[QuickActionImageAttachment]| {
+        validate_quick_action_with_attachments(
+            "claude",
+            "default",
+            "default",
+            "default",
+            "Inspect",
+            attachments,
+        )
+    };
+    assert!(validate(&images[..MAX_QUICK_ACTION_IMAGE_ATTACHMENTS]).is_ok());
+    assert!(matches!(
+        validate(&images),
+        Err(InvocationError::InvalidImageAttachment)
+    ));
+    assert!(matches!(
+        validate(&[images[0].clone(), images[0].clone()]),
+        Err(InvocationError::InvalidImageAttachment)
+    ));
 }
 
 #[test]

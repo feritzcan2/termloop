@@ -28,13 +28,22 @@ pub fn validate_quick_action_with_attachments(
     validate_image_attachments(attachments)
 }
 
+/// Mirrors the generated contract's `attachments.maxItems`.
+pub const MAX_QUICK_ACTION_IMAGE_ATTACHMENTS: usize = 8;
+
 pub fn validate_image_attachments(
     attachments: &[QuickActionImageAttachment],
 ) -> Result<(), InvocationError> {
-    if attachments.len() > 1 {
+    if attachments.len() > MAX_QUICK_ACTION_IMAGE_ATTACHMENTS {
         return Err(InvocationError::InvalidImageAttachment);
     }
-    for attachment in attachments {
+    for (index, attachment) in attachments.iter().enumerate() {
+        if attachments[..index]
+            .iter()
+            .any(|prior| prior.attachment_id == attachment.attachment_id)
+        {
+            return Err(InvocationError::InvalidImageAttachment);
+        }
         let path = Path::new(&attachment.file_path);
         let id = attachment.attachment_id.as_bytes();
         let valid_id = id.len() == 36
@@ -79,20 +88,12 @@ pub fn validate_image_attachments(
     Ok(())
 }
 
-/// Encodes one user-initiated image paste as a provider-neutral remote file
-/// reference without a submit key. The path is serialized as a JSON string so
-/// spaces, quotes, and platform separators remain unambiguous to every Agent
-/// composer while the user continues typing the accompanying instruction.
+
 pub fn image_attachment_terminal_paste(
     attachment: &QuickActionImageAttachment,
 ) -> Result<Vec<u8>, InvocationError> {
     validate_image_attachments(std::slice::from_ref(attachment))?;
-    let mut reference = serde_json::to_string(&attachment.file_path)
-        .map_err(|_| InvocationError::InvalidImageAttachment)?;
-    reference.push(' ');
-    Ok(termloop_platform::terminal_paste_input(
-        reference.as_bytes(),
-    ))
+    attachment.terminal_reference_paste()
 }
 
 /// TermLoop's own default permission mode for an unconfigured launch. Claude's

@@ -4,7 +4,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { QuickActionImageHandle } from "../src/quick-action-image.js";
-import { rememberQuickActionAttachment } from "../src/renderer/quick-action-memory.js";
+import { rememberQuickActionAttachments } from "../src/renderer/quick-action-memory.js";
 import { QuickActionComposer } from "../src/renderer/ui/QuickActionComposer.js";
 import { fullAgentCapability, observableGeminiCapability } from "./agent-capability-fixture.js";
 
@@ -63,25 +63,28 @@ describe("Quick Action draft", () => {
       .toBe("keep this unfinished request");
   });
 
-  it("restores a saved image attachment when the composer reopens", async () => {
-    const attachment: QuickActionImageHandle = {
-      id: "58df9988-2939-4d63-a546-6ebbd0c15f16",
+  it("restores every saved image attachment when the composer reopens", async () => {
+    const image = (id: string, width: number): QuickActionImageHandle => ({
+      id,
       mediaType: "image/png",
       byteLength: 128,
       sha256: `sha256:${"a".repeat(64)}`,
-      width: 40,
+      width,
       height: 30,
-      previewDataUrl: "data:image/png;base64,cHJldmlldw==",
-    };
-    rememberQuickActionAttachment(attachment);
-    const restoreImage = vi.fn().mockResolvedValue(attachment);
+      previewDataUrl: `data:image/png;base64,${btoa(id)}`,
+    });
+    const first = image("58df9988-2939-4d63-a546-6ebbd0c15f16", 40);
+    const second = image("68df9988-2939-4d63-a546-6ebbd0c15f16", 50);
+    rememberQuickActionAttachments([first.id, second.id]);
+    const restoreImage = vi.fn((id: string) => Promise.resolve(id === first.id ? first : second));
 
     await act(async () => root.render(createElement(QuickActionComposer, composerProps(restoreImage))));
     await act(async () => undefined);
 
-    expect(restoreImage).toHaveBeenCalledWith(attachment.id);
-    expect(container.querySelector<HTMLImageElement>('.quick-action-attachment img')?.src)
-      .toBe(attachment.previewDataUrl);
+    expect(restoreImage.mock.calls.map(([id]) => id)).toEqual([first.id, second.id]);
+    expect([...container.querySelectorAll<HTMLImageElement>(".quick-action-attachment img")].map((img) => img.src))
+      .toEqual([first.previewDataUrl, second.previewDataUrl]);
+    expect(container.querySelector('button[aria-label="Remove pasted image 2"]')).not.toBeNull();
   });
 
   it("keeps Agent Profile permission user-selectable", async () => {

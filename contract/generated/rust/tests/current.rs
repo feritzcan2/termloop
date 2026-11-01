@@ -268,10 +268,13 @@ fn quick_action_image_attachment_is_strict_and_bounded() {
     let mut oversized = params.clone();
     oversized["attachments"][0]["byteLength"] = serde_json::json!(10 * 1024 * 1024 + 1);
     assert!(!validate_method_params("quickAction.preview", &oversized));
-    let mut two = params;
-    let repeated = two["attachments"][0].clone();
-    two["attachments"] = serde_json::json!([repeated.clone(), repeated]);
-    assert!(!validate_method_params("quickAction.preview", &two));
+    let repeated = params["attachments"][0].clone();
+    let mut eight = params.clone();
+    eight["attachments"] = serde_json::json!(vec![repeated.clone(); 8]);
+    assert!(validate_method_params("quickAction.preview", &eight));
+    let mut nine = params;
+    nine["attachments"] = serde_json::json!(vec![repeated; 9]);
+    assert!(!validate_method_params("quickAction.preview", &nine));
 }
 
 #[test]

@@ -8,7 +8,8 @@ import {
   defaultAgentPermission,
   permissionLabel,
   readQuickActionMemory,
-  rememberQuickActionAttachment,
+  QUICK_ACTION_IMAGE_LIMIT,
+  rememberQuickActionAttachments,
   rememberQuickActionDraft,
   rememberQuickActionRun,
   QUICK_ACTION_AGENT_MODELS,
@@ -23,6 +24,8 @@ import { requireQuickActionPreview } from "../quick-action-result.js";
 import { quickActionShortcutUnavailable, type QuickActionShortcutDraft } from "../quick-action-shortcuts.js";
 import { QuickActionShortcutEditor } from "./QuickActionShortcutEditor.js";
 import { Icon } from "./Icon.js";
+
+const IMAGE_LIMIT_MESSAGE = `Quick Action supports up to ${QUICK_ACTION_IMAGE_LIMIT} image attachments.`;
 
 export const QUICK_ACTION_MODELS = QUICK_ACTION_AGENT_MODELS;
 export const QUICK_ACTION_PERMISSIONS = QUICK_ACTION_AGENT_PERMISSIONS;
@@ -134,8 +137,8 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
     && agentReasoningOptions(initialCapability, model).includes(initialPreset.reasoning)
     ? initialPreset.reasoning : "default");
   const [prompt, setPrompt] = useState(() => memory.draft ?? "");
-  const [attachment, setAttachment] = useState<QuickActionImageHandle | undefined>(() => memory.draftAttachment);
-  const [attachmentReady, setAttachmentReady] = useState(() => !memory.draftAttachment);
+  const [attachments, setAttachments] = useState<QuickActionImageHandle[]>([]);
+  const [attachmentReady, setAttachmentReady] = useState(() => !memory.draftAttachmentIds?.length);
   const [previewResult, setPreviewResult] = useState<QuickActionPreviewResult>();
   const [error, setError] = useState<string>();
   const [running, setRunning] = useState(false);
@@ -146,7 +149,13 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
   const shortcutTriggerRef = useRef<HTMLButtonElement>(null);
   const [inspectorTab, setInspectorTab] = useState<"preview" | "raw">("preview");
   const promptRef = useRef<HTMLTextAreaElement>(null);
-  const attachmentRef = useRef<QuickActionImageHandle | undefined>(memory.draftAttachment);
+  const attachmentsRef = useRef<QuickActionImageHandle[]>([]);
+  const updateAttachments = (next: QuickActionImageHandle[]) => {
+    attachmentsRef.current = next;
+    setAttachments(next);
+    rememberQuickActionAttachments(next.map((image) => image.id));
+    setPreviewResult(undefined);
+  };
   const priorAgentRef = useRef(agentId);
   const applyingProfile = useRef(false);
   const selectedCapability = capabilityByAgent.get(agentId);
@@ -156,35 +165,28 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
   useEffect(() => {
     if (!agentReasoningOptions(selectedCapability, model).includes(reasoning)) setReasoning("default");
   }, [selectedCapability, model, reasoning]);
-  const attachmentIds = useMemo(() => attachment ? [attachment.id] : [], [attachment]);
+  const attachmentIds = useMemo(() => attachments.map((image) => image.id), [attachments]);
   const shortcutSelection = { agentId, model, permission, reasoning };
   const shortcutDisabled = running || Boolean(quickActionShortcutUnavailable(shortcutSelection, capabilities));
   const closeShortcut = () => { setShortcutOpen(false); shortcutTriggerRef.current?.focus(); };
 
   useEffect(() => { requestAnimationFrame(() => promptRef.current?.focus()); }, []);
   useEffect(() => { rememberQuickActionDraft(prompt); }, [prompt]);
+  // Restores the draft saved when this composer opened; later pastes own the list.
   useEffect(() => {
-    const saved = memory.draftAttachment;
-    if (!saved) return;
+    const saved = memory.draftAttachmentIds ?? [];
+    if (!saved.length) return;
     let live = true;
-    void restoreImage(saved.id)
-      .then((restored) => {
-        if (!live || attachmentRef.current?.id !== saved.id) return;
-        attachmentRef.current = restored;
-        setAttachment(restored);
-        setAttachmentReady(true);
-        rememberQuickActionAttachment(restored);
-      })
-      .catch((cause) => {
-        if (!live || attachmentRef.current?.id !== saved.id) return;
-        attachmentRef.current = undefined;
-        setAttachment(undefined);
-        setAttachmentReady(true);
-        rememberQuickActionAttachment(undefined);
-        setError(cause instanceof Error ? cause.message : String(cause));
-      });
+    void Promise.allSettled(saved.map((id) => restoreImage(id))).then((results) => {
+      if (!live) return;
+      const restored = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
+      const failure = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+      updateAttachments(restored);
+      setAttachmentReady(true);
+      if (failure) setError(failure.reason instanceof Error ? failure.reason.message : String(failure.reason));
+    });
     return () => { live = false; };
-  }, [memory.draftAttachment, restoreImage]);
+  }, [memory.draftAttachmentIds, restoreImage]);
   useEffect(() => {
     if (priorAgentRef.current === agentId) return;
     priorAgentRef.current = agentId;
@@ -246,32 +248,29 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
     if (event.clipboardData.getData("text/plain")) return;
     if (![...event.clipboardData.items].some((item) => item.kind === "file" && item.type.startsWith("image/"))) return;
     event.preventDefault();
-    if (attachmentRef.current) {
-      setError("Quick Action currently supports one image attachment.");
+    if (!attachmentReady) return;
+    if (attachmentsRef.current.length >= QUICK_ACTION_IMAGE_LIMIT) {
+      setError(IMAGE_LIMIT_MESSAGE);
       return;
     }
     try {
       const staged = await pasteImage(projectId);
-      attachmentRef.current = staged;
-      setAttachment(staged);
-      setAttachmentReady(true);
-      rememberQuickActionAttachment(staged);
+      if (attachmentsRef.current.length >= QUICK_ACTION_IMAGE_LIMIT) {
+        await discardImage(staged.id);
+        setError(IMAGE_LIMIT_MESSAGE);
+        return;
+      }
+      updateAttachments([...attachmentsRef.current, staged]);
       setPrompt((current) => current || "Inspect the attached image.");
-      setPreviewResult(undefined);
       setError(undefined);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
   };
-  const removeAttachment = async () => {
-    const current = attachmentRef.current;
-    if (!current) return;
-    attachmentRef.current = undefined;
-    setAttachment(undefined);
-    setAttachmentReady(true);
-    rememberQuickActionAttachment(undefined);
-    setPreviewResult(undefined);
-    await discardImage(current.id);
+  const removeAttachment = async (id: string) => {
+    if (!attachmentsRef.current.some((image) => image.id === id)) return;
+    updateAttachments(attachmentsRef.current.filter((image) => image.id !== id));
+    await discardImage(id);
   };
   const selectTemplate = (nextTemplateRef: QuickActionParams["templateRef"]) => {
     const profile = profiles.find((candidate) => candidate.id === nextTemplateRef);
@@ -328,10 +327,12 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
         <main className="quick-action-body">
           <label htmlFor="quick-action-prompt">{selectedProfile ? "Scope / task" : "Prompt"}</label>
           <textarea ref={promptRef} id="quick-action-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} onPaste={(event) => { void paste(event); }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.ctrlKey) { event.preventDefault(); void submit(); } }} placeholder={selectedProfile?.description ?? "What would you like to run? Paste an image with ⌘V."} spellCheck={false} />
-          {attachment ? <div className="quick-action-attachment">
-            <img src={attachment.previewDataUrl} alt="Pasted Quick Action attachment" />
-            <span><strong>Image</strong><small>{attachment.width}×{attachment.height} · {formatBytes(attachment.byteLength)}</small></span>
-            <button type="button" aria-label="Remove pasted image" onClick={() => { void removeAttachment(); }}>×</button>
+          {attachments.length ? <div className="quick-action-attachments">
+            {attachments.map((image, index) => <div key={image.id} className="quick-action-attachment">
+              <img src={image.previewDataUrl} alt={`Pasted Quick Action attachment ${index + 1}`} />
+              <span><strong>Image {index + 1}</strong><small>{image.width}×{image.height} · {formatBytes(image.byteLength)}</small></span>
+              <button type="button" aria-label={`Remove pasted image ${index + 1}`} onClick={() => { void removeAttachment(image.id); }}>×</button>
+            </div>)}
           </div> : null}
         </main>
         <div className="quick-action-options">
@@ -355,7 +356,7 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
           save={(draft) => { createShortcut(draft); setShortcutCreated(true); }}
           close={closeShortcut}
         /> : null}
-        <button className="quick-action-advanced-row" type="button" onClick={() => setAdvancedOpen((open) => !open)} aria-expanded={advancedOpen}><span aria-hidden="true"><PuzzleGlyph /></span><strong>Advanced {attachment ? 1 : 0}</strong><small>· project</small><i /> <em>{attachment ? "1 image attachment ·" : "No project rules ·"}</em><b>Advanced</b></button>
+        <button className="quick-action-advanced-row" type="button" onClick={() => setAdvancedOpen((open) => !open)} aria-expanded={advancedOpen}><span aria-hidden="true"><PuzzleGlyph /></span><strong>Advanced {attachments.length}</strong><small>· project</small><i /> <em>{attachments.length ? `${attachments.length} image attachment${attachments.length === 1 ? "" : "s"} ·` : "No project rules ·"}</em><b>Advanced</b></button>
         {advancedOpen || error || profileUnavailable ? <section className="quick-action-preview">
           {profileUnavailable ? <p role="alert">This agent is unavailable on the current connection. Choose another agent or Free prompt.</p> : error ? <p role="alert">{error}</p> : <>
             <nav className="quick-action-inspector-tabs" aria-label="Launch inspector views">

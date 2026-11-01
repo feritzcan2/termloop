@@ -8234,7 +8234,7 @@
         },
         "attachments": {
           "type": "array",
-          "maxItems": 1,
+          "maxItems": 8,
           "items": {
             "$ref": "#/$defs/quickActionImageAttachment"
           }
@@ -8314,7 +8314,7 @@
         },
         "attachments": {
           "type": "array",
-          "maxItems": 1,
+          "maxItems": 8,
           "items": {
             "$ref": "#/$defs/quickActionImageAttachment"
           }
@@ -9534,8 +9534,49 @@
           "minimum": 0,
           "maximum": 1024,
           "x-rust-type": "u32"
+        },
+        "waitingOn": {
+          "type": "array",
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/agentPendingWakeDto"
+          }
         }
       }
+    },
+    "agentPendingWakeDto": {
+      "x-codegen": true,
+      "x-codegen-name": "AgentPendingWakeDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "label"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/agentPendingWakeKind"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "x-utf8-max-bytes": 480
+        }
+      }
+    },
+    "agentPendingWakeKind": {
+      "x-codegen": true,
+      "x-codegen-name": "AgentPendingWakeKind",
+      "type": "string",
+      "enum": [
+        "shell",
+        "subagent",
+        "monitor",
+        "workflow",
+        "task",
+        "scheduled"
+      ]
     },
     "agentObserveParams": {
       "x-codegen": true,
