@@ -33,8 +33,8 @@ afterEach(async () => {
 });
 
 describe("packaged app update config", () => {
-  it.each(["win32", "darwin"])("gives a %s directory build the release feed", async (platform) => {
-    await writeAppUpdateConfig(await contextFor(platform, [publish]));
+  it("gives a macOS directory build the release feed", async () => {
+    await writeAppUpdateConfig(await contextFor("darwin", [publish]));
     expect(JSON.parse(await readFile(configPath(), "utf8"))).toEqual({
       ...publish,
       updaterCacheDirName: "@termloopdesktop-updater",
@@ -42,17 +42,19 @@ describe("packaged app update config", () => {
   });
 
   it("keeps the config an installer target already wrote", async () => {
-    const context = await contextFor("win32");
+    const context = await contextFor("darwin");
     await writeFile(configPath(), "provider: generic\npublisherName: TermLoop\n");
     await writeAppUpdateConfig(context);
     expect(await readFile(configPath(), "utf8")).toBe("provider: generic\npublisherName: TermLoop\n");
   });
 
-  it("leaves Linux and unpublished builds without a feed", async () => {
-    await writeAppUpdateConfig(await contextFor("linux"));
+  it.each(["linux", "win32"])("leaves a %s directory build without a feed", async (platform) => {
+    await writeAppUpdateConfig(await contextFor(platform));
     await expect(readFile(configPath())).rejects.toThrow();
-    await rm(resourcesDir!, { recursive: true, force: true });
-    await writeAppUpdateConfig(await contextFor("win32", null));
+  });
+
+  it("leaves an unpublished build without a feed", async () => {
+    await writeAppUpdateConfig(await contextFor("darwin", null));
     await expect(readFile(configPath())).rejects.toThrow();
   });
 
