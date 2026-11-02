@@ -1664,6 +1664,12 @@ async fn dispatch_inner(
                 preview_relocate_agent_to_project(request.params, state).await
             }
             "session.relocateAgentToProject" => relocate_agent_session(request.params, state).await,
+            "session.jiraTaskProposalApprove" => {
+                super::jira_task_proposal::approve(request.params, state).await
+            }
+            "session.jiraTaskProposalRespond" => {
+                super::jira_task_proposal::respond(request.params, state).await
+            }
             "session.restoreArchived" => restore_archived_session(request.params, state).await,
             "session.listDeleted" => list_deleted_sessions(request.params, state).await,
             "session.restoreDeleted" => restore_deleted_session(request.params, state).await,

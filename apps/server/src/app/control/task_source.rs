@@ -685,7 +685,7 @@ async fn observe_refresh(
     outcome
 }
 
-async fn read_stored_credential(
+pub(super) async fn read_stored_credential(
     state: &AppState,
     source_id: &str,
 ) -> Result<SecureSecret, TaskSourceFailure> {
@@ -733,7 +733,7 @@ pub(in crate::app::control) async fn credential_presence(
     }
 }
 
-fn expose_credential(secret: &SecureSecret) -> Result<(&str, &str), TaskSourceFailure> {
+pub(super) fn expose_credential(secret: &SecureSecret) -> Result<(&str, &str), TaskSourceFailure> {
     let separator = secret
         .expose()
         .iter()

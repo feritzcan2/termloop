@@ -12,6 +12,7 @@ use serde::Deserialize;
 
 use crate::issue_key_pull_requests::valid_issue_key;
 use crate::jira::{JiraCloudClient, JiraCredential, normalize_jira_site_base_url};
+use crate::jira_browse::valid_project_key;
 
 const JIRA_ISSUE_RESPONSE_MAX_BYTES: u64 = 1024 * 1024;
 /// Jira refuses a summary longer than this.
@@ -36,6 +37,47 @@ pub struct JiraIssueText {
     pub status_category: Option<String>,
     /// Jira's `updated` stamp, which moves on every change to the issue.
     pub updated: String,
+}
+
+/// Jira refuses an issue type name longer than this.
+pub const JIRA_ISSUE_TYPE_MAX_CHARS: usize = 60;
+/// The longest Jira rejection text carried back to the person who asked.
+const JIRA_REJECTION_DETAIL_MAX_CHARS: usize = 512;
+
+/// The fields of one new issue. The description is Jira wiki markup.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JiraIssueDraft {
+    pub project_key: String,
+    pub issue_type: String,
+    /// The epic (or other parent) the new issue belongs to.
+    pub parent_key: Option<String>,
+    pub summary: String,
+    pub description: String,
+}
+
+/// The issue Jira created.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JiraCreatedIssue {
+    pub key: String,
+    /// The secret-free browse URL on the source's own site.
+    pub url: String,
+}
+
+/// Whether a draft is shaped like an issue Jira could accept. Jira still
+/// decides whether the project, issue type, and parent exist.
+pub fn valid_jira_issue_draft(draft: &JiraIssueDraft) -> bool {
+    let summary = draft.summary.trim();
+    let issue_type = draft.issue_type.trim();
+    valid_project_key(&draft.project_key)
+        && draft.project_key.len() <= 32
+        && !issue_type.is_empty()
+        && issue_type.chars().count() <= JIRA_ISSUE_TYPE_MAX_CHARS
+        && !issue_type.chars().any(char::is_control)
+        && draft.parent_key.as_deref().is_none_or(valid_issue_key)
+        && !summary.is_empty()
+        && summary.chars().count() <= JIRA_SUMMARY_MAX_CHARS
+        && !summary.contains(['\n', '\r'])
+        && draft.description.chars().count() <= JIRA_DESCRIPTION_MAX_CHARS
 }
 
 /// One workflow transition Jira offers for an issue right now.
@@ -73,6 +115,10 @@ pub enum JiraWriteError {
     NotFound,
     #[error("Jira rejected the change")]
     Rejected,
+    /// Jira's own field errors for a refused new issue, bounded and
+    /// credential-free, so the person can correct the draft.
+    #[error("Jira rejected the issue: {0}")]
+    RejectedWithReason(String),
     #[error("Jira rate limit is active")]
     RateLimited,
     #[error("Jira is unavailable")]
@@ -133,6 +179,14 @@ pub trait JiraIssueWriter: Send + Sync {
         issue_key: &str,
         body: &str,
     ) -> Result<(), JiraWriteError>;
+
+    /// Creates one issue and returns its key and browse URL.
+    fn create_issue(
+        &self,
+        site_base_url: &str,
+        credential: JiraCredential<'_>,
+        draft: &JiraIssueDraft,
+    ) -> Result<JiraCreatedIssue, JiraWriteError>;
 }
 
 impl JiraIssueWriter for JiraCloudClient {
@@ -270,6 +324,115 @@ impl JiraIssueWriter for JiraCloudClient {
             .map_err(|_| JiraWriteError::Unavailable)?;
         read_response(response).map(|_| ())
     }
+
+    fn create_issue(
+        &self,
+        site_base_url: &str,
+        credential: JiraCredential<'_>,
+        draft: &JiraIssueDraft,
+    ) -> Result<JiraCreatedIssue, JiraWriteError> {
+        if !valid_jira_issue_draft(draft) {
+            return Err(JiraWriteError::InvalidRequest);
+        }
+        let site = normalize_jira_site_base_url(site_base_url)
+            .map_err(|_| JiraWriteError::InvalidRequest)?;
+        let response = self
+            .http()
+            .post(format!("{site}/rest/api/2/issue"))
+            .basic_auth(credential.email, Some(credential.api_token))
+            .header(reqwest::header::ACCEPT, "application/json")
+            .json(&issue_create_body(draft))
+            .send()
+            .map_err(|_| JiraWriteError::Unavailable)?;
+        if response.status() == StatusCode::BAD_REQUEST {
+            let mut bytes = Vec::new();
+            let _ = response
+                .take(JIRA_ISSUE_RESPONSE_MAX_BYTES)
+                .read_to_end(&mut bytes);
+            return Err(decode_create_rejection(&bytes));
+        }
+        decode_created_issue(&site, &read_response(response)?)
+    }
+}
+
+fn issue_create_body(draft: &JiraIssueDraft) -> serde_json::Value {
+    let mut fields = serde_json::json!({
+        "project": { "key": draft.project_key },
+        "issuetype": { "name": draft.issue_type.trim() },
+        "summary": draft.summary.trim(),
+    });
+    if !draft.description.trim().is_empty() {
+        fields["description"] = draft.description.clone().into();
+    }
+    if let Some(parent) = &draft.parent_key {
+        fields["parent"] = serde_json::json!({ "key": parent });
+    }
+    serde_json::json!({ "fields": fields })
+}
+
+#[derive(Deserialize)]
+struct CreatedIssueResponse {
+    key: String,
+}
+
+fn decode_created_issue(site: &str, bytes: &[u8]) -> Result<JiraCreatedIssue, JiraWriteError> {
+    let created: CreatedIssueResponse =
+        serde_json::from_slice(bytes).map_err(|_| JiraWriteError::MalformedResponse)?;
+    if !valid_issue_key(&created.key) {
+        return Err(JiraWriteError::MalformedResponse);
+    }
+    Ok(JiraCreatedIssue {
+        url: format!("{site}/browse/{}", created.key),
+        key: created.key,
+    })
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct CreateRejection {
+    #[serde(default)]
+    error_messages: Vec<String>,
+    #[serde(default)]
+    errors: std::collections::BTreeMap<String, String>,
+}
+
+/// Jira's field errors as one bounded line, e.g. `parent: Epic not found`.
+fn decode_create_rejection(bytes: &[u8]) -> JiraWriteError {
+    let rejection: CreateRejection = serde_json::from_slice(bytes).unwrap_or_default();
+    let detail = rejection
+        .error_messages
+        .into_iter()
+        .chain(
+            rejection
+                .errors
+                .into_iter()
+                .map(|(field, message)| format!("{field}: {message}")),
+        )
+        .map(|line| {
+            line.chars()
+                .map(|character| {
+                    if character.is_control() {
+                        ' '
+                    } else {
+                        character
+                    }
+                })
+                .collect::<String>()
+                .trim()
+                .to_owned()
+        })
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("; ");
+    if detail.is_empty() {
+        return JiraWriteError::Rejected;
+    }
+    JiraWriteError::RejectedWithReason(
+        detail
+            .chars()
+            .take(JIRA_REJECTION_DETAIL_MAX_CHARS)
+            .collect(),
+    )
 }
 
 fn valid_transition_id(id: &str) -> bool {
@@ -575,6 +738,103 @@ mod tests {
         // An unclosed fence still closes, and a lone marker stays text.
         assert_eq!(markdown_to_jira_wiki("```\nx"), "{code}\nx\n{code}");
         assert_eq!(markdown_to_jira_wiki("2 * 3 and a_b"), "2 * 3 and a_b");
+    }
+
+    fn draft() -> JiraIssueDraft {
+        JiraIssueDraft {
+            project_key: "PAY".into(),
+            issue_type: "Task".into(),
+            parent_key: Some("PAY-7".into()),
+            summary: " Retry checkout once ".into(),
+            description: "h2. Goal".into(),
+        }
+    }
+
+    #[test]
+    fn a_new_issue_names_its_project_type_and_epic_parent() {
+        assert_eq!(
+            issue_create_body(&draft()),
+            serde_json::json!({ "fields": {
+                "project": { "key": "PAY" },
+                "issuetype": { "name": "Task" },
+                "summary": "Retry checkout once",
+                "description": "h2. Goal",
+                "parent": { "key": "PAY-7" },
+            }})
+        );
+        let bare = JiraIssueDraft {
+            parent_key: None,
+            description: "  ".into(),
+            ..draft()
+        };
+        assert_eq!(
+            issue_create_body(&bare)["fields"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .collect::<Vec<_>>(),
+            ["issuetype", "project", "summary"]
+        );
+    }
+
+    #[test]
+    fn a_malformed_draft_never_reaches_jira() {
+        assert!(valid_jira_issue_draft(&draft()));
+        for invalid in [
+            JiraIssueDraft {
+                project_key: "pay".into(),
+                ..draft()
+            },
+            JiraIssueDraft {
+                issue_type: " ".into(),
+                ..draft()
+            },
+            JiraIssueDraft {
+                parent_key: Some("epic".into()),
+                ..draft()
+            },
+            JiraIssueDraft {
+                summary: "two\nlines".into(),
+                ..draft()
+            },
+            JiraIssueDraft {
+                summary: "x".repeat(256),
+                ..draft()
+            },
+        ] {
+            assert!(!valid_jira_issue_draft(&invalid), "{invalid:?}");
+        }
+    }
+
+    #[test]
+    fn the_created_key_becomes_a_browse_url_on_the_same_site() {
+        assert_eq!(
+            decode_created_issue(
+                "https://acme.atlassian.net",
+                br#"{"id":"1","key":"PAY-43","self":"x"}"#
+            ),
+            Ok(JiraCreatedIssue {
+                key: "PAY-43".into(),
+                url: "https://acme.atlassian.net/browse/PAY-43".into(),
+            })
+        );
+        assert_eq!(
+            decode_created_issue("https://acme.atlassian.net", br#"{"key":"../x"}"#),
+            Err(JiraWriteError::MalformedResponse)
+        );
+    }
+
+    #[test]
+    fn a_refused_issue_carries_jiras_field_errors() {
+        assert_eq!(
+            decode_create_rejection(
+                br#"{"errorMessages":["Bad"],"errors":{"parent":"Epic not found","issuetype":"Invalid\ntype"}}"#
+            ),
+            JiraWriteError::RejectedWithReason(
+                "Bad; issuetype: Invalid type; parent: Epic not found".into()
+            )
+        );
+        assert_eq!(decode_create_rejection(b"<html>"), JiraWriteError::Rejected);
     }
 
     #[test]

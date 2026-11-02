@@ -61,7 +61,7 @@ const PuzzleGlyph = () => <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M
 const profileSupportsCapability = (profile: AgentProfileDto, capability: AgentCapabilityDto) =>
   profile.agent_ids.includes(capability.agent_id) && capability.permissions.length > 0;
 
-export function QuickActionComposer({ projects, selectedProject, tasks = [], capabilities, profiles, libraryProfiles = [], initialTemplateRef, manageAgents, initialAgent, loadAccounts, droppedFilePath, pasteImage, restoreImage, discardImage, preview, launch, createShortcut, close }: {
+export function QuickActionComposer({ projects, selectedProject, tasks = [], capabilities, profiles, libraryProfiles = [], initialTemplateRef, manageAgents, initialAgent, loadAccounts, jiraTaskSourceAvailable, droppedFilePath, pasteImage, restoreImage, discardImage, preview, launch, createShortcut, close }: {
   projects: readonly Project[];
   selectedProject: Project | undefined;
   tasks?: readonly Task[];
@@ -73,12 +73,14 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
   initialAgent?: AgentId;
   createShortcut?: ((draft: QuickActionShortcutDraft) => void) | undefined;
   loadAccounts?: ((projectId: string) => Promise<AgentAccountDto[]>) | undefined;
+  /** Whether the Project has an enabled Jira Task Source; the intake option is hidden otherwise. */
+  jiraTaskSourceAvailable?: ((projectId: string) => Promise<boolean>) | undefined;
   droppedFilePath?: ((file: File) => string) | undefined;
   pasteImage(projectId: string): Promise<QuickActionImageHandle>;
   restoreImage(attachmentId: string): Promise<QuickActionImageHandle>;
   discardImage(attachmentId: string): Promise<void>;
-  preview(projectId: string, agentId: AgentId, model: string, permission: Permission, reasoning: Reasoning, templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], accountId?: string, taskId?: string): Promise<QuickActionPreviewResult>;
-  launch(projectId: string, agentId: AgentId, model: string, permission: Permission, reasoning: Reasoning, templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string, taskId?: string): Promise<string | undefined>;
+  preview(projectId: string, agentId: AgentId, model: string, permission: Permission, reasoning: Reasoning, templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], accountId?: string, taskId?: string, jiraTaskIntake?: boolean): Promise<QuickActionPreviewResult>;
+  launch(projectId: string, agentId: AgentId, model: string, permission: Permission, reasoning: Reasoning, templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string, taskId?: string, jiraTaskIntake?: boolean): Promise<string | undefined>;
   close(): void;
 }) {
   const [templateRef, setTemplateRef] = useState<QuickActionParams["templateRef"]>(initialTemplateRef ?? FREE_PROMPT_TEMPLATE_REF);
@@ -131,6 +133,21 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
     void loadAccounts(projectId).then((accounts) => { if (live) setAccountChoices({ projectId, accounts }); }).catch((cause) => { if (live) setAccountError(cause instanceof Error ? cause.message : "Could not load server accounts"); });
     return () => { live = false; };
   }, [accountReload, loadAccounts, projectId]);
+  const [jiraSource, setJiraSource] = useState<{ projectId: string; available: boolean }>();
+  const [jiraTaskRequested, setJiraTaskRequested] = useState(false);
+  useEffect(() => {
+    if (!jiraTaskSourceAvailable || !projectId) return;
+    let live = true;
+    void jiraTaskSourceAvailable(projectId)
+      .then((available) => { if (live) setJiraSource({ projectId, available }); })
+      .catch(() => { if (live) setJiraSource({ projectId, available: false }); });
+    return () => { live = false; };
+  }, [jiraTaskSourceAvailable, projectId]);
+  // The approved proposal moves this Agent into a new Task worktree, which
+  // only a free-prompt Agent started in the Project folder can do.
+  const jiraTaskOffered = jiraSource?.projectId === projectId && jiraSource.available
+    && templateRef === FREE_PROMPT_TEMPLATE_REF && target === "run";
+  const jiraTaskIntake = jiraTaskOffered && jiraTaskRequested ? true : undefined;
   const [model, setModel] = useState(() => initialPreset?.model && initialCapability?.models.includes(initialPreset.model)
     ? initialPreset.model : "default");
   const [permission, setPermission] = useState<Permission>(initialPreset?.permission
@@ -217,7 +234,7 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
       // A submit owns preview and launch; a successful launch consumes the attachment, so a
       // background preview racing it would report quickActionImageNotFound before close.
       if (submittingRef.current) return;
-      void preview(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId, taskId)
+      void preview(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId, taskId, jiraTaskIntake)
         .then((value) => {
           const result = requireQuickActionPreview(value);
           if (live && !submittingRef.current) { setPreviewResult(result); setError(undefined); }
@@ -225,7 +242,7 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
         .catch((cause) => { if (live && !submittingRef.current) { setPreviewResult(undefined); setError(cause instanceof Error ? cause.message : String(cause)); } });
     }, 180);
     return () => { live = false; window.clearTimeout(timer); };
-  }, [accountId, agentId, attachmentIds, attachmentReady, model, permission, preview, profileUnavailable, projectId, prompt, reasoning, selectedProfile?.version, targetUnavailable, taskId, templateRef]);
+  }, [accountId, agentId, attachmentIds, attachmentReady, jiraTaskIntake, model, permission, preview, profileUnavailable, projectId, prompt, reasoning, selectedProfile?.version, targetUnavailable, taskId, templateRef]);
 
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();
@@ -233,9 +250,9 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
     setRunning(true);
     submittingRef.current = true;
     try {
-      const inspected = requireQuickActionPreview(await preview(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId, taskId));
+      const inspected = requireQuickActionPreview(await preview(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId, taskId, jiraTaskIntake));
       setPreviewResult(inspected);
-      const message = await launch(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, inspected.launch_ticket, accountId, taskId);
+      const message = await launch(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, inspected.launch_ticket, accountId, taskId, jiraTaskIntake);
       if (message) setError(message); else {
         rememberQuickActionRun(projectId, agentId, { model, permission, reasoning });
         close();
@@ -362,6 +379,14 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
               <span><strong>Image {index + 1}</strong><small>{image.width}×{image.height} · {formatBytes(image.byteLength)}</small></span>
               <button type="button" aria-label={`Remove pasted image ${index + 1}`} onClick={() => { void removeAttachment(image.id); }}>×</button>
             </div>)}
+          </div> : null}
+          {jiraTaskOffered ? <div className="quick-action-jira-task">
+            <label>
+              <input type="checkbox" checked={jiraTaskRequested} disabled={running} onChange={(event) => setJiraTaskRequested(event.target.checked)} />
+              Create Jira issue and task
+            </label>
+            <span className="quick-action-help" tabIndex={0} role="img" aria-label="What Create Jira issue and task does" aria-describedby="quick-action-jira-task-help">?</span>
+            <span id="quick-action-jira-task-help" role="tooltip">The agent first works out the request, finds the Jira project and epic with its own Jira tools, and proposes an issue. You review, edit, or send feedback on the proposal. When you approve, TermLoop creates the Jira issue and a linked Task, then moves the agent into the Task worktree to start the work.</span>
           </div> : null}
         </main>
         <div className="quick-action-options">

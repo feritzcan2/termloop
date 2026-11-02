@@ -129,7 +129,7 @@ const LONG_RUNNING_REQUEST_TIMEOUT_MS = 300_000;
 export function controlRequestTimeoutMs(method: Method): number {
   // Two account probes can each take 5s for version and 8s for auth, plus transport.
   if (method === "agent.authStatusList") return 45_000;
-  return method === "task.cleanupWorktree" || method === "task.discardStaleWorktree" || method === "session.relocateAgentToTask" || method === "session.relocateAgentToProject" || method === "taskSource.boardList" || method === "taskSource.boardListStored" || method === "taskSource.statusList" || method === "taskSource.statusListStored" || method === "taskSource.refresh" || method === "playbook.update"
+  return method === "task.cleanupWorktree" || method === "task.discardStaleWorktree" || method === "session.relocateAgentToTask" || method === "session.relocateAgentToProject" || method === "session.jiraTaskProposalApprove" || method === "taskSource.boardList" || method === "taskSource.boardListStored" || method === "taskSource.statusList" || method === "taskSource.statusListStored" || method === "taskSource.refresh" || method === "playbook.update"
     ? LONG_RUNNING_REQUEST_TIMEOUT_MS
     : CONTROL_REQUEST_TIMEOUT_MS;
 }

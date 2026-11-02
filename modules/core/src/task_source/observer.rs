@@ -1,5 +1,6 @@
 use termloop_providers::{
-    JiraBoardSource, JiraCloudClient, JiraCredential, JiraIssueSource, JiraSearchError,
+    JiraBoardSource, JiraCloudClient, JiraCreatedIssue, JiraCredential, JiraIssueDraft,
+    JiraIssueSource, JiraIssueWriter, JiraSearchError,
 };
 
 use super::{TaskSourceFailure, TaskSourceRefreshOutcome, TaskSourceRefreshPlan};
@@ -59,9 +60,28 @@ pub struct TaskSourceStatusList {
     pub statuses: Vec<TaskSourceStatus>,
 }
 
-pub trait TaskSourceJiraObserver: TaskSourceRefreshObserver + TaskSourceBoardObserver {}
+/// Creates one Jira issue with a Task Source's stored credentials. The server
+/// calls this outside the serialized Core lock; the error is a bounded,
+/// credential-free sentence the user can act on.
+pub trait TaskSourceIssueCreator: Send + Sync {
+    fn create_issue(
+        &self,
+        site_base_url: &str,
+        email: &str,
+        api_token: &str,
+        draft: &JiraIssueDraft,
+    ) -> Result<JiraCreatedIssue, String>;
+}
 
-impl<T> TaskSourceJiraObserver for T where T: TaskSourceRefreshObserver + TaskSourceBoardObserver {}
+pub trait TaskSourceJiraObserver:
+    TaskSourceRefreshObserver + TaskSourceBoardObserver + TaskSourceIssueCreator
+{
+}
+
+impl<T> TaskSourceJiraObserver for T where
+    T: TaskSourceRefreshObserver + TaskSourceBoardObserver + TaskSourceIssueCreator
+{
+}
 
 pub struct JiraTaskSourceRefreshObserver {
     client: JiraCloudClient,
@@ -103,6 +123,32 @@ impl TaskSourceBoardObserver for UnavailableTaskSourceRefreshObserver {
         _board_ids: &[String],
     ) -> Result<TaskSourceStatusList, TaskSourceFailure> {
         Err(TaskSourceFailure::ProviderUnavailable)
+    }
+}
+
+impl TaskSourceIssueCreator for UnavailableTaskSourceRefreshObserver {
+    fn create_issue(
+        &self,
+        _site_base_url: &str,
+        _email: &str,
+        _api_token: &str,
+        _draft: &JiraIssueDraft,
+    ) -> Result<JiraCreatedIssue, String> {
+        Err("Jira is unavailable in this TermLoop build".into())
+    }
+}
+
+impl TaskSourceIssueCreator for JiraTaskSourceRefreshObserver {
+    fn create_issue(
+        &self,
+        site_base_url: &str,
+        email: &str,
+        api_token: &str,
+        draft: &JiraIssueDraft,
+    ) -> Result<JiraCreatedIssue, String> {
+        self.client
+            .create_issue(site_base_url, JiraCredential { email, api_token }, draft)
+            .map_err(|error| error.to_string())
     }
 }
 

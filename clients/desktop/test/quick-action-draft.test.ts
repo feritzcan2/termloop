@@ -174,8 +174,8 @@ describe("Quick Action draft", () => {
       prompt.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await act(async () => container.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
-    expect(props.preview.mock.calls.at(-1)?.at(-2)).toBe("default");
-    expect(props.launch.mock.calls.at(-1)?.slice(-3)).toEqual(["approved-ticket", "default", undefined]);
+    expect(props.preview.mock.calls.at(-1)?.at(-3)).toBe("default");
+    expect(props.launch.mock.calls.at(-1)?.slice(-4)).toEqual(["approved-ticket", "default", undefined, undefined]);
     expect(props.close).toHaveBeenCalledOnce();
   });
 
@@ -210,9 +210,9 @@ describe("Quick Action draft", () => {
       container.querySelector<HTMLTextAreaElement>("#quick-action-prompt")!
         .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
     });
-    expect(props.preview.mock.calls.at(-1)?.at(-2)).toBeUndefined();
+    expect(props.preview.mock.calls.at(-1)?.at(-3)).toBeUndefined();
     expect(props.launch).toHaveBeenCalledOnce();
-    expect(props.launch.mock.calls[0]?.slice(-3)).toEqual(["approved-ticket", undefined, undefined]);
+    expect(props.launch.mock.calls[0]?.slice(-4)).toEqual(["approved-ticket", undefined, undefined, undefined]);
     expect(props.close).toHaveBeenCalledOnce();
     expect(container.textContent).not.toContain("Loading server accounts");
   });

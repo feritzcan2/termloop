@@ -38,6 +38,7 @@ import { ghosttyBridge } from "../transport/ghostty-bridge.js";
 import { terminalRendererKind } from "../terminal/renderer-kind.js";
 import { attachTerminal } from "../transport/terminal-port.js";
 import type { TaskSourceActions } from "../ui/TaskSourcesPanel.js";
+import type { JiraTaskProposalActions } from "../ui/JiraTaskProposalCards.js";
 import { Shell } from "../ui/Shell.js";
 import { AgentLaunchInspector } from "../ui/AgentLaunchInspector.js";
 import { createPromptSettingsActions } from "./prompt-settings-actions.js";
@@ -1176,11 +1177,30 @@ export function DesktopApp() {
     }
   }, []);
   const loadAgentAccounts = useCallback(async (projectId: string) => (await sourceApiForProject(projectId).agentAccountList()).accounts, [sourceApiForProject]);
-  const launchQuickAction = useCallback(async (projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string, taskId?: string) => {
+  const jiraTaskProposals = useMemo<JiraTaskProposalActions>(() => ({
+    loadSources: async (projectId) => (await sourceApiForProject(projectId).taskSourceList({ projectId })).sources
+      .filter((source) => source.enabled)
+      .map((source) => ({ id: source.id, name: source.name })),
+    approve: async (sessionId, proposalId, edit) => {
+      const result = await sourceApiForSession(sessionId).sessionJiraTaskProposalApprove({ sessionId, proposalId, ...edit });
+      if (result.outcome === "created") await refreshTaskProjection([result.taskId]);
+      return result;
+    },
+    respond: async (sessionId, proposalId, decision, feedback) => {
+      try {
+        await sourceApiForSession(sessionId).sessionJiraTaskProposalRespond({ sessionId, proposalId, decision, feedback });
+        return undefined;
+      } catch (error) {
+        return controlErrorMessage(error);
+      }
+    },
+  }), []);
+  const jiraTaskSourceAvailable = useCallback(async (projectId: string) => (await jiraTaskProposals.loadSources(projectId)).length > 0, [jiraTaskProposals]);
+  const launchQuickAction = useCallback(async (projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string, taskId?: string, jiraTaskIntake?: boolean) => {
     const activation = captureSessionActivation();
     try {
       const session = requireQuickActionSession(
-        await sourceApiForProject(projectId).quickActionLaunch(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, launchTicket, accountId, taskId),
+        await sourceApiForProject(projectId).quickActionLaunch(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, launchTicket, accountId, taskId, jiraTaskIntake),
         projectId,
       );
       await activateSession(activation, session, taskId ? { kind: "task", taskId } : undefined);
@@ -2723,7 +2743,10 @@ export function DesktopApp() {
       loadSessionHistoryPreview={loadSessionHistoryPreview}
       resumeHistorySession={resumeHistorySession}
       loadAgentAccounts={loadAgentAccounts}
-      previewQuickAction={(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId, taskId) => sourceApiForProject(projectId).quickActionPreview(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId, taskId)}
+      jiraTaskSourceAvailable={jiraTaskSourceAvailable}
+      jiraTaskProposals={jiraTaskProposals}
+      reportMessage={(message) => projectionStore.setMessage(message)}
+      previewQuickAction={(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId, taskId, jiraTaskIntake) => sourceApiForProject(projectId).quickActionPreview(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId, taskId, jiraTaskIntake)}
       droppedFilePath={(file) => desktopApi.droppedFilePath(file)}
       pasteQuickActionImage={(projectId) => sourceApiForProject(projectId).quickActionPasteImage()}
       restoreQuickActionImage={createQuickActionImageRestore({

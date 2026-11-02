@@ -189,6 +189,8 @@ struct QuickActionLaunch {
     personal_agent: Option<termloop_domain::PersonalAgent>,
     prompt: String,
     attachments: Vec<termloop_invocation::QuickActionImageAttachment>,
+    /// Ask the Agent to propose a Jira issue and Task before starting.
+    jira_task_intake: bool,
 }
 
 #[derive(Clone)]
@@ -1322,7 +1324,8 @@ impl CoreRuntime {
             && params.get("templateRef").and_then(Value::as_str)
                 == Some(quick_action.template_ref.as_str())
             && prompt == Some(quick_action.prompt.as_str())
-            && attachments == quick_action.attachments;
+            && attachments == quick_action.attachments
+            && jira_task_intake_requested(&params)? == quick_action.jira_task_intake;
         if !matches {
             return Err(CoreError::InvalidParams("launchTicket".into()));
         }
@@ -1360,7 +1363,22 @@ impl CoreRuntime {
             .ok_or_else(|| CoreError::InvalidParams("bindings.prompt".into()))?
             .to_owned();
         let attachments = quick_action_attachments(&params)?;
+        let jira_task_intake = jira_task_intake_requested(&params)?;
         let mut plan = self.plan_agent_launch(params)?;
+        if jira_task_intake {
+            // The approved proposal moves this Agent into a Task worktree,
+            // which only an ordinary Project Agent can do.
+            if template_ref != termloop_invocation::QUICK_ACTION_FREE_PROMPT_TEMPLATE_REF
+                || plan.task_guard.is_some()
+                || !self
+                    .store
+                    .task_source_configurations()
+                    .iter()
+                    .any(|source| source.enabled && source.project_id == plan.project_id)
+            {
+                return Err(CoreError::InvalidParams("jiraTaskIntake".into()));
+            }
+        }
         if personal_agent.is_some() && !matches!(plan.agent_id.as_str(), "codex" | "claude") {
             return Err(CoreError::AgentUnsupported);
         }
@@ -1386,6 +1404,7 @@ impl CoreRuntime {
             personal_agent,
             prompt,
             attachments,
+            jira_task_intake,
         });
         Ok(plan)
     }
@@ -2233,6 +2252,14 @@ fn launch_session_name(plan: &AgentLaunchPlan) -> Option<String> {
         .or_else(|| plan.fork_name.clone())
 }
 
+fn jira_task_intake_requested(params: &Value) -> Result<bool, CoreError> {
+    match params.get("jiraTaskIntake") {
+        None | Some(Value::Null) => Ok(false),
+        Some(Value::Bool(value)) => Ok(*value),
+        Some(_) => Err(CoreError::InvalidParams("jiraTaskIntake".into())),
+    }
+}
+
 fn resolve_quick_action_launch(
     plan: &AgentLaunchPlan,
     quick_action: &QuickActionLaunch,
@@ -2241,13 +2268,20 @@ fn resolve_quick_action_launch(
     mcp: Option<termloop_invocation::AgentMcpLaunch<'_>>,
 ) -> Result<termloop_invocation::LaunchPayload, termloop_invocation::InvocationError> {
     let conversation = conversation.in_account(plan.account.as_ref());
+    let intake_prompt;
+    let prompt = if quick_action.jira_task_intake {
+        intake_prompt = termloop_invocation::jira_task_intake_prompt(&quick_action.prompt)?;
+        intake_prompt.as_str()
+    } else {
+        quick_action.prompt.as_str()
+    };
     if let Some(profile) = &quick_action.personal_agent {
         termloop_invocation::personal_agent_for_conversation(
             profile,
             &plan.agent_id,
             &plan.cwd,
             &quick_action.selection,
-            Some(&quick_action.prompt),
+            Some(prompt),
             &quick_action.attachments,
             conversation,
             observation,
@@ -2263,7 +2297,7 @@ fn resolve_quick_action_launch(
             &quick_action.selection.model,
             &quick_action.selection.permission,
             &quick_action.selection.reasoning,
-            &quick_action.prompt,
+            prompt,
             &quick_action.attachments,
             conversation,
             observation,
@@ -2277,7 +2311,7 @@ fn resolve_quick_action_launch(
             &quick_action.selection.model,
             &quick_action.selection.permission,
             &quick_action.selection.reasoning,
-            &quick_action.prompt,
+            prompt,
             &quick_action.attachments,
             conversation,
             observation,

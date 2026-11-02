@@ -38,6 +38,8 @@ import {
   type AgentProfileDeleteParams,
   type AgentProfileFavoriteParams,
   type QuickActionLaunchParams,
+  type SessionJiraTaskProposalApproveParams,
+  type SessionJiraTaskProposalRespondParams,
   type GitHostRepositoryPullRequestFilter,
   type ResultFor,
   type TaskProvisionWorktreeParams,
@@ -1444,8 +1446,10 @@ const quickActionParams = async (
   attachmentIds: string[],
   accountId?: string,
   taskId?: string,
+  jiraTaskIntake?: boolean,
 ): Promise<QuickActionParams> => ({
   projectId,
+  ...(jiraTaskIntake ? { jiraTaskIntake: true } : {}),
   ...(accountId ? { accountId } : {}),
   cwd: taskId ? await taskWorktreeCwd(projectId, taskId) : await projectCwd(projectId),
   agentId: requireAgentId(agentId),
@@ -1458,14 +1462,14 @@ const quickActionParams = async (
 });
 handleIpc(
   "termloop:quick-action-preview",
-  async (_event, projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], accountId?: string, taskId?: string) =>
-    controlCall("quickAction.preview", await quickActionParams(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId, taskId)),
+  async (_event, projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], accountId?: string, taskId?: string, jiraTaskIntake?: boolean) =>
+    controlCall("quickAction.preview", await quickActionParams(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId, taskId, jiraTaskIntake)),
 );
 handleIpc(
   "termloop:quick-action-launch",
-  async (_event, projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string, taskId?: string) => {
+  async (_event, projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string, taskId?: string, jiraTaskIntake?: boolean) => {
     const params: QuickActionLaunchParams = {
-      ...await quickActionParams(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId, taskId),
+      ...await quickActionParams(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId, taskId, jiraTaskIntake),
       launchTicket,
     };
     const result = await controlCall("quickAction.launch", params);
@@ -1503,6 +1507,14 @@ handleIpc(
   "termloop:session-relocate-agent-to-project",
   (_event, sessionId: string, projectId: string, operationId: string, relocationTicket: string) =>
     controlCall("session.relocateAgentToProject", { sessionId, projectId, operationId, relocationTicket }),
+);
+handleIpc(
+  "termloop:session-jira-task-proposal-approve",
+  (_event, params: SessionJiraTaskProposalApproveParams) => controlCall("session.jiraTaskProposalApprove", params),
+);
+handleIpc(
+  "termloop:session-jira-task-proposal-respond",
+  (_event, params: SessionJiraTaskProposalRespondParams) => controlCall("session.jiraTaskProposalRespond", params),
 );
 handleIpc("termloop:session-fork-agent", (_event, sessionId: string) =>
   typedControlCall("session.forkAgent", { sessionId }),

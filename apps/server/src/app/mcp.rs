@@ -373,6 +373,17 @@ async fn tool_call_inner(
                 .expect("generated MCP validation precedes decoding");
             super::playbook_agent_report::report_step(token, params, state).await
         }
+        (termloop_core::session_launch::AgentMcpRole::Interactive, "propose_jira_task") => {
+            let result = state.core.lock().await.propose_jira_task(
+                token,
+                &arguments,
+                super::current_epoch_ms(),
+            );
+            if result.is_ok() {
+                super::invalidation::publish_session_invalidation(state).await;
+            }
+            result
+        }
         (
             termloop_core::session_launch::AgentMcpRole::Helper { request_id },
             "reply_to_request",
@@ -728,7 +739,7 @@ fn role_instructions(role: &termloop_core::session_launch::AgentMcpRole) -> &'st
     match role {
         role if role.is_agent_creator() => "Agent Creator profile.",
         termloop_core::session_launch::AgentMcpRole::Interactive => {
-            "Interactive Session profile. When a visible Core-managed workflow step is active, use only workflow_delegate and workflow_step_complete as that prompt directs; Core owns its participant and transition. Otherwise use ask_to whenever the user wants another Claude or Codex involved — ask, consult, discuss, second opinion, or review — including short provider-named requests in any language such as 'ask codex' or 'discuss this with codex'; the user never has to name TermLoop, MCP, or the tool, and you compose the helper's message from the current conversation. Use send_to_agent instead whenever an exact existing TermLoop Session ID is present and the user wants something delivered there — any phrasing, any language — to return an answer to a received TermLoop handoff using its exact Source Session ID, or to send the one completion/blocker report required by a visible Steward Task assignment to its exact Steward Session ID; compose that message yourself, never guess or fuzzily resolve a Session ID, the target may be in any Project or worktree, and you must not poll for a reply. When you are the Agent working a Task whose Project walks a Playbook, read the step your Task stands at with playbook_step_read, and when your own work meets or is blocked at that step's completion criteria, report it once with playbook_step_report; a report is a claim the step's evaluator verifies unless that step trusts it."
+            "Interactive Session profile. When a visible Core-managed workflow step is active, use only workflow_delegate and workflow_step_complete as that prompt directs; Core owns its participant and transition. Otherwise use ask_to whenever the user wants another Claude or Codex involved — ask, consult, discuss, second opinion, or review — including short provider-named requests in any language such as 'ask codex' or 'discuss this with codex'; the user never has to name TermLoop, MCP, or the tool, and you compose the helper's message from the current conversation. Use send_to_agent instead whenever an exact existing TermLoop Session ID is present and the user wants something delivered there — any phrasing, any language — to return an answer to a received TermLoop handoff using its exact Source Session ID, or to send the one completion/blocker report required by a visible Steward Task assignment to its exact Steward Session ID; compose that message yourself, never guess or fuzzily resolve a Session ID, the target may be in any Project or worktree, and you must not poll for a reply. When you are the Agent working a Task whose Project walks a Playbook, read the step your Task stands at with playbook_step_read, and when your own work meets or is blocked at that step's completion criteria, report it once with playbook_step_report; a report is a claim the step's evaluator verifies unless that step trusts it. When the user or a TermLoop Quick Action instruction asks for this work to become a Jira issue and Task, propose it once with propose_jira_task after you understand the work, then wait for the user's answer."
         }
         termloop_core::session_launch::AgentMcpRole::Improver { .. } => {
             "Target-bound Improve Agent profile. Read the active snapshot through configuration_version_read. Discuss and prepare changes freely, but call configuration_version_write only after the user says to apply, save, use, or an equivalent confirmation. That call applies the target's normal configuration command and records a new active snapshot only when the effective content changed; preserve every field the user did not ask to change."
@@ -1821,6 +1832,12 @@ fn core_tool_error(id: Value, error: &termloop_core::CoreError) -> Response {
             "this Session is not the Agent of a Task on an active Playbook; there is no step to read or report",
             None,
         ),
+        termloop_core::CoreError::JiraTaskSourceUnavailable => tool_error(
+            id,
+            "jiraTaskSourceUnavailable",
+            "this Project has no enabled Jira Task Source; tell the user to connect one in Project settings, then propose again",
+            None,
+        ),
         termloop_core::CoreError::TrackerReportInvalid => {
             tool_error(id, "invalidReport", "Routine report is invalid", None)
         }
@@ -1966,7 +1983,8 @@ mod tests {
                 "workflow_delegate",
                 "workflow_step_complete",
                 "playbook_step_read",
-                "playbook_step_report"
+                "playbook_step_report",
+                "propose_jira_task"
             ]
         );
         let creator_role = termloop_core::session_launch::AgentMcpRole::Improver {
@@ -2336,6 +2354,25 @@ mod tests {
         assert!(!protocol::validate_mcp_tool_params(
             "send_to_agent",
             &json!({ "sessionId": "the first Codex", "message": "review" })
+        ));
+        assert!(protocol::validate_mcp_tool_params(
+            "propose_jira_task",
+            &json!({
+                "projectKey": "PAY",
+                "issueType": "Task",
+                "epicKey": "PAY-12",
+                "summary": "Retry failed captures",
+                "description": "Retry once."
+            })
+        ));
+        assert!(!protocol::validate_mcp_tool_params(
+            "propose_jira_task",
+            &json!({
+                "projectKey": "pay",
+                "issueType": "Task",
+                "summary": "Retry failed captures",
+                "description": "Retry once."
+            })
         ));
         let maximum_escaped_message = "\u{001f}".repeat(32_768);
         let envelope = serde_json::to_vec(&json!({

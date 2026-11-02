@@ -211,6 +211,8 @@ export const PROFILED_DESKTOP_OPERATIONS = {
   sessionRelocateAgent: "termloop:session-relocate-agent",
   sessionPreviewRelocateAgentToProject: "termloop:session-preview-relocate-agent-to-project",
   sessionRelocateAgentToProject: "termloop:session-relocate-agent-to-project",
+  sessionJiraTaskProposalApprove: "termloop:session-jira-task-proposal-approve",
+  sessionJiraTaskProposalRespond: "termloop:session-jira-task-proposal-respond",
   sessionForkAgent: "termloop:session-fork-agent",
   sessionRepairProviderHistory: "termloop:session-repair-provider-history",
   sessionHistoryList: "termloop:session-history-list",

@@ -94,7 +94,7 @@ describe("Quick Action run target", () => {
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await act(async () => { vi.advanceTimersByTime(200); });
-    expect(preview).toHaveBeenLastCalledWith(NUCLEUS.id, "codex", expect.any(String), expect.any(String), expect.any(String), expect.any(String), "do it", [], undefined, "a");
+    expect(preview).toHaveBeenLastCalledWith(NUCLEUS.id, "codex", expect.any(String), expect.any(String), expect.any(String), expect.any(String), "do it", [], undefined, "a", undefined);
     vi.useRealTimers();
   });
 

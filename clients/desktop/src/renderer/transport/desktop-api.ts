@@ -2,6 +2,7 @@ import type { SourceControlCommitParams, SourceControlCommitResult, SourceContro
 import type { WorkspaceFilesParams, WorkspaceDirectoryResult, WorkspaceFileReadResult, WorkspaceFileSearchParams, WorkspaceFileSearchResult, WorkspaceFileWriteParams, WorkspaceFileWriteResult } from "@termloop/contract/current";
 import type { SshSetupInput, SshSetupLogin, SshSetupState } from "../../ssh-setup-types.js";
 import type { WorkflowCreatorParams, WorkflowCreatorLaunchParams, WorkflowCreatorDraftGetParams, WorkflowCreatorDraftGetResult } from "@termloop/contract/current";
+import type { SessionJiraTaskProposalApproveParams, SessionJiraTaskProposalApproveResult, SessionJiraTaskProposalRespondParams, SessionJiraTaskProposalRespondResult } from "@termloop/contract/current";
 import type { AgentAccountListResult, AgentAccountCreateParams, AgentAccountRenameParams, AgentAccountSetDefaultParams, AgentAccountDeleteParams, AgentAccountUsageListParams, AgentAccountUsageListResult, AgentAuthStatusListParams } from "@termloop/contract/current";
 import type { AgentStatus, Project, Session, Task } from "../model.js";
 import type { MobileAccessPairingResult } from "../mobile-access.js";
@@ -478,8 +479,8 @@ export type DesktopApi = {
   quickActionPasteImage(): Promise<QuickActionImageHandle>;
   quickActionRestoreImage(attachmentId: string): Promise<QuickActionImageHandle>;
   quickActionDiscardImage(attachmentId: string): Promise<void>;
-  quickActionPreview(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], accountId?: string, taskId?: string): Promise<QuickActionPreviewResult>;
-  quickActionLaunch(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string, taskId?: string): Promise<Session>;
+  quickActionPreview(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], accountId?: string, taskId?: string, jiraTaskIntake?: boolean): Promise<QuickActionPreviewResult>;
+  quickActionLaunch(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string, taskId?: string, jiraTaskIntake?: boolean): Promise<Session>;
   taskTerminalLaunch(taskId: string): Promise<TaskControlDesktopResult<Session>>;
   taskStartRun(params: TaskStartRunParams): Promise<TaskControlDesktopResult<Session>>;
   taskRestartRun(params: TaskRestartRunParams): Promise<TaskControlDesktopResult<Session>>;
@@ -500,6 +501,8 @@ export type DesktopApi = {
   sessionRelocateAgent(sessionId: string, taskId: string, operationId: string, relocationTicket: string): Promise<Session>;
   sessionPreviewRelocateAgentToProject(sessionId: string, projectId: string): Promise<SessionRelocationPreviewDto>;
   sessionRelocateAgentToProject(sessionId: string, projectId: string, operationId: string, relocationTicket: string): Promise<Session>;
+  sessionJiraTaskProposalApprove(params: SessionJiraTaskProposalApproveParams): Promise<SessionJiraTaskProposalApproveResult>;
+  sessionJiraTaskProposalRespond(params: SessionJiraTaskProposalRespondParams): Promise<SessionJiraTaskProposalRespondResult>;
   sessionForkAgent(sessionId: string): Promise<TaskControlDesktopResult<Session>>;
   sessionRepairProviderHistory(sessionId: string): Promise<TaskControlDesktopResult<SessionRepairProviderHistoryResult>>;
   sessionHistoryList(projectId: string, force?: boolean, fillCache?: boolean): Promise<SessionHistoryListResult>;

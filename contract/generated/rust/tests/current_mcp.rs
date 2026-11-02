@@ -15,7 +15,8 @@ fn role_profile_tools_are_generated_bounded_and_not_control_methods() {
             "workflow_delegate",
             "workflow_step_complete",
             "playbook_step_read",
-            "playbook_step_report"
+            "playbook_step_report",
+            "propose_jira_task"
         ]
     );
     assert_eq!(

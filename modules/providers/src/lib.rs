@@ -48,8 +48,9 @@ pub use jira_browse::{
 };
 
 pub use jira_write::{
-    JIRA_DESCRIPTION_MAX_CHARS, JIRA_SUMMARY_MAX_CHARS, JiraIssueText, JiraIssueWriter,
-    JiraTransition, JiraWriteError, jira_issue_url_on_site, markdown_to_jira_wiki,
+    JIRA_DESCRIPTION_MAX_CHARS, JIRA_ISSUE_TYPE_MAX_CHARS, JIRA_SUMMARY_MAX_CHARS,
+    JiraCreatedIssue, JiraIssueDraft, JiraIssueText, JiraIssueWriter, JiraTransition,
+    JiraWriteError, jira_issue_url_on_site, markdown_to_jira_wiki, valid_jira_issue_draft,
 };
 
 pub use repository_pull_requests::{

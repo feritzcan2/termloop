@@ -15,12 +15,15 @@ pub use termloop_domain::{
 
 mod observer;
 mod projection;
+mod proposal;
 pub use observer::{
     JiraTaskSourceRefreshObserver, TaskSourceBoard, TaskSourceBoardList, TaskSourceBoardObserver,
-    TaskSourceJiraObserver, TaskSourceRefreshObserver, TaskSourceStatus, TaskSourceStatusList,
-    UnavailableTaskSourceRefreshObserver,
+    TaskSourceIssueCreator, TaskSourceJiraObserver, TaskSourceRefreshObserver, TaskSourceStatus,
+    TaskSourceStatusList, UnavailableTaskSourceRefreshObserver,
 };
 pub use projection::{task_source_candidate_json, task_source_failure_wire, task_source_view_json};
+pub(crate) use proposal::JiraTaskProposal;
+pub use proposal::JiraTaskProposalCreatePlan;
 
 use crate::task_worktree::{BRIEF_LIMIT, TITLE_LIMIT};
 use crate::{CoreError, CoreRuntime, store_error};

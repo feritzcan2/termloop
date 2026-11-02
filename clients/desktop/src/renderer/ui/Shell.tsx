@@ -73,6 +73,7 @@ import { StewardPanel, type StewardPanelProps } from "./StewardPanel.js";
 import { promptImprovementActionLabel, type ConfigurationVersionActions } from "./PromptImprovement.js";
 import { StewardPetHost } from "./StewardPetHost.js";
 import { SessionRelocationDialog } from "./SessionRelocationDialog.js";
+import { JiraTaskProposalCards, jiraTaskWorktreeParams, type JiraTaskProposalActions } from "./JiraTaskProposalCards.js";
 import { SessionProjectRelocationDialog } from "./SessionProjectRelocationDialog.js";
 import { ProviderHistoryRepairDialog } from "./ProviderHistoryRepairDialog.js";
 import { WorkflowCloseDialog, type WorkflowCloseTarget } from "./WorkflowCloseDialog.js";
@@ -350,8 +351,11 @@ export type ShellProps = {
   restoreQuickActionImage(attachmentId: string): Promise<QuickActionImageHandle>;
   discardQuickActionImage(attachmentId: string): Promise<void>;
   loadAgentAccounts?(projectId: string): Promise<AgentAccountDto[]>;
-  previewQuickAction(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], accountId?: string, taskId?: string): Promise<QuickActionPreviewResult>;
-  launchQuickAction(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string, taskId?: string): Promise<string | undefined>;
+  jiraTaskSourceAvailable?(projectId: string): Promise<boolean>;
+  jiraTaskProposals?: JiraTaskProposalActions | undefined;
+  reportMessage?(message: string): void;
+  previewQuickAction(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], accountId?: string, taskId?: string, jiraTaskIntake?: boolean): Promise<QuickActionPreviewResult>;
+  launchQuickAction(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string, taskId?: string, jiraTaskIntake?: boolean): Promise<string | undefined>;
   launchTaskTerminal(taskId: string): Promise<string | undefined>;
   launchTaskAgent(taskId: string, agentId: string, model?: string, permission?: AgentCapabilityDto["permissions"][number], reasoning?: AgentCapabilityDto["reasoning"][number], kickoffMessage?: string): Promise<string | undefined>;
   launchTaskWorkflow(taskId: string, workflowId: string, goal: string): Promise<string | undefined>;
@@ -2411,6 +2415,7 @@ export function Shell(props: ShellProps) {
         restoreImage={props.restoreQuickActionImage}
         discardImage={props.discardQuickActionImage}
         loadAccounts={props.loadAgentAccounts}
+        jiraTaskSourceAvailable={props.jiraTaskSourceAvailable}
         preview={props.previewQuickAction}
         launch={props.launchQuickAction}
         createShortcut={(draft) => setQuickActionShortcuts(saveQuickActionShortcut(draft))}
@@ -2573,6 +2578,20 @@ export function Shell(props: ShellProps) {
         preview={props.previewSessionProjectRelocation}
         relocate={props.relocateSessionToProject}
         repairProviderHistory={() => setProviderHistoryRepairSessionId(projectRelocationSession.id)}
+      /> : null}
+      {props.jiraTaskProposals ? <JiraTaskProposalCards
+        sessions={props.projectSessions}
+        actions={props.jiraTaskProposals}
+        selectSession={selectSession}
+        started={(session, approval, summary) => {
+          const project = props.selectedProject;
+          if (!project || project.id !== session.project_id || !project.folder_path.trim()) return;
+          void props.listProjectLocalBranches(project.id).then((branches) => {
+            const params = jiraTaskWorktreeParams(project.id, project.folder_path, approval.taskId, approval.issueKey, summary, branches);
+            if (typeof params === "string") props.reportMessage?.(`${approval.issueKey} was created, but its worktree could not start: ${params}`);
+            else beginBackgroundRelocation(session.id, params, "resume");
+          }).catch((cause: unknown) => props.reportMessage?.(`${approval.issueKey} was created, but its worktree could not start: ${cause instanceof Error ? cause.message : String(cause)}`));
+        }}
       /> : null}
       <BackgroundSessionRelocation
         intents={backgroundRelocationIntents}

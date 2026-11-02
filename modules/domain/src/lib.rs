@@ -187,10 +187,12 @@ pub enum McpToolName {
     PlaybookStepRead,
     #[serde(rename = "playbook_step_report")]
     PlaybookStepReport,
+    #[serde(rename = "propose_jira_task")]
+    ProposeJiraTask,
 }
 
 impl McpToolName {
-    pub const ALL: [Self; 38] = [
+    pub const ALL: [Self; 39] = [
         Self::AskTo,
         Self::SendToAgent,
         Self::ReplyToRequest,
@@ -229,6 +231,7 @@ impl McpToolName {
         Self::AgentProfileCreate,
         Self::PlaybookStepRead,
         Self::PlaybookStepReport,
+        Self::ProposeJiraTask,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -271,6 +274,7 @@ impl McpToolName {
             Self::AgentProfileCreate => "agent_profile_create",
             Self::PlaybookStepRead => "playbook_step_read",
             Self::PlaybookStepReport => "playbook_step_report",
+            Self::ProposeJiraTask => "propose_jira_task",
         }
     }
 }
@@ -320,6 +324,7 @@ impl std::str::FromStr for McpToolName {
             "agent_profile_create" => Ok(Self::AgentProfileCreate),
             "playbook_step_read" => Ok(Self::PlaybookStepRead),
             "playbook_step_report" => Ok(Self::PlaybookStepReport),
+            "propose_jira_task" => Ok(Self::ProposeJiraTask),
             _ => Err(()),
         }
     }
@@ -1552,6 +1557,7 @@ mod tests {
                 "agent_profile_create",
                 "playbook_step_read",
                 "playbook_step_report",
+                "propose_jira_task",
             ]
         );
         assert!("unknown".parse::<McpToolName>().is_err());

@@ -660,6 +660,23 @@
         "idempotentHint": false,
         "openWorldHint": false
       }
+    },
+    "propose_jira_task": {
+      "description": "Propose one Jira issue for the work the user asked for, so TermLoop can create it and track the work as a Task. Call this only when the user, or a TermLoop Quick Action instruction, asks for a Jira issue and Task, and only once you understand the work well enough to describe it. Find the Jira project key, the issue type, and the parent epic with your own Jira tools (for example an Atlassian or Jira MCP server). If you have no tool that can read Jira, tell the user which Jira tool to install, then still propose your best guess and say in rationale that it is unverified. Write summary as one line and description in Markdown with the goal and acceptance criteria. Do not create the issue yourself: TermLoop shows the proposal to the user, who can edit and approve it, send feedback, or dismiss it. After calling, stop and wait. Feedback arrives as a visible message; propose again with the corrections. On approval TermLoop creates the issue and the Task and resumes this conversation in the Task worktree, where you start the work. A new proposal replaces a pending one.",
+      "role": "interactive",
+      "params": {
+        "$ref": "#/$defs/proposeJiraTaskParams"
+      },
+      "result": {
+        "$ref": "#/$defs/proposeJiraTaskResult"
+      },
+      "annotations": {
+        "title": "Propose a Jira issue and Task",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     }
   },
   "$defs": {
@@ -1148,7 +1165,8 @@
         "jiraUrlAlreadySet",
         "proposalPending",
         "noTaskPlaybook",
-        "operationFailed"
+        "operationFailed",
+        "jiraTaskSourceUnavailable"
       ]
     },
     "mcpToolErrorDetails": {
@@ -2237,6 +2255,76 @@
           "minLength": 1,
           "maxLength": 600,
           "x-utf8-max-bytes": 600
+        }
+      }
+    },
+    "proposeJiraTaskParams": {
+      "x-codegen": true,
+      "x-codegen-name": "ProposeJiraTaskParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectKey",
+        "issueType",
+        "summary",
+        "description"
+      ],
+      "properties": {
+        "projectKey": {
+          "description": "The Jira project key the issue belongs in, such as PAY.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[A-Z][A-Z0-9_]*$"
+        },
+        "issueType": {
+          "description": "The Jira issue type name, such as Task, Story, or Bug.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "epicKey": {
+          "description": "The key of the parent epic, such as PAY-12; omit it when the issue belongs to no epic.",
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[A-Z][A-Z0-9_]*-[1-9][0-9]*$"
+        },
+        "summary": {
+          "description": "The one-line issue title.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "description": {
+          "description": "The issue body in Markdown: the goal, context, and acceptance criteria.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32767
+        },
+        "rationale": {
+          "description": "Why this project, issue type, and epic, and anything you could not verify. Shown only to the user.",
+          "type": "string",
+          "maxLength": 2000
+        }
+      }
+    },
+    "proposeJiraTaskResult": {
+      "x-codegen": true,
+      "x-codegen-name": "ProposeJiraTaskResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "proposalId",
+        "status"
+      ],
+      "properties": {
+        "proposalId": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36
+        },
+        "status": {
+          "const": "awaitingUser"
         }
       }
     },

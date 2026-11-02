@@ -144,6 +144,8 @@ pub enum CoreError {
     PlaybookStepIdle,
     #[error("this Session is not the Agent of a Task on an active Playbook")]
     NoTaskPlaybook,
+    #[error("this Project has no enabled Jira Task Source")]
+    JiraTaskSourceUnavailable,
     #[error("agent provider identity replacement was rejected")]
     ResumeRefReplacement,
     #[error("an Ask-To request is already current for this Session")]

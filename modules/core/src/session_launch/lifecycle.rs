@@ -651,6 +651,7 @@ impl CoreRuntime {
             ask_to_source_session_id,
             fork_source_session_id,
         );
+        projection["jira_task_proposal"] = self.jira_task_proposal_projection(&session.id);
         // Durable relocation state keeps the source cwd until the replacement
         // process is proven ready, so a failed move can roll back without
         // reconstructing ownership. During that bounded attempt, project the
@@ -751,6 +752,7 @@ pub(super) fn session_projection(
             "targetId": target.target_id,
         })),
         "run_configuration_id": session.run_configuration_id,
+        "jira_task_proposal": null,
     })
 }
 

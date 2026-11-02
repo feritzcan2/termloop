@@ -66,10 +66,11 @@ pub use session_launch::{
 pub use settings_improvement::{SettingsImproverEntry, settings_entry_kind};
 pub use skills::{SkillCatalogPlan, SkillDeploymentAgent, SkillDeploymentPlan};
 pub use task_source::{
-    JiraTaskSourceRefreshObserver, TaskSourceBoard, TaskSourceBoardList, TaskSourceBoardObserver,
-    TaskSourceBoardSelection, TaskSourceCandidateSnapshot, TaskSourceCandidateView,
-    TaskSourceConfiguration, TaskSourceDelete, TaskSourceFailure, TaskSourceImport,
-    TaskSourceImportPolicy, TaskSourceJiraObserver, TaskSourceMutation, TaskSourceRefreshApply,
+    JiraTaskProposalCreatePlan, JiraTaskSourceRefreshObserver, TaskSourceBoard,
+    TaskSourceBoardList, TaskSourceBoardObserver, TaskSourceBoardSelection,
+    TaskSourceCandidateSnapshot, TaskSourceCandidateView, TaskSourceConfiguration,
+    TaskSourceDelete, TaskSourceFailure, TaskSourceImport, TaskSourceImportPolicy,
+    TaskSourceIssueCreator, TaskSourceJiraObserver, TaskSourceMutation, TaskSourceRefreshApply,
     TaskSourceRefreshObserver, TaskSourceRefreshOutcome, TaskSourceRefreshPlan,
     TaskSourceRuntimeStatus, TaskSourceStatus, TaskSourceStatusList, TaskSourceStatusSelection,
     TaskSourceView, UnavailableTaskSourceRefreshObserver, task_source_candidate_json,
@@ -249,6 +250,8 @@ pub struct CoreRuntime {
     pub(crate) git_host_invalidated_tasks: VecDeque<String>,
     pub(crate) tracker_runtime: companion_integrations::tracker_runtime::TrackerRuntimeState,
     pub(crate) task_source_runtime: task_source::TaskSourceRuntimeState,
+    /// Session ID to its one runtime-only Agent-proposed Jira issue.
+    pub(crate) jira_task_proposals: HashMap<String, task_source::JiraTaskProposal>,
     pub(crate) run_runtimes: HashMap<String, run_configuration::RunRuntimeObservation>,
     /// Claude reports a user interrupt through no hook at all, so a working
     /// turn keeps the bounded pointers needed to ask its transcript whether it
@@ -739,6 +742,7 @@ impl CoreRuntime {
             git_host_invalidated_tasks: VecDeque::new(),
             tracker_runtime: companion_integrations::tracker_runtime::TrackerRuntimeState::default(),
             task_source_runtime: task_source::TaskSourceRuntimeState::default(),
+            jira_task_proposals: HashMap::new(),
             run_runtimes: HashMap::new(),
             claude_turn_watches: HashMap::new(),
         };

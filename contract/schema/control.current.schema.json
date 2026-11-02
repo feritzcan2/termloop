@@ -998,6 +998,22 @@
         "$ref": "#/$defs/sessionDto"
       }
     },
+    "session.jiraTaskProposalApprove": {
+      "params": {
+        "$ref": "#/$defs/sessionJiraTaskProposalApproveParams"
+      },
+      "result": {
+        "$ref": "#/$defs/sessionJiraTaskProposalApproveResult"
+      }
+    },
+    "session.jiraTaskProposalRespond": {
+      "params": {
+        "$ref": "#/$defs/sessionJiraTaskProposalRespondParams"
+      },
+      "result": {
+        "$ref": "#/$defs/sessionJiraTaskProposalRespondResult"
+      }
+    },
     "session.restartAgentsForClientLaunch": {
       "params": {
         "$ref": "#/$defs/sessionRestartAgentsForClientLaunchParams"
@@ -2487,6 +2503,8 @@
         "session.relocateAgentToTask",
         "session.previewRelocateAgentToProject",
         "session.relocateAgentToProject",
+        "session.jiraTaskProposalApprove",
+        "session.jiraTaskProposalRespond",
         "session.restartAgentsForClientLaunch",
         "session.close",
         "agent.capabilityList",
@@ -2882,7 +2900,8 @@
         "playbook_evaluation_read",
         "playbook_evaluation_complete",
         "playbook_step_read",
-        "playbook_step_report"
+        "playbook_step_report",
+        "propose_jira_task"
       ]
     },
     "mcpToolRole": {
@@ -2964,8 +2983,8 @@
           "items": {
             "$ref": "#/$defs/mcpToolSettingsDto"
           },
-          "minItems": 38,
-          "maxItems": 38,
+          "minItems": 39,
+          "maxItems": 39,
           "uniqueItems": true
         }
       }
@@ -6513,6 +6532,17 @@
               "type": "null"
             }
           ]
+        },
+        "jira_task_proposal": {
+          "description": "The Jira issue this Agent proposed and the user has not answered yet; null when none is pending. Runtime-only: it does not survive a daemon restart.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/jiraTaskProposalDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },
@@ -8344,7 +8374,11 @@
             "$ref": "#/$defs/quickActionImageAttachment"
           }
         },
-        "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"}
+        "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"},
+        "jiraTaskIntake": {
+          "description": "Ask the Agent to propose a Jira issue for this work before starting it; once the user approves, TermLoop creates the issue and its Task and moves the Agent into the Task worktree.",
+          "type": "boolean"
+        }
       }
     },
     "quickActionLaunchParams": {
@@ -8428,7 +8462,10 @@
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
         },
-        "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"}
+        "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"},
+        "jiraTaskIntake": {
+          "type": "boolean"
+        }
       }
     },
     "quickActionImageAttachment": {
@@ -9089,6 +9126,218 @@
         "sessionId": { "type": "string", "minLength": 1 },
         "taskId": { "type": "string", "minLength": 1 },
         "mode": { "$ref": "#/$defs/sessionRelocationMode" }
+      }
+    },
+    "jiraTaskProposalDto": {
+      "x-codegen": true,
+      "x-codegen-name": "JiraTaskProposalDto",
+      "description": "One Agent-proposed Jira issue awaiting the user. Approving creates the issue with the Project's Jira source credentials, then a linked Task.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "proposal_id",
+        "project_key",
+        "issue_type",
+        "epic_key",
+        "summary",
+        "description",
+        "rationale",
+        "state",
+        "failure",
+        "proposed_at_epoch_ms"
+      ],
+      "properties": {
+        "proposal_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "project_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "issue_type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "epic_key": {
+          "type": ["string", "null"],
+          "maxLength": 64
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 32767
+        },
+        "rationale": {
+          "type": ["string", "null"],
+          "maxLength": 2000
+        },
+        "state": {
+          "description": "awaitingUser until approved; creating while TermLoop talks to Jira.",
+          "type": "string",
+          "enum": ["awaitingUser", "creating"]
+        },
+        "failure": {
+          "description": "Why the last approval did not create the issue; null when it has not failed.",
+          "type": ["string", "null"],
+          "maxLength": 600
+        },
+        "proposed_at_epoch_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "sessionJiraTaskProposalApproveParams": {
+      "x-codegen": true,
+      "x-codegen-name": "SessionJiraTaskProposalApproveParams",
+      "description": "Create the proposed Jira issue as the user edited it, through the named Jira Task Source of the Session's Project, then a Task linked to it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sessionId",
+        "proposalId",
+        "sourceId",
+        "projectKey",
+        "issueType",
+        "epicKey",
+        "summary",
+        "description"
+      ],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "proposalId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "sourceId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "projectKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[A-Z][A-Z0-9_]*$"
+        },
+        "issueType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "epicKey": {
+          "type": ["string", "null"],
+          "maxLength": 64,
+          "pattern": "^[A-Z][A-Z0-9_]*-[1-9][0-9]*$"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 32767
+        }
+      }
+    },
+    "sessionJiraTaskProposalApproveResult": {
+      "x-codegen": true,
+      "x-codegen-name": "SessionJiraTaskProposalApproveResult",
+      "x-codegen-tagged-union": "outcome",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["outcome", "taskId", "issueKey", "issueUrl"],
+          "properties": {
+            "outcome": {
+              "const": "created"
+            },
+            "taskId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "issueKey": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "issueUrl": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["outcome", "failure"],
+          "properties": {
+            "outcome": {
+              "const": "failed"
+            },
+            "failure": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 600
+            }
+          }
+        }
+      ]
+    },
+    "sessionJiraTaskProposalRespondParams": {
+      "x-codegen": true,
+      "x-codegen-name": "SessionJiraTaskProposalRespondParams",
+      "description": "Answer a pending proposal without creating it: revise sends the user's feedback to the Agent so it proposes again; dismiss tells the Agent to continue without a Jira issue.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "proposalId", "decision", "feedback"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "proposalId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "decision": {
+          "type": "string",
+          "enum": ["revise", "dismiss"]
+        },
+        "feedback": {
+          "type": "string",
+          "maxLength": 4000
+        }
+      }
+    },
+    "sessionJiraTaskProposalRespondResult": {
+      "x-codegen": true,
+      "x-codegen-name": "SessionJiraTaskProposalRespondResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "status"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": ["submitting"]
+        }
       }
     },
     "sessionRelocateAgentToTaskParams": {
