@@ -189,18 +189,34 @@ describe("Active Agent rows inside a Task", () => {
     await view.dispose();
   });
 
-  it("keeps a user-given Session name and an Ask-To helper's own name", async () => {
+  it("keeps a user-given Session name and a nested Agent's own name next to the issue key", async () => {
+    const opened: string[] = [];
     const named = agentSession("named", { name: "Payments lead" });
     const lead = agentSession("lead");
     const helper = agentSession("helper", {
       ask_to_source_session_id: "lead",
       process: { ...lead.process, program: "/usr/local/bin/codex", agent_id: "codex" },
     });
-    const view = await renderRail([named, lead, helper]);
-    expect(view.container.querySelector('[data-session-id="named"] .row-title')?.textContent).toBe("Payments lead");
-    expect(view.container.querySelector('[data-session-id="helper"] .row-title')?.textContent).toBe("Codex");
+    const fork = agentSession("fork", { name: "Claude fork-1", fork_source_session_id: "lead" } as Partial<Session>);
+    const view = await renderRail([named, lead, helper, fork], { openExternal: (url) => opened.push(url) });
+    const title = (id: string) => view.container.querySelector(`[data-session-id="${id}"] .row-title`)?.textContent;
+    expect(title("named")).toBe("UKIE-931Payments lead");
+    expect(title("helper")).toBe("UKIE-931Codex");
+    expect(title("fork")).toBe("UKIE-931Claude fork-1");
+    /// The key says which checkout this is, so the folder is not repeated.
+    expect(view.container.querySelector('[data-session-id="named"] .row-subtitle')).toBeNull();
+    expect(view.container.querySelector('[data-session-id="fork"] .row-subtitle')).toBeNull();
     expect(view.container.querySelector('[data-session-id="helper"] .row-subtitle')).toBeNull();
+    await act(async () => view.container.querySelector<HTMLElement>('[data-session-id="fork"] .row-title-key')!.click());
+    expect(opened).toEqual(["https://apcoa.atlassian.net/browse/UKIE-931"]);
     await view.dispose();
+
+    /// A Task without a Jira issue adds no key.
+    const keyless = await renderRail([named], {
+      taskIdentityBySessionId: new Map([["named", { taskId: "task-1", issueKey: undefined, issueUrl: undefined, title: "Local work", pullRequests: [], morePullRequests: 0 }]]),
+    });
+    expect(keyless.container.querySelector('[data-session-id="named"] .row-title')?.textContent).toBe("Payments lead");
+    await keyless.dispose();
   });
 
   it("lists the newest two pull requests under the change count and opens the one clicked in the browser", async () => {

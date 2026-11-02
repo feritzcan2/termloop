@@ -649,10 +649,14 @@ function ActiveAgentRow({ session, source, depth = 0, projectedSource, worktreeC
   const nested = Boolean(source || projectedSource);
   /// A name the user gave the Session, or a workflow role, still wins.
   const workflowLabel = props.workflowAgentLabelsBySessionId?.get(session.id);
+  const attachedTask = props.taskIdentityBySessionId?.get(session.id);
   const taskIdentity = compactWorkflow || session.name?.trim() || workflowLabel
     ? undefined
-    : props.taskIdentityBySessionId?.get(session.id);
+    : attachedTask;
   const taskTitled = Boolean(taskIdentity) && !nested;
+  /// Every Agent in a Jira-linked Task carries its issue key, even one that
+  /// keeps its own name or sits under another Agent.
+  const issueKey = attachedTask?.issueKey;
   const pullRequests = (taskTitled ? taskIdentity!.pullRequests : []).map((pullRequest, index, all) => ({
     pullRequest,
     chip: pullRequestChip(pullRequest),
@@ -700,9 +704,9 @@ function ActiveAgentRow({ session, source, depth = 0, projectedSource, worktreeC
         <SessionRowButton
         session={session}
         displayName={taskTitled ? taskIdentity!.title : workflowLabel}
-        titleKey={taskTitled ? taskIdentity!.issueKey : undefined}
-        openTitleKey={taskTitled && taskIdentity!.issueUrl && props.openExternal
-          ? () => props.openExternal!(taskIdentity!.issueUrl!)
+        titleKey={issueKey}
+        openTitleKey={issueKey && attachedTask!.issueUrl && props.openExternal
+          ? () => props.openExternal!(attachedTask!.issueUrl!)
           : undefined}
         presenceBadge={evaluation ? {
           glyph: "✦",
@@ -713,7 +717,7 @@ function ActiveAgentRow({ session, source, depth = 0, projectedSource, worktreeC
         reviewReady={reviewReady}
         /// The Task title already says which checkout this is; a helper under a
         /// Task row inherits that and needs no folder either.
-        subtitle={sharedCheckout || taskIdentity || session.process.cwd === props.projectFolder ? "" : basename(session.process.cwd)}
+        subtitle={sharedCheckout || taskIdentity || issueKey || session.process.cwd === props.projectFolder ? "" : basename(session.process.cwd)}
         {...(projectedSource?.kind === "Agent"
           ? { relationshipLabel: source ? sessionRelationshipLabel(source, session) : sessionRelationshipLabel(projectedSource, session) }
           : {})}
