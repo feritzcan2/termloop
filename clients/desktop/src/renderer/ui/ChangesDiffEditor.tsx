@@ -20,7 +20,20 @@ export function monacoReviewLine(side: "old" | "new", lineNumber: number): Chang
 /// A local working-tree change as an editable diff: the index or HEAD
 /// pre-image on the left, the working-tree file on the right. Edits go
 /// through the shared file editor, so saves keep its compare-and-swap.
-export function ChangesDiffEditor({ editing, path, original, viewType, fullFile, notes, draft, openLineReview, editLineReview, updateLineReview, removeLineReview, saved }: {
+/// Monaco computes the diff in a worker; a first result that never arrives
+/// within this time is treated as failed.
+export const MONACO_DIFF_TIMEOUT_MS = 8_000;
+
+/// Why the first Monaco diff cannot be trusted, or undefined when it can.
+/// `lineChanges` is null while no result exists.
+export function monacoDiffFailure(lineChanges: readonly unknown[] | null, originalText: string, modifiedText: string, expectsChanges: boolean): string | undefined {
+  if (lineChanges === null) return "the editable diff did not finish computing.";
+  if (lineChanges.length > 0) return undefined;
+  if (originalText !== modifiedText) return "the editable diff found no differences in files that differ.";
+  return expectsChanges ? "the original file and the working-tree file read the same; refresh to see the current change." : undefined;
+}
+
+export function ChangesDiffEditor({ editing, path, original, viewType, fullFile, notes, draft, openLineReview, editLineReview, updateLineReview, removeLineReview, saved, expectsChanges, diffFailed }: {
   editing: ChangesEditing;
   path: string;
   /** Pre-image text; empty for an untracked file. */
@@ -35,6 +48,10 @@ export function ChangesDiffEditor({ editing, path, original, viewType, fullFile,
   removeLineReview(key: string): void;
   /** The file's saved version moved: a save, or a reload of an outside edit. */
   saved(): void;
+  /** The Git patch for this entry has hunks. */
+  expectsChanges: boolean;
+  /** The first Monaco diff is missing or empty; the caller falls back to the patch. */
+  diffFailed(reason: string): void;
 }) {
   const { editor, snapshot, readOnly } = editing;
   const tab = snapshot.tabs.find((candidate) => candidate.path === path);
@@ -49,6 +66,8 @@ export function ChangesDiffEditor({ editing, path, original, viewType, fullFile,
   openLineReviewRef.current = openLineReview;
   const savedRef = useRef(saved);
   savedRef.current = saved;
+  const firstDiffRef = useRef({ expectsChanges, diffFailed });
+  firstDiffRef.current = { expectsChanges, diffFailed };
 
   // Viewing a change opens its file only for as long as it is shown, unless
   // it was already open or still holds unsaved edits.
@@ -85,6 +104,31 @@ export function ChangesDiffEditor({ editing, path, original, viewType, fullFile,
       });
       commentGutter(monaco, diff.getOriginalEditor(), "old", (line) => openLineReviewRef.current(line));
       commentGutter(monaco, modifiedEditor, "new", (line) => openLineReviewRef.current(line));
+      // Only the first result is checked: later edits may legitimately
+      // remove every difference.
+      let checked = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let firstResult: { dispose(): void } | undefined;
+      const check = () => {
+        if (checked || disposed) return;
+        checked = true;
+        clearTimeout(timer);
+        firstResult?.dispose();
+        const lineChanges = diff.getLineChanges();
+        const originalText = originalModel.getValue();
+        const modifiedText = modifiedModel.getValue();
+        const reason = monacoDiffFailure(lineChanges, originalText, modifiedText, firstDiffRef.current.expectsChanges);
+        if (!reason) return;
+        console.warn(`[changes-diag] ${JSON.stringify({
+          event: "editableDiffFallback", reason, lineChanges: lineChanges?.length ?? null,
+          originalLines: originalModel.getLineCount(), modifiedLines: modifiedModel.getLineCount(),
+          identical: originalText === modifiedText, expectsChanges: firstDiffRef.current.expectsChanges,
+        })}`);
+        firstDiffRef.current.diffFailed(reason);
+      };
+      firstResult = diff.onDidUpdateDiff(check);
+      timer = setTimeout(check, MONACO_DIFF_TIMEOUT_MS);
+      created = { dispose: () => { clearTimeout(timer); firstResult?.dispose(); diff.dispose(); } };
       setInstance({ monaco, diff });
     }, (error: unknown) => {
       if (!disposed) setFailure(error instanceof Error ? error.message : "The editor could not be loaded.");

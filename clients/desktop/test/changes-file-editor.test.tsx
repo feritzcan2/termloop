@@ -7,6 +7,7 @@ import { FileEditor } from "../src/renderer/file-editor.js";
 import type { LocalPreImageResult } from "../src/renderer/changes-local-recovery.js";
 import { ChangesOverlay, type ChangesOverlayProps } from "../src/renderer/ui/ChangesOverlay.js";
 import { editableChangePath } from "../src/renderer/ui/ChangesFileEditor.js";
+import { monacoDiffFailure } from "../src/renderer/ui/ChangesDiffEditor.js";
 import { fakeMonaco } from "./monaco-fixture.js";
 
 const fake = vi.hoisted(() => ({ current: undefined as ReturnType<typeof import("./monaco-fixture.js").fakeMonaco> | undefined }));
@@ -97,6 +98,30 @@ describe("Editing local changes in their diff", () => {
     expect(container.querySelector(".changes-file-heading strong")?.textContent).toBe("src/alpha.ts");
     expect(createDiffEditor).toHaveBeenCalledTimes(1);
     expect(diff.modified.model?.value).toBe("after");
+  });
+
+  it("falls back to the read-only patch when the first editable diff comes out empty", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const editor = new FileEditor({ read, write: (path) => write(path) });
+    const list = vi.fn<ChangesOverlayProps["list"]>(async () => changeList("local-1", [entry("a-1", "src/alpha.ts", "unstaged")]));
+    await act(async () => root.render(<Harness editor={editor} list={list} />));
+    await settle();
+    expect(container.querySelector(".changes-diff-scroll")).toBeNull();
+
+    await act(async () => fake.current!.finishDiff([]));
+    await settle();
+    expect(container.querySelector(".changes-diff-scroll")).not.toBeNull();
+    expect(container.querySelector(".changes-full-file-status")?.textContent)
+      .toBe("Read-only here: the editable diff found no differences in files that differ.");
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/^\[changes-diag\] .*"originalLines":3,"modifiedLines":1,"identical":false/));
+  });
+
+  it("trusts only a computed, non-empty first diff", () => {
+    expect(monacoDiffFailure([{}], "a", "b", true)).toBeUndefined();
+    expect(monacoDiffFailure([], "same", "same", false)).toBeUndefined();
+    expect(monacoDiffFailure(null, "a", "b", true)).toBe("the editable diff did not finish computing.");
+    expect(monacoDiffFailure([], "a", "b", true)).toBe("the editable diff found no differences in files that differ.");
+    expect(monacoDiffFailure([], "same", "same", true)).toMatch(/^the original file and the working-tree file read the same/);
   });
 
   it("compares an untracked file against an empty original", async () => {

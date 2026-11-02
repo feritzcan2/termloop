@@ -168,6 +168,9 @@ export function ChangesOverlay({
   const [preImages, setPreImages] = useState<ReadonlyMap<string, CachedPreImage>>(new Map());
   const [loadingPreImage, setLoadingPreImage] = useState(false);
   const [preImageError, setPreImageError] = useState<string>();
+  // The change whose editable diff came out empty or never finished; it is
+  // shown as the read-only patch until the entry is listed again.
+  const [editFallback, setEditFallback] = useState<{ key: string; reason: string }>();
   const [reviewNotes, setReviewNotes] = useState<ReadonlyMap<string, ChangeReviewNote>>(new Map());
   const [reviewDraft, setReviewDraft] = useState<ChangeReviewDraft>();
   const [targetSessionId, setTargetSessionId] = useState<string>();
@@ -488,14 +491,15 @@ export function ChangesOverlay({
   const selectedPreImage = fullFileSupported && diffKey ? preImages.get(diffKey) : undefined;
   // The editable diff compares against the pre-image; a refused pre-image
   // falls back to the read-only patch view.
-  const editOriginal = editPath === undefined || !selectedPreImage ? undefined
+  const editFallbackReason = editFallback && editFallback.key === diffKey ? editFallback.reason : undefined;
+  const editOriginal = editPath === undefined || !selectedPreImage || editFallbackReason ? undefined
     : selectedPreImage.state === "absent" ? ""
       : selectedPreImage.state === "content" ? selectedPreImage.content ?? undefined : undefined;
   const editableDiff = editOriginal !== undefined;
   const awaitingEditableDiff = editPath !== undefined && !selectedPreImage && !preImageError;
   // A working-tree change that falls back to the read-only diff says why.
   const editRefusal = editPath === undefined || editableDiff || awaitingEditableDiff ? undefined
-    : `Read-only here: ${preImageError ?? (selectedPreImage && preImageRefusal(selectedPreImage.state)) ?? "the original file could not be read."}`;
+    : `Read-only here: ${editFallbackReason ?? preImageError ?? (selectedPreImage && preImageRefusal(selectedPreImage.state)) ?? "the original file could not be read."}`;
 
   useEffect(() => {
     if (loadingSources || !diffKey || (editPath === undefined && (!fullFile || !fullFileSupported || !parsed))) return;
@@ -829,6 +833,8 @@ export function ChangesOverlay({
               updateLineReview={updateReviewNote}
               removeLineReview={removeReviewNote}
               saved={() => void relistAfterSave()}
+              expectsChanges={(parsed?.hunks.length ?? 0) > 0}
+              diffFailed={(reason) => { if (diffKey) setEditFallback({ key: diffKey, reason }); }}
             /> : <>
             {loadingDiff || awaitingEditableDiff ? <p className="changes-placeholder">Loading diff…</p> : null}
             {!selected && !loadingSources && loadingSourceKey !== selectedSourceKey ? <p className="changes-placeholder">Select a changed file.</p> : null}

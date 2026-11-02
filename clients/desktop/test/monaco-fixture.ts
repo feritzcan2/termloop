@@ -1,6 +1,6 @@
 /// A minimal stand-in for the Monaco adapter: one view or one diff view,
 /// text models and the hooks the editors use. jsdom cannot run Monaco.
-type Model = { value: string; language: string; disposed: boolean; getValue(): string; setValue(value: string): void; dispose(): void;
+type Model = { value: string; language: string; disposed: boolean; getValue(): string; setValue(value: string): void; dispose(): void; getLineCount(): number;
   getFullModelRange(): object; pushEditOperations(_: unknown, edits: { text: string }[]): null };
 type MouseTarget = { type: number; position: { lineNumber: number } };
 type ViewZone = { afterLineNumber: number; domNode: HTMLElement };
@@ -49,7 +49,8 @@ export function fakeMonaco() {
   const contentListeners = new Set<() => void>();
   const models: Model[] = [];
   const state = { model: undefined as Model | undefined, readOnly: false, theme: "",
-    diff: undefined as { original: ReturnType<typeof fakeDiffSide>; modified: ReturnType<typeof fakeDiffSide>; options: Record<string, unknown> } | undefined };
+    diff: undefined as { original: ReturnType<typeof fakeDiffSide>; modified: ReturnType<typeof fakeDiffSide>; options: Record<string, unknown>;
+      lineChanges: unknown[] | null; updated: Set<() => void> } | undefined };
   const changed = () => contentListeners.forEach((listener) => listener());
   const monaco = {
     KeyMod: { CtrlCmd: 2048 },
@@ -62,6 +63,7 @@ export function fakeMonaco() {
         const model: Model = {
           value, language, disposed: false,
           getValue: () => model.value,
+          getLineCount: () => model.value.split("\n").length,
           setValue: (next) => { model.value = next; },
           dispose: () => { model.disposed = true; },
           getFullModelRange: () => ({}),
@@ -74,8 +76,11 @@ export function fakeMonaco() {
         const original = fakeDiffSide();
         const modified = fakeDiffSide();
         state.theme = String(options.theme ?? "");
-        state.diff = { original, modified, options: { ...options } };
+        state.diff = { original, modified, options: { ...options }, lineChanges: null, updated: new Set() };
+        const diff = state.diff;
         return {
+          getLineChanges: () => diff.lineChanges,
+          onDidUpdateDiff(listener: () => void) { diff.updated.add(listener); return { dispose: () => { diff.updated.delete(listener); } }; },
           setModel(models: { original: Model; modified: Model }) { original.model = models.original; modified.model = models.modified; },
           getOriginalEditor: () => original,
           getModifiedEditor: () => modified,
@@ -114,5 +119,10 @@ export function fakeMonaco() {
       side.contentListeners.forEach((listener) => listener());
     },
     saveDiff() { state.diff!.modified.commands.get(2048 | 49)!(); },
+    /// Delivers the diff worker's result; `null` keeps it uncomputed.
+    finishDiff(lineChanges: unknown[] | null) {
+      state.diff!.lineChanges = lineChanges;
+      [...state.diff!.updated].forEach((listener) => listener());
+    },
   };
 }

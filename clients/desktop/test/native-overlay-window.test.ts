@@ -194,11 +194,13 @@ describe("native overlay window request", () => {
     new NativeOverlayWindowManager(parent as never, vi.fn());
 
     consoleListener?.({ message: "[overlay-diag] t rendererOpen clickToCommit=12ms ipc=3ms" });
+    consoleListener?.({ message: "[changes-diag] {\"event\":\"editableDiffFallback\"}" });
     consoleListener?.({ message: "unrelated renderer log with private text" });
     consoleListener?.({ message: 42 });
 
     expect(info.mock.calls.map(([line]) => String(line))).toEqual([
       "[overlay-diag] t rendererOpen clickToCommit=12ms ipc=3ms",
+      "[changes-diag] {\"event\":\"editableDiffFallback\"}",
     ]);
     info.mockRestore();
   });

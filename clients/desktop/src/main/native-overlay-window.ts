@@ -49,10 +49,12 @@ export class NativeOverlayWindowManager {
   }
 
   // The renderer measures click-to-render and IPC time for overlay opens; its
-  // console is not captured, so relay only its own diagnostic lines.
+  // console is not captured, so relay only its own diagnostic lines. Changes
+  // reports an editable diff that fell back to the patch the same way.
   #forwardRendererDiagnostics(contents: InputEventSource | undefined): void {
     contents?.on("console-message", (details: { message?: unknown }) => {
-      if (typeof details.message === "string" && details.message.startsWith("[overlay-diag] ")) {
+      if (typeof details.message === "string"
+        && (details.message.startsWith("[overlay-diag] ") || details.message.startsWith("[changes-diag] "))) {
         console.info(details.message);
       }
     });
