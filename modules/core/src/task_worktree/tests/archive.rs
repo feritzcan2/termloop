@@ -754,3 +754,88 @@ fn reopen_plans_no_worktree_for_open_or_agentless_tasks() {
             .is_none()
     );
 }
+
+#[test]
+fn a_failed_archive_of_an_active_task_no_longer_blocks_a_fresh_archive() {
+    let mut fixture = Fixture::new();
+    let task = fixture.create_task("Stuck archive", Value::Null);
+    let task_id = task["id"].as_str().unwrap().to_owned();
+    let stuck_operation_id = Uuid::new_v4().to_string();
+    fixture
+        .runtime
+        .store
+        .begin_task_archive(
+            &fixture.runtime.write_authority,
+            termloop_domain::TaskArchiveOperation {
+                operation_id: stuck_operation_id.clone(),
+                task_id: task_id.clone(),
+                project_id: fixture.project_id.clone(),
+                worktree_path: None,
+                worktree_generation: 0,
+                targets: vec![termloop_domain::TaskArchiveTarget {
+                    session_id: "deleted-agent".into(),
+                    runtime_epoch: 1,
+                    prior_lifecycle_state: "running".into(),
+                    prior_resume_failure: None,
+                    was_live_agent: true,
+                }],
+                state: termloop_domain::TaskArchiveOperationState::Prepared,
+            },
+        )
+        .unwrap();
+    fixture
+        .runtime
+        .store
+        .mark_task_archive_recovery_attention(
+            &fixture.runtime.write_authority,
+            &task_id,
+            &stuck_operation_id,
+        )
+        .unwrap();
+
+    let preview = fixture
+        .runtime
+        .inspect_task_archive(json!({ "taskId": task_id }))
+        .unwrap();
+    assert!(fixture.runtime.store.task_archive_operations().is_empty());
+    assert_eq!(preview["can_archive"], true);
+    let archived = fixture
+        .runtime
+        .archive_task(json!({
+            "taskId": task_id,
+            "operationId": Uuid::new_v4().to_string(),
+            "archiveTicket": preview["archive_ticket"],
+        }))
+        .unwrap();
+    assert!(archived["task"]["archived_at_epoch_ms"].is_number());
+}
+
+#[test]
+fn an_archive_still_in_progress_keeps_refusing_a_second_preview() {
+    let mut fixture = Fixture::new();
+    let task = fixture.create_task("Busy archive", Value::Null);
+    let task_id = task["id"].as_str().unwrap().to_owned();
+    fixture
+        .runtime
+        .store
+        .begin_task_archive(
+            &fixture.runtime.write_authority,
+            termloop_domain::TaskArchiveOperation {
+                operation_id: Uuid::new_v4().to_string(),
+                task_id: task_id.clone(),
+                project_id: fixture.project_id.clone(),
+                worktree_path: None,
+                worktree_generation: 0,
+                targets: Vec::new(),
+                state: termloop_domain::TaskArchiveOperationState::Prepared,
+            },
+        )
+        .unwrap();
+    assert!(matches!(
+        fixture
+            .runtime
+            .inspect_task_archive(json!({ "taskId": task_id })),
+        Err(CoreError::ArchiveInProgress { .. })
+    ));
+    assert_eq!(fixture.runtime.store.task_archive_operations().len(), 1);
+}

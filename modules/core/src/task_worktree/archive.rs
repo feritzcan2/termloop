@@ -221,6 +221,27 @@ impl CoreRuntime {
             .task_archive_operations()
             .iter()
             .find(|operation| operation.task_id == task.id)
+            .cloned()
+        {
+            // A failed archive of a Task that is still active never parked
+            // anything durable, and nothing else ever clears it: release it so
+            // this fresh preview revalidates the cohort instead of refusing
+            // every later close or archive of the Task.
+            if operation.state != TaskArchiveOperationState::RecoveryAttention {
+                return Err(CoreError::ArchiveInProgress {
+                    task_id: task.id,
+                    operation_id: operation.operation_id,
+                });
+            }
+            self.store
+                .abandon_task_archive(&self.write_authority, &task.id, &operation.operation_id)
+                .map_err(store_error)?;
+        }
+        if let Some(operation) = self
+            .store
+            .task_archive_operations()
+            .iter()
+            .find(|operation| operation.task_id == task.id)
         {
             return Err(CoreError::ArchiveInProgress {
                 task_id: task.id,
