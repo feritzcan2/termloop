@@ -6,6 +6,27 @@ pub(super) const PLAYBOOK_EVALUATOR_TEMPLATE: PromptTemplate = PromptTemplate {
     authored_body: include_str!("../../../resources/prompts/builtin.agent.playbook-evaluator.md"),
 };
 
+pub(super) const PLAYBOOK_EVALUATOR_RETRY_TEMPLATE: PromptTemplate = PromptTemplate {
+    id: "builtin.agent.playbook-evaluator-retry",
+    version: 1,
+    authored_body: include_str!(
+        "../../../resources/prompts/builtin.agent.playbook-evaluator-retry.md"
+    ),
+};
+
+/// The one visible reminder sent to an evaluator whose turn ended while its
+/// evaluation was still open, typically because its first turn started before
+/// the TermLoop MCP server connected.
+pub fn playbook_evaluator_retry_prompt() -> Result<AskToTerminalPrompt, InvocationError> {
+    let template = &PLAYBOOK_EVALUATOR_RETRY_TEMPLATE;
+    assistant::validate_template_asset(template)?;
+    terminal_prompt(
+        template,
+        Vec::new(),
+        bind_ordered(template.authored_body, &[])?,
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn playbook_evaluator_for_conversation(
     agent_id: &str,

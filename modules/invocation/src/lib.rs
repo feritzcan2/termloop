@@ -6,7 +6,9 @@ mod jira_task;
 mod personal_agent;
 mod playbook_evaluation;
 mod profiles;
-pub use playbook_evaluation::playbook_evaluator_for_conversation;
+pub use playbook_evaluation::{
+    playbook_evaluator_for_conversation, playbook_evaluator_retry_prompt,
+};
 mod project_workflow;
 pub use agent_fork::{
     agent_fork_active_source_template, agent_fork_notice_template,
@@ -279,6 +281,7 @@ pub fn prompt_templates() -> &'static [PromptTemplate] {
         ASSISTANT_ACTIVATION_TEMPLATE,
         ASK_TO_HELPER_TEMPLATE,
         playbook_evaluation::PLAYBOOK_EVALUATOR_TEMPLATE,
+        playbook_evaluation::PLAYBOOK_EVALUATOR_RETRY_TEMPLATE,
         ASK_TO_FOLLOWUP_TEMPLATE,
         ASK_TO_REPLY_TEMPLATE,
         ASK_TO_RESUME_TEMPLATE,

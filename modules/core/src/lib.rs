@@ -972,6 +972,7 @@ impl CoreRuntime {
         if next.state == AgentState::Idle {
             self.try_deliver_ask_to_reply_for_source(session_id);
             self.observe_steward_idle(session_id, capability_runtime_epoch);
+            self.retry_open_playbook_evaluation(session_id, capability_runtime_epoch, previous);
         }
 
         let mut session_changed = false;
@@ -1287,6 +1288,7 @@ impl CoreRuntime {
         if next.state == AgentState::Idle {
             self.try_deliver_ask_to_reply_for_source(session_id);
             self.observe_steward_idle(session_id, runtime_epoch);
+            self.retry_open_playbook_evaluation(session_id, runtime_epoch, previous);
         }
         Ok(projection_changed)
     }

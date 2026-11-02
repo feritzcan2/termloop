@@ -92,3 +92,24 @@ fn evaluation_forks_apply_selected_model_and_permissions_with_visible_instructio
         }
     }
 }
+
+#[test]
+fn an_open_evaluation_reminder_is_visible_versioned_and_names_the_tools() {
+    let prompt = termloop_invocation::playbook_evaluator_retry_prompt().unwrap();
+    assert_eq!(
+        prompt.provenance().template_ref,
+        "builtin.agent.playbook-evaluator-retry"
+    );
+    assert_eq!(prompt.provenance().template_version, 1);
+    assert_eq!(prompt.bindings().count(), 0);
+    assert_eq!(
+        prompt.delivered_prompt(),
+        include_str!("../../../resources/prompts/builtin.agent.playbook-evaluator-retry.md")
+            .trim_end()
+    );
+    let delivered = prompt.delivered_prompt().replace('\n', " ");
+    assert!(delivered.contains("`playbook_evaluation_read`"));
+    assert!(delivered.contains("`playbook_evaluation_complete`"));
+    assert!(delivered.contains("does not concern `termloop_next`"));
+    assert!(delivered.contains("does not send this reminder again"));
+}

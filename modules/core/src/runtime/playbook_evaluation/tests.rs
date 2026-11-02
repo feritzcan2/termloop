@@ -529,6 +529,44 @@ fn verdict_requires_exact_fork_read_and_advances_once_without_steward_overwrite(
 }
 
 #[test]
+fn an_open_evaluation_is_reminded_once_after_a_finished_turn_only() {
+    let (mut runtime, root, project) = pipeline_runtime();
+    let claim = claim(&mut runtime, &project);
+    evaluator(&mut runtime, &claim);
+    let retried =
+        |runtime: &CoreRuntime| runtime.playbook_evaluation.evaluations["evaluation-check"].retried;
+    // Startup idle is not the end of a turn, and another epoch or Session is
+    // never this evaluation.
+    runtime.retry_open_playbook_evaluation("reviewer", 1, None);
+    runtime.retry_open_playbook_evaluation(
+        "reviewer",
+        1,
+        Some(observation(AgentState::Idle, 1, 1)),
+    );
+    runtime.retry_open_playbook_evaluation(
+        "reviewer",
+        2,
+        Some(observation(AgentState::Working, 1, 1)),
+    );
+    runtime.retry_open_playbook_evaluation(
+        "source",
+        1,
+        Some(observation(AgentState::Working, 1, 1)),
+    );
+    assert!(!retried(&runtime));
+
+    runtime.retry_open_playbook_evaluation(
+        "reviewer",
+        1,
+        Some(observation(AgentState::Working, 2, 2)),
+    );
+    assert!(retried(&runtime));
+    // The evaluation stays open for its own report or expiry.
+    runtime.read_playbook_evaluation("reviewer-token").unwrap();
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn changing_policy_or_manually_moving_task_rejects_the_in_flight_answer() {
     for policy_change in [false, true] {
         let (mut runtime, root, project) = pipeline_runtime();

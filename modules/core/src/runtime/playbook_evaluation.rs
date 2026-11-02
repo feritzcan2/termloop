@@ -40,6 +40,8 @@ pub(crate) struct PlaybookEvaluation {
     /// Core refused this fork's report because its check no longer matched.
     /// The fork stops on that answer, so cleanup must not wait for expiry.
     report_rejected: bool,
+    /// The one reminder sent after a turn ended with this evaluation open.
+    retried: bool,
 }
 
 #[derive(Default)]
@@ -362,6 +364,7 @@ impl CoreRuntime {
                 assignment,
                 read: false,
                 report_rejected: false,
+                retried: false,
             },
         );
         Ok(())
@@ -428,6 +431,48 @@ impl CoreRuntime {
             })
             .cloned()
             .ok_or(CoreError::CapabilityDenied)
+    }
+
+    /// A Claude evaluator's first turn can start before its MCP server
+    /// connects, and a model may stop instead of waiting. When a turn ends
+    /// with the exact evaluation still open, send the visible reminder once.
+    pub(crate) fn retry_open_playbook_evaluation(
+        &mut self,
+        session_id: &str,
+        runtime_epoch: u64,
+        previous: Option<AgentObservation>,
+    ) {
+        if !previous.is_some_and(|observation| observation.state == AgentState::Working) {
+            return;
+        }
+        let Some(evaluation) = self
+            .playbook_evaluation
+            .evaluations
+            .values()
+            .find(|e| e.session_id == session_id && e.runtime_epoch == runtime_epoch)
+            .filter(|e| !e.retried && !e.report_rejected)
+            .cloned()
+        else {
+            return;
+        };
+        if self
+            .validate_playbook_evaluation(&evaluation, termloop_platform::current_epoch_ms())
+            .is_err()
+        {
+            return;
+        }
+        let Ok(prompt) = termloop_invocation::playbook_evaluator_retry_prompt() else {
+            return;
+        };
+        if let Some(current) = self
+            .playbook_evaluation
+            .evaluations
+            .get_mut(&evaluation.capability.check_id)
+        {
+            current.retried = true;
+        }
+        // A refused submission leaves the evaluation to its ordinary expiry.
+        let _ = self.submit_generated_terminal_input(session_id, prompt.terminal_submission());
     }
 
     pub fn read_playbook_evaluation(&mut self, token: &str) -> Result<Value, CoreError> {
