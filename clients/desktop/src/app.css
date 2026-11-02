@@ -1992,26 +1992,37 @@ button.changes-branch-current:hover:not(:disabled) { border-color: rgba(102,179,
 .quick-action-help { display: inline-grid; place-items: center; width: 15px; height: 15px; border: 1px solid var(--qa-rule); border-radius: 50%; color: var(--qa-secondary); font: 600 10px var(--qa-font); cursor: help; }
 .quick-action-jira-task [role="tooltip"] { position: absolute; z-index: 2; top: calc(100% + 6px); right: 0; width: 320px; max-width: 360px; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg-raised); color: var(--qa-text); font: 12px/1.45 var(--qa-font); box-shadow: 0 8px 24px rgba(0,0,0,.28); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .12s; }
 .quick-action-help:hover + [role="tooltip"], .quick-action-help:focus-visible + [role="tooltip"] { opacity: 1; visibility: visible; }
+/* Jira issue proposal. The header and the action row stay put while the form
+   scrolls between them, so the decision buttons are always in reach. */
 .jira-proposal-layer { z-index: 95; }
-.dialog-card.jira-proposal-card { display: flex; flex-direction: column; gap: 10px; width: min(760px, calc(100vw - 40px)); max-height: calc(100vh - 48px); overflow: auto; padding: 18px 20px; font-size: 13px; }
-.jira-proposal-card header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.jira-proposal-card h3 { margin: 0; font-size: 15px; }
-.jira-proposal-card header .link { padding: 0; border: 0; background: none; color: var(--accent); cursor: pointer; }
-.jira-proposal-card label { display: flex; flex-direction: column; gap: 3px; color: var(--text-muted); }
-.jira-proposal-card input, .jira-proposal-card textarea, .jira-proposal-card select { width: 100%; box-sizing: border-box; font: inherit; }
-.jira-proposal-card textarea { resize: vertical; }
-.jira-proposal-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 8px; }
-.jira-proposal-rationale { margin: 0; color: var(--text-muted); }
-.jira-proposal-card [role="alert"] { margin: 0; color: #f87171; }
-.jira-proposal-card [role="status"] { margin: 0; color: var(--text-muted); }
-.jira-proposal-card footer { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
-.jira-proposal-card footer em, .jira-proposal-card footer .jira-proposal-later { margin-right: auto; color: var(--text-muted); }
-.jira-proposal-start { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; }
-.jira-proposal-start legend { padding: 0 4px; color: var(--text-muted); }
-.jira-proposal-start label:has(> input[type="radio"]) { display: grid; grid-template-columns: auto 1fr; column-gap: 6px; align-items: baseline; color: var(--text); cursor: pointer; }
-.jira-proposal-start input[type="radio"] { width: auto; margin: 0; }
-.jira-proposal-start label small { grid-column: 2; color: var(--text-muted); }
-.jira-proposal-start-agent { display: flex; flex-direction: column; gap: 6px; margin-left: 20px; }
+.dialog-card.jira-proposal-card { display: flex; flex-direction: column; width: min(720px, calc(100vw - 40px)); max-height: calc(100vh - 48px); }
+.jira-proposal-card .dialog-header { flex: none; gap: 12px; }
+.jira-proposal-origin { margin: 6px 0 0; color: var(--text-muted); font-size: 10.5px; }
+.jira-proposal-agent { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
+.jira-proposal-agent:hover { color: var(--accent-strong); text-decoration: underline; text-underline-offset: 2px; }
+.jira-proposal-body { display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-bottom: 16px; scrollbar-color: light-dark(#94a3b8, #555c60) transparent; }
+.jira-proposal-rationale { margin: 0; padding: 9px 11px; border: 1px solid var(--border); border-left: 2px solid var(--warning); border-radius: 6px; background: light-dark(rgba(217,170,95,.08), rgba(217,170,95,.06)); color: var(--text-secondary); font-size: 10.5px; line-height: 1.5; }
+.jira-proposal-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+.jira-proposal-field { display: flex; flex-direction: column; min-width: 0; }
+.dialog-body .jira-proposal-field > label, .dialog-body .jira-proposal-field > label:not(:first-child) { margin: 0 0 6px 2px; }
+.dialog-body .jira-proposal-field input, .dialog-body .jira-proposal-field select { height: 32px; font-size: 11.5px; }
+.dialog-body .jira-proposal-field textarea { font-size: 11.5px; }
+.dialog-body textarea.jira-proposal-description { min-height: 180px; max-height: none; font: 11px/1.55 var(--font-mono); }
+.dialog-body .jira-proposal-kickoff textarea { min-height: 54px; }
+.jira-proposal-start { display: flex; flex-direction: column; gap: 10px; min-width: 0; margin: 2px 0 0; padding: 0; border: 0; }
+.jira-proposal-start legend { margin: 0 0 8px 2px; padding: 0; color: #636d71; font-size: 10px; font-weight: 750; letter-spacing: .13em; text-transform: uppercase; }
+.jira-proposal-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
+.dialog-body .jira-proposal-choice, .dialog-body .jira-proposal-choice:not(:first-child) { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 3px 9px; margin: 0; padding: 10px 11px; border: 1px solid var(--border); border-radius: 8px; background: light-dark(#f8fafc, #252a2c); color: var(--text); font-size: 11.5px; font-weight: 600; letter-spacing: 0; text-transform: none; cursor: pointer; transition: border-color .12s, background .12s; }
+.dialog-body .jira-proposal-choice:hover { border-color: var(--border-strong); background: var(--bg-hover); }
+.dialog-body .jira-proposal-choice:has(input:checked) { border-color: rgba(102,179,255,.5); background: var(--accent-wash); }
+.dialog-body .jira-proposal-choice input { width: auto; height: auto; margin: 0; accent-color: var(--accent); }
+.jira-proposal-choice small { grid-column: 2; color: var(--text-muted); font-size: 10px; font-weight: 450; line-height: 1.45; }
+.jira-proposal-start:disabled .jira-proposal-choice { cursor: default; opacity: .6; }
+.jira-proposal-start-agent { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: light-dark(rgba(15,23,42,.02), rgba(0,0,0,.12)); }
+.jira-proposal-card .dialog-actions { flex: none; align-items: center; border-top: 1px solid var(--border); }
+.jira-proposal-card .dialog-actions .jira-proposal-later { margin-right: auto; }
+.jira-proposal-card .dialog-actions em { color: var(--text-muted); font-size: 10.5px; }
+.jira-proposal-card .form-error, .jira-proposal-card .field-help { margin: 0 2px; }
 .quick-action-preview { min-height: 0; padding: 8px 12px; overflow: auto; border-bottom: 1px solid var(--qa-rule); color: light-dark(#6d6f72, #8b9093); background: rgba(0,0,0,.18); font: 10px var(--qa-mono); }
 .quick-action-preview pre, .quick-action-preview p { max-height: 120px; margin: 6px 0 0; overflow: auto; color: light-dark(#686d6e, #bcc2c4); white-space: pre-wrap; }
 .quick-action-preview p { color: var(--danger); }

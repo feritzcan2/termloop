@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Icon } from "./Icon.js";
 import { useOverlayLease } from "./overlay-lease.js";
 import type {
   JiraTaskProposalDto,
@@ -208,53 +209,63 @@ function JiraTaskProposalCard({ session, proposal, actions, selectSession, start
   };
 
   const shownError = error ?? proposal.failure ?? undefined;
-  return <section className="dialog-card jira-proposal-card" role="dialog" aria-modal="true" aria-labelledby={`jira-proposal-${proposal.proposal_id}`} aria-busy={disabled}>
-    <header>
-      <h3 id={`jira-proposal-${proposal.proposal_id}`}>Jira issue proposal</h3>
-      <button type="button" className="link" onClick={() => selectSession(session.id)}>{sessionLabel(session)}</button>
+  const id = (field: string) => `jira-proposal-${proposal.proposal_id}-${field}`;
+  return <section className="dialog-card jira-proposal-card" role="dialog" aria-modal="true" aria-labelledby={id("title")} aria-busy={disabled}>
+    <header className="dialog-header">
+      <div>
+        <span className="dialog-eyebrow">Jira issue proposal</span>
+        <h2 id={id("title")}>Review before creating</h2>
+        <p className="jira-proposal-origin">Proposed by <button type="button" className="jira-proposal-agent" onClick={() => selectSession(session.id)}>{sessionLabel(session)}</button></p>
+      </div>
+      <button type="button" className="icon-button quiet" aria-label="Review the Jira issue proposal later" onClick={later}><Icon name="close" /></button>
     </header>
-    {proposal.rationale ? <p className="jira-proposal-rationale">{proposal.rationale}</p> : null}
-    <div className="jira-proposal-grid">
-      {sources && sources.length > 1 ? <label>Source
-        <select value={sourceId} disabled={disabled} onChange={(event) => setSourceId(event.target.value)}>
-          {sources.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}
-        </select>
-      </label> : null}
-      <label>Project<input value={projectKey} maxLength={32} disabled={disabled} onChange={(event) => setProjectKey(event.target.value.toUpperCase())} /></label>
-      <label>Type<input value={issueType} maxLength={60} disabled={disabled} onChange={(event) => setIssueType(event.target.value)} /></label>
-      <label>Epic<input value={epicKey} maxLength={64} placeholder="None" disabled={disabled} onChange={(event) => setEpicKey(event.target.value.toUpperCase())} /></label>
+    <div className="dialog-body jira-proposal-body">
+      {proposal.rationale ? <p className="jira-proposal-rationale">{proposal.rationale}</p> : null}
+      <div className="jira-proposal-grid">
+        {sources && sources.length > 1 ? <Field id={id("source")} label="Source"><select id={id("source")} value={sourceId} disabled={disabled} onChange={(event) => setSourceId(event.target.value)}>
+            {sources.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}
+          </select></Field> : null}
+        <Field id={id("project")} label="Project"><input id={id("project")} value={projectKey} maxLength={32} disabled={disabled} onChange={(event) => setProjectKey(event.target.value.toUpperCase())} /></Field>
+        <Field id={id("type")} label="Type"><input id={id("type")} value={issueType} maxLength={60} disabled={disabled} onChange={(event) => setIssueType(event.target.value)} /></Field>
+        <Field id={id("epic")} label="Epic"><input id={id("epic")} value={epicKey} maxLength={64} placeholder="None" disabled={disabled} onChange={(event) => setEpicKey(event.target.value.toUpperCase())} /></Field>
+      </div>
+      <Field id={id("summary")} label="Summary"><input id={id("summary")} value={summary} maxLength={255} disabled={disabled} onChange={(event) => setSummary(event.target.value)} /></Field>
+      <Field id={id("description")} label="Description"><textarea id={id("description")} className="jira-proposal-description" value={description} maxLength={32767} rows={10} disabled={disabled} onChange={(event) => setDescription(event.target.value)} /></Field>
+      <fieldset className="jira-proposal-start" disabled={disabled}>
+        <legend>After creating the issue</legend>
+        <div className="jira-proposal-choices">
+          <Choice name={id("outcome")} checked={!createTask} select={() => setCreateTask(false)} title="Only create the Jira issue" help="Links it to the agent's current Task when that Task has no issue yet." />
+          <Choice name={id("outcome")} checked={createTask} select={() => setCreateTask(true)} title="Create a Task and start now" help="Creates a worktree for the issue and starts working in it." />
+        </div>
+        {createTask ? <div className="jira-proposal-start-agent">
+          <div className="jira-proposal-choices">
+            <Choice name={id("agent")} checked={!freshAgent} select={() => setFreshAgent(false)} title="With this agent" help="Moves this conversation into the Task. If the agent already works in a Task, a fork of it starts there instead." />
+            <Choice name={id("agent")} checked={freshAgent} select={() => setFreshAgent(true)} title="With a fresh agent" help="A new agent of the same kind starts with the issue; this agent stays where it is." />
+          </div>
+          <Field id={id("kickoff")} label="First message for a fresh or forked agent" className="jira-proposal-kickoff"><textarea id={id("kickoff")} value={kickoffMessage} maxLength={8192} rows={2} onChange={(event) => setKickoffMessage(event.target.value)} /></Field>
+        </div> : null}
+      </fieldset>
+      {feedbackOpen ? <Field id={id("feedback")} label="Feedback for the agent"><textarea id={id("feedback")} value={feedback} maxLength={4000} rows={3} autoFocus disabled={disabled} placeholder="For example: use epic PAY-9 and make it a Story" onChange={(event) => setFeedback(event.target.value)} /></Field> : null}
+      {shownError ? <p className="form-error" role="alert">{shownError}</p> : invalid && sources ? <p className="field-help" role="status">{invalid}</p> : null}
     </div>
-    <label>Summary<input value={summary} maxLength={255} disabled={disabled} onChange={(event) => setSummary(event.target.value)} /></label>
-    <label>Description<textarea value={description} maxLength={32767} rows={12} disabled={disabled} onChange={(event) => setDescription(event.target.value)} /></label>
-    <fieldset className="jira-proposal-start" disabled={disabled}>
-      <legend>After creating the issue</legend>
-      <label><input type="radio" name={`jira-outcome-${proposal.proposal_id}`} checked={!createTask} onChange={() => setCreateTask(false)} />
-        Only create the Jira issue<small>Links it to the agent's current Task when that Task has no issue yet.</small></label>
-      <label><input type="radio" name={`jira-outcome-${proposal.proposal_id}`} checked={createTask} onChange={() => setCreateTask(true)} />
-        Create a Task and start now<small>Creates a worktree for the issue and starts working in it.</small></label>
-      {createTask ? <div className="jira-proposal-start-agent">
-        <label><input type="radio" name={`jira-agent-${proposal.proposal_id}`} checked={!freshAgent} onChange={() => setFreshAgent(false)} />
-          With this agent<small>Moves this conversation into the Task. If the agent already works in a Task, a fork of it starts there instead.</small></label>
-        <label><input type="radio" name={`jira-agent-${proposal.proposal_id}`} checked={freshAgent} onChange={() => setFreshAgent(true)} />
-          With a fresh agent<small>A new agent of the same kind starts with the issue; this agent stays where it is.</small></label>
-        <label className="jira-proposal-kickoff">First message for a fresh or forked agent
-          <textarea value={kickoffMessage} maxLength={8192} rows={2} onChange={(event) => setKickoffMessage(event.target.value)} />
-        </label>
-      </div> : null}
-    </fieldset>
-    {feedbackOpen ? <label>Feedback for the agent
-      <textarea value={feedback} maxLength={4000} rows={3} autoFocus disabled={disabled} placeholder="For example: use epic PAY-9 and make it a Story" onChange={(event) => setFeedback(event.target.value)} />
-    </label> : null}
-    {shownError ? <p role="alert">{shownError}</p> : invalid && sources ? <p role="status">{invalid}</p> : null}
-    <footer>
-      {creating ? <em>Creating in Jira…</em> : <button type="button" className="jira-proposal-later" onClick={later}>Later</button>}
-      <button type="button" disabled={disabled} onClick={() => void respond("dismiss")}>Dismiss</button>
+    <footer className="dialog-actions">
+      {creating ? <em className="jira-proposal-later">Creating in Jira…</em> : <button type="button" className="secondary-button jira-proposal-later" onClick={later}>Later</button>}
+      <button type="button" className="secondary-button" disabled={disabled} onClick={() => void respond("dismiss")}>Dismiss</button>
       {feedbackOpen
-        ? <button type="button" disabled={disabled || !feedback.trim()} onClick={() => void respond("revise")}>Send feedback</button>
-        : <button type="button" disabled={disabled} onClick={() => setFeedbackOpen(true)}>Feedback…</button>}
-      <button type="button" className="primary" disabled={disabled || Boolean(invalid)} onClick={() => void approve()}>{createTask ? "Create issue and start" : "Create issue"}</button>
+        ? <button type="button" className="secondary-button" disabled={disabled || !feedback.trim()} onClick={() => void respond("revise")}>Send feedback</button>
+        : <button type="button" className="secondary-button" disabled={disabled} onClick={() => setFeedbackOpen(true)}>Feedback…</button>}
+      <button type="button" className="primary-button" disabled={disabled || Boolean(invalid)} onClick={() => void approve()}>{createTask ? "Create issue and start" : "Create issue"}</button>
     </footer>
   </section>;
+}
+
+function Field({ id, label, className, children }: { id: string; label: string; className?: string; children: ReactNode }) {
+  return <div className={className ? `jira-proposal-field ${className}` : "jira-proposal-field"}><label htmlFor={id}>{label}</label>{children}</div>;
+}
+
+/** A radio card; its input stays the label's first child. */
+function Choice({ name, checked, select, title, help }: { name: string; checked: boolean; select(): void; title: string; help: string }) {
+  return <label className="jira-proposal-choice"><input type="radio" name={name} checked={checked} onChange={select} /><span>{title}</span><small>{help}</small></label>;
 }
 
 function message(cause: unknown): string {
