@@ -1,6 +1,6 @@
 use super::*;
 
-fn archived_task_fixture() -> (Store, CoreWriteAuthority) {
+fn pending_task_archive_fixture() -> (Store, CoreWriteAuthority) {
     let path = std::env::temp_dir().join(format!(
         "termloop-store-archive-deletion-{}.json",
         uuid::Uuid::new_v4()
@@ -71,10 +71,56 @@ fn archived_task_fixture() -> (Store, CoreWriteAuthority) {
             },
         )
         .unwrap();
+    (store, authority)
+}
+
+fn archived_task_fixture() -> (Store, CoreWriteAuthority) {
+    let (mut store, authority) = pending_task_archive_fixture();
     store
         .commit_task_archive(&authority, "archived-task", "archive", 100)
         .unwrap();
     (store, authority)
+}
+
+#[test]
+fn an_agent_held_by_an_unfinished_task_archive_cannot_be_deleted() {
+    let (mut store, authority) = pending_task_archive_fixture();
+    let journal_conflict = |result: Result<_, StoreError>| matches!(result, Err(StoreError::JournalConflict { operation_id }) if operation_id == "archive");
+    assert!(journal_conflict(
+        store
+            .move_agent_session_to_deleted(&authority, "archived-agent", 100)
+            .map(|_| ())
+    ));
+    assert!(journal_conflict(
+        store
+            .delete_session_descriptor(&authority, "archived-agent")
+            .map(|_| ())
+    ));
+    store
+        .move_agent_session_to_deleted(&authority, "surviving-agent", 100)
+        .unwrap();
+    assert!(Store::open(&store.path).is_ok());
+    std::fs::remove_file(&store.path).unwrap();
+}
+
+#[test]
+fn loading_drops_a_task_archive_target_whose_agent_was_already_deleted() {
+    let (store, _) = pending_task_archive_fixture();
+    let mut written = serde_json::to_value(&store.state).unwrap();
+    written["sessions"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|row| row["id"] != "archived-agent");
+    written["agent_conversation_readiness"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|row| row["sessionId"] != "archived-agent");
+    std::fs::write(&store.path, serde_json::to_vec(&written).unwrap()).unwrap();
+    let reopened = Store::open(&store.path).unwrap();
+    let operations = reopened.task_archive_operations();
+    assert_eq!(operations.len(), 1);
+    assert!(operations[0].targets.is_empty());
+    std::fs::remove_file(&store.path).unwrap();
 }
 
 #[test]

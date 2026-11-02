@@ -540,6 +540,9 @@ impl Store {
         {
             return Err(StoreError::SessionNotClosable);
         }
+        if let Some(operation_id) = self.archive_journal_holding_session(session_id) {
+            return Err(StoreError::JournalConflict { operation_id });
+        }
         let previous = self.state.clone();
         clear_executor_session_references(&mut self.state, [session_id]);
         let _ = clear_ask_to_continuations_for_session(&mut self.state.sessions, session_id);

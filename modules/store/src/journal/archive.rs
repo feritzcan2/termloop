@@ -7,6 +7,29 @@ use termloop_domain::{
 use super::super::{CoreWriteAuthority, Store, StoreError};
 
 impl Store {
+    /// An archive journal that still names this Session as its own Session or
+    /// as a Task target. Deleting the Session would leave that journal pointing
+    /// at a missing Session, which the next load rejects.
+    pub(crate) fn archive_journal_holding_session(&self, session_id: &str) -> Option<String> {
+        self.state
+            .session_archive_operations
+            .iter()
+            .find(|operation| operation.session_id == session_id)
+            .map(|operation| operation.operation_id.clone())
+            .or_else(|| {
+                self.state
+                    .task_archive_operations
+                    .iter()
+                    .find(|operation| {
+                        operation
+                            .targets
+                            .iter()
+                            .any(|target| target.session_id == session_id)
+                    })
+                    .map(|operation| operation.operation_id.clone())
+            })
+    }
+
     /// The launch guard an Agent moved to `cwd` must carry: the current managed
     /// checkout's exact tuple when `cwd` is a Task worktree, otherwise none. A
     /// guard left from a removed checkout would refuse every later resume.

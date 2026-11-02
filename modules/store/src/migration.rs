@@ -574,12 +574,34 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
         CURRENT_SCHEMA_VERSION => {
             let mut state: CurrentState =
                 serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
-            let sanitized = removed_retired_session_topics || sanitize_resume_metadata(&mut state);
+            let released_targets = release_deleted_task_archive_targets(&mut state);
+            let sanitized = (removed_retired_session_topics
+                || sanitize_resume_metadata(&mut state))
+                | released_targets;
             validate_current_state(&state)?;
             Ok((state, sanitized))
         }
         unsupported => Err(StoreError::UnsupportedSchema(unsupported)),
     }
+}
+
+/// An Agent deleted while a Task archive journal still named it left that
+/// journal pointing at a missing Session, and the whole state stopped loading.
+/// The deleted Agent has nothing left to suspend or restore, so drop only that
+/// target; every other archive invariant still fails validation.
+fn release_deleted_task_archive_targets(state: &mut CurrentState) -> bool {
+    let mut changed = false;
+    for operation in &mut state.task_archive_operations {
+        let before = operation.targets.len();
+        operation.targets.retain(|target| {
+            state
+                .sessions
+                .iter()
+                .any(|session| session.id == target.session_id)
+        });
+        changed |= operation.targets.len() != before;
+    }
+    changed
 }
 
 fn remove_orphan_task_branch_sets(value: &mut serde_json::Value) {
