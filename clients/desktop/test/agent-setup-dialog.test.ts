@@ -4,7 +4,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentSetupDialog } from "../src/renderer/ui/AgentSetupDialog.js";
-import { readQuickActionMemory, rememberQuickActionDraft } from "../src/renderer/quick-action-memory.js";
+import { readQuickActionDraft, readQuickActionMemory, rememberQuickActionDraft } from "../src/renderer/quick-action-memory.js";
 import { fullAgentCapability, launchOnlyGeminiCapability } from "./agent-capability-fixture.js";
 
 const PROJECT = { id: "project-1", name: "TermLoop", folder_path: "/tmp/termloop" };
@@ -32,7 +32,7 @@ describe("Agent Setup", () => {
   it("is a dedicated promptless surface and starts with the selected fallback settings", async () => {
     const start = vi.fn(async () => undefined);
     const close = vi.fn();
-    rememberQuickActionDraft("keep this draft");
+    rememberQuickActionDraft(PROJECT.id, "keep this draft");
     await act(async () => root.render(createElement(AgentSetupDialog, {
       project: PROJECT,
       title: "Build Playbook with agent",
@@ -59,7 +59,7 @@ describe("Agent Setup", () => {
       reasoning: "default",
     });
     expect(close).toHaveBeenCalledOnce();
-    expect(readQuickActionMemory().draft).toBe("keep this draft");
+    expect(readQuickActionDraft(PROJECT.id).text).toBe("keep this draft");
   });
 
   it("opens an unconfigured Claude in auto permission mode", async () => {

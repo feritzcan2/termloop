@@ -120,7 +120,7 @@ describe("agent library workflows", () => {
 
   it("explains an unavailable selection and never launches it as a free prompt", async () => {
     const preview = vi.fn(); const launch = vi.fn();
-    rememberQuickActionDraft("Inspect the release changes");
+    rememberQuickActionDraft("p", "Inspect the release changes");
     await act(async () => root.render(createElement(QuickActionComposer, {
       projects: [{ id: "p", name: "Demo", folder_path: "/tmp/demo" }], selectedProject: undefined, capabilities, profiles: [],
       initialTemplateRef: profile.id, pasteImage: vi.fn(), restoreImage: vi.fn(), discardImage: vi.fn(), preview, launch, close: vi.fn(),

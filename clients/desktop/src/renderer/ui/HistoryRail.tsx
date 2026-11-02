@@ -81,6 +81,14 @@ function HistorySessionTitle(props: { session: Session; title: string }) {
   </span>;
 }
 
+/// Core rejects a conversation it can no longer vouch for with the bare
+/// parameter name; say what that means for the person clicking Import.
+function importFailureMessage(message: string): string {
+  return message === "historyHandle"
+    ? "This conversation changed or is already open in TermLoop. Refresh Session History and try again."
+    : message;
+}
+
 function historyDate(epochMs: number): string {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(epochMs);
 }
@@ -142,6 +150,7 @@ export function HistoryRail(props: HistoryRailProps) {
   const [fillingProjectId, setFillingProjectId] = useState<string>();
   const [failure, setFailure] = useState<{ projectId: string; message: string }>();
   const [importingHandle, setImportingHandle] = useState<string>();
+  const [importFailure, setImportFailure] = useState<{ projectId: string; handle: string; message: string }>();
   const [tab, setTab] = useState<HistoryTab>("agents");
   const [query, setQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState<HistorySourceFilter>("all");
@@ -363,14 +372,23 @@ export function HistoryRail(props: HistoryRailProps) {
 
   const importAndResume = async (entry: SessionHistoryEntryDto) => {
     if (!props.projectId || importingHandle) return;
-    setImportingHandle(entry.history_handle);
-    setFailure(undefined);
+    const projectId = props.projectId;
+    const handle = entry.history_handle;
+    setImportingHandle(handle);
+    setImportFailure(undefined);
     try {
-      const importFailure = await props.resumeExternal(props.projectId, entry.history_handle);
-      if (importFailure) setFailure({ projectId: props.projectId, message: importFailure });
-      else await reload(true);
+      let importFailure = await props.resumeExternal(projectId, handle);
+      if (importFailure) {
+        // The listed conversation may come from a cached scan that predates
+        // the provider's latest write; core then rejects its stale
+        // fingerprint. A forced rescan keeps the handle and refreshes it.
+        await props.load(projectId, true, true);
+        importFailure = await props.resumeExternal(projectId, handle);
+      }
+      if (importFailure) setImportFailure({ projectId, handle, message: importFailureMessage(importFailure) });
+      await reload(false);
     } catch (error) {
-      setFailure({ projectId: props.projectId, message: error instanceof Error ? error.message : "Could not import this conversation." });
+      setImportFailure({ projectId, handle, message: error instanceof Error ? importFailureMessage(error.message) : "Could not import this conversation." });
     } finally {
       setImportingHandle(undefined);
     }
@@ -544,6 +562,7 @@ export function HistoryRail(props: HistoryRailProps) {
                 <span className="history-disclosure" aria-hidden="true"><Icon name="chevronDown" /></span>
               </button>
               <button type="button" className="history-import" disabled={props.disabled || Boolean(importingHandle)} onClick={() => void importAndResume(entry)}>{importingHandle === entry.history_handle ? "Importing…" : "Import & Resume"}</button>
+              {importFailure && importFailure.projectId === props.projectId && importFailure.handle === entry.history_handle ? <p className="history-notice error history-import-error" role="alert">{importFailure.message}</p> : null}
               {expanded ? <div className="history-detail history-preview">
                 <span className="history-meta">{entry.model ?? entry.provider} · {historyDate(entry.updated_at_epoch_ms)}{entry.project_match === "related" ? " · worktree" : ""}</span>
                 {entry.preview_messages.slice(-2).map((message, index) => <p key={`${message.role}-${index}`}><b>{message.role === "user" ? "You" : entry.provider}</b>{message.text}</p>)}

@@ -242,6 +242,60 @@ describe("Session History rail", () => {
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
 
+  it("rescans and retries an import rejected for a stale cached conversation, then reports on the row", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const load = vi.fn(async () => externalHistory);
+    const props = (resumeExternal: (projectId: string, handle: string) => Promise<string | undefined>) => createElement(HistoryRail, {
+      projectId: "project-1",
+      projectPath: "/repo/termloop-next",
+      projectBranch: "task/history",
+      currentCwd: "/repo/termloop-next",
+      sessions: [],
+      archivedSessions: [],
+      tasks: [],
+      archivedTasks: [],
+      deletedSessions: [],
+      favoriteSessionIds: new Set<string>(),
+      termLoopHistoryLoading: false,
+      selectedSessionId: undefined,
+      disabled: false,
+      load,
+      loadTermLoopPreview: async () => termLoopPreview,
+      resumeExternal,
+      selectSession: () => {},
+      resumeSession: () => {},
+      restoreArchivedSession: () => {},
+      deleteArchivedSession: () => {},
+      restoreDeletedSession: () => {},
+      reopenTask: () => {},
+      restoreTask: () => {},
+    });
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+    const staleOnce = vi.fn<(projectId: string, handle: string) => Promise<string | undefined>>()
+      .mockResolvedValueOnce("historyHandle")
+      .mockResolvedValueOnce(undefined);
+    await act(async () => root.render(props(staleOnce)));
+    load.mockClear();
+    await act(async () => container.querySelector<HTMLButtonElement>(".history-import")!.click());
+    expect(staleOnce).toHaveBeenCalledTimes(2);
+    expect(load).toHaveBeenCalledWith("project-1", true, true);
+    expect(container.querySelector(".history-import-error")).toBeNull();
+
+    const alwaysStale = vi.fn(async () => "historyHandle");
+    await act(async () => root.render(props(alwaysStale)));
+    await act(async () => container.querySelector<HTMLButtonElement>(".history-import")!.click());
+    expect(alwaysStale).toHaveBeenCalledTimes(2);
+    expect(container.querySelector(".history-row.external .history-import-error")?.textContent)
+      .toContain("Refresh Session History");
+
+    await act(async () => root.unmount());
+    container.remove();
+    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+  });
+
   it("keeps the rail mounted when the transport returns an invalid envelope", async () => {
     const container = document.createElement("div");
     document.body.append(container);

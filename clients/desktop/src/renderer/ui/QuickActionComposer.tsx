@@ -9,6 +9,7 @@ import { droppedPathsText, dropTargetShell, insertDroppedText } from "../termina
 import {
   defaultAgentPermission,
   permissionLabel,
+  readQuickActionDraft,
   readQuickActionMemory,
   QUICK_ACTION_IMAGE_LIMIT,
   rememberQuickActionAttachments,
@@ -164,9 +165,12 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
   const [reasoning, setReasoning] = useState<Reasoning>(initialPreset?.reasoning
     && agentReasoningOptions(initialCapability, model).includes(initialPreset.reasoning)
     ? initialPreset.reasoning : "default");
-  const [prompt, setPrompt] = useState(() => memory.draft ?? "");
+  // Each Project keeps its own unsent draft; switching Projects shows that Project's.
+  const [draftProjectId, setDraftProjectId] = useState(projectId);
+  const [savedAttachmentIds, setSavedAttachmentIds] = useState(() => readQuickActionDraft(projectId).attachmentIds ?? []);
+  const [prompt, setPrompt] = useState(() => readQuickActionDraft(projectId).text ?? "");
   const [attachments, setAttachments] = useState<QuickActionImageHandle[]>([]);
-  const [attachmentReady, setAttachmentReady] = useState(() => !memory.draftAttachmentIds?.length);
+  const [attachmentReady, setAttachmentReady] = useState(() => !savedAttachmentIds.length);
   const [previewResult, setPreviewResult] = useState<QuickActionPreviewResult>();
   const [error, setError] = useState<string>();
   const [running, setRunning] = useState(false);
@@ -178,12 +182,26 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
   const [inspectorTab, setInspectorTab] = useState<"preview" | "raw">("preview");
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const attachmentsRef = useRef<QuickActionImageHandle[]>([]);
-  const updateAttachments = (next: QuickActionImageHandle[]) => {
+  const projectIdRef = useRef(projectId);
+  projectIdRef.current = projectId;
+  const updateAttachments = (owner: string, next: QuickActionImageHandle[]) => {
     attachmentsRef.current = next;
     setAttachments(next);
-    rememberQuickActionAttachments(next.map((image) => image.id));
+    rememberQuickActionAttachments(owner, next.map((image) => image.id));
     setPreviewResult(undefined);
   };
+  // Leaving a Project keeps its draft saved and loads the next Project's draft.
+  if (draftProjectId !== projectId) {
+    const draft = readQuickActionDraft(projectId);
+    attachmentsRef.current = [];
+    setDraftProjectId(projectId);
+    setPrompt(draft.text ?? "");
+    setAttachments([]);
+    setSavedAttachmentIds(draft.attachmentIds ?? []);
+    setAttachmentReady(!draft.attachmentIds?.length);
+    setPreviewResult(undefined);
+    setError(undefined);
+  }
   const priorAgentRef = useRef(agentId);
   const applyingProfile = useRef(false);
   const selectedCapability = capabilityByAgent.get(agentId);
@@ -199,26 +217,25 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
   const closeShortcut = () => { setShortcutOpen(false); shortcutTriggerRef.current?.focus(); };
 
   useEffect(() => { requestAnimationFrame(() => promptRef.current?.focus()); }, []);
-  useEffect(() => { rememberQuickActionDraft(prompt); }, [prompt]);
-  // Restores the draft saved when this composer opened, exactly once; later pastes own
-  // the list. The port is read through a ref because callers pass a fresh function on
-  // every render: rerunning would restore images a launch already consumed.
+  useEffect(() => { rememberQuickActionDraft(draftProjectId, prompt); }, [draftProjectId, prompt]);
+  // Restores a Project's saved images once each time its draft is loaded; later pastes
+  // own the list. The port is read through a ref because callers pass a fresh function
+  // on every render: rerunning would restore images a launch already consumed.
   const restoreImageRef = useRef(restoreImage);
   restoreImageRef.current = restoreImage;
   useEffect(() => {
-    const saved = memory.draftAttachmentIds ?? [];
-    if (!saved.length) return;
+    if (!savedAttachmentIds.length) return;
     let live = true;
-    void Promise.allSettled(saved.map((id) => restoreImageRef.current(id))).then((results) => {
+    void Promise.allSettled(savedAttachmentIds.map((id) => restoreImageRef.current(id))).then((results) => {
       if (!live) return;
       const restored = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
       const failure = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
-      updateAttachments(restored);
+      updateAttachments(draftProjectId, restored);
       setAttachmentReady(true);
       if (failure) setError(failure.reason instanceof Error ? failure.reason.message : String(failure.reason));
     });
     return () => { live = false; };
-  }, [memory.draftAttachmentIds]);
+  }, [draftProjectId, savedAttachmentIds]);
   useEffect(() => {
     if (priorAgentRef.current === agentId) return;
     priorAgentRef.current = agentId;
@@ -310,14 +327,17 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
       setError(IMAGE_LIMIT_MESSAGE);
       return;
     }
+    const owner = projectId;
     try {
-      const staged = await pasteImage(projectId);
+      const staged = await pasteImage(owner);
+      // The image was staged for the Project that was showing; a switch meanwhile drops it.
+      if (projectIdRef.current !== owner) { await discardImage(staged.id); return; }
       if (attachmentsRef.current.length >= QUICK_ACTION_IMAGE_LIMIT) {
         await discardImage(staged.id);
         setError(IMAGE_LIMIT_MESSAGE);
         return;
       }
-      updateAttachments([...attachmentsRef.current, staged]);
+      updateAttachments(owner, [...attachmentsRef.current, staged]);
       setPrompt((current) => current || "Inspect the attached image.");
       setError(undefined);
     } catch (cause) {
@@ -326,7 +346,7 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
   };
   const removeAttachment = async (id: string) => {
     if (!attachmentsRef.current.some((image) => image.id === id)) return;
-    updateAttachments(attachmentsRef.current.filter((image) => image.id !== id));
+    updateAttachments(projectId, attachmentsRef.current.filter((image) => image.id !== id));
     await discardImage(id);
   };
   const selectTemplate = (nextTemplateRef: QuickActionParams["templateRef"]) => {

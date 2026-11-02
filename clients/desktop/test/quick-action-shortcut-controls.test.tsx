@@ -6,7 +6,7 @@ import { QuickActionComposer } from "../src/renderer/ui/QuickActionComposer.js";
 import { QuickActionShortcutLaunchers } from "../src/renderer/ui/QuickActionShortcutLaunchers.js";
 import { WorkspaceViewSwitch } from "../src/renderer/ui/WorkspaceViewSwitch.js";
 import { readQuickActionShortcuts, removeQuickActionShortcut, saveQuickActionShortcut, updateQuickActionShortcut, type QuickActionShortcut } from "../src/renderer/quick-action-shortcuts.js";
-import { readQuickActionMemory, rememberQuickActionDraft } from "../src/renderer/quick-action-memory.js";
+import { readQuickActionDraft, readQuickActionMemory, rememberQuickActionDraft } from "../src/renderer/quick-action-memory.js";
 import { fullAgentCapability } from "./agent-capability-fixture.js";
 
 const capability = fullAgentCapability("codex");
@@ -103,7 +103,7 @@ describe("Quick Action shortcut controls", () => {
   });
 
   it("saves from the name field with Enter without running a prompt", async () => {
-    rememberQuickActionDraft("Keep this request");
+    rememberQuickActionDraft("project-1", "Keep this request");
     const props = composerProps();
     const createShortcut = vi.fn();
     await act(async () => root.render(<QuickActionComposer {...props} createShortcut={createShortcut} />));
@@ -113,7 +113,7 @@ describe("Quick Action shortcut controls", () => {
     await act(async () => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })));
     expect(createShortcut).toHaveBeenCalledTimes(1);
     expect(props.launch).not.toHaveBeenCalled();
-    expect(readQuickActionMemory().draft).toBe("Keep this request");
+    expect(readQuickActionDraft("project-1").text).toBe("Keep this request");
     expect(document.activeElement).toBe(button("Create shortcut"));
   });
 
@@ -149,7 +149,7 @@ describe("Quick Action shortcut controls", () => {
   it("does not preview again while a submitted launch is still settling", async () => {
     vi.useFakeTimers();
     try {
-      rememberQuickActionDraft("Inspect the screenshot");
+      rememberQuickActionDraft("project-1", "Inspect the screenshot");
       const ticket = { launch_ticket: "ticket-1", manifest: {} };
       let finishLaunch!: (message: string | undefined) => void;
       const launch = vi.fn(() => new Promise<string | undefined>((resolve) => { finishLaunch = resolve; }));
@@ -175,7 +175,7 @@ describe("Quick Action shortcut controls", () => {
   it("keeps a launch failure visible after the submit settles", async () => {
     vi.useFakeTimers();
     try {
-      rememberQuickActionDraft("Inspect the screenshot");
+      rememberQuickActionDraft("project-1", "Inspect the screenshot");
       const preview = vi.fn().mockResolvedValue({ launch_ticket: "ticket-1", manifest: {} });
       const launch = vi.fn().mockResolvedValue("Launch failed");
       await act(async () => root.render(<QuickActionComposer {...composerProps()} preview={preview} launch={launch} />));

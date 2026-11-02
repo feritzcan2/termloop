@@ -4,7 +4,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { QuickActionImageHandle } from "../src/quick-action-image.js";
-import { rememberQuickActionAttachments } from "../src/renderer/quick-action-memory.js";
+import { readQuickActionDraft, rememberQuickActionAttachments, rememberQuickActionDraft } from "../src/renderer/quick-action-memory.js";
 import { QuickActionComposer } from "../src/renderer/ui/QuickActionComposer.js";
 import { fullAgentCapability, observableGeminiCapability } from "./agent-capability-fixture.js";
 
@@ -75,7 +75,7 @@ describe("Quick Action draft", () => {
     });
     const first = image("58df9988-2939-4d63-a546-6ebbd0c15f16", 40);
     const second = image("68df9988-2939-4d63-a546-6ebbd0c15f16", 50);
-    rememberQuickActionAttachments([first.id, second.id]);
+    rememberQuickActionAttachments("project-1", [first.id, second.id]);
     const restoreImage = vi.fn((id: string) => Promise.resolve(id === first.id ? first : second));
 
     await act(async () => root.render(createElement(QuickActionComposer, composerProps(restoreImage))));
@@ -93,6 +93,61 @@ describe("Quick Action draft", () => {
     await act(async () => undefined);
     expect(rerenderRestore).not.toHaveBeenCalled();
     expect(container.querySelectorAll(".quick-action-attachment img")).toHaveLength(2);
+  });
+
+  it("keeps each Project's text and images when the user switches Projects", async () => {
+    const image: QuickActionImageHandle = {
+      id: "58df9988-2939-4d63-a546-6ebbd0c15f16",
+      mediaType: "image/png",
+      byteLength: 128,
+      sha256: `sha256:${"a".repeat(64)}`,
+      width: 40,
+      height: 30,
+      previewDataUrl: "data:image/png;base64,aW1hZ2U=",
+    };
+    const projects = [
+      { id: "project-1", name: "TermNext", folder_path: "/tmp/termnext" },
+      { id: "project-2", name: "Other", folder_path: "/tmp/other" },
+    ];
+    rememberQuickActionDraft("project-1", "inspect this screenshot");
+    rememberQuickActionAttachments("project-1", [image.id]);
+    rememberQuickActionDraft("project-2", "other request");
+    const restoreImage = vi.fn(() => Promise.resolve(image));
+    const render = (selected: number) => act(async () => root.render(createElement(QuickActionComposer, {
+      ...composerProps(restoreImage), projects, selectedProject: projects[selected],
+    })));
+    const promptValue = () => container.querySelector<HTMLTextAreaElement>("#quick-action-prompt")?.value;
+    const images = () => container.querySelectorAll(".quick-action-attachment img").length;
+
+    await render(1);
+    await act(async () => undefined);
+    expect(promptValue()).toBe("other request");
+    expect(images()).toBe(0);
+    expect(restoreImage).not.toHaveBeenCalled();
+    await act(async () => root.unmount());
+
+    root = createRoot(container);
+    await render(0);
+    await act(async () => undefined);
+    expect(promptValue()).toBe("inspect this screenshot");
+    expect(images()).toBe(1);
+
+    const select = container.querySelector<HTMLSelectElement>('select[aria-label="Run in Project"]')!;
+    const choose = (projectId: string) => act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(select, projectId);
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await choose("project-2");
+    await act(async () => undefined);
+    expect(promptValue()).toBe("other request");
+    expect(images()).toBe(0);
+    expect(readQuickActionDraft("project-1")).toEqual({ text: "inspect this screenshot", attachmentIds: [image.id] });
+
+    await choose("project-1");
+    await act(async () => undefined);
+    expect(promptValue()).toBe("inspect this screenshot");
+    expect(images()).toBe(1);
+    expect(restoreImage).toHaveBeenCalledTimes(2);
   });
 
   it("keeps Agent Profile permission user-selectable", async () => {

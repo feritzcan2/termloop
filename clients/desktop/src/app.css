@@ -3074,6 +3074,7 @@ button.history-row-main { cursor: pointer; }
 .history-empty, .history-notice { margin: 3px 11px 7px; color: var(--sidebar-dimmer); font: 9.5px/1.45 var(--font-ui); }
 .history-notice { padding: 6px 8px; border: 1px solid var(--rule); border-radius: 6px; background: light-dark(rgba(15,23,42,.025), rgba(255,255,255,.025)); }
 .history-notice.error { border-color: rgba(222,104,104,.26); color: light-dark(#8c6660, #e6a99f); }
+.history-import-error { grid-column: 1 / -1; margin: 0 7px 7px 36px; }
 .active-agent-row .session-item.agent.state-attention { border-color: transparent; background: rgba(255,143,107,.055); }
 .active-agent-row .session-item.agent.state-review { border-color: transparent; background: rgba(102,179,255,.055); }
 .active-agent-row .session-item.agent.state-attention.active, .active-agent-row .session-item.agent.state-review.active { border-color: rgba(102,179,255,.18); background: rgba(102,179,255,.12); }
