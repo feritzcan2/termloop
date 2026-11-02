@@ -683,11 +683,11 @@ mod tests {
             Err(CoreError::JiraTaskSourceUnavailable)
         ));
         let mut with = fixture(true);
-        assert!(matches!(
+        assert!(
             with.runtime
-                .propose_jira_task("other-token", &proposal(), 5),
-            Err(_)
-        ));
+                .propose_jira_task("other-token", &proposal(), 5)
+                .is_err()
+        );
         let mut bad = proposal();
         bad["epicKey"] = json!("not an epic");
         assert!(matches!(
