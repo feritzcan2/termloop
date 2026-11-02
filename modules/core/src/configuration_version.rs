@@ -6,6 +6,8 @@ use termloop_domain::{
     RunSetupPolicy, StewardAgentId, StewardConfiguration, TrackerConfiguration,
 };
 
+mod run_snapshot;
+
 use crate::companion_integrations::playbook::{PlaybookMilestoneDraft, PlaybookPipelineDraft};
 use crate::{
     AssistantAvailability, CoreError, CoreRuntime, StewardConfigurationUpdate, required_string,
@@ -864,8 +866,6 @@ impl CoreRuntime {
                 serialize(&snapshot)
             }
             ImproverSessionTargetKind::RunConfiguration => {
-                let snapshot: RunConfigurationSnapshot =
-                    serde_json::from_str(content).map_err(|_| invalid())?;
                 let configuration_id = target.target_id.as_deref().ok_or_else(invalid)?;
                 let current = self
                     .store
@@ -876,26 +876,16 @@ impl CoreRuntime {
                             && configuration.project_id == project_id
                     })
                     .ok_or(CoreError::NotFound)?;
-                if !run_candidate(
+                serialize(&run_snapshot::parse_valid(
                     project_id,
                     current.id.clone(),
                     current.generation,
-                    &snapshot,
-                )
-                .is_valid()
-                {
-                    return Err(invalid());
-                }
-                serialize(&snapshot)
+                    content,
+                )?)
             }
-            ImproverSessionTargetKind::NewRunConfiguration => {
-                let snapshot: RunConfigurationSnapshot =
-                    serde_json::from_str(content).map_err(|_| invalid())?;
-                if !run_candidate(project_id, "candidate".into(), 1, &snapshot).is_valid() {
-                    return Err(invalid());
-                }
-                serialize(&snapshot)
-            }
+            ImproverSessionTargetKind::NewRunConfiguration => serialize(
+                &run_snapshot::parse_valid(project_id, "candidate".into(), 1, content)?,
+            ),
             ImproverSessionTargetKind::RoutineBuilder => {
                 let snapshot = parse_new_routine_snapshot(content)?;
                 let candidate = TrackerConfiguration {

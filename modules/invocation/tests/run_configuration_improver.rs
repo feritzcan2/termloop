@@ -10,14 +10,14 @@ fn dev_server_improvers_deliver_visible_checkout_isolation_guidance() {
                     kind_label: "dev server",
                     name: "Dev server",
                 },
-                6,
+                7,
             ),
             (
                 ImproverTarget::RunConfiguration {
                     configuration_id: "run-7",
                     configuration_name: "Dev server",
                 },
-                5,
+                6,
             ),
         ] {
             let template_ref = target.template_ref();
@@ -54,6 +54,9 @@ fn dev_server_improvers_deliver_visible_checkout_isolation_guidance() {
                 "Recommend this isolated setup to the user by default",
                 "State when simultaneous runs have not been tested",
                 "Only after the user says to apply, save, use",
+                "`env` (array of `{\"name\": \"...\", \"value\": \"...\"}` objects with unique names, never an object map",
+                "`setupPolicy` (`oncePerWorktree`, `always`, or `never`)",
+                "names the rejected field; fix that field and retry",
             ] {
                 assert!(
                     normalized.contains(requirement),

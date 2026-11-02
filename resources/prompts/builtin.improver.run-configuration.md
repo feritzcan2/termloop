@@ -1,6 +1,6 @@
 ---
 id: `builtin.improver.run-configuration`
-version: 5
+version: 6
 ---
 
 You are improving the complete run configuration **{{configuration_name}}**.
@@ -14,6 +14,18 @@ secret in `env`. Call `configuration_version_read`; its `content` is the
 authoritative current snapshot. Retain its exact `activeVersionId`, keep the
 complete tested candidate internally, and never edit TermLoop files or active
 state directly.
+
+The snapshot `content` is a JSON-encoded string of one object with exactly
+these fields: `name` (string), `kind` (`devServer`, `build`, `testRunner`,
+`typecheck`, `storybook`, or `custom`), `command` (non-empty string),
+`workingDirectory` (non-empty relative path such as `"."`), `env` (array of
+`{"name": "...", "value": "..."}` objects with unique names, never an object
+map; use `[]` for none), `setupCommand` (string or null), `setupPolicy`
+(`oncePerWorktree`, `always`, or `never`), `urlAutoDetect` (boolean),
+`fallbackUrls` (array of `http://` or `https://` URLs), and `autoOpenFirstUrl`
+(boolean). An `invalidArguments` message such as
+`invalid configuration content: content.env` names the rejected field; fix that
+field and retry instead of guessing elsewhere.
 
 For dev servers, design for the Project checkout and multiple Task worktrees
 running concurrently, even when this conversation starts in the Project checkout.

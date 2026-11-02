@@ -51,13 +51,13 @@ const QUICK_ACTION_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const IMPROVER_RUN_CONFIGURATION_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.improver.run-configuration",
-    version: 5,
+    version: 6,
     authored_body: include_str!("../../../resources/prompts/builtin.improver.run-configuration.md"),
 };
 
 const IMPROVER_RUN_CONFIGURATION_NEW_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.improver.run-configuration-new",
-    version: 6,
+    version: 7,
     authored_body: include_str!(
         "../../../resources/prompts/builtin.improver.run-configuration-new.md"
     ),

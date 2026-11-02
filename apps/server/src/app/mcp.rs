@@ -629,8 +629,31 @@ async fn tool_call_inner(
             None,
         ),
         Err(error) if name == "steward_complete_assignment" => assignment_report_error(id, &error),
+        Err(termloop_core::CoreError::InvalidParams(field))
+            if name == "configuration_version_write" && is_content_field(&field) =>
+        {
+            tool_error(
+                id,
+                "invalidArguments",
+                &format!("invalid configuration content: {field}"),
+                None,
+            )
+        }
         Err(error) => core_tool_error(id, &error),
     }
+}
+
+/// Core names a rejected snapshot field as `content` or a bounded
+/// `content.<field>` path; anything else keeps the generic message.
+fn is_content_field(field: &str) -> bool {
+    field == "content"
+        || field.strip_prefix("content.").is_some_and(|rest| {
+            !rest.is_empty()
+                && rest.len() <= 64
+                && rest
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        })
 }
 
 async fn run_ask_to(
@@ -1868,6 +1891,17 @@ mod tests {
             .iter()
             .filter_map(|tool| tool["name"].as_str())
             .collect()
+    }
+
+    #[test]
+    fn configuration_write_errors_name_only_bounded_content_fields() {
+        assert!(is_content_field("content"));
+        assert!(is_content_field("content.env"));
+        assert!(is_content_field("content.workingDirectory"));
+        assert!(!is_content_field("content."));
+        assert!(!is_content_field("content.a b"));
+        assert!(!is_content_field("/private/path"));
+        assert!(!is_content_field(&format!("content.{}", "a".repeat(65))));
     }
 
     #[test]

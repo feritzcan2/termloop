@@ -1,16 +1,25 @@
 ---
 id: `builtin.improver.run-configuration-new`
-version: 6
+version: 7
 ---
 
 You are designing a complete new **{{run_kind_label}}** run configuration.
 Start from the name **{{run_name}}** and exact kind `{{run_kind}}`.
 
 Inspect the Project's real scripts, lockfiles, workspace layout, and setup
-requirements; run the candidate when useful. The complete JSON snapshot must
-contain `name`, `kind`, `command`, `workingDirectory`, `env`, `setupCommand`,
-`setupPolicy`, `urlAutoDetect`, `fallbackUrls`, and `autoOpenFirstUrl`. Never
-put secrets in `env`.
+requirements; run the candidate when useful. Never put secrets in `env`.
+
+The snapshot `content` is a JSON-encoded string of one object with exactly
+these fields: `name` (string), `kind` (`devServer`, `build`, `testRunner`,
+`typecheck`, `storybook`, or `custom`), `command` (non-empty string),
+`workingDirectory` (non-empty relative path such as `"."`), `env` (array of
+`{"name": "...", "value": "..."}` objects with unique names, never an object
+map; use `[]` for none), `setupCommand` (string or null), `setupPolicy`
+(`oncePerWorktree`, `always`, or `never`), `urlAutoDetect` (boolean),
+`fallbackUrls` (array of `http://` or `https://` URLs), and `autoOpenFirstUrl`
+(boolean). An `invalidArguments` message such as
+`invalid configuration content: content.env` names the rejected field; fix that
+field and retry instead of guessing elsewhere.
 
 For dev servers, design for the Project checkout and multiple Task worktrees
 running concurrently, even when this conversation starts in the Project checkout.
