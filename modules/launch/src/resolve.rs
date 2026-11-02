@@ -142,7 +142,11 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
         arguments.extend(observation_manifest_args(agent_id, observation));
     }
     if let Some(mcp) = mcp.as_ref() {
-        arguments.extend(mcp_manifest_args(agent_id, mcp)?);
+        arguments.extend(mcp_manifest_args(
+            agent_id,
+            mcp,
+            provider_instructions.is_none(),
+        )?);
     }
     if let Some(instructions) = provider_instructions {
         match agent_id {

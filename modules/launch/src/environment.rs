@@ -33,11 +33,16 @@ fn observation_manifest_args(
         .collect()
 }
 
+/// `include_interactive_instructions` is false when the launch carries its own
+/// provider instructions. Those already embed the interactive protocol, and a
+/// second `--append-system-prompt` (or `developer_instructions`) makes the
+/// provider keep only one of the two, silently dropping the composed text.
 fn mcp_manifest_args(
     agent_id: &str,
     mcp: &McpConnection<'_>,
+    include_interactive_instructions: bool,
 ) -> Result<Vec<ResolvedArgument>, InvocationError> {
-    Ok(mcp_args(agent_id, mcp, true)?
+    Ok(mcp_args(agent_id, mcp, include_interactive_instructions)?
         .into_iter()
         .enumerate()
         .map(|(position, value)| {

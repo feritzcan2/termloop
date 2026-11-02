@@ -1,7 +1,7 @@
 use termloop_domain::{AgentLaunchSelection, ResumeProvider, ResumeRef};
 use termloop_invocation::{
-    AgentConversationLaunch, InvocationError, agent_fork_notice_template,
-    interactive_agent_fork_for_conversation,
+    AgentConversationLaunch, AgentMcpLaunch, AgentMcpProfile, InvocationError,
+    agent_fork_notice_template, interactive_agent_fork_for_conversation,
 };
 
 const SOURCE_SESSION_ID: &str = "8c1d9a4e-6f0b-4a8e-9a43-1b2c3d4e5f60";
@@ -21,7 +21,18 @@ fn source_ref(agent: &str) -> ResumeRef {
 #[test]
 fn fork_notice_is_delivered_as_instructions_and_matches_the_preview() {
     let selection = AgentLaunchSelection::new("default", "default", "default");
-    for agent in ["codex", "claude"] {
+    let interactive_mcp = || AgentMcpLaunch {
+        endpoint: "http://127.0.0.1:4567/mcp",
+        token: "private-test-token",
+        claude_config_path: "/tmp/claude-mcp.json",
+        profile: AgentMcpProfile::Interactive,
+    };
+    for (agent, with_mcp) in [
+        ("codex", false),
+        ("claude", false),
+        ("codex", true),
+        ("claude", true),
+    ] {
         let source_ref = source_ref(agent);
         let launch = interactive_agent_fork_for_conversation(
             agent,
@@ -32,7 +43,7 @@ fn fork_notice_is_delivered_as_instructions_and_matches_the_preview() {
                 source_ref: &source_ref,
             },
             None,
-            None,
+            with_mcp.then(interactive_mcp),
             false,
         )
         .unwrap();
@@ -52,18 +63,34 @@ fn fork_notice_is_delivered_as_instructions_and_matches_the_preview() {
         let instructions = &part.content;
         assert!(instructions.contains(&format!("Source Session ID: `{SOURCE_SESSION_ID}`")));
         assert!(!instructions.contains("{{"));
+        assert_eq!(
+            instructions.starts_with("# Interactive agent launch"),
+            with_mcp,
+            "the interactive protocol travels inside the fork instructions"
+        );
         if agent == "codex" {
+            assert!(
+                launch
+                    .args()
+                    .iter()
+                    .filter(|arg| arg.starts_with("developer_instructions="))
+                    .count()
+                    <= 1
+            );
             assert_eq!(
                 launch.codex_app_server_developer_instructions(),
                 Some(instructions.as_str())
             );
         } else {
-            assert!(
-                launch
-                    .args()
-                    .windows(2)
-                    .any(|pair| pair[0] == "--append-system-prompt" && pair[1] == *instructions)
-            );
+            // Claude keeps only one appended system prompt, so the MCP
+            // connection must not add its own interactive copy beside ours.
+            let appended: Vec<_> = launch
+                .args()
+                .windows(2)
+                .filter(|pair| pair[0] == "--append-system-prompt")
+                .map(|pair| pair[1].as_str())
+                .collect();
+            assert_eq!(appended, [instructions.as_str()]);
             assert!(launch.args().iter().any(|arg| arg == "--fork-session"));
         }
     }
