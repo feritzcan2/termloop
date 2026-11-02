@@ -65,8 +65,9 @@ impl HookClientConfig {
 }
 
 /// Provider hook failures must never delay or change the provider's own turn.
-/// The runner is therefore silent and fail-open; the daemon remains the only
-/// authority that decides whether a successfully received observation counts.
+/// The runner is therefore fail-open and silent except for launch-scoped
+/// SessionStart context; the daemon remains the only authority that decides
+/// whether a successfully received observation counts.
 pub async fn run_hook_client<P: HookProtocol>(
     protocol: P,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -106,6 +107,19 @@ where
         .filter(|value| !value.is_empty() && value.chars().count() <= 64);
     let native_session_id = hook_native_session_id(&config.agent_id, &payload);
     let is_claude = config.agent_id == "claude";
+    // Launch-scoped context is answered before the daemon round trip so a
+    // slow or unavailable daemon never keeps it from the provider.
+    if is_claude
+        && let Some(output) = std::env::var(termloop_agents::CLAUDE_SESSION_START_CONTEXT_VARIABLE)
+            .ok()
+            .and_then(|context| termloop_agents::claude_session_start_hook_output(signal, &context))
+    {
+        use std::io::Write;
+        let mut stdout = std::io::stdout().lock();
+        let _ = stdout
+            .write_all(output.as_bytes())
+            .and_then(|()| stdout.flush());
+    }
     let plan = is_claude
         .then(|| termloop_agents::normalize_claude_plan_update(&payload))
         .flatten();

@@ -1,7 +1,8 @@
 use termloop_domain::{AgentLaunchSelection, ResumeProvider, ResumeRef};
 use termloop_invocation::{
-    AgentConversationLaunch, AgentMcpLaunch, AgentMcpProfile, InvocationError,
-    agent_fork_notice_template, interactive_agent_fork_for_conversation,
+    AgentConversationLaunch, AgentMcpLaunch, AgentMcpProfile, AgentObservationLaunch,
+    AgentObservationLaunchTransport, InvocationError, agent_fork_notice_template,
+    interactive_agent_fork_for_conversation,
 };
 
 const SOURCE_SESSION_ID: &str = "8c1d9a4e-6f0b-4a8e-9a43-1b2c3d4e5f60";
@@ -42,7 +43,7 @@ fn fork_notice_is_delivered_as_instructions_and_matches_the_preview() {
             AgentConversationLaunch::Fork {
                 source_ref: &source_ref,
             },
-            None,
+            (agent == "claude").then(claude_observation),
             with_mcp.then(interactive_mcp),
             false,
         )
@@ -63,10 +64,12 @@ fn fork_notice_is_delivered_as_instructions_and_matches_the_preview() {
         let instructions = &part.content;
         assert!(instructions.contains(&format!("Source Session ID: `{SOURCE_SESSION_ID}`")));
         assert!(!instructions.contains("{{"));
+        // Codex takes fresh developer instructions, so the interactive protocol
+        // travels with the notice. Claude keeps the source's system prompt,
+        // which already carries that protocol, and learns only the notice.
         assert_eq!(
             instructions.starts_with("# Interactive agent launch"),
-            with_mcp,
-            "the interactive protocol travels inside the fork instructions"
+            with_mcp && agent == "codex",
         );
         if agent == "codex" {
             assert!(
@@ -82,17 +85,38 @@ fn fork_notice_is_delivered_as_instructions_and_matches_the_preview() {
                 Some(instructions.as_str())
             );
         } else {
-            // Claude keeps only one appended system prompt, so the MCP
-            // connection must not add its own interactive copy beside ours.
-            let appended: Vec<_> = launch
-                .args()
-                .windows(2)
-                .filter(|pair| pair[0] == "--append-system-prompt")
-                .map(|pair| pair[1].as_str())
-                .collect();
-            assert_eq!(appended, [instructions.as_str()]);
+            // Claude ignores a new appended system prompt on `--fork-session`,
+            // so the notice reaches it only through the SessionStart hook.
             assert!(launch.args().iter().any(|arg| arg == "--fork-session"));
+            assert!(
+                !launch
+                    .args()
+                    .iter()
+                    .any(|arg| arg == "--append-system-prompt")
+            );
+            let context = launch
+                .environment()
+                .entries()
+                .find(|(key, _)| *key == "TERMLOOP_SESSION_START_CONTEXT")
+                .map(|(_, value)| value.to_string_lossy().into_owned());
+            assert_eq!(context.as_deref(), Some(instructions.as_str()));
+            assert!(manifest.environment.iter().any(|entry| {
+                entry.key == "TERMLOOP_SESSION_START_CONTEXT"
+                    && entry.display_value != *instructions
+            }));
         }
+    }
+}
+
+fn claude_observation() -> AgentObservationLaunch<'static> {
+    AgentObservationLaunch {
+        session_id: "8f3a2b1c-4d5e-4f60-8a7b-9c0d1e2f3a4b",
+        endpoint: "http://127.0.0.1:4568/agent-observation",
+        token: "private-hook-token",
+        transport: AgentObservationLaunchTransport::InlineSettings {
+            content: "{}",
+            inspectable_content: "{}",
+        },
     }
 }
 

@@ -94,12 +94,12 @@ function AgentForkSettingsPanel({ actions, profileId }: { actions: AgentForkSett
           checked={settings.systemPromptEnabled}
           disabled={saving}
           title="Tell forks they are a fork"
-          description="Give each new fork the message below as part of its system prompt, so it knows the source Agent is still running and waits for your instructions."
+          description="Give each new fork the message below as standing instructions (Codex developer instructions, Claude session-start context), so it knows the source Agent is still running and waits for your instructions."
           change={(checked) => void change(checked)}
         />
       </div>
       <figure className="agent-fork-prompt">
-        <figcaption>System prompt added to new forks. TermLoop fills in the source Session ID.</figcaption>
+        <figcaption>Instructions added to new forks. TermLoop fills in the source Session ID.</figcaption>
         <pre aria-label="Fork system prompt">{settings.systemPrompt}</pre>
       </figure>
       {saveError ? <p className="settings-error" role="alert">Could not save Agent settings: {saveError}</p> : null}

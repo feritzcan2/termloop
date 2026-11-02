@@ -17,7 +17,12 @@ pub fn agent_fork_notice_template() -> &'static PromptTemplate {
     &AGENT_FORK_TEMPLATE
 }
 
+/// Codex takes the fork's developer instructions as given, so the interactive
+/// protocol travels with the notice. Claude keeps the source conversation's
+/// system prompt (which already carries that protocol) and only learns the
+/// notice through its SessionStart context, so it receives the notice alone.
 fn agent_fork_provider_instructions(
+    agent_id: &str,
     source_session_id: &str,
     mcp: Option<&AgentMcpLaunch<'_>>,
 ) -> Result<String, InvocationError> {
@@ -31,7 +36,9 @@ fn agent_fork_provider_instructions(
         AGENT_FORK_TEMPLATE.authored_body,
         &[("source_session_id", source_session_id)],
     )?;
-    let instructions = if mcp.is_some_and(|mcp| mcp.profile.includes_interactive_instructions()) {
+    let instructions = if agent_id == "codex"
+        && mcp.is_some_and(|mcp| mcp.profile.includes_interactive_instructions())
+    {
         format!(
             "{}\n\n{notice}",
             crate::INTERACTIVE_AGENT_TEMPLATE.authored_body
@@ -70,7 +77,7 @@ pub fn interactive_agent_fork_for_conversation(
         &selection.permission,
         &selection.reasoning,
     )?;
-    let instructions = agent_fork_provider_instructions(source_session_id, mcp.as_ref())?;
+    let instructions = agent_fork_provider_instructions(agent_id, source_session_id, mcp.as_ref())?;
     let mut resolved = crate::resolve_launch_manifest_with_attachments_and_codex_project_trust(
         agent_id,
         cwd,

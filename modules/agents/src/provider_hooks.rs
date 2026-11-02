@@ -38,6 +38,28 @@ pub fn provider_hook_settings(
     }
 }
 
+/// Launch-scoped instructions a Claude hook adds when its conversation starts.
+/// A native fork keeps the source's system prompt and ignores a new appended
+/// one, so this is the only channel that reaches a forked conversation.
+pub const CLAUDE_SESSION_START_CONTEXT_VARIABLE: &str = "TERMLOOP_SESSION_START_CONTEXT";
+const MAX_SESSION_START_CONTEXT_BYTES: usize = 64 * 1024;
+
+/// The exact stdout a Claude `SessionStart` hook prints to add `context` to the
+/// conversation. Claude fires it on start, resume, clear, and compaction, so a
+/// fork keeps the context after its transcript is summarized.
+pub fn claude_session_start_hook_output(event_name: &str, context: &str) -> Option<String> {
+    (event_name == "SessionStart"
+        && !context.trim().is_empty()
+        && context.len() <= MAX_SESSION_START_CONTEXT_BYTES)
+        .then(|| {
+            json!({ "hookSpecificOutput": {
+                "hookEventName": "SessionStart",
+                "additionalContext": context,
+            } })
+            .to_string()
+        })
+}
+
 pub fn supports_provider_hook_observation(agent_id: &str) -> bool {
     agent_descriptor(agent_id).is_some_and(|descriptor| {
         matches!(
@@ -162,6 +184,24 @@ fn opencode_hook_settings(executable: &Path) -> Result<ProviderHookSettings, ser
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn claude_session_start_context_is_added_only_at_session_start() {
+        let output = claude_session_start_hook_output("SessionStart", "You are a fork.").unwrap();
+        let output: serde_json::Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(
+            output,
+            json!({ "hookSpecificOutput": {
+                "hookEventName": "SessionStart",
+                "additionalContext": "You are a fork.",
+            } })
+        );
+        assert!(claude_session_start_hook_output("UserPromptSubmit", "You are a fork.").is_none());
+        assert!(claude_session_start_hook_output("SessionStart", "  ").is_none());
+        assert!(
+            claude_session_start_hook_output("SessionStart", &"x".repeat(64 * 1024 + 1)).is_none()
+        );
+    }
 
     #[test]
     fn each_launch_scoped_provider_owns_its_event_matrix_and_timeout_units() {

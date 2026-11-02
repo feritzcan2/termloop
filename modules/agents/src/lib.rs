@@ -55,8 +55,8 @@ pub use codex_settings::{
 };
 use futures_util::{SinkExt, StreamExt};
 pub use provider_hooks::{
-    ProviderHookSettings, ProviderHookSettingsDelivery, provider_hook_settings,
-    supports_provider_hook_observation,
+    CLAUDE_SESSION_START_CONTEXT_VARIABLE, ProviderHookSettings, ProviderHookSettingsDelivery,
+    claude_session_start_hook_output, provider_hook_settings, supports_provider_hook_observation,
 };
 pub use provider_observation::{
     NormalizedProviderObservation, ProviderHookObservationInput, ProviderObservationIngress,

@@ -148,7 +148,21 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
             provider_instructions.is_none(),
         )?);
     }
-    if let Some(instructions) = provider_instructions {
+    // Claude keeps the source conversation's system prompt on `--fork-session`
+    // and silently ignores a new `--append-system-prompt`. The launch-scoped
+    // SessionStart hook can still add context, so a Claude fork hands its
+    // instructions to that hook instead of an argument Claude would drop.
+    let session_start_context = provider_instructions.filter(|_| {
+        agent_id == "claude"
+            && matches!(conversation, AgentConversationLaunch::Fork { .. })
+            && observation.as_ref().is_some_and(|observation| {
+                matches!(
+                    observation.transport,
+                    AgentObservationLaunchTransport::InlineSettings { .. }
+                )
+            })
+    });
+    if let Some(instructions) = provider_instructions.filter(|_| session_start_context.is_none()) {
         match agent_id {
             "codex" => {
                 let instructions = serde_json::to_string(instructions)
@@ -285,6 +299,9 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
     }
     if let Some(mcp) = mcp {
         environment = environment.with_explicit("TERMLOOP_MCP_TOKEN", mcp.token);
+    }
+    if let Some(context) = session_start_context {
+        environment = environment.with_explicit(termloop_agents::CLAUDE_SESSION_START_CONTEXT_VARIABLE, context);
     }
 
     // One resolution against the exact launch environment feeds both

@@ -135,6 +135,14 @@ fn inspect_environment(
                     source: "invocation",
                     purpose: "launch-scoped OpenCode observation settings",
                 },
+                termloop_agents::CLAUDE_SESSION_START_CONTEXT_VARIABLE => InspectableEnvironmentEntry {
+                    key,
+                    display_value: "<provider instructions shown in content>".into(),
+                    visibility: "redacted",
+                    classification: "public",
+                    source: "invocation",
+                    purpose: "provider instructions added at Claude SessionStart",
+                },
                 "TERMLOOP_MCP_TOKEN" => InspectableEnvironmentEntry {
                     key,
                     display_value: "<redacted secret>".into(),
