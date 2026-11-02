@@ -16,7 +16,7 @@ import type { AgentAccountDto } from "@termloop/contract/current";
 import type { AgentConnectionActions } from "./AgentConnectionsPanel.js";
 import { AgentAccountSwitcher } from "./AgentAccountSwitcher.js";
 import { TerminalStatus } from "./TerminalStatus.js";
-import type { TerminalPresentationPort } from "../terminal-presentation.js";
+import type { ConversationSubagent, TerminalPresentationPort } from "../terminal-presentation.js";
 import type { AgentLibraryController } from "../agent-library.js";
 import { AgentsRail } from "./AgentsRail.js";
 import { AgentProfilePanel } from "./AgentProfilePanel.js";
@@ -33,7 +33,7 @@ import { SidebarFooterHoverCard } from "./SidebarFooterHoverCard.js";
 import { ProjectCheckoutHeader } from "./ProjectCheckoutHeader.js";
 import { ProjectSourceRefreshButton } from "./ProjectSourceRefreshButton.js";
 import { SessionRail } from "./SessionRail.js";
-import { ForkingSessionsContext, SessionContextMenu, type SessionAgentActions, type SessionMenuState, type SessionRunDevServer } from "./SessionRow.js";
+import { ForkingSessionsContext, OpenSubagentTranscriptContext, SessionContextMenu, type SessionAgentActions, type SessionMenuState, type SessionRunDevServer } from "./SessionRow.js";
 import { TaskRail, askToHelpersForSources, taskAttachedSessionIds, taskSessions } from "./TaskRail.js";
 import { TaskDetailPanel } from "./TaskDetailPanel.js";
 import { OverlayPortal } from "./OverlayPortal.js";
@@ -1038,6 +1038,15 @@ export function Shell(props: ShellProps) {
     ),
     [assistantSelection, dismissChanges, dismissStagePages, props.selectSession, props.selectedSession?.id],
   );
+  const terminalPresentation = props.terminalPresentation;
+  /// Shows the Agent's pane, then covers its terminal with the subagent's
+  /// transcript; returning to the main agent only uncovers it again.
+  const openSubagentTranscript = useMemo(() => terminalPresentation?.conversation
+    ? (sessionId: string, subagent: ConversationSubagent) => {
+        selectSession(sessionId);
+        terminalPresentation.conversation?.open(sessionId, subagent);
+      }
+    : undefined, [selectSession, terminalPresentation]);
   /// Only an Agent inside a Task worktree offers a dev server from its own
   /// menu, and it runs in that worktree. An Agent in the Project checkout has
   /// the rail's own Run button for exactly that checkout, so repeating the
@@ -1582,6 +1591,7 @@ export function Shell(props: ShellProps) {
         : "Server connection lost";
   return (
     <ForkingSessionsContext.Provider value={props.forkingSessionIds}>
+    <OpenSubagentTranscriptContext.Provider value={openSubagentTranscript}>
       {props.connection !== "connected" ? <div className="server-connection-alert" role="status">
         <div><strong>{connectionTitle}</strong><span>{props.connectionMessage ?? "TermLoop will keep retrying in the background."}</span></div>
         <button type="button" onClick={() => setSettingsPage("servers")}>Settings</button>
@@ -2608,6 +2618,7 @@ export function Shell(props: ShellProps) {
         repairProviderHistory={repairBackgroundRelocation}
       />
       </OverlayPortal>
+    </OpenSubagentTranscriptContext.Provider>
     </ForkingSessionsContext.Provider>
   );
 }

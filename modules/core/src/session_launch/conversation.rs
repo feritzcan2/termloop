@@ -13,6 +13,9 @@ pub struct SessionConversationPlan {
     resume: Option<ResumeRef>,
     account: Option<AgentAccountContext>,
     before: Option<u64>,
+    /// The opaque roster key of one in-process Claude subagent whose own
+    /// transcript is read instead of the lead conversation.
+    subagent_key: Option<String>,
 }
 
 pub struct ObservedSessionConversation {
@@ -22,9 +25,18 @@ pub struct ObservedSessionConversation {
 
 impl SessionConversationPlan {
     pub fn observe(self, cancellation: &AtomicBool) -> ObservedSessionConversation {
-        let page = match (&self.account, &self.resume) {
-            (Some(account), Some(resume)) => {
+        let page = match (&self.account, &self.resume, &self.subagent_key) {
+            (Some(account), Some(resume), None) => {
                 termloop_agents::read_agent_conversation(account, resume, self.before, cancellation)
+            }
+            (Some(account), Some(resume), Some(key)) => {
+                termloop_agents::read_claude_subagent_conversation(
+                    account,
+                    resume,
+                    key,
+                    self.before,
+                    cancellation,
+                )
             }
             _ => ConversationPage::default(),
         };
@@ -58,6 +70,16 @@ impl CoreRuntime {
                     .ok_or_else(|| CoreError::InvalidParams("before".into()))?,
             ),
         };
+        let subagent_key = match params.get("subagentKey") {
+            None => None,
+            Some(value) => Some(
+                value
+                    .as_str()
+                    .filter(|key| termloop_agents::is_subagent_key(key))
+                    .map(str::to_owned)
+                    .ok_or_else(|| CoreError::InvalidParams("subagentKey".into()))?,
+            ),
+        };
         Ok(SessionConversationPlan {
             project_id,
             session_id,
@@ -65,6 +87,7 @@ impl CoreRuntime {
             resume: session.resume_ref.clone(),
             account: self.session_agent_account(session)?,
             before,
+            subagent_key,
         })
     }
 
@@ -168,6 +191,24 @@ mod tests {
                 .plan_session_conversation_read(json!({"projectId":"other","sessionId":"reader"})),
             Err(CoreError::NotFound)
         ));
+        for key in [json!("ABCDEF0123456789"), json!("abc"), json!(7)] {
+            let mut invalid = params.clone();
+            invalid["subagentKey"] = key;
+            assert!(matches!(
+                runtime.plan_session_conversation_read(invalid),
+                Err(CoreError::InvalidParams(field)) if field == "subagentKey"
+            ));
+        }
+        let mut subagent = params.clone();
+        subagent["subagentKey"] = json!("0123456789abcdef");
+        assert_eq!(
+            runtime
+                .plan_session_conversation_read(subagent)
+                .unwrap()
+                .subagent_key
+                .as_deref(),
+            Some("0123456789abcdef")
+        );
         for before in [
             json!(0),
             json!(-1),

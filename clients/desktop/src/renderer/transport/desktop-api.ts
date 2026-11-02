@@ -506,7 +506,7 @@ export type DesktopApi = {
   sessionForkAgent(sessionId: string): Promise<TaskControlDesktopResult<Session>>;
   sessionRepairProviderHistory(sessionId: string): Promise<TaskControlDesktopResult<SessionRepairProviderHistoryResult>>;
   sessionHistoryList(projectId: string, force?: boolean, fillCache?: boolean): Promise<SessionHistoryListResult>;
-  sessionConversationRead(projectId: string, sessionId: string, before?: number): Promise<SessionConversationReadResult>;
+  sessionConversationRead(projectId: string, sessionId: string, before?: number, subagentKey?: string): Promise<SessionConversationReadResult>;
   sessionHistoryPreview(projectId: string, sessionId: string): Promise<SessionHistoryPreviewResult>;
   sessionHistoryPreviewResumeAgent(projectId: string, historyHandle: string): Promise<AgentLaunchPreviewResult>;
   sessionHistoryResumeAgent(projectId: string, historyHandle: string, launchTicket: string): Promise<Session>;

@@ -7,8 +7,14 @@ export type TerminalPresentationPort = SurfacePresentationPort & {
   conversation?: ConversationPort;
 };
 
+/// One in-process subagent of an Agent Session, named by its opaque roster key.
+export type ConversationSubagent = { key: string; label: string };
+
 export type ConversationState = {
   loading: boolean;
+  /// Present while the view shows a subagent's own transcript instead of the
+  /// Session's saved messages. That view follows the live transcript.
+  subagent?: ConversationSubagent | undefined;
   page?: SessionConversationReadResult | undefined;
   error?: string | undefined;
   hasNewer: boolean;
@@ -18,7 +24,7 @@ export type ConversationPort = {
   supported(sessionId: string): boolean;
   subscribe(listener: () => void): () => void;
   snapshot(sessionId: string): ConversationState | undefined;
-  open(sessionId: string): void;
+  open(sessionId: string, subagent?: ConversationSubagent): void;
   close(sessionId: string): void;
   older(sessionId: string): void;
   newer(sessionId: string): void;

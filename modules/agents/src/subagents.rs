@@ -309,11 +309,19 @@ fn tool_activity(payload: &serde_json::Value) -> Option<String> {
 }
 
 /// An opaque, stable stand-in for the provider's child id.
-fn subagent_key(provider_id: &str) -> String {
+pub(crate) fn subagent_key(provider_id: &str) -> String {
     Sha256::digest(provider_id.as_bytes())[..8]
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
+}
+
+/// Whether `value` has the exact shape `subagent_key` produces.
+pub fn is_subagent_key(value: &str) -> bool {
+    value.len() == 16
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 fn text<'a>(value: &'a serde_json::Value, keys: &[&str]) -> Option<&'a str> {
