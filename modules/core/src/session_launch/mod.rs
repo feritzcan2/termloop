@@ -424,6 +424,11 @@ impl AgentLaunchPlan {
         self.observation_warning.as_deref()
     }
 
+    #[cfg(test)]
+    pub(crate) fn fork_name(&self) -> Option<&str> {
+        self.fork_name.as_deref()
+    }
+
     pub fn fork_runtime_ready(&self) -> bool {
         fork_runtime_is_ready(
             &self.agent_id,
@@ -769,7 +774,11 @@ impl CoreRuntime {
         plan.set_account(self.session_agent_account(&source)?);
         plan.interactive_options = Some(source.launch_selection.clone());
         plan.resume_ref = None;
-        plan.fork_name = Some(fork_session_name(&source, &agent_id));
+        // A fork that starts its own Task is named by that Task's issue and
+        // title, so it gets no derived "fork-1" name to outrank them.
+        plan.fork_name = target_worktree
+            .is_none()
+            .then(|| fork_session_name(&source, &agent_id));
         plan.fork_system_prompt = self.store.agent_fork_preference().system_prompt_enabled;
         plan.fork_source_active = self.agent_session_may_still_act(&source);
         let worktree_plan = if let Some(worktree_plan) = target_worktree {

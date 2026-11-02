@@ -385,3 +385,75 @@ fn cleanup_presence_uses_one_bounded_running_or_reserved_resume_predicate() {
         Err(CoreError::RepositoryUnavailable)
     ));
 }
+
+#[test]
+fn a_fork_into_a_task_takes_that_tasks_name_instead_of_a_fork_name() {
+    let mut fixture = Fixture::new();
+    let (task_id, _, _, _) = provision_cleanup_fixture(&mut fixture);
+    let project_cwd =
+        termloop_platform::canonical_existing_directory_path(&fixture.project_directory)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+    fixture
+        .runtime
+        .configure_agent_observations(crate::test_agent_observation_transport(
+            fixture.project_directory.join("provider"),
+        ));
+    fixture
+        .runtime
+        .store
+        .insert_session(
+            &fixture.runtime.write_authority,
+            termloop_domain::SessionRecord {
+                id: "source-agent".into(),
+                project_id: fixture.project_id.clone(),
+                name: Some("Source".into()),
+                kind: termloop_domain::SessionKind::Agent,
+                process: termloop_domain::ProcessDescriptor {
+                    program: "claude".into(),
+                    args: vec![],
+                    cwd: project_cwd,
+                    agent_id: Some("claude".into()),
+                    template_ref: Some("builtin.agent.interactive".into()),
+                    template_version: Some(1),
+                },
+                lifecycle_state: "running".into(),
+                runtime_epoch: 1,
+                archived_at_epoch_ms: None,
+                ask_to_source_session_id: None,
+                fork_source_session_id: None,
+                run_configuration_id: None,
+                improver_target: None,
+                ask_to_continuation: None,
+                resume_ref: termloop_domain::ResumeRef::for_provider(
+                    termloop_domain::ResumeProvider::Claude,
+                    "00000000-0000-4000-8000-000000000002".into(),
+                ),
+                resume_launch_guard: None,
+                resume_failure: None,
+                launch_selection: termloop_domain::AgentLaunchSelection::new(
+                    "fable",
+                    "bypassPermissions",
+                    "high",
+                ),
+            },
+        )
+        .unwrap();
+
+    let in_place = fixture
+        .runtime
+        .plan_agent_fork(json!({ "sessionId": "source-agent" }))
+        .unwrap();
+    assert_eq!(in_place.fork_name(), Some("Source fork-1"));
+    // The Task's issue key and title name this Agent, so nothing outranks them.
+    let into_task = fixture
+        .runtime
+        .plan_agent_fork(json!({
+            "sessionId": "source-agent",
+            "taskId": task_id,
+            "kickoffMessage": "Start the issue",
+        }))
+        .unwrap();
+    assert!(into_task.fork_name().is_none());
+}
