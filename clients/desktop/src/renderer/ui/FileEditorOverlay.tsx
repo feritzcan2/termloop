@@ -62,7 +62,7 @@ export function FileEditorBody({ editor, snapshot, tab, readOnly }: { editor: Fi
   return <div className="file-editor-body">
     <FileEditorBanners editor={editor} tab={tab} readOnly={readOnly} />
     <MonacoSurface editor={editor} snapshot={snapshot} readOnly={tab.status !== "ready" || readOnly} hidden={tab.status !== "ready"} />
-    <FileEditorState tab={tab} />
+    <FileEditorState editor={editor} tab={tab} />
     <FileEditorStatus tab={tab} readOnly={readOnly} />
   </div>;
 }
@@ -81,9 +81,12 @@ export function FileEditorBanners({ editor, tab, readOnly }: { editor: FileEdito
 }
 
 /// Loading and unavailable states shown in place of the editor surface.
-export function FileEditorState({ tab }: { tab: FileEditorTab }) {
+export function FileEditorState({ editor, tab }: { editor: FileEditor; tab: FileEditorTab }) {
   return tab.status === "loading" ? <p className="file-editor-message" role="status">Loading file…</p>
-    : tab.status === "unavailable" ? <p className="file-editor-message" role="alert">{tab.message}</p> : null;
+    : tab.status === "unavailable" ? <div className="file-editor-message" role="alert">
+      <p>{tab.message}</p>
+      {tab.readFailed ? <button type="button" className="secondary-button" onClick={() => editor.reload(tab.path)}>Try again</button> : null}
+    </div> : null;
 }
 
 export function FileEditorStatus({ tab, readOnly }: { tab: FileEditorTab; readOnly: boolean }) {

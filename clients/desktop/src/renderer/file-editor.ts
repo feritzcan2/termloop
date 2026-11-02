@@ -1,4 +1,5 @@
 import type { WorkspaceFileReadResult, WorkspaceFileWriteResult } from "@termloop/contract/current";
+import { controlErrorMessage } from "./control-error.js";
 
 export type FileEditorIo = {
   read(path: string): Promise<WorkspaceFileReadResult>;
@@ -16,11 +17,15 @@ export type FileEditorTab = {
   /// The disk moved past `saved`; `version` is null when it can no longer be compared.
   conflict?: { version: string | null } | undefined;
   message?: string | undefined;
+  /// The last read failed rather than reporting a file state; reading again may succeed.
+  readFailed?: boolean | undefined;
 };
 
 export type FileEditorSnapshot = { tabs: readonly FileEditorTab[]; active: string | undefined };
 
-const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
+const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? controlErrorMessage(error) : fallback;
+/// A read can fail transiently while the daemon or volume is busy.
+const READ_RETRY_DELAY_MS = 400;
 
 export function fileEditorMessage(state: WorkspaceFileReadResult["state"]): string {
   switch (state) {
@@ -43,7 +48,7 @@ export class FileEditor {
   // Per-path request counters drop late reads after a newer read, reload or close.
   private requests = new Map<string, number>();
 
-  constructor(private readonly io: FileEditorIo) {}
+  constructor(private readonly io: FileEditorIo, private readonly retryDelayMs = READ_RETRY_DELAY_MS) {}
   getSnapshot = (): FileEditorSnapshot => this.snapshot;
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -91,9 +96,14 @@ export class FileEditor {
 
   private async load(path: string, quiet: boolean): Promise<void> {
     const current = this.request(path);
-    if (!quiet) this.update(path, (tab) => ({ ...tab, status: tab.saved ? tab.status : "loading", message: undefined }));
+    if (!quiet) this.update(path, (tab) => ({ ...tab, status: tab.saved ? tab.status : "loading", message: undefined, readFailed: undefined }));
     try {
-      const result = await this.io.read(path);
+      const result = await this.io.read(path).catch(async (error: unknown) => {
+        if (quiet || !current()) throw error;
+        await new Promise((resolve) => setTimeout(resolve, this.retryDelayMs));
+        if (!current()) throw error;
+        return this.io.read(path);
+      });
       if (!current()) return;
       const tab = this.tab(path)!;
       if (quiet && (tab.dirty || tab.saved?.version === result.version)) return;
@@ -106,8 +116,9 @@ export class FileEditor {
       }
     } catch (error) {
       if (!current() || quiet) return;
-      this.update(path, (tab) => tab.saved ? { ...tab, message: errorMessage(error, "The file could not be reloaded.") }
-        : { ...tab, status: "unavailable", message: errorMessage(error, "The file could not be opened. Try again.") });
+      const reason = errorMessage(error, "");
+      this.update(path, (tab) => tab.saved ? { ...tab, message: `The file could not be reloaded.${reason ? ` ${reason}` : ""}` }
+        : { ...tab, status: "unavailable", readFailed: true, message: `The file could not be read right now.${reason ? ` ${reason}` : ""}` });
     }
   }
 

@@ -6,14 +6,34 @@ const version = (digit: string) => digit.repeat(64);
 const text = (path: string, content: string, digit = "1"): WorkspaceFileReadResult => ({ path, state: "text", content, version: version(digit) });
 const deferred = <T,>() => { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done; }); return { resolve, promise }; };
 const settle = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
+/// Lets the zero-delay read retry timer run.
+const settleRetry = async () => { await settle(); await new Promise((resolve) => setTimeout(resolve, 0)); await settle(); };
 
 function editorWith(io: Partial<FileEditorIo>) {
   const read = vi.fn(io.read ?? (async (path: string) => text(path, `${path} contents`)));
   const write = vi.fn(io.write ?? (async (path: string): Promise<WorkspaceFileWriteResult> => ({ path, state: "written", version: version("2") })));
-  return { editor: new FileEditor({ read, write }), read, write };
+  return { editor: new FileEditor({ read, write }, 0), read, write };
 }
 
 describe("File editor tabs", () => {
+  it("retries a failed read once and shows the IPC failure without its transport wrapper", async () => {
+    const busy = new Error("Error invoking remote method 'termloop:workspace-file-read': TermLoopControlError: repository is unavailable");
+    const read = vi.fn<FileEditorIo["read"]>()
+      .mockRejectedValueOnce(busy)
+      .mockResolvedValueOnce(text("a.ts", "a"))
+      .mockRejectedValueOnce(busy)
+      .mockRejectedValueOnce(busy)
+      .mockResolvedValueOnce(text("b.ts", "b"));
+    const { editor } = editorWith({ read });
+    editor.open("a.ts"); await settleRetry();
+    expect(editor.tab("a.ts")).toMatchObject({ status: "ready", saved: { content: "a" } });
+    editor.open("b.ts"); await settleRetry();
+    expect(editor.tab("b.ts")).toMatchObject({ status: "unavailable", readFailed: true, message: "The file could not be read right now. repository is unavailable" });
+    editor.reload("b.ts"); await settle();
+    expect(editor.tab("b.ts")).toMatchObject({ status: "ready", readFailed: undefined, saved: { content: "b" } });
+    expect(read).toHaveBeenCalledTimes(5);
+  });
+
   it("opens each path once, tracks drafts and saves against the version it read", async () => {
     const { editor, read, write } = editorWith({});
     editor.open("a.ts"); editor.open("b.ts"); await settle();
@@ -94,6 +114,7 @@ describe("File editor tabs", () => {
     const read = vi.fn<FileEditorIo["read"]>()
       .mockResolvedValueOnce({ path: "bin", state: "binary", content: null })
       .mockReturnValueOnce(pending.promise)
+      .mockRejectedValueOnce(new Error("File removed"))
       .mockRejectedValueOnce(new Error("File removed"));
     const { editor } = editorWith({ read });
     editor.open("bin"); await settle();
@@ -102,8 +123,8 @@ describe("File editor tabs", () => {
     pending.resolve(text("late", "late")); await settle();
     expect(editor.tab("late")).toBeUndefined();
     expect(editor.getSnapshot().active).toBe("bin");
-    editor.open("gone"); await settle();
-    expect(editor.tab("gone")).toMatchObject({ status: "unavailable", message: "File removed" });
+    editor.open("gone"); await settleRetry();
+    expect(editor.tab("gone")).toMatchObject({ status: "unavailable", readFailed: true, message: "The file could not be read right now. File removed" });
     const before = editor.getSnapshot();
     editor.dispose();
     editor.close("bin");

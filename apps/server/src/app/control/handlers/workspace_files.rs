@@ -27,19 +27,18 @@ pub(in crate::app) async fn observe_workspace_files(
         params.task_id.as_deref(),
         &params.path,
     )?;
-    let observed = observe_with_deadline(
-        &state.git_observation_gate,
-        plan.project_id().to_owned(),
-        Instant::now() + Duration::from_secs(5),
-        move || {
+    // A single file or directory page is a bounded filesystem call, not Git
+    // work; queueing it behind an Agent's Git observations made reads slow or
+    // fail while the Project was busy.
+    let observed =
+        observe_with_deadline(None, Instant::now() + Duration::from_secs(5), move || {
             if read_file {
                 plan.observe_file()
             } else {
                 plan.observe_directory_page(params.after_name.as_deref())
             }
-        },
-    )
-    .await?;
+        })
+        .await?;
     state.core.lock().await.complete_workspace_files(observed)
 }
 
@@ -59,8 +58,7 @@ pub(in crate::app) async fn search_workspace_files(
     // results marked incomplete instead of an error.
     let walk_deadline = std::time::Instant::now() + Duration::from_secs(8);
     let observed = observe_with_deadline(
-        &state.git_observation_gate,
-        plan.project_id().to_owned(),
+        Some((&state.git_observation_gate, plan.project_id().to_owned())),
         deadline,
         move || {
             plan.observe_search(
@@ -87,19 +85,18 @@ pub(in crate::app) async fn write_workspace_file(
         params.task_id.as_deref(),
         &params.path,
     )?;
-    let observed = observe_with_deadline(
-        &state.git_observation_gate,
-        plan.project_id().to_owned(),
-        Instant::now() + Duration::from_secs(10),
-        move || plan.observe_write(&params.content, &params.expected_version),
-    )
-    .await?;
+    let observed =
+        observe_with_deadline(None, Instant::now() + Duration::from_secs(10), move || {
+            plan.observe_write(&params.content, &params.expected_version)
+        })
+        .await?;
     state.core.lock().await.complete_workspace_files(observed)
 }
 
+/// `gate` queues the observation behind the Project's Git work; only a
+/// whole-tree search needs that. Every call holds a bounded file-worker slot.
 async fn observe_with_deadline<T: Send + 'static>(
-    gate: &FairObservationGate,
-    project_id: String,
+    gate: Option<(&FairObservationGate, String)>,
     deadline: Instant,
     observe: impl FnOnce() -> T + Send + 'static,
 ) -> Result<T, CoreError> {
@@ -107,14 +104,18 @@ async fn observe_with_deadline<T: Send + 'static>(
         .await
         .map_err(|_| CoreError::RepositoryUnavailable)?
         .map_err(|_| CoreError::RepositoryUnavailable)?;
-    let _permit = gate
-        .acquire_until(
-            project_id,
-            ObservationPriority::Explicit,
-            deadline.min(Instant::now() + Duration::from_secs(2)),
-        )
-        .await
-        .map_err(|_| CoreError::RepositoryUnavailable)?;
+    let _permit = match gate {
+        Some((gate, project_id)) => Some(
+            gate.acquire_until(
+                project_id,
+                ObservationPriority::Explicit,
+                deadline.min(Instant::now() + Duration::from_secs(2)),
+            )
+            .await
+            .map_err(|_| CoreError::RepositoryUnavailable)?,
+        ),
+        None => None,
+    };
     // Filesystem calls cannot be cancelled. Release the shared observation gate
     // on timeout so a stalled volume cannot block other Project observations.
     tokio::time::timeout_at(
@@ -141,8 +142,7 @@ mod tests {
         let reader_gate = gate.clone();
         let reader = tokio::spawn(async move {
             observe_with_deadline(
-                &reader_gate,
-                "project".into(),
+                Some((&reader_gate, "project".into())),
                 Instant::now() + Duration::from_millis(100),
                 move || {
                     let _ = started.send(());
@@ -176,12 +176,23 @@ mod tests {
             .await
             .unwrap();
         let result = observe_with_deadline(
-            &gate,
-            "project".into(),
+            Some((&gate, "project".into())),
             Instant::now() + Duration::from_millis(20),
             || panic!("queued reader must not start"),
         )
         .await;
         assert!(matches!(result, Err(CoreError::RepositoryUnavailable)));
+    }
+
+    #[tokio::test]
+    async fn single_path_reads_do_not_wait_for_project_git_work() {
+        let gate = FairObservationGate::new();
+        let _occupied = gate
+            .acquire("project", ObservationPriority::Explicit)
+            .await
+            .unwrap();
+        let result =
+            observe_with_deadline(None, Instant::now() + Duration::from_millis(500), || 7).await;
+        assert!(matches!(result, Ok(7)));
     }
 }

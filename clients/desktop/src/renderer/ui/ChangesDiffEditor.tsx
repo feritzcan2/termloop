@@ -138,7 +138,7 @@ export function ChangesDiffEditor({ editing, path, original, viewType, fullFile,
       {failure ? <p className="file-editor-message" role="alert">{failure}</p> : null}
       <div ref={host} className="file-editor-monaco" aria-label={`Editable diff of ${path}`} />
     </div>
-    {tab ? <FileEditorState tab={tab} /> : <p className="file-editor-message" role="status">Opening file…</p>}
+    {tab ? <FileEditorState editor={editor} tab={tab} /> : <p className="file-editor-message" role="status">Opening file…</p>}
     {instance ? <NoteMarkers monaco={instance.monaco} diff={instance.diff} lines={[...targets.values()]} /> : null}
     {instance ? [...targets.values()].map((target) => (
       <ReviewZone
