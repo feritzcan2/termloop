@@ -21,6 +21,7 @@ import {
   type QuickActionPermission as Permission,
   type QuickActionReasoning as Reasoning,
 } from "../quick-action-memory.js";
+import { readQuickActionProfileSelection, rememberQuickActionProfileSelection } from "../quick-action-profile-memory.js";
 import { AgentProfilePicker } from "./AgentProfilePicker.js";
 import { requireQuickActionPreview } from "../quick-action-result.js";
 import { quickActionShortcutUnavailable, type QuickActionShortcutDraft } from "../quick-action-shortcuts.js";
@@ -99,8 +100,15 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
   const memory = useMemo(readQuickActionMemory, []);
   const restoredAgent = initialAgent && availableAgents.includes(initialAgent) ? initialAgent
     : memory.lastAgentId && availableAgents.includes(memory.lastAgentId) ? memory.lastAgentId : undefined;
-  const initialAgentId = (savedProfile && availableAgents.includes(savedProfile.default_agent_id) ? savedProfile.default_agent_id : undefined) ?? restoredAgent ?? availableAgents[0] ?? "codex";
-  const initialPreset = savedProfile ? { model: savedProfile.default_model, permission: savedProfile.permission, reasoning: savedProfile.default_reasoning } : memory.presets[initialAgentId];
+  // A profile reopens with the selection it last ran with; its saved library
+  // defaults apply only until it has run once.
+  const initialProfileRun = useMemo(() => initialTemplateRef && initialTemplateRef !== FREE_PROMPT_TEMPLATE_REF
+    ? readQuickActionProfileSelection(initialTemplateRef) : undefined, []);
+  const rememberedInitial = initialProfileRun && availableAgents.includes(initialProfileRun.agentId) ? initialProfileRun : undefined;
+  const initialAgentId = rememberedInitial?.agentId
+    ?? (savedProfile && availableAgents.includes(savedProfile.default_agent_id) ? savedProfile.default_agent_id : undefined) ?? restoredAgent ?? availableAgents[0] ?? "codex";
+  const initialPreset = rememberedInitial
+    ?? (savedProfile ? { model: savedProfile.default_model, permission: savedProfile.permission, reasoning: savedProfile.default_reasoning } : memory.presets[initialAgentId]);
   const initialCapability = capabilityByAgent.get(initialAgentId);
   // Quick Action opens against the Project the user is looking at. The last-run
   // Project is only a fallback for the no-selection case; letting it win sent
@@ -255,6 +263,9 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
       const message = await launch(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, inspected.launch_ticket, accountId, taskId, jiraTaskIntake);
       if (message) setError(message); else {
         rememberQuickActionRun(projectId, agentId, { model, permission, reasoning });
+        if (templateRef !== FREE_PROMPT_TEMPLATE_REF && (agentId === "claude" || agentId === "codex")) {
+          rememberQuickActionProfileSelection(templateRef, { agentId, model, permission, reasoning });
+        }
         close();
       }
     } catch (cause) {
@@ -323,15 +334,20 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
     setTemplateRef(nextTemplateRef);
     if (profile) {
       const saved = libraryProfiles.find((entry) => entry.id === profile.id);
-      const nextAgent = availableCapabilities.find((capability) => capability.agent_id === saved?.default_agent_id && profileSupportsCapability(profile, capability))
+      const lastRun = readQuickActionProfileSelection(profile.id);
+      const lastRunAgent = lastRun && availableCapabilities.find((capability) => capability.agent_id === lastRun.agentId && profileSupportsCapability(profile, capability));
+      const nextAgent = lastRunAgent
+        ?? availableCapabilities.find((capability) => capability.agent_id === saved?.default_agent_id && profileSupportsCapability(profile, capability))
         ?? (selectedCapability && profileSupportsCapability(profile, selectedCapability) ? selectedCapability : undefined)
         ?? availableCapabilities.find((capability) => profileSupportsCapability(profile, capability));
       if (nextAgent) {
+        const defaults = lastRunAgent && lastRun ? lastRun
+          : { model: saved?.default_model, permission: profile.permission, reasoning: saved?.default_reasoning };
         applyingProfile.current = nextAgent.agent_id !== agentId;
         setAgentId(nextAgent.agent_id as AgentId);
-        setModel(saved && nextAgent.models.includes(saved.default_model) ? saved.default_model : "default");
-        setPermission(nextAgent.permissions.includes(profile.permission) ? profile.permission : "default");
-        setReasoning(saved && nextAgent.reasoning.includes(saved.default_reasoning) ? saved.default_reasoning : "default");
+        setModel(defaults.model && nextAgent.models.includes(defaults.model) ? defaults.model : "default");
+        setPermission(nextAgent.permissions.includes(defaults.permission) ? defaults.permission : "default");
+        setReasoning(defaults.reasoning && nextAgent.reasoning.includes(defaults.reasoning) ? defaults.reasoning as Reasoning : "default");
       }
     } else {
       const preset = memory.presets[agentId];
