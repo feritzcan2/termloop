@@ -7,7 +7,7 @@ use crate::{
 
 pub(super) const AGENT_FORK_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.agent.fork",
-    version: 2,
+    version: 3,
     authored_body: include_str!("../../../resources/prompts/builtin.agent.fork.md"),
 };
 

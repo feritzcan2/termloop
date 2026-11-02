@@ -4319,7 +4319,7 @@ fn agent_fork_plan_derives_private_source_context_without_persisting_a_parent() 
             .map(|part| (part.source.clone(), part.content.clone()))
     };
     let (source, notice) = fork_instruction_source(&plan).expect("fork notice is on by default");
-    assert_eq!(source, "resources/prompts/builtin.agent.fork@2");
+    assert_eq!(source, "resources/prompts/builtin.agent.fork@3");
     assert!(notice.contains("Source Session ID: `source-agent`"));
     // A running source with no settled observation may still be editing.
     assert!(plan.fork_source_active);

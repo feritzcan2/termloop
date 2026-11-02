@@ -61,7 +61,7 @@ fn fork_notice_is_delivered_as_instructions_and_matches_the_preview() {
             .iter()
             .find(|part| part.kind == "providerInstructions")
             .unwrap();
-        assert_eq!(part.source, "resources/prompts/builtin.agent.fork@2");
+        assert_eq!(part.source, "resources/prompts/builtin.agent.fork@3");
         let instructions = &part.content;
         // Only a source that may still be working earns the concurrency warning.
         assert_eq!(
@@ -70,6 +70,11 @@ fn fork_notice_is_delivered_as_instructions_and_matches_the_preview() {
         );
         assert!(instructions.contains(&format!("Source Session ID: `{SOURCE_SESSION_ID}`")));
         assert!(!instructions.contains("{{"));
+        // A fork reports to the user, never back to its source on its own.
+        assert!(
+            instructions
+                .contains("Do not send messages,\nhandoffs, or status reports to the source Agent")
+        );
         // Codex takes fresh developer instructions, so the interactive protocol
         // travels with the notice. Claude keeps the source's system prompt,
         // which already carries that protocol, and learns only the notice.
