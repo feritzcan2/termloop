@@ -4,6 +4,14 @@ export const NATIVE_OVERLAY_FRAME_NAME = "termloop-native-overlay";
 
 export type NativeOverlayPassiveRegion = { x: number; y: number; width: number; height: number };
 type ScreenPoint = { x: number; y: number };
+type InputEventSource = Pick<BrowserWindow["webContents"], "on">;
+
+// Temporary click-routing diagnostics for intermittent unclickable menus.
+// Logs only mouse-down coordinates and overlay mode transitions, never content.
+function overlayDiagnostic(event: string, fields: Record<string, unknown> = {}): void {
+  const detail = Object.entries(fields).map(([key, value]) => `${key}=${String(value)}`).join(" ");
+  console.info(`[overlay-diag] ${new Date().toISOString()} ${event}${detail ? ` ${detail}` : ""}`);
+}
 
 export function isNativeOverlayWindowRequest(details: Pick<HandlerDetails, "url" | "frameName">): boolean {
   if (details.url !== "about:blank") return false;
@@ -36,6 +44,23 @@ export class NativeOverlayWindowManager {
     parent.on("leave-full-screen", this.#syncBounds);
     parent.on("minimize", this.#hideForParent);
     parent.on("restore", this.#restoreForParent);
+    this.#traceMouseDown("parent", parent.webContents);
+  }
+
+  #mode(): string {
+    const overlay = this.#overlay;
+    if (!overlay || overlay.isDestroyed()) return "absent";
+    if (this.#parent.isMinimized() || (!this.#visible && !this.#passiveVisible)) return "hidden";
+    if (this.#visible) return "interactive";
+    return this.#requestedPointerInteractive || this.#cursorPointerInteractive ? "passive-interactive" : "passive-clickthrough";
+  }
+
+  #traceMouseDown(target: string, contents: InputEventSource | undefined): void {
+    contents?.on("input-event", (_event, input) => {
+      if (input.type !== "mouseDown") return;
+      const mouse = input as { x?: number; y?: number };
+      overlayDiagnostic("mouseDown", { target, x: mouse.x, y: mouse.y, mode: this.#mode() });
+    });
   }
 
   handleWindowOpen = (details: HandlerDetails): WindowOpenHandlerResponse => {
@@ -70,9 +95,12 @@ export class NativeOverlayWindowManager {
       return;
     }
     this.#overlay = window;
+    overlayDiagnostic("adopt", { frame: details.frameName });
+    this.#traceMouseDown("overlay", window.webContents);
     window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     window.webContents.on("will-navigate", (event) => event.preventDefault());
     window.on("closed", () => {
+      overlayDiagnostic("closed", { current: this.#overlay === window });
       if (this.#overlay === window) this.#overlay = undefined;
       this.#updateCursorPolling();
       if (!this.#disposed) this.#overlayClosed();
@@ -84,6 +112,7 @@ export class NativeOverlayWindowManager {
 
   setVisible(visible: boolean): void {
     const restoreParentFocus = this.#visible && !visible;
+    overlayDiagnostic("setVisible", { visible, from: this.#mode() });
     this.#visible = visible;
     this.#updateCursorPolling();
     this.#applyVisibility();
@@ -91,6 +120,7 @@ export class NativeOverlayWindowManager {
   }
 
   setPassiveVisible(visible: boolean): void {
+    if (visible !== this.#passiveVisible) overlayDiagnostic("setPassiveVisible", { visible, from: this.#mode() });
     this.#passiveVisible = visible;
     if (!visible) {
       this.#requestedPointerInteractive = false;

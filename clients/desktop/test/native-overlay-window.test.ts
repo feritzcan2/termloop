@@ -145,6 +145,41 @@ describe("native overlay window request", () => {
     expect(overlay.hide).toHaveBeenCalled();
   });
 
+  it("logs which window received each mouse-down and the overlay mode at that moment", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const listeners = new Map<string, (event: unknown, input: { type: string; x?: number; y?: number }) => void>();
+    const recorder = (target: string) => vi.fn((name: string, listener: never) => {
+      if (name === "input-event") listeners.set(target, listener);
+    });
+    const parent = {
+      on: vi.fn(), off: vi.fn(), isMinimized: vi.fn(() => false), isDestroyed: vi.fn(() => false),
+      getContentBounds: vi.fn(() => ({ x: 0, y: 0, width: 800, height: 600 })), focus: vi.fn(),
+      webContents: { on: recorder("parent") },
+    };
+    const overlay = {
+      webContents: { setWindowOpenHandler: vi.fn(), on: recorder("overlay") },
+      on: vi.fn(), setBounds: vi.fn(), isDestroyed: vi.fn(() => false), isVisible: vi.fn(() => true),
+      show: vi.fn(), showInactive: vi.fn(), focus: vi.fn(), hide: vi.fn(), destroy: vi.fn(),
+      setIgnoreMouseEvents: vi.fn(),
+    };
+    const manager = new NativeOverlayWindowManager(parent as never, vi.fn());
+    manager.adopt(overlay as never, { url: "about:blank", frameName: "termloop-native-overlay-0" });
+    manager.setPassiveVisible(true);
+
+    listeners.get("parent")?.({}, { type: "mouseDown", x: 40, y: 12 });
+    listeners.get("parent")?.({}, { type: "mouseMove", x: 41, y: 12 });
+    manager.setVisible(true);
+    listeners.get("overlay")?.({}, { type: "mouseDown", x: 60, y: 80 });
+
+    const lines = info.mock.calls.map(([line]) => String(line));
+    expect(lines.filter((line) => line.includes("mouseDown"))).toEqual([
+      expect.stringContaining("target=parent x=40 y=12 mode=passive-clickthrough"),
+      expect.stringContaining("target=overlay x=60 y=80 mode=interactive"),
+    ]);
+    expect(lines).toContainEqual(expect.stringContaining("setVisible visible=true from=passive-clickthrough"));
+    info.mockRestore();
+  });
+
   it("acquires the pet from the system cursor without waiting for a forwarded mousemove", () => {
     let cursor = { x: 125, y: 125 };
     const parent = {
