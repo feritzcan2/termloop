@@ -6,7 +6,7 @@ use crate::{AskToTerminalPrompt, InvocationError, PromptTemplate};
 
 pub(super) const JIRA_TASK_INTAKE_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.quick-action.jira-task-intake",
-    version: 1,
+    version: 2,
     authored_body: include_str!(
         "../../../resources/prompts/builtin.quick-action.jira-task-intake.md"
     ),
@@ -25,6 +25,14 @@ pub(super) const JIRA_TASK_PROPOSAL_DISMISS_TEMPLATE: PromptTemplate = PromptTem
     version: 1,
     authored_body: include_str!(
         "../../../resources/prompts/builtin.agent.jira-task-proposal-dismiss.md"
+    ),
+};
+
+pub(super) const JIRA_TASK_PROPOSAL_CREATED_TEMPLATE: PromptTemplate = PromptTemplate {
+    id: "builtin.agent.jira-task-proposal-created",
+    version: 1,
+    authored_body: include_str!(
+        "../../../resources/prompts/builtin.agent.jira-task-proposal-created.md"
     ),
 };
 
@@ -86,6 +94,31 @@ pub fn jira_task_proposal_answer_prompt(
     )
 }
 
+/// The visible message that tells a proposing Agent which issue TermLoop
+/// created when its conversation does not move into the issue's Task.
+pub fn jira_task_proposal_created_prompt(
+    issue_key: &str,
+    issue_url: &str,
+) -> Result<AskToTerminalPrompt, InvocationError> {
+    if [issue_key, issue_url].iter().any(|value| {
+        value.trim().is_empty() || value.len() > 2_048 || value.chars().any(char::is_control)
+    }) {
+        return Err(InvocationError::InvalidPromptBinding);
+    }
+    let template = &JIRA_TASK_PROPOSAL_CREATED_TEMPLATE;
+    crate::assistant::validate_template_asset(template)?;
+    let bindings = [("issue_key", issue_key), ("issue_url", issue_url)];
+    let delivered = crate::bind_ordered(template.authored_body, &bindings)?;
+    crate::terminal_prompt(
+        template,
+        bindings
+            .into_iter()
+            .map(|(name, value)| (name.to_owned(), value.to_owned()))
+            .collect(),
+        delivered,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -117,5 +150,30 @@ mod tests {
         assert!(
             jira_task_proposal_answer_prompt(JiraTaskProposalAnswer::Dismiss, "a\u{1b}b").is_err()
         );
+    }
+
+    #[test]
+    fn the_created_notice_names_the_issue_and_keeps_the_conversation_in_place() {
+        let created = jira_task_proposal_created_prompt(
+            "PAY-42",
+            "https://example.atlassian.net/browse/PAY-42",
+        )
+        .unwrap();
+        assert_eq!(
+            created.provenance().template_ref,
+            "builtin.agent.jira-task-proposal-created"
+        );
+        assert!(
+            created
+                .delivered_prompt()
+                .contains("TermLoop created\nPAY-42: https://example.atlassian.net/browse/PAY-42")
+        );
+        assert!(
+            created
+                .delivered_prompt()
+                .contains("This conversation stays where it is.")
+        );
+        assert!(jira_task_proposal_created_prompt(" ", "https://x").is_err());
+        assert!(jira_task_proposal_created_prompt("PAY-1", "a\nb").is_err());
     }
 }

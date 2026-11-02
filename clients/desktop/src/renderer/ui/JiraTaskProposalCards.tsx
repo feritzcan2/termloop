@@ -12,6 +12,9 @@ import { sortRemoteBranches, suggestedBranchName, worktreeDestination, worktreeP
 
 export type JiraTaskSourceChoice = { id: string; name: string };
 
+/** What follows the created issue. */
+export type JiraTaskProposalStart = "issueOnly" | "proposingAgent" | "freshAgent";
+
 export type JiraTaskProposalEdit = {
   sourceId: string;
   projectKey: string;
@@ -19,17 +22,34 @@ export type JiraTaskProposalEdit = {
   epicKey: string | null;
   summary: string;
   description: string;
+  start: JiraTaskProposalStart;
 };
 
+/**
+ * startWith says how the created Task starts: relocate moves the proposing
+ * Agent, fork starts a fork of a Task-attached proposing Agent, fresh launches
+ * a new Agent, and none starts nothing.
+ */
 export type JiraTaskProposalApproval =
-  | { outcome: "created"; taskId: string; issueKey: string; issueUrl: string }
+  | { outcome: "created"; taskId: string | null; issueKey: string; issueUrl: string; startWith: "none" | "relocate" | "fork" | "fresh" }
   | { outcome: "failed"; failure: string };
 
 export type JiraTaskProposalActions = {
   loadSources(projectId: string): Promise<JiraTaskSourceChoice[]>;
   approve(sessionId: string, proposalId: string, edit: JiraTaskProposalEdit): Promise<JiraTaskProposalApproval>;
   respond(sessionId: string, proposalId: string, decision: "revise" | "dismiss", feedback: string): Promise<string | undefined>;
+  /** Starts a fork of the Agent in the Task's worktree; resolves to a failure message. */
+  forkIntoTask(sessionId: string, taskId: string, kickoffMessage: string): Promise<string | undefined>;
 };
+
+/** What the created issue's Task needs from the user to start. */
+export type JiraTaskProposalStarted = {
+  approval: Extract<JiraTaskProposalApproval, { outcome: "created" }>;
+  summary: string;
+  kickoffMessage: string;
+};
+
+const DEFAULT_KICKOFF = "Start working on this Jira issue.";
 
 const PROJECT_KEY = /^[A-Z][A-Z0-9_]*$/;
 const ISSUE_KEY = /^[A-Z][A-Z0-9_]*-[1-9][0-9]*$/;
@@ -74,7 +94,7 @@ export function JiraTaskProposalCards({ sessions, selectedSessionId, actions, se
   selectedSessionId?: string | undefined;
   actions: JiraTaskProposalActions;
   selectSession(sessionId: string): void;
-  started(session: Session, approval: Extract<JiraTaskProposalApproval, { outcome: "created" }>, summary: string): void;
+  started(session: Session, started: JiraTaskProposalStarted): void;
   /** Reports while the modal is open so the native terminal stops covering it. */
   reportOverlay(open: boolean): void;
 }) {
@@ -115,7 +135,7 @@ function JiraTaskProposalCard({ session, proposal, actions, selectSession, start
   proposal: JiraTaskProposalDto;
   actions: JiraTaskProposalActions;
   selectSession(sessionId: string): void;
-  started(session: Session, approval: Extract<JiraTaskProposalApproval, { outcome: "created" }>, summary: string): void;
+  started(session: Session, started: JiraTaskProposalStarted): void;
 }) {
   const [sources, setSources] = useState<JiraTaskSourceChoice[]>();
   const [sourceId, setSourceId] = useState("");
@@ -124,6 +144,9 @@ function JiraTaskProposalCard({ session, proposal, actions, selectSession, start
   const [epicKey, setEpicKey] = useState(proposal.epic_key ?? "");
   const [summary, setSummary] = useState(proposal.summary);
   const [description, setDescription] = useState(proposal.description);
+  const [createTask, setCreateTask] = useState(true);
+  const [freshAgent, setFreshAgent] = useState(false);
+  const [kickoffMessage, setKickoffMessage] = useState(DEFAULT_KICKOFF);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [busy, setBusy] = useState(false);
@@ -145,7 +168,8 @@ function JiraTaskProposalCard({ session, proposal, actions, selectSession, start
       : epicKey.trim() && !ISSUE_KEY.test(epicKey.trim()) ? "Enter the epic as an issue key such as PAY-12, or leave it empty."
         : !summary.trim() || summary.includes("\n") ? "Enter a one-line summary."
           : !sourceId ? "Connect a Jira Task Source to this Project first."
-            : undefined;
+            : createTask && !kickoffMessage.trim() ? "Enter the first message for a fresh or forked agent."
+              : undefined;
 
   const approve = async () => {
     if (invalid || disabled) return;
@@ -159,8 +183,9 @@ function JiraTaskProposalCard({ session, proposal, actions, selectSession, start
         epicKey: epicKey.trim() || null,
         summary: summary.trim(),
         description,
+        start: !createTask ? "issueOnly" : freshAgent ? "freshAgent" : "proposingAgent",
       });
-      if (result.outcome === "created") started(session, result, summary.trim());
+      if (result.outcome === "created") started(session, { approval: result, summary: summary.trim(), kickoffMessage: kickoffMessage.trim() });
       else setError(result.failure);
     } catch (cause) {
       setError(message(cause));
@@ -201,6 +226,22 @@ function JiraTaskProposalCard({ session, proposal, actions, selectSession, start
     </div>
     <label>Summary<input value={summary} maxLength={255} disabled={disabled} onChange={(event) => setSummary(event.target.value)} /></label>
     <label>Description<textarea value={description} maxLength={32767} rows={12} disabled={disabled} onChange={(event) => setDescription(event.target.value)} /></label>
+    <fieldset className="jira-proposal-start" disabled={disabled}>
+      <legend>After creating the issue</legend>
+      <label><input type="radio" name={`jira-outcome-${proposal.proposal_id}`} checked={!createTask} onChange={() => setCreateTask(false)} />
+        Only create the Jira issue<small>Links it to the agent's current Task when that Task has no issue yet.</small></label>
+      <label><input type="radio" name={`jira-outcome-${proposal.proposal_id}`} checked={createTask} onChange={() => setCreateTask(true)} />
+        Create a Task and start now<small>Creates a worktree for the issue and starts working in it.</small></label>
+      {createTask ? <div className="jira-proposal-start-agent">
+        <label><input type="radio" name={`jira-agent-${proposal.proposal_id}`} checked={!freshAgent} onChange={() => setFreshAgent(false)} />
+          With this agent<small>Moves this conversation into the Task. If the agent already works in a Task, a fork of it starts there instead.</small></label>
+        <label><input type="radio" name={`jira-agent-${proposal.proposal_id}`} checked={freshAgent} onChange={() => setFreshAgent(true)} />
+          With a fresh agent<small>A new agent of the same kind starts with the issue; this agent stays where it is.</small></label>
+        <label className="jira-proposal-kickoff">First message for a fresh or forked agent
+          <textarea value={kickoffMessage} maxLength={8192} rows={2} onChange={(event) => setKickoffMessage(event.target.value)} />
+        </label>
+      </div> : null}
+    </fieldset>
     {feedbackOpen ? <label>Feedback for the agent
       <textarea value={feedback} maxLength={4000} rows={3} autoFocus disabled={disabled} placeholder="For example: use epic PAY-9 and make it a Story" onChange={(event) => setFeedback(event.target.value)} />
     </label> : null}
@@ -211,7 +252,7 @@ function JiraTaskProposalCard({ session, proposal, actions, selectSession, start
       {feedbackOpen
         ? <button type="button" disabled={disabled || !feedback.trim()} onClick={() => void respond("revise")}>Send feedback</button>
         : <button type="button" disabled={disabled} onClick={() => setFeedbackOpen(true)}>Feedback…</button>}
-      <button type="button" className="primary" disabled={disabled || Boolean(invalid)} onClick={() => void approve()}>Create issue and start</button>
+      <button type="button" className="primary" disabled={disabled || Boolean(invalid)} onClick={() => void approve()}>{createTask ? "Create issue and start" : "Create issue"}</button>
     </footer>
   </section>;
 }

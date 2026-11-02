@@ -73,24 +73,51 @@ function session(jira: JiraTaskProposalDto | null): Session {
 
 describe("Jira task proposal card", () => {
   it("renders nothing without a pending proposal", async () => {
-    const actions: JiraTaskProposalActions = { loadSources: vi.fn(async () => []), approve: vi.fn(), respond: vi.fn() };
+    const actions: JiraTaskProposalActions = { loadSources: vi.fn(async () => []), approve: vi.fn(), respond: vi.fn(), forkIntoTask: vi.fn() };
     await act(async () => root.render(<JiraTaskProposalCards reportOverlay={vi.fn()} sessions={[session(null)]} actions={actions} selectSession={vi.fn()} started={vi.fn()} />));
     expect(host.querySelector(".jira-proposal-card")).toBeNull();
   });
 
   it("approves the edited proposal and reports the created Task", async () => {
-    const approve = vi.fn<JiraTaskProposalActions["approve"]>(async () => ({ outcome: "created", taskId: "task-1", issueKey: "PAY-42", issueUrl: "https://jira.example/browse/PAY-42" }));
+    const approve = vi.fn<JiraTaskProposalActions["approve"]>(async () => ({ outcome: "created", taskId: "task-1", issueKey: "PAY-42", issueUrl: "https://jira.example/browse/PAY-42", startWith: "relocate" }));
     const started = vi.fn();
-    const actions: JiraTaskProposalActions = { loadSources: async () => [{ id: "source-1", name: "Jira" }], approve, respond: vi.fn() };
+    const actions: JiraTaskProposalActions = { loadSources: async () => [{ id: "source-1", name: "Jira" }], approve, respond: vi.fn(), forkIntoTask: vi.fn() };
     await act(async () => root.render(<JiraTaskProposalCards reportOverlay={vi.fn()} sessions={[session(proposal)]} actions={actions} selectSession={vi.fn()} started={started} />));
     await act(async () => {});
     const create = [...host.querySelectorAll("button")].find((button) => button.textContent === "Create issue and start")!;
     expect(create.disabled).toBe(false);
     await act(async () => create.click());
     expect(approve).toHaveBeenCalledWith("session-1", proposal.proposal_id, {
-      sourceId: "source-1", projectKey: "PAY", issueType: "Task", epicKey: "PAY-9", summary: "Add refund export", description: "Export refunds as CSV.",
+      sourceId: "source-1", projectKey: "PAY", issueType: "Task", epicKey: "PAY-9", summary: "Add refund export", description: "Export refunds as CSV.", start: "proposingAgent",
     });
-    expect(started).toHaveBeenCalledWith(expect.objectContaining({ id: "session-1" }), expect.objectContaining({ taskId: "task-1", issueKey: "PAY-42" }), "Add refund export");
+    expect(started).toHaveBeenCalledWith(expect.objectContaining({ id: "session-1" }), {
+      approval: expect.objectContaining({ taskId: "task-1", issueKey: "PAY-42" }),
+      summary: "Add refund export",
+      kickoffMessage: "Start working on this Jira issue.",
+    });
+  });
+
+  it("offers creating only the issue, or a Task started by a fresh agent with an edited first message", async () => {
+    const approve = vi.fn<JiraTaskProposalActions["approve"]>(async () => ({ outcome: "created", taskId: null, issueKey: "PAY-43", issueUrl: "https://jira.example/browse/PAY-43", startWith: "none" }));
+    const started = vi.fn();
+    const actions: JiraTaskProposalActions = { loadSources: async () => [{ id: "source-1", name: "Jira" }], approve, respond: vi.fn(), forkIntoTask: vi.fn() };
+    await act(async () => root.render(<JiraTaskProposalCards reportOverlay={vi.fn()} sessions={[session(proposal)]} actions={actions} selectSession={vi.fn()} started={started} />));
+    await act(async () => {});
+    const radio = (text: string) => [...host.querySelectorAll<HTMLInputElement>('input[type="radio"]')].find((input) => input.parentElement?.textContent?.startsWith(text))!;
+    await act(async () => radio("With a fresh agent").click());
+    const kickoff = host.querySelector<HTMLTextAreaElement>(".jira-proposal-kickoff textarea")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(kickoff, "Write the CSV exporter first.");
+      kickoff.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => [...host.querySelectorAll("button")].find((button) => button.textContent === "Create issue and start")!.click());
+    expect(approve).toHaveBeenLastCalledWith("session-1", proposal.proposal_id, expect.objectContaining({ start: "freshAgent" }));
+    expect(started).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ kickoffMessage: "Write the CSV exporter first." }));
+
+    await act(async () => radio("Only create the Jira issue").click());
+    expect(host.querySelector(".jira-proposal-kickoff")).toBeNull();
+    await act(async () => [...host.querySelectorAll("button")].find((button) => button.textContent === "Create issue")!.click());
+    expect(approve).toHaveBeenLastCalledWith("session-1", proposal.proposal_id, expect.objectContaining({ start: "issueOnly" }));
   });
 
   it("shows a failed creation and keeps the card", async () => {
@@ -98,6 +125,7 @@ describe("Jira task proposal card", () => {
       loadSources: async () => [{ id: "source-1", name: "Jira" }],
       approve: async () => ({ outcome: "failed", failure: "Jira rejected the issue: Epic does not exist." }),
       respond: vi.fn(),
+      forkIntoTask: vi.fn(),
     };
     await act(async () => root.render(<JiraTaskProposalCards reportOverlay={vi.fn()} sessions={[session(proposal)]} actions={actions} selectSession={vi.fn()} started={vi.fn()} />));
     await act(async () => {});
@@ -107,7 +135,7 @@ describe("Jira task proposal card", () => {
 
   it("opens as a modal native overlay and hides until its Agent is selected again", async () => {
     const reportOverlay = vi.fn();
-    const actions: JiraTaskProposalActions = { loadSources: async () => [{ id: "source-1", name: "Jira" }], approve: vi.fn(), respond: vi.fn() };
+    const actions: JiraTaskProposalActions = { loadSources: async () => [{ id: "source-1", name: "Jira" }], approve: vi.fn(), respond: vi.fn(), forkIntoTask: vi.fn() };
     const render = (selectedSessionId?: string) => root.render(<JiraTaskProposalCards sessions={[session(proposal)]} selectedSessionId={selectedSessionId} actions={actions} selectSession={vi.fn()} started={vi.fn()} reportOverlay={reportOverlay} />);
     await act(async () => render("other"));
     expect(host.querySelector('[role="dialog"][aria-modal="true"]')).not.toBeNull();
@@ -121,7 +149,7 @@ describe("Jira task proposal card", () => {
 
   it("dismisses without feedback", async () => {
     const respond = vi.fn<JiraTaskProposalActions["respond"]>(async () => undefined);
-    const actions: JiraTaskProposalActions = { loadSources: async () => [{ id: "source-1", name: "Jira" }], approve: vi.fn(), respond };
+    const actions: JiraTaskProposalActions = { loadSources: async () => [{ id: "source-1", name: "Jira" }], approve: vi.fn(), respond, forkIntoTask: vi.fn() };
     await act(async () => root.render(<JiraTaskProposalCards reportOverlay={vi.fn()} sessions={[session(proposal)]} actions={actions} selectSession={vi.fn()} started={vi.fn()} />));
     await act(async () => {});
     await act(async () => [...host.querySelectorAll("button")].find((button) => button.textContent === "Dismiss")!.click());

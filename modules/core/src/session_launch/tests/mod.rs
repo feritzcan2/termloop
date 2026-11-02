@@ -4275,6 +4275,27 @@ fn agent_fork_plan_derives_private_source_context_without_persisting_a_parent() 
     );
     assert!(plan.resume_ref.is_none());
     assert_eq!(plan.fork_name.as_deref(), Some("Source fork-1"));
+    // A fork into another Task names both the Task and its first message,
+    // and the Task must have a launchable managed worktree.
+    for params in [
+        json!({ "sessionId": "source-agent", "taskId": "task-1" }),
+        json!({ "sessionId": "source-agent", "kickoffMessage": "Start" }),
+        json!({ "sessionId": "source-agent", "taskId": "task-1", "kickoffMessage": " " }),
+    ] {
+        assert!(matches!(
+            runtime.plan_agent_fork(params),
+            Err(CoreError::InvalidParams(field)) if field == "kickoffMessage"
+        ));
+    }
+    assert!(
+        runtime
+            .plan_agent_fork(json!({
+                "sessionId": "source-agent",
+                "taskId": "missing-task",
+                "kickoffMessage": "Start the issue",
+            }))
+            .is_err()
+    );
     let fork_instruction_source = |plan: &super::AgentLaunchPlan| {
         let source_ref = plan.fork_source_ref.clone().unwrap();
         let launch = super::resolve_interactive_agent_launch_with_transport(

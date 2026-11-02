@@ -503,7 +503,8 @@ export type DesktopApi = {
   sessionRelocateAgentToProject(sessionId: string, projectId: string, operationId: string, relocationTicket: string): Promise<Session>;
   sessionJiraTaskProposalApprove(params: SessionJiraTaskProposalApproveParams): Promise<SessionJiraTaskProposalApproveResult>;
   sessionJiraTaskProposalRespond(params: SessionJiraTaskProposalRespondParams): Promise<SessionJiraTaskProposalRespondResult>;
-  sessionForkAgent(sessionId: string): Promise<TaskControlDesktopResult<Session>>;
+  /** Forks the Agent; with a target, the fork starts in that Task's worktree with the kickoff as its first message. */
+  sessionForkAgent(sessionId: string, target?: { taskId: string; kickoffMessage: string }): Promise<TaskControlDesktopResult<Session>>;
   sessionRepairProviderHistory(sessionId: string): Promise<TaskControlDesktopResult<SessionRepairProviderHistoryResult>>;
   sessionHistoryList(projectId: string, force?: boolean, fillCache?: boolean): Promise<SessionHistoryListResult>;
   sessionConversationRead(projectId: string, sessionId: string, before?: number, subagentKey?: string): Promise<SessionConversationReadResult>;

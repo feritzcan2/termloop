@@ -53,6 +53,21 @@ pub struct JiraTaskProposalCreatePlan {
     project_id: String,
     title: String,
     brief: Option<String>,
+    start: JiraTaskProposalStart,
+    /// The Task whose worktree holds the proposing Agent's working directory.
+    source_task_id: Option<String>,
+}
+
+/// What follows a created issue, as the user chose on approval.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum JiraTaskProposalStart {
+    /// Only the issue; linked to the proposing Agent's Task when it has none.
+    IssueOnly,
+    /// A new Task started by the proposing Agent, or a fork of it when it
+    /// already works in another Task.
+    ProposingAgent,
+    /// A new Task started by a fresh Agent.
+    FreshAgent,
 }
 
 impl CoreRuntime {
@@ -165,6 +180,12 @@ impl CoreRuntime {
         let session_id = required(params, "sessionId")?;
         let proposal_id = required(params, "proposalId")?;
         let source_id = required(params, "sourceId")?;
+        let start = match params.get("start").and_then(Value::as_str) {
+            None | Some("proposingAgent") => JiraTaskProposalStart::ProposingAgent,
+            Some("freshAgent") => JiraTaskProposalStart::FreshAgent,
+            Some("issueOnly") => JiraTaskProposalStart::IssueOnly,
+            Some(_) => return Err(CoreError::InvalidParams("start".into())),
+        };
         let proposal = self
             .live_jira_task_proposal(&session_id)
             .filter(|proposal| proposal.proposal_id == proposal_id)
@@ -172,13 +193,14 @@ impl CoreRuntime {
         if proposal.state != JiraTaskProposalState::AwaitingUser {
             return Err(CoreError::InvalidParams("proposalId".into()));
         }
-        let project_id = self
+        let session = self
             .store
             .sessions()
             .iter()
             .find(|session| session.id == session_id)
-            .map(|session| session.project_id.clone())
             .ok_or(CoreError::NotFound)?;
+        let project_id = session.project_id.clone();
+        let source_task_id = self.task_holding_session_cwd(session);
         let source = self
             .store
             .task_source_configurations()
@@ -219,6 +241,8 @@ impl CoreRuntime {
             title: super::truncate_utf8(&fields.summary, TITLE_LIMIT),
             brief: Some(super::truncate_utf8(fields.description.trim(), BRIEF_LIMIT))
                 .filter(|brief| !brief.is_empty()),
+            start,
+            source_task_id,
         };
         let proposal = self
             .jira_task_proposals
@@ -235,8 +259,10 @@ impl CoreRuntime {
         Ok(plan)
     }
 
-    /// Applies the Jira outcome. A created issue always becomes a Task, even
-    /// when the Agent exited meanwhile, so the issue never goes untracked.
+    /// Applies the Jira outcome. Unless the user chose the issue only, a
+    /// created issue always becomes a Task, even when the Agent exited
+    /// meanwhile, so the issue never goes untracked. The proposing Agent hears
+    /// about the issue unless its own conversation moves into the new Task.
     pub fn apply_jira_task_proposal_creation(
         &mut self,
         plan: JiraTaskProposalCreatePlan,
@@ -273,6 +299,25 @@ impl CoreRuntime {
         };
         if matches_plan(self) {
             self.jira_task_proposals.remove(&plan.session_id);
+        }
+        let start_with = match plan.start {
+            JiraTaskProposalStart::IssueOnly => "none",
+            JiraTaskProposalStart::FreshAgent => "fresh",
+            JiraTaskProposalStart::ProposingAgent if plan.source_task_id.is_some() => "fork",
+            JiraTaskProposalStart::ProposingAgent => "relocate",
+        };
+        if start_with != "relocate" {
+            self.notify_jira_issue_created(&plan.session_id, &created);
+        }
+        if plan.start == JiraTaskProposalStart::IssueOnly {
+            let linked = self.link_issue_to_source_task(&plan, &created)?;
+            return Ok(json!({
+                "outcome": "created",
+                "taskId": linked,
+                "issueKey": created.key,
+                "issueUrl": created.url,
+                "startWith": start_with,
+            }));
         }
         if !self
             .store
@@ -332,7 +377,82 @@ impl CoreRuntime {
             "taskId": task_id,
             "issueKey": created.key,
             "issueUrl": created.url,
+            "startWith": start_with,
         }))
+    }
+
+    /// Links the created issue to the proposing Agent's Task when that Task
+    /// is still open, unarchived, and has no Jira issue, which promotes the
+    /// current work. Returns the linked Task.
+    fn link_issue_to_source_task(
+        &mut self,
+        plan: &JiraTaskProposalCreatePlan,
+        created: &JiraCreatedIssue,
+    ) -> Result<Option<String>, CoreError> {
+        let Some(task_id) =
+            plan.source_task_id.as_deref().filter(|task_id| {
+                self.store.tasks().iter().any(|task| {
+                    task.id == *task_id
+                        && task.project_id == plan.project_id
+                        && task.archived_at_epoch_ms.is_none()
+                }) && !self.store.issue_links().iter().any(|link| {
+                    link.task_id == *task_id && link.provider == IssueLinkProvider::Jira
+                })
+            })
+        else {
+            return Ok(None);
+        };
+        self.store
+            .insert_task_jira_issue_link(
+                &self.write_authority,
+                IssueLink {
+                    task_id: task_id.to_owned(),
+                    provider: IssueLinkProvider::Jira,
+                    external_ref: created.key.clone(),
+                    source_id: None,
+                    external_id: None,
+                    external_updated_at: None,
+                    url: Some(created.url.clone()),
+                    sync_authority: IssueLinkSyncAuthority::None,
+                },
+            )
+            .map_err(store_error)?;
+        Ok(Some(task_id.to_owned()))
+    }
+
+    /// Best effort: an Agent that exited meanwhile simply misses the notice.
+    fn notify_jira_issue_created(&mut self, session_id: &str, created: &JiraCreatedIssue) {
+        let running = self
+            .store
+            .sessions()
+            .iter()
+            .any(|session| session.id == session_id && session.lifecycle_state == "running");
+        if !running {
+            return;
+        }
+        if let Ok(prompt) =
+            termloop_invocation::jira_task_proposal_created_prompt(&created.key, &created.url)
+        {
+            let _ = self.submit_generated_terminal_input(session_id, prompt.terminal_submission());
+        }
+    }
+
+    /// The Task whose worktree contains the Session's working directory, the
+    /// same attachment that stops relocating the Session into another Task.
+    fn task_holding_session_cwd(&self, session: &termloop_domain::SessionRecord) -> Option<String> {
+        let cwd = crate::task_worktree::comparison_key(std::path::Path::new(&session.process.cwd))
+            .ok()?;
+        self.store
+            .tasks()
+            .iter()
+            .find(|task| {
+                task.project_id == session.project_id
+                    && task.worktree.as_ref().is_some_and(|worktree| {
+                        crate::task_worktree::comparison_key(std::path::Path::new(&worktree.path))
+                            .is_ok_and(|root| root.contains_or_equals(&cwd))
+                    })
+            })
+            .map(|task| task.id.clone())
     }
 
     /// Answers a pending proposal without creating it and tells the Agent.
@@ -700,6 +820,215 @@ mod tests {
         assert_eq!(
             link.url.as_deref(),
             Some("https://example.atlassian.net/browse/PAY-77")
+        );
+    }
+
+    fn approve_with(fixture: &mut Fixture, start: Option<&str>, task_id: &str, key: &str) -> Value {
+        fixture
+            .runtime
+            .propose_jira_task(TOKEN, &proposal(), 5)
+            .unwrap();
+        let mut params = approval(&fixture.runtime, "Retry captures once");
+        if let Some(start) = start {
+            params["start"] = json!(start);
+        }
+        let plan = fixture
+            .runtime
+            .plan_jira_task_proposal_approval(&params)
+            .unwrap();
+        fixture
+            .runtime
+            .apply_jira_task_proposal_creation(
+                plan,
+                Ok(JiraCreatedIssue {
+                    key: key.into(),
+                    url: format!("https://example.atlassian.net/browse/{key}"),
+                }),
+                task_id.into(),
+                10,
+            )
+            .unwrap()
+    }
+
+    /// A Task whose managed worktree is the given directory.
+    fn bind_task_worktree(runtime: &mut CoreRuntime, task_id: &str, path: &str) {
+        use termloop_domain::{
+            ManagedWorktreeProof, NormalizedWorktreeSpec, ProvisioningBranchMode,
+            ProvisioningStage, TaskBranchBinding, TaskWorktreeBinding,
+            WorktreeProvisioningOperation,
+        };
+        use termloop_store::ProvisioningCommit;
+        let project_id = runtime.store.projects()[0].id.clone();
+        runtime
+            .store
+            .insert_task(
+                &runtime.write_authority,
+                TaskRecord {
+                    id: task_id.into(),
+                    project_id: project_id.clone(),
+                    title: "Current work".into(),
+                    brief: None,
+                    developer_notes: Vec::new(),
+                    status: TaskStatus::Open,
+                    archived_at_epoch_ms: None,
+                    branch: None,
+                    worktree: None,
+                    worktree_generation: 0,
+                    steward_brief_markdown: String::new(),
+                    steward_brief_revision: 1,
+                    rank: 0,
+                    created_at_epoch_ms: 1,
+                    updated_at_epoch_ms: 1,
+                },
+            )
+            .unwrap();
+        let repository_root = format!("{path}-repo");
+        let operation_id = "provision-current-work";
+        let spec = NormalizedWorktreeSpec {
+            version: 1,
+            repository_root: repository_root.clone(),
+            repository_common_dir: format!("{repository_root}/.git"),
+            destination_path: path.into(),
+            branch_name: "task/current".into(),
+            branch_mode: ProvisioningBranchMode::Create,
+            base_ref: Some("refs/heads/main".into()),
+            base_oid: Some("a".repeat(40)),
+        };
+        runtime
+            .store
+            .begin_task_worktree_provisioning(
+                &runtime.write_authority,
+                WorktreeProvisioningOperation {
+                    operation_id: operation_id.into(),
+                    task_id: task_id.into(),
+                    project_id,
+                    spec: spec.clone(),
+                    stage: ProvisioningStage::Reserved,
+                    created_branch_ref: false,
+                    failure: None,
+                    started_at_epoch_ms: 2,
+                    updated_at_epoch_ms: 2,
+                },
+            )
+            .unwrap();
+        runtime
+            .store
+            .advance_task_worktree_provisioning(
+                &runtime.write_authority,
+                task_id,
+                operation_id,
+                ProvisioningStage::WorktreeAdded,
+                true,
+                3,
+            )
+            .unwrap();
+        runtime
+            .store
+            .commit_task_worktree_provisioning(
+                &runtime.write_authority,
+                task_id,
+                operation_id,
+                ProvisioningCommit {
+                    branch: TaskBranchBinding {
+                        repository_root: repository_root.clone(),
+                        name: "task/current".into(),
+                    },
+                    worktree: TaskWorktreeBinding { path: path.into() },
+                    proof: ManagedWorktreeProof {
+                        task_id: task_id.into(),
+                        operation_id: operation_id.into(),
+                        worktree_generation: 0,
+                        normalized_spec_version: 1,
+                        normalized_spec: spec,
+                        repository_common_dir: format!("{repository_root}/.git"),
+                        registered_worktree_path: path.into(),
+                        branch_ref: "refs/heads/task/current".into(),
+                    },
+                    updated_at_epoch_ms: 4,
+                },
+            )
+            .unwrap();
+        runtime
+            .store
+            .clear_task_worktree_provisioning(&runtime.write_authority, task_id, operation_id)
+            .unwrap();
+    }
+
+    fn task_count(fixture: &Fixture) -> usize {
+        fixture.runtime.store.tasks().len()
+    }
+
+    #[test]
+    fn the_start_choice_decides_how_the_client_starts_the_new_task() {
+        let mut fixture = fixture(true);
+        let relocated = approve_with(&mut fixture, None, "task-1", "PAY-1");
+        assert_eq!(relocated["startWith"], "relocate");
+        assert_eq!(relocated["taskId"], "task-1");
+        let fresh = approve_with(&mut fixture, Some("freshAgent"), "task-2", "PAY-2");
+        assert_eq!(fresh["startWith"], "fresh");
+        assert_eq!(fresh["taskId"], "task-2");
+        let mut bad = {
+            fixture
+                .runtime
+                .propose_jira_task(TOKEN, &proposal(), 5)
+                .unwrap();
+            approval(&fixture.runtime, "Retry")
+        };
+        bad["start"] = json!("later");
+        assert!(matches!(
+            fixture.runtime.plan_jira_task_proposal_approval(&bad),
+            Err(CoreError::InvalidParams(_))
+        ));
+        // Without a Task to promote, the issue stands alone.
+        let alone = approve_with(&mut fixture, Some("issueOnly"), "task-unused", "PAY-3");
+        assert_eq!(alone["startWith"], "none");
+        assert_eq!(alone["taskId"], Value::Null);
+        assert_eq!(task_count(&fixture), 2);
+    }
+
+    #[test]
+    fn a_task_attached_agent_forks_into_the_new_task_or_promotes_its_own() {
+        let mut fixture = fixture(true);
+        let cwd = fixture
+            .runtime
+            .store
+            .sessions()
+            .iter()
+            .find(|session| session.id == SESSION_ID)
+            .unwrap()
+            .process
+            .cwd
+            .clone();
+        bind_task_worktree(&mut fixture.runtime, "task-here", &cwd);
+        let forked = approve_with(&mut fixture, Some("proposingAgent"), "task-new", "PAY-5");
+        assert_eq!(forked["startWith"], "fork");
+        assert_eq!(forked["taskId"], "task-new");
+
+        let promoted = approve_with(&mut fixture, Some("issueOnly"), "task-unused", "PAY-6");
+        assert_eq!(promoted["startWith"], "none");
+        assert_eq!(promoted["taskId"], "task-here");
+        let tasks = task_count(&fixture);
+        let link = fixture
+            .runtime
+            .store
+            .issue_links()
+            .iter()
+            .find(|link| link.task_id == "task-here")
+            .unwrap();
+        assert_eq!(link.external_ref, "PAY-6");
+        // A Task that already has an issue keeps it.
+        let again = approve_with(&mut fixture, Some("issueOnly"), "task-unused", "PAY-7");
+        assert_eq!(again["taskId"], Value::Null);
+        assert_eq!(task_count(&fixture), tasks);
+        assert_eq!(
+            fixture
+                .runtime
+                .store
+                .issue_links()
+                .iter()
+                .filter(|link| link.task_id == "task-here")
+                .count(),
+            1
         );
     }
 

@@ -102,6 +102,9 @@ pub struct AgentLaunchPlan {
     fork_source_ref: Option<termloop_domain::ResumeRef>,
     fork_name: Option<String>,
     fork_worktree_plan: Option<TaskWorktreeLaunchPlan>,
+    /// The source's working directory when a fork starts in another Task's
+    /// worktree; otherwise the fork shares the source's directory.
+    fork_source_cwd: Option<String>,
     fork_worktree_observed: bool,
     /// Captured from the global fork preference when the fork is planned, so
     /// the inspected preview and the launch deliver the same instructions.
@@ -652,6 +655,7 @@ impl CoreRuntime {
             fork_source_ref: None,
             fork_name: None,
             fork_worktree_plan: None,
+            fork_source_cwd: None,
             fork_worktree_observed: false,
             fork_system_prompt: false,
             interactive_options: None,
@@ -722,20 +726,51 @@ impl CoreRuntime {
             .map_err(|_| CoreError::AgentForkUnavailable {
                 reason: crate::AgentForkUnavailableReason::CwdUnavailable,
             })?;
-        self.ensure_launch_not_reserved(Path::new(&cwd))?;
+        let target_task_id = params
+            .get("taskId")
+            .and_then(Value::as_str)
+            .filter(|task_id| !task_id.is_empty())
+            .map(str::to_owned);
+        let kickoff_message = params
+            .get("kickoffMessage")
+            .and_then(Value::as_str)
+            .filter(|message| !message.trim().is_empty())
+            .map(str::to_owned);
+        if target_task_id.is_some() != kickoff_message.is_some() {
+            return Err(CoreError::InvalidParams("kickoffMessage".into()));
+        }
+        // A fork into another Task starts in that Task's worktree with its
+        // kickoff, which is how an Agent already attached to a Task carries
+        // its conversation into a second one it cannot itself move into.
+        let target_worktree = match target_task_id.as_deref() {
+            Some(task_id) => {
+                let worktree_plan =
+                    self.plan_task_worktree_launch(json!({ "taskId": task_id }), false)?;
+                if worktree_plan.project_id != source.project_id {
+                    return Err(CoreError::CapabilityDenied);
+                }
+                Some(worktree_plan)
+            }
+            None => None,
+        };
+        let launch_cwd = target_worktree
+            .as_ref()
+            .map_or_else(|| cwd.clone(), |worktree_plan| worktree_plan.cwd.clone());
+        self.ensure_launch_not_reserved(Path::new(&launch_cwd))?;
         let mut plan = self.plan_agent_launch(json!({
             "projectId": source.project_id,
-            "cwd": cwd,
+            "cwd": launch_cwd,
             "agentId": agent_id,
         }))?;
         plan.set_account(self.session_agent_account(&source)?);
         plan.interactive_options = Some(source.launch_selection.clone());
         plan.resume_ref = None;
         plan.fork_name = Some(fork_session_name(&source, &agent_id));
-        plan.fork_source_session_id = Some(source.id);
-        plan.fork_source_ref = Some(source_ref);
         plan.fork_system_prompt = self.store.agent_fork_preference().system_prompt_enabled;
-        if let Some(guard) = source.resume_launch_guard {
+        let worktree_plan = if let Some(worktree_plan) = target_worktree {
+            plan.fork_source_cwd = Some(cwd);
+            Some(worktree_plan)
+        } else if let Some(guard) = source.resume_launch_guard.as_ref() {
             let worktree_plan =
                 self.plan_task_worktree_launch(json!({ "taskId": guard.task_id }), false)?;
             if worktree_plan.cwd != guard.path
@@ -748,6 +783,13 @@ impl CoreRuntime {
                     reason: TaskWorktreeUnavailableReason::ManagedProofMismatch,
                 });
             }
+            Some(worktree_plan)
+        } else {
+            None
+        };
+        plan.fork_source_session_id = Some(source.id);
+        plan.fork_source_ref = Some(source_ref);
+        if let Some(worktree_plan) = worktree_plan {
             plan.task_guard = Some(TaskLaunchGuard {
                 task_id: worktree_plan.task_id.clone(),
                 managed_worktree_operation_id: worktree_plan.managed_worktree_operation_id.clone(),
@@ -758,7 +800,10 @@ impl CoreRuntime {
             });
             plan.fork_worktree_plan = Some(worktree_plan);
         }
-        Ok(plan)
+        match (target_task_id, kickoff_message) {
+            (Some(task_id), Some(message)) => self.attach_task_kickoff(plan, &task_id, &message),
+            _ => Ok(plan),
+        }
     }
 
     pub fn preview_quick_action(&mut self, params: Value) -> Result<Value, CoreError> {
@@ -1797,7 +1842,7 @@ impl CoreRuntime {
                 })?;
             if source.kind != SessionKind::Agent
                 || source.project_id != plan.project_id
-                || source.process.cwd != plan.cwd
+                || source.process.cwd != *plan.fork_source_cwd.as_ref().unwrap_or(&plan.cwd)
                 || source.process.agent_id.as_deref() != Some(plan.agent_id.as_str())
             {
                 return Err(CoreError::AgentForkUnavailable {
@@ -1813,7 +1858,7 @@ impl CoreRuntime {
                 .map_err(|_| CoreError::AgentForkUnavailable {
                     reason: crate::AgentForkUnavailableReason::CwdUnavailable,
                 })?;
-            if current_cwd != Path::new(&plan.cwd) {
+            if current_cwd != Path::new(plan.fork_source_cwd.as_ref().unwrap_or(&plan.cwd)) {
                 return Err(CoreError::AgentForkUnavailable {
                     reason: crate::AgentForkUnavailableReason::CwdUnavailable,
                 });

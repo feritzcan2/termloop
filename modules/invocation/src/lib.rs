@@ -11,7 +11,7 @@ mod project_workflow;
 pub use agent_fork::{agent_fork_notice_template, interactive_agent_fork_for_conversation};
 pub use jira_task::{
     JIRA_TASK_PROPOSAL_FEEDBACK_MAX_CHARS, JiraTaskProposalAnswer, jira_task_intake_prompt,
-    jira_task_proposal_answer_prompt,
+    jira_task_proposal_answer_prompt, jira_task_proposal_created_prompt,
 };
 pub use personal_agent::personal_agent_for_conversation;
 pub use project_workflow::{
@@ -285,6 +285,7 @@ pub fn prompt_templates() -> &'static [PromptTemplate] {
         jira_task::JIRA_TASK_INTAKE_TEMPLATE,
         jira_task::JIRA_TASK_PROPOSAL_REVISE_TEMPLATE,
         jira_task::JIRA_TASK_PROPOSAL_DISMISS_TEMPLATE,
+        jira_task::JIRA_TASK_PROPOSAL_CREATED_TEMPLATE,
         AGENT_MENU_ASK_TO_TEMPLATE,
         AGENT_MENU_HANDOVER_TO_TEMPLATE,
         STEWARD_TASK_ASSIGNMENT_TEMPLATE,

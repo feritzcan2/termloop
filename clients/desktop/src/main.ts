@@ -1516,8 +1516,8 @@ handleIpc(
   "termloop:session-jira-task-proposal-respond",
   (_event, params: SessionJiraTaskProposalRespondParams) => controlCall("session.jiraTaskProposalRespond", params),
 );
-handleIpc("termloop:session-fork-agent", (_event, sessionId: string) =>
-  typedControlCall("session.forkAgent", { sessionId }),
+handleIpc("termloop:session-fork-agent", (_event, sessionId: string, target?: { taskId: string; kickoffMessage: string }) =>
+  typedControlCall("session.forkAgent", target ? { sessionId, taskId: target.taskId, kickoffMessage: target.kickoffMessage } : { sessionId }),
 );
 handleIpc("termloop:session-repair-provider-history", (_event, sessionId: string) =>
   typedControlCall("session.repairProviderHistory", {

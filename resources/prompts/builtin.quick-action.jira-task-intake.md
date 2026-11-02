@@ -1,7 +1,7 @@
 # Quick Action Jira issue and Task
 
 - id: `builtin.quick-action.jira-task-intake`
-- version: `1`
+- version: `2`
 - binding: `prompt`
 
 {{prompt}}
@@ -24,5 +24,7 @@ TermLoop Task before it starts.
 4. Stop and wait. The user reviews the proposal in TermLoop. Feedback arrives
    as a message; propose again with the corrections. If the user dismisses the
    proposal, continue the work here without a Jira issue.
-5. After approval, TermLoop creates the issue and the Task and resumes this
-   conversation in the Task worktree. Start the work there.
+5. After approval, TermLoop creates the issue. If it also moves this
+   conversation into a Task worktree, a visible notice says so; start the work
+   there. Otherwise a visible message names the created issue and says how to
+   continue.

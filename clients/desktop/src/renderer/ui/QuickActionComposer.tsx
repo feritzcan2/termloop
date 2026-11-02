@@ -396,6 +396,12 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
               <button type="button" aria-label={`Remove pasted image ${index + 1}`} onClick={() => { void removeAttachment(image.id); }}>×</button>
             </div>)}
           </div> : null}
+        </main>
+        <div className="quick-action-options">
+          <label className="agent"><span>PROVIDER</span><em aria-hidden="true">{agentId}</em><select aria-label="Provider" value={agentId} onChange={(event) => setAgentId(event.target.value as AgentId)}>{availableAgents.map((agent) => <option key={agent} value={agent}>{agent}</option>)}</select></label>
+          <label className={permission === "bypassPermissions" ? "danger" : permission === "plan" ? "plan" : permission === "acceptEdits" ? "accept" : undefined}><span>PERM</span><em aria-hidden="true">{permissionLabel(agentId, permission)}</em><select aria-label="Permission" value={permission} onChange={(event) => setPermission(event.target.value as Permission)}>{permissions.map((value) => <option key={value} value={value}>{permissionLabel(agentId, value as Permission)}</option>)}</select></label>
+          <label><span>MODEL</span><em aria-hidden="true">{modelLabel(agentId, model)}</em><select aria-label="Model" value={model} onChange={(event) => setModel(event.target.value)}>{models.map((value) => <option key={value} value={value}>{modelLabel(agentId, value)}</option>)}</select></label>
+          <label><span>REASON</span><em aria-hidden="true">{reasoning}</em><select aria-label="Reasoning" value={reasoning} onChange={(event) => setReasoning(event.target.value as Reasoning)}>{reasoningOptions.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
           {jiraTaskOffered ? <div className="quick-action-jira-task">
             <label>
               <input type="checkbox" checked={jiraTaskRequested} disabled={running} onChange={(event) => setJiraTaskRequested(event.target.checked)} />
@@ -404,13 +410,6 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
             <span className="quick-action-help" tabIndex={0} role="img" aria-label="What Create Jira issue and task does" aria-describedby="quick-action-jira-task-help">?</span>
             <span id="quick-action-jira-task-help" role="tooltip">The agent first works out the request, finds the Jira project and epic with its own Jira tools, and proposes an issue. You review, edit, or send feedback on the proposal. When you approve, TermLoop creates the Jira issue and a linked Task, then moves the agent into the Task worktree to start the work.</span>
           </div> : null}
-        </main>
-        <div className="quick-action-options">
-          <label className="agent"><span>PROVIDER</span><em aria-hidden="true">{agentId}</em><select aria-label="Provider" value={agentId} onChange={(event) => setAgentId(event.target.value as AgentId)}>{availableAgents.map((agent) => <option key={agent} value={agent}>{agent}</option>)}</select></label>
-          <label className={permission === "bypassPermissions" ? "danger" : permission === "plan" ? "plan" : permission === "acceptEdits" ? "accept" : undefined}><span>PERM</span><em aria-hidden="true">{permissionLabel(agentId, permission)}</em><select aria-label="Permission" value={permission} onChange={(event) => setPermission(event.target.value as Permission)}>{permissions.map((value) => <option key={value} value={value}>{permissionLabel(agentId, value as Permission)}</option>)}</select></label>
-          <label><span>MODEL</span><em aria-hidden="true">{modelLabel(agentId, model)}</em><select aria-label="Model" value={model} onChange={(event) => setModel(event.target.value)}>{models.map((value) => <option key={value} value={value}>{modelLabel(agentId, value)}</option>)}</select></label>
-          <label><span>REASON</span><em aria-hidden="true">{reasoning}</em><select aria-label="Reasoning" value={reasoning} onChange={(event) => setReasoning(event.target.value as Reasoning)}>{reasoningOptions.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-          {memory.presets[agentId] && !selectedProfile ? <small>restored from last run</small> : null}
         </div>
         {loadAccounts && ['codex', 'claude'].includes(agentId) ? <div className="quick-action-account">
           <label htmlFor="quick-action-account">Account</label>

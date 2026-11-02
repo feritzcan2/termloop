@@ -2598,14 +2598,27 @@ export function Shell(props: ShellProps) {
         reportOverlay={setJiraProposalOverlayOpen}
         actions={props.jiraTaskProposals}
         selectSession={selectSession}
-        started={(session, approval, summary) => {
+        started={(session, { approval, summary, kickoffMessage }) => {
+          const { issueKey, taskId, startWith } = approval;
+          if (startWith === "none" || !taskId) {
+            props.reportMessage?.(taskId ? `Created ${issueKey} and linked it to the agent's Task.` : `Created ${issueKey}.`);
+            return;
+          }
           const project = props.selectedProject;
           if (!project || project.id !== session.project_id || !project.folder_path.trim()) return;
-          void props.listProjectLocalBranches(project.id).then((branches) => {
-            const params = jiraTaskWorktreeParams(project.id, project.folder_path, approval.taskId, approval.issueKey, summary, branches);
-            if (typeof params === "string") props.reportMessage?.(`${approval.issueKey} was created, but its worktree could not start: ${params}`);
-            else beginBackgroundRelocation(session.id, params, "resume");
-          }).catch((cause: unknown) => props.reportMessage?.(`${approval.issueKey} was created, but its worktree could not start: ${cause instanceof Error ? cause.message : String(cause)}`));
+          const failed = (reason: string) => props.reportMessage?.(`${issueKey} was created, but its Task could not start: ${reason}`);
+          void props.listProjectLocalBranches(project.id).then(async (branches) => {
+            const params = jiraTaskWorktreeParams(project.id, project.folder_path, taskId, issueKey, summary, branches);
+            if (typeof params === "string") return failed(params);
+            if (startWith === "relocate") return beginBackgroundRelocation(session.id, params, "resume");
+            const provisioning = await props.provisionTaskWorktree(params);
+            if (provisioning) return failed(provisioning);
+            const agentId = session.process.agent_id;
+            const launch = startWith === "fork"
+              ? await props.jiraTaskProposals!.forkIntoTask(session.id, taskId, kickoffMessage)
+              : agentId ? await props.launchTaskAgent(taskId, agentId, undefined, undefined, undefined, kickoffMessage) : "The proposing Session has no agent.";
+            if (launch) failed(launch);
+          }).catch((cause: unknown) => failed(cause instanceof Error ? cause.message : String(cause)));
         }}
       /> : null}
       <BackgroundSessionRelocation

@@ -1183,8 +1183,21 @@ export function DesktopApp() {
       .map((source) => ({ id: source.id, name: source.name })),
     approve: async (sessionId, proposalId, edit) => {
       const result = await sourceApiForSession(sessionId).sessionJiraTaskProposalApprove({ sessionId, proposalId, ...edit });
-      if (result.outcome === "created") await refreshTaskProjection([result.taskId]);
+      if (result.outcome === "created" && result.taskId) await refreshTaskProjection([result.taskId]);
       return result;
+    },
+    forkIntoTask: async (sessionId, taskId, kickoffMessage) => {
+      try {
+        const outcome = await sourceApiForSession(sessionId).sessionForkAgent(sessionId, { taskId, kickoffMessage });
+        await refreshProjection();
+        if (!outcome.ok) return agentForkErrorMessage(outcome);
+        presentationStore.getState().selectProject(outcome.result.project_id);
+        presentationStore.getState().selectSession(outcome.result.project_id, outcome.result.id);
+        focusTerminalSoon(outcome.result.id);
+        return undefined;
+      } catch (error) {
+        return controlErrorMessage(error);
+      }
     },
     respond: async (sessionId, proposalId, decision, feedback) => {
       try {

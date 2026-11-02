@@ -7754,6 +7754,18 @@
         "sessionId": {
           "type": "string",
           "minLength": 1
+        },
+        "taskId": {
+          "description": "Start the fork in this Task's managed worktree instead of the source's working directory. Requires kickoffMessage.",
+          "type": "string",
+          "minLength": 1
+        },
+        "kickoffMessage": {
+          "description": "The first message a fork started in taskId receives, with the Task context.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "pattern": "\\S"
         }
       }
     },
@@ -9204,7 +9216,7 @@
     "sessionJiraTaskProposalApproveParams": {
       "x-codegen": true,
       "x-codegen-name": "SessionJiraTaskProposalApproveParams",
-      "description": "Create the proposed Jira issue as the user edited it, through the named Jira Task Source of the Session's Project, then a Task linked to it.",
+      "description": "Create the proposed Jira issue as the user edited it, through the named Jira Task Source of the Session's Project. start chooses what follows: issueOnly links the issue to the Task the proposing Agent works in when that Task has no Jira issue yet and creates no Task; proposingAgent and freshAgent create a Task linked to the issue, which the client then starts with the proposing Agent or a fresh Agent. Omitted start means proposingAgent.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -9254,6 +9266,10 @@
         "description": {
           "type": "string",
           "maxLength": 32767
+        },
+        "start": {
+          "type": "string",
+          "enum": ["issueOnly", "proposingAgent", "freshAgent"]
         }
       }
     },
@@ -9265,14 +9281,20 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["outcome", "taskId", "issueKey", "issueUrl"],
+          "required": ["outcome", "taskId", "issueKey", "issueUrl", "startWith"],
           "properties": {
             "outcome": {
               "const": "created"
             },
             "taskId": {
-              "type": "string",
+              "description": "The created Task, or for issueOnly the existing Task the issue was linked to; null when no Task holds the issue.",
+              "type": ["string", "null"],
               "minLength": 1
+            },
+            "startWith": {
+              "description": "How the client starts the created Task: relocate moves the proposing Agent into its worktree, fork starts a fork of the Task-attached proposing Agent there, fresh launches a new Task Agent, and none starts nothing.",
+              "type": "string",
+              "enum": ["none", "relocate", "fork", "fresh"]
             },
             "issueKey": {
               "type": "string",
