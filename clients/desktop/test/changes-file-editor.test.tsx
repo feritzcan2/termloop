@@ -116,6 +116,37 @@ describe("Editing local changes in their diff", () => {
     expect(warn).toHaveBeenCalledWith(expect.stringMatching(/^\[changes-diag\] .*"originalLines":3,"modifiedLines":1,"identical":false/));
   });
 
+  it("re-reads a tab opened before the change instead of diffing its stale content", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const editor = new FileEditor({ read, write: (path) => write(path) });
+    read.mockResolvedValueOnce({ path: "src/alpha.ts", state: "text", content: "x\nline 2\n", version: "1".repeat(64) });
+    editor.open("src/alpha.ts");
+    await settle();
+    let finishRead!: () => void;
+    read.mockImplementationOnce((path) => new Promise((resolve) => {
+      finishRead = () => resolve({ path, state: "text", content: "y\nline 2\n", version: "3".repeat(64) });
+    }));
+    const list = vi.fn<ChangesOverlayProps["list"]>(async () => changeList("local-1", [entry("a-1", "src/alpha.ts", "unstaged")]));
+    await act(async () => root.render(<Harness editor={editor} list={list} />));
+    await settle();
+    const diff = fake.current!.state.diff!;
+    expect(diff.modified.model?.value).toBe("x\nline 2\n");
+
+    // The stale copy matches the original; that first empty result is not final.
+    await act(async () => fake.current!.finishDiff([]));
+    await settle();
+    expect(container.querySelector(".changes-full-file-status")).toBeNull();
+
+    await act(async () => finishRead());
+    await settle();
+    expect(diff.modified.model?.value).toBe("y\nline 2\n");
+    await act(async () => fake.current!.finishDiff([{}]));
+    await settle();
+    expect(container.querySelector(".changes-diff-scroll")).toBeNull();
+    expect(container.querySelector(".changes-full-file-status")).toBeNull();
+    expect(warn).not.toHaveBeenCalled();
+  });
+
   it("trusts only a computed, non-empty first diff", () => {
     expect(monacoDiffFailure([{}], "a", "b", true)).toBeUndefined();
     expect(monacoDiffFailure([], "same", "same", false)).toBeUndefined();

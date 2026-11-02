@@ -70,10 +70,13 @@ export function ChangesDiffEditor({ editing, path, original, viewType, fullFile,
   firstDiffRef.current = { expectsChanges, diffFailed };
 
   // Viewing a change opens its file only for as long as it is shown, unless
-  // it was already open or still holds unsaved edits.
+  // it was already open or still holds unsaved edits. A tab that was already
+  // open may hold content from before the change was made (an agent edited
+  // the file since), so a clean one re-reads the file.
   useEffect(() => {
     const alreadyOpen = editor.tab(path) !== undefined;
     editor.open(path);
+    if (alreadyOpen) editor.revalidate(path);
     return () => { if (!alreadyOpen && !editor.tab(path)?.dirty) editor.close(path); };
   }, [editor, path]);
 
@@ -104,19 +107,22 @@ export function ChangesDiffEditor({ editing, path, original, viewType, fullFile,
       });
       commentGutter(monaco, diff.getOriginalEditor(), "old", (line) => openLineReviewRef.current(line));
       commentGutter(monaco, modifiedEditor, "new", (line) => openLineReviewRef.current(line));
-      // Only the first result is checked: later edits may legitimately
-      // remove every difference.
+      // Only the first trustworthy result is checked: later edits may
+      // legitimately remove every difference. Identical texts are not final
+      // before the timeout, because a re-read of a stale tab or the patch
+      // that says whether changes are expected may still be on its way.
       let checked = false;
       let timer: ReturnType<typeof setTimeout> | undefined;
       let firstResult: { dispose(): void } | undefined;
-      const check = () => {
+      const check = (final: boolean) => {
         if (checked || disposed) return;
-        checked = true;
-        clearTimeout(timer);
-        firstResult?.dispose();
         const lineChanges = diff.getLineChanges();
         const originalText = originalModel.getValue();
         const modifiedText = modifiedModel.getValue();
+        if (!final && lineChanges?.length === 0 && originalText === modifiedText) return;
+        checked = true;
+        clearTimeout(timer);
+        firstResult?.dispose();
         const reason = monacoDiffFailure(lineChanges, originalText, modifiedText, firstDiffRef.current.expectsChanges);
         if (!reason) return;
         console.warn(`[changes-diag] ${JSON.stringify({
@@ -126,8 +132,8 @@ export function ChangesDiffEditor({ editing, path, original, viewType, fullFile,
         })}`);
         firstDiffRef.current.diffFailed(reason);
       };
-      firstResult = diff.onDidUpdateDiff(check);
-      timer = setTimeout(check, MONACO_DIFF_TIMEOUT_MS);
+      firstResult = diff.onDidUpdateDiff(() => check(false));
+      timer = setTimeout(() => check(true), MONACO_DIFF_TIMEOUT_MS);
       created = { dispose: () => { clearTimeout(timer); firstResult?.dispose(); diff.dispose(); } };
       setInstance({ monaco, diff });
     }, (error: unknown) => {
