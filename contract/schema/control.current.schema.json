@@ -17744,13 +17744,19 @@
       "additionalProperties": false,
       "required": [
         "systemPromptEnabled",
-        "systemPrompt"
+        "systemPrompt",
+        "activeSourcePrompt"
       ],
       "properties": {
         "systemPromptEnabled": {
           "type": "boolean"
         },
         "systemPrompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536
+        },
+        "activeSourcePrompt": {
           "type": "string",
           "minLength": 1,
           "maxLength": 65536

@@ -8,7 +8,10 @@ mod playbook_evaluation;
 mod profiles;
 pub use playbook_evaluation::playbook_evaluator_for_conversation;
 mod project_workflow;
-pub use agent_fork::{agent_fork_notice_template, interactive_agent_fork_for_conversation};
+pub use agent_fork::{
+    agent_fork_active_source_template, agent_fork_notice_template,
+    interactive_agent_fork_for_conversation,
+};
 pub use jira_task::{
     JIRA_TASK_PROPOSAL_FEEDBACK_MAX_CHARS, JiraTaskProposalAnswer, jira_task_intake_prompt,
     jira_task_proposal_answer_prompt, jira_task_proposal_created_prompt,
@@ -250,6 +253,7 @@ pub fn prompt_templates() -> &'static [PromptTemplate] {
     &[
         INTERACTIVE_AGENT_TEMPLATE,
         agent_fork::AGENT_FORK_TEMPLATE,
+        agent_fork::AGENT_FORK_ACTIVE_SOURCE_TEMPLATE,
         QUICK_ACTION_TEMPLATE,
         personal_agent::PERSONAL_AGENT_TEMPLATE,
         profiles::SCATTERED_ORCHESTRATION_FINDER_TEMPLATE,

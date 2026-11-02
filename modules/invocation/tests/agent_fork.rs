@@ -1,8 +1,8 @@
 use termloop_domain::{AgentLaunchSelection, ResumeProvider, ResumeRef};
 use termloop_invocation::{
     AgentConversationLaunch, AgentMcpLaunch, AgentMcpProfile, AgentObservationLaunch,
-    AgentObservationLaunchTransport, InvocationError, agent_fork_notice_template,
-    interactive_agent_fork_for_conversation,
+    AgentObservationLaunchTransport, InvocationError, agent_fork_active_source_template,
+    agent_fork_notice_template, interactive_agent_fork_for_conversation,
 };
 
 const SOURCE_SESSION_ID: &str = "8c1d9a4e-6f0b-4a8e-9a43-1b2c3d4e5f60";
@@ -28,11 +28,11 @@ fn fork_notice_is_delivered_as_instructions_and_matches_the_preview() {
         claude_config_path: "/tmp/claude-mcp.json",
         profile: AgentMcpProfile::Interactive,
     };
-    for (agent, with_mcp) in [
-        ("codex", false),
-        ("claude", false),
-        ("codex", true),
-        ("claude", true),
+    for (agent, with_mcp, source_active) in [
+        ("codex", false, true),
+        ("claude", false, false),
+        ("codex", true, false),
+        ("claude", true, true),
     ] {
         let source_ref = source_ref(agent);
         let launch = interactive_agent_fork_for_conversation(
@@ -40,6 +40,7 @@ fn fork_notice_is_delivered_as_instructions_and_matches_the_preview() {
             "/tmp",
             &selection,
             SOURCE_SESSION_ID,
+            source_active,
             AgentConversationLaunch::Fork {
                 source_ref: &source_ref,
             },
@@ -60,8 +61,13 @@ fn fork_notice_is_delivered_as_instructions_and_matches_the_preview() {
             .iter()
             .find(|part| part.kind == "providerInstructions")
             .unwrap();
-        assert_eq!(part.source, "resources/prompts/builtin.agent.fork@1");
+        assert_eq!(part.source, "resources/prompts/builtin.agent.fork@2");
         let instructions = &part.content;
+        // Only a source that may still be working earns the concurrency warning.
+        assert_eq!(
+            instructions.ends_with(agent_fork_active_source_template().authored_body),
+            source_active
+        );
         assert!(instructions.contains(&format!("Source Session ID: `{SOURCE_SESSION_ID}`")));
         assert!(!instructions.contains("{{"));
         // Codex takes fresh developer instructions, so the interactive protocol
@@ -134,6 +140,7 @@ fn fork_notice_template_is_visible_and_rejects_invalid_source_ids() {
                 "/tmp",
                 &selection,
                 invalid,
+                true,
                 AgentConversationLaunch::Fork {
                     source_ref: &source_ref,
                 },

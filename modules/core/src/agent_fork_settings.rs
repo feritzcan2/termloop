@@ -15,6 +15,7 @@ impl CoreRuntime {
         json!({
             "systemPromptEnabled": preference.system_prompt_enabled,
             "systemPrompt": termloop_invocation::agent_fork_notice_template().authored_body,
+            "activeSourcePrompt": termloop_invocation::agent_fork_active_source_template().authored_body,
         })
     }
 
@@ -60,6 +61,12 @@ mod tests {
                 .as_str()
                 .unwrap()
                 .contains("{{source_session_id}}")
+        );
+        assert!(
+            initial["activeSourcePrompt"]
+                .as_str()
+                .unwrap()
+                .contains("still working")
         );
         assert!(matches!(
             runtime.handle("agent.forkSettingsSet", json!({})),

@@ -102,6 +102,10 @@ function AgentForkSettingsPanel({ actions, profileId }: { actions: AgentForkSett
         <figcaption>Instructions added to new forks. TermLoop fills in the source Session ID.</figcaption>
         <pre aria-label="Fork system prompt">{settings.systemPrompt}</pre>
       </figure>
+      <figure className="agent-fork-prompt">
+        <figcaption>Added after it only when the source Agent is still working at fork time.</figcaption>
+        <pre aria-label="Fork active source prompt">{settings.activeSourcePrompt}</pre>
+      </figure>
       {saveError ? <p className="settings-error" role="alert">Could not save Agent settings: {saveError}</p> : null}
       <p className="settings-footnote">Changes apply to forks started afterwards. Running forks keep the instructions they started with.</p>
     </section>

@@ -4319,8 +4319,11 @@ fn agent_fork_plan_derives_private_source_context_without_persisting_a_parent() 
             .map(|part| (part.source.clone(), part.content.clone()))
     };
     let (source, notice) = fork_instruction_source(&plan).expect("fork notice is on by default");
-    assert_eq!(source, "resources/prompts/builtin.agent.fork@1");
+    assert_eq!(source, "resources/prompts/builtin.agent.fork@2");
     assert!(notice.contains("Source Session ID: `source-agent`"));
+    // A running source with no settled observation may still be editing.
+    assert!(plan.fork_source_active);
+    assert!(notice.contains("was still working when this fork started"));
     runtime
         .handle(
             "agent.forkSettingsSet",
@@ -4368,11 +4371,11 @@ fn agent_fork_plan_derives_private_source_context_without_persisting_a_parent() 
     runtime.configure_agent_observations(transport);
     let projected_exited = runtime.list_sessions().unwrap();
     assert_eq!(projected_exited[0]["forkable"], true);
-    assert!(
-        runtime
-            .plan_agent_fork(json!({ "sessionId": "source-agent" }))
-            .is_ok()
-    );
+    // An exited source cannot change anything, so the fork is not warned.
+    let exited_plan = runtime
+        .plan_agent_fork(json!({ "sessionId": "source-agent" }))
+        .unwrap();
+    assert!(!exited_plan.fork_source_active);
 }
 
 #[test]

@@ -11,6 +11,8 @@ const local: ConnectionProfileSummary = {
   endpoint: "", enabled: true, persistence: "local", state: "connected",
 };
 const PROMPT = "This Session is a fork.\n\n- Source Session ID: `{{source_session_id}}`";
+const ACTIVE = "The source Agent was still working when this fork started.";
+const SETTINGS = { systemPrompt: PROMPT, activeSourcePrompt: ACTIVE };
 
 let host: HTMLDivElement;
 let root: Root;
@@ -32,13 +34,14 @@ const toggle = () => host.querySelector<HTMLButtonElement>('button[role="switch"
 describe("Agent fork settings", () => {
   it("shows the daemon's fork prompt and saves the opt-out to that computer", async () => {
     const actions: AgentForkSettingsActions = {
-      get: vi.fn(async () => ({ systemPromptEnabled: true, systemPrompt: PROMPT })),
-      set: vi.fn(async (_profileId, params) => ({ ...params, systemPrompt: PROMPT })),
+      get: vi.fn(async () => ({ systemPromptEnabled: true, ...SETTINGS })),
+      set: vi.fn(async (_profileId, params) => ({ ...params, ...SETTINGS })),
     };
     await render(actions);
     expect(actions.get).toHaveBeenCalledWith("local");
     expect(toggle().getAttribute("aria-checked")).toBe("true");
     expect(host.querySelector('pre[aria-label="Fork system prompt"]')?.textContent).toBe(PROMPT);
+    expect(host.querySelector('pre[aria-label="Fork active source prompt"]')?.textContent).toBe(ACTIVE);
 
     await act(async () => toggle().click());
     expect(actions.set).toHaveBeenCalledWith("local", { systemPromptEnabled: false });
@@ -47,7 +50,7 @@ describe("Agent fork settings", () => {
 
   it("restores the previous value when saving fails", async () => {
     const actions: AgentForkSettingsActions = {
-      get: vi.fn(async () => ({ systemPromptEnabled: true, systemPrompt: PROMPT })),
+      get: vi.fn(async () => ({ systemPromptEnabled: true, ...SETTINGS })),
       set: vi.fn(async () => { throw new Error("daemon offline"); }),
     };
     await render(actions);

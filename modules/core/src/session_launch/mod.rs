@@ -109,6 +109,9 @@ pub struct AgentLaunchPlan {
     /// Captured from the global fork preference when the fork is planned, so
     /// the inspected preview and the launch deliver the same instructions.
     fork_system_prompt: bool,
+    /// Whether the source was still working when the fork was planned, so
+    /// the notice warns about concurrent edits only when they can happen.
+    fork_source_active: bool,
     interactive_options: Option<AgentLaunchSelection>,
     quick_action: Option<QuickActionLaunch>,
     /// Set only for an Improve-with-agent launch against an existing
@@ -658,6 +661,7 @@ impl CoreRuntime {
             fork_source_cwd: None,
             fork_worktree_observed: false,
             fork_system_prompt: false,
+            fork_source_active: false,
             interactive_options: None,
             quick_action: None,
             improver_configuration_id: None,
@@ -767,6 +771,7 @@ impl CoreRuntime {
         plan.resume_ref = None;
         plan.fork_name = Some(fork_session_name(&source, &agent_id));
         plan.fork_system_prompt = self.store.agent_fork_preference().system_prompt_enabled;
+        plan.fork_source_active = self.agent_session_may_still_act(&source);
         let worktree_plan = if let Some(worktree_plan) = target_worktree {
             plan.fork_source_cwd = Some(cwd);
             Some(worktree_plan)
@@ -2777,6 +2782,7 @@ fn resolve_interactive_agent_launch_with_transport(
             &plan.cwd,
             options,
             source_session_id,
+            plan.fork_source_active,
             conversation,
             observation,
             mcp,

@@ -2322,6 +2322,33 @@ impl CoreRuntime {
         Ok(observation_projection_changed(previous, next))
     }
 
+    /// True when a live Agent Session may still change shared state on its
+    /// own: it is working, waiting on a permission, compacting, resting with
+    /// background work or a scheduled wake, or not yet observed. An idle,
+    /// failed, interrupted, or exited Session only acts on a new user message.
+    pub(crate) fn agent_session_may_still_act(
+        &self,
+        session: &termloop_domain::SessionRecord,
+    ) -> bool {
+        if !matches!(session.lifecycle_state.as_str(), "running" | "resuming") {
+            return false;
+        }
+        let Some(capability) = self.agent_observations.get(&session.id) else {
+            return true;
+        };
+        match capability.observation.map(|observation| observation.state) {
+            None
+            | Some(
+                AgentState::Unknown
+                | AgentState::Working
+                | AgentState::AwaitingInput
+                | AgentState::Compacting,
+            ) => true,
+            Some(AgentState::Idle) => !capability.pending_wakes.is_empty(),
+            Some(AgentState::Failed | AgentState::Interrupted | AgentState::Exited) => false,
+        }
+    }
+
     pub fn agent_status_list(&self) -> Result<Value, CoreError> {
         self.agent_status_list_for_project(None)
     }

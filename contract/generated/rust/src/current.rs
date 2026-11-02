@@ -240,7 +240,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:16de4c5baf8a40f581632b6ac700afc41da23ddacab7ca3faca2a1808ef8de4f";
+    "sha256:55ec006553dc4c39c99617c0fadc1e0abdf91604d44f3f632fcdce4fafef6c9d";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -7970,6 +7970,8 @@ pub struct AgentForkSettingsResult {
     pub system_prompt_enabled: bool,
     #[serde(rename = "systemPrompt")]
     pub system_prompt: String,
+    #[serde(rename = "activeSourcePrompt")]
+    pub active_source_prompt: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -30186,9 +30188,15 @@ fn validate_agent_fork_settings_result(value: &Value) -> bool {
                     .as_str()
                     .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 65536)
             })
-            && object
-                .keys()
-                .all(|key| ["systemPromptEnabled", "systemPrompt"].contains(&key.as_str()))
+            && object.get("activeSourcePrompt").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 65536)
+            })
+            && object.keys().all(|key| {
+                ["systemPromptEnabled", "systemPrompt", "activeSourcePrompt"]
+                    .contains(&key.as_str())
+            })
     })
 }
 

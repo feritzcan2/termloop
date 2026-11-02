@@ -7,14 +7,26 @@ use crate::{
 
 pub(super) const AGENT_FORK_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.agent.fork",
-    version: 1,
+    version: 2,
     authored_body: include_str!("../../../resources/prompts/builtin.agent.fork.md"),
+};
+
+pub(super) const AGENT_FORK_ACTIVE_SOURCE_TEMPLATE: PromptTemplate = PromptTemplate {
+    id: "builtin.agent.fork.active",
+    version: 1,
+    authored_body: include_str!("../../../resources/prompts/builtin.agent.fork.active.md"),
 };
 
 /// The visible fork notice exactly as authored, with its binding marker intact.
 /// Settings show this so the user sees what a fork receives before enabling it.
 pub fn agent_fork_notice_template() -> &'static PromptTemplate {
     &AGENT_FORK_TEMPLATE
+}
+
+/// The paragraph added after the notice only when the source Agent was still
+/// working at fork time, warning that it may keep changing shared state.
+pub fn agent_fork_active_source_template() -> &'static PromptTemplate {
+    &AGENT_FORK_ACTIVE_SOURCE_TEMPLATE
 }
 
 /// Codex takes the fork's developer instructions as given, so the interactive
@@ -24,6 +36,7 @@ pub fn agent_fork_notice_template() -> &'static PromptTemplate {
 fn agent_fork_provider_instructions(
     agent_id: &str,
     source_session_id: &str,
+    source_active: bool,
     mcp: Option<&AgentMcpLaunch<'_>>,
 ) -> Result<String, InvocationError> {
     if source_session_id.trim().is_empty()
@@ -32,10 +45,17 @@ fn agent_fork_provider_instructions(
     {
         return Err(InvocationError::InvalidPromptBinding);
     }
-    let notice = crate::bind_ordered(
+    let mut notice = crate::bind_ordered(
         AGENT_FORK_TEMPLATE.authored_body,
         &[("source_session_id", source_session_id)],
     )?;
+    if source_active {
+        notice = format!(
+            "{}\n\n{}",
+            notice.trim_end(),
+            AGENT_FORK_ACTIVE_SOURCE_TEMPLATE.authored_body
+        );
+    }
     let instructions = if agent_id == "codex"
         && mcp.is_some_and(|mcp| mcp.profile.includes_interactive_instructions())
     {
@@ -63,6 +83,7 @@ pub fn interactive_agent_fork_for_conversation(
     cwd: &str,
     selection: &AgentLaunchSelection,
     source_session_id: &str,
+    source_active: bool,
     conversation: AgentConversationLaunch<'_>,
     observation: Option<AgentObservationLaunch<'_>>,
     mcp: Option<AgentMcpLaunch<'_>>,
@@ -77,7 +98,8 @@ pub fn interactive_agent_fork_for_conversation(
         &selection.permission,
         &selection.reasoning,
     )?;
-    let instructions = agent_fork_provider_instructions(agent_id, source_session_id, mcp.as_ref())?;
+    let instructions =
+        agent_fork_provider_instructions(agent_id, source_session_id, source_active, mcp.as_ref())?;
     let mut resolved = crate::resolve_launch_manifest_with_attachments_and_codex_project_trust(
         agent_id,
         cwd,
