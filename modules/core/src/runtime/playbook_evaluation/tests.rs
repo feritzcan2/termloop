@@ -680,3 +680,54 @@ fn fork_exit_without_a_verdict_is_recorded_as_interrupted_before_claim_expiry() 
     assert_eq!(runtime.store.playbook_evaluations().len(), 1);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn evaluator_parked_by_its_task_is_not_offered_for_termination() {
+    let (mut runtime, root, project) = pipeline_runtime();
+    let claim = claim(&mut runtime, &project);
+    evaluator(&mut runtime, &claim);
+    runtime
+        .store
+        .mark_session_exited(&runtime.write_authority, "reviewer")
+        .unwrap();
+    assert_eq!(
+        runtime.obsolete_playbook_evaluator_sessions().unwrap(),
+        vec!["reviewer"]
+    );
+    let runtime_epoch = runtime
+        .store
+        .sessions()
+        .iter()
+        .find(|s| s.id == "reviewer")
+        .unwrap()
+        .runtime_epoch;
+    runtime
+        .store
+        .close_task_with_suspended_sessions(
+            &runtime.write_authority,
+            "task-1",
+            &[termloop_domain::TaskArchiveTarget {
+                session_id: "reviewer".into(),
+                runtime_epoch,
+                prior_lifecycle_state: "exited".into(),
+                prior_resume_failure: None,
+                was_live_agent: false,
+            }],
+            termloop_platform::current_epoch_ms(),
+        )
+        .unwrap();
+
+    // Termination of a parked Session is refused, so the sweep must not keep
+    // offering it on every wake.
+    assert!(matches!(
+        runtime.terminate_session(json!({"sessionId": "reviewer"})),
+        Err(CoreError::SessionSuspendedByTaskArchive { .. })
+    ));
+    assert!(
+        runtime
+            .obsolete_playbook_evaluator_sessions()
+            .unwrap()
+            .is_empty()
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}

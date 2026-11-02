@@ -647,7 +647,11 @@ impl CoreRuntime {
             .sessions()
             .iter()
             .filter(|s| {
+                // A Task archive or close owns the Sessions it parked and
+                // refuses termination, so offering one here would only retry
+                // forever. It returns to this sweep once the Task restores it.
                 s.process.template_ref.as_deref() == Some(EVALUATOR_TEMPLATE)
+                    && !self.session_is_archive_suspended(&s.id)
                     && !self.pending_agent_forks.contains(&s.id)
                     && !self
                         .playbook_evaluation
