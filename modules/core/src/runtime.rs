@@ -34,6 +34,8 @@ impl CoreRuntime {
             "agent.accountCreate" => self.create_agent_account(params),
             "agent.accountRename" => self.rename_agent_account(params),
             "agent.accountSetDefault" => self.set_default_agent_account(params),
+            "agent.forkSettingsGet" => Ok(self.agent_fork_settings_get()),
+            "agent.forkSettingsSet" => self.set_agent_fork_settings(params),
             "agent.libraryGet" => self.agent_library_get(),
             "agent.profileCreate" => self.create_agent_profile(params),
             "agent.profileUpdate" => self.update_agent_profile(params),

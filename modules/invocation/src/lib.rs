@@ -1,11 +1,13 @@
 #![forbid(unsafe_code)]
 
+mod agent_fork;
 mod assistant;
 mod personal_agent;
 mod playbook_evaluation;
 mod profiles;
 pub use playbook_evaluation::playbook_evaluator_for_conversation;
 mod project_workflow;
+pub use agent_fork::{agent_fork_notice_template, interactive_agent_fork_for_conversation};
 pub use personal_agent::personal_agent_for_conversation;
 pub use project_workflow::{
     project_agent_with_workflow_for_conversation, project_workflow_step_prompt,
@@ -242,6 +244,7 @@ const AGENT_TASK_WORKFLOW_TEMPLATE: PromptTemplate = PromptTemplate {
 pub fn prompt_templates() -> &'static [PromptTemplate] {
     &[
         INTERACTIVE_AGENT_TEMPLATE,
+        agent_fork::AGENT_FORK_TEMPLATE,
         QUICK_ACTION_TEMPLATE,
         personal_agent::PERSONAL_AGENT_TEMPLATE,
         profiles::SCATTERED_ORCHESTRATION_FINDER_TEMPLATE,

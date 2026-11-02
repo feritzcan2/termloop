@@ -1209,6 +1209,23 @@ pub struct KeepAwakePreference {
     pub expires_at_epoch_ms: Option<u64>,
 }
 
+/// The durable global preference for native Agent forks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct AgentForkPreference {
+    /// Whether a new fork receives the visible fork notice as part of its
+    /// persistent provider instructions. Enabled unless the user opts out.
+    pub system_prompt_enabled: bool,
+}
+
+impl Default for AgentForkPreference {
+    fn default() -> Self {
+        Self {
+            system_prompt_enabled: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DurableAgentPlanSource {

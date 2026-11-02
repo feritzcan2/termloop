@@ -4275,6 +4275,49 @@ fn agent_fork_plan_derives_private_source_context_without_persisting_a_parent() 
     );
     assert!(plan.resume_ref.is_none());
     assert_eq!(plan.fork_name.as_deref(), Some("Source fork-1"));
+    let fork_instruction_source = |plan: &super::AgentLaunchPlan| {
+        let source_ref = plan.fork_source_ref.clone().unwrap();
+        let launch = super::resolve_interactive_agent_launch_with_transport(
+            plan,
+            termloop_invocation::AgentConversationLaunch::Fork {
+                source_ref: &source_ref,
+            },
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            launch.provenance().template_ref,
+            "builtin.agent.interactive"
+        );
+        launch
+            .inspectable_manifest()
+            .content_parts
+            .iter()
+            .find(|part| part.kind == "providerInstructions")
+            .map(|part| (part.source.clone(), part.content.clone()))
+    };
+    let (source, notice) = fork_instruction_source(&plan).expect("fork notice is on by default");
+    assert_eq!(source, "resources/prompts/builtin.agent.fork@1");
+    assert!(notice.contains("Source Session ID: `source-agent`"));
+    runtime
+        .handle(
+            "agent.forkSettingsSet",
+            json!({ "systemPromptEnabled": false }),
+        )
+        .unwrap();
+    // A plan captured before the change keeps what its preview showed.
+    assert!(fork_instruction_source(&plan).is_some());
+    let opted_out = runtime
+        .plan_agent_fork(json!({ "sessionId": "source-agent" }))
+        .unwrap();
+    assert!(fork_instruction_source(&opted_out).is_none());
+    runtime
+        .handle(
+            "agent.forkSettingsSet",
+            json!({ "systemPromptEnabled": true }),
+        )
+        .unwrap();
     let mut long_named_source = runtime.store.sessions()[0].clone();
     long_named_source.name = Some("ü".repeat(80));
     let bounded_name = super::fork_session_name(&long_named_source, "claude");

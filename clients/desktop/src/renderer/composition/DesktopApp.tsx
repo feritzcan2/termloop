@@ -1,5 +1,6 @@
 import type { AgentConnectionActions } from "../ui/AgentConnectionsPanel.js";
 import type { IntegrationActions } from "../ui/IntegrationsSettings.js";
+import type { AgentForkSettingsActions } from "../ui/AgentForkSettings.js";
 import { openAgentCreator } from "./agent-creator.js";
 import { openWorkflowCreator } from "./workflow-creator.js";
 import type { WorkflowCreatorActions } from "../ui/WorkflowCreator.js";
@@ -812,6 +813,10 @@ export function DesktopApp() {
   const integrationActions = useMemo<IntegrationActions>(() => ({
     list: (profileId, params) => desktopApi.source(profileId).integrationStatusList(params),
     setAzureDevOpsToken: (profileId, params) => desktopApi.source(profileId).integrationAzureDevOpsCredentialSet(params),
+  }), []);
+  const agentForkSettingsActions = useMemo<AgentForkSettingsActions>(() => ({
+    get: (profileId) => desktopApi.source(profileId).agentForkSettingsGet(),
+    set: (profileId, params) => desktopApi.source(profileId).agentForkSettingsSet(params),
   }), []);
   const selectedConnectionProfileId = connectionProfileIdOf(selectedProject);
   const selectedSourceApi = desktopApi.source(selectedConnectionProfileId);
@@ -2595,6 +2600,7 @@ export function DesktopApp() {
       connectionProfiles={settingsComputers.profiles}
       computerKeepAwake={{ ...computerKeepAwake, refreshToken: keepAwakeRefreshToken }}
       integrationActions={integrationActions}
+      agentForkSettingsActions={agentForkSettingsActions}
       listConnectionProfiles={settingsComputers.list}
       sshSetup={{
         current: desktopApi.sshSetupCurrent,

@@ -225,7 +225,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:990cc12fc7a841fdd3fd068b859682d95be84c59049a21d6f33a8896f537f0c2";
+    "sha256:722e6f3ac13b8fe41f5c643a82132b447f5f1ed15a4b0f74091498fef2d74a28";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -418,6 +418,8 @@ pub const METHODS: &[&str] = &[
     "gitHost.repositoryPullRequestList",
     "gitHost.projectRepository",
     "agent.libraryGet",
+    "agent.forkSettingsGet",
+    "agent.forkSettingsSet",
     "agent.profileCreate",
     "agent.profileUpdate",
     "agent.profileDelete",
@@ -7849,6 +7851,22 @@ pub struct AgentLibraryEntry {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
+pub struct AgentForkSettingsSetParams {
+    #[serde(rename = "systemPromptEnabled")]
+    pub system_prompt_enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct AgentForkSettingsResult {
+    #[serde(rename = "systemPromptEnabled")]
+    pub system_prompt_enabled: bool,
+    #[serde(rename = "systemPrompt")]
+    pub system_prompt: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct AgentLibraryResult {
     pub revision: u64,
     pub profiles: Vec<AgentLibraryEntry>,
@@ -9418,6 +9436,9 @@ pub type VoiceCredentialsSetResult = VoiceSettingsResult;
 pub type GitHostPullRequestListResult = Vec<GitHostTaskProjectionDto>;
 pub type AgentLibraryGetParams = EmptyParams;
 pub type AgentLibraryGetResult = AgentLibraryResult;
+pub type AgentForkSettingsGetParams = EmptyParams;
+pub type AgentForkSettingsGetResult = AgentForkSettingsResult;
+pub type AgentForkSettingsSetResult = AgentForkSettingsResult;
 pub type AgentProfileCreateResult = AgentLibraryResult;
 pub type AgentProfileUpdateResult = AgentLibraryResult;
 pub type AgentProfileDeleteResult = AgentLibraryResult;
@@ -10219,6 +10240,8 @@ fn validate_method(value: &Value) -> bool {
             "gitHost.repositoryPullRequestList",
             "gitHost.projectRepository",
             "agent.libraryGet",
+            "agent.forkSettingsGet",
+            "agent.forkSettingsSet",
             "agent.profileCreate",
             "agent.profileUpdate",
             "agent.profileDelete",
@@ -29720,6 +29743,51 @@ fn validate_agent_library_entry(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_agent_fork_settings_set_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("systemPromptEnabled")
+            .is_some_and(|field| field.is_boolean())
+            && object
+                .keys()
+                .all(|key| ["systemPromptEnabled"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_agent_fork_settings_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("systemPromptEnabled")
+            .is_some_and(|field| field.is_boolean())
+            && object.get("systemPrompt").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 65536)
+            })
+            && object
+                .keys()
+                .all(|key| ["systemPromptEnabled", "systemPrompt"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_agent_library_result(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object.get("revision").is_some_and(|field| {
@@ -34530,6 +34598,14 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<AgentLibraryGetParams>(params.clone()).is_ok()
                 && validate_empty_params(params)
         }
+        "agent.forkSettingsGet" => {
+            serde_json::from_value::<AgentForkSettingsGetParams>(params.clone()).is_ok()
+                && validate_empty_params(params)
+        }
+        "agent.forkSettingsSet" => {
+            serde_json::from_value::<AgentForkSettingsSetParams>(params.clone()).is_ok()
+                && validate_agent_fork_settings_set_params(params)
+        }
         "agent.profileCreate" => {
             serde_json::from_value::<AgentProfileCreateParams>(params.clone()).is_ok()
                 && validate_agent_profile_create_params(params)
@@ -35463,6 +35539,14 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         "agent.libraryGet" => {
             serde_json::from_value::<AgentLibraryGetResult>(result.clone()).is_ok()
                 && validate_agent_library_result(result)
+        }
+        "agent.forkSettingsGet" => {
+            serde_json::from_value::<AgentForkSettingsGetResult>(result.clone()).is_ok()
+                && validate_agent_fork_settings_result(result)
+        }
+        "agent.forkSettingsSet" => {
+            serde_json::from_value::<AgentForkSettingsSetResult>(result.clone()).is_ok()
+                && validate_agent_fork_settings_result(result)
         }
         "agent.profileCreate" => {
             serde_json::from_value::<AgentProfileCreateResult>(result.clone()).is_ok()

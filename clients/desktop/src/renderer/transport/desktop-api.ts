@@ -179,6 +179,8 @@ import type {
   AgentLaunchPreviewResult,
   McpToolDescriptionResetParams,
   KeepAwakeSetParams,
+  AgentForkSettingsResult,
+  AgentForkSettingsSetParams,
   KeepAwakeStatusResult,
   VoiceCredentialsSetParams,
   VoiceSettingsResult,
@@ -283,6 +285,8 @@ export type DesktopApi = {
   systemInfo(): Promise<Record<string, unknown>>;
   keepAwakeGet(): Promise<KeepAwakeStatusResult>;
   keepAwakeSet(params: KeepAwakeSetParams): Promise<KeepAwakeStatusResult>;
+  agentForkSettingsGet(): Promise<AgentForkSettingsResult>;
+  agentForkSettingsSet(params: AgentForkSettingsSetParams): Promise<AgentForkSettingsResult>;
   voiceSettingsGet(): Promise<VoiceSettingsResult>;
   voiceCredentialsSet(params: VoiceCredentialsSetParams): Promise<VoiceSettingsResult>;
   integrationStatusList(params: IntegrationStatusListParams): Promise<IntegrationStatusListResult>;

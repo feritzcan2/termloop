@@ -9,6 +9,8 @@ export const PROFILED_DESKTOP_OPERATIONS = {
   keepAwakeSet: "termloop:keep-awake-set",
   voiceSettingsGet: "termloop:voice-settings-get",
   voiceCredentialsSet: "termloop:voice-credentials-set",
+  agentForkSettingsGet: "termloop:agent-fork-settings-get",
+  agentForkSettingsSet: "termloop:agent-fork-settings-set",
   integrationStatusList: "termloop:integration-status-list",
   integrationAzureDevOpsCredentialSet: "termloop:integration-azure-devops-credential-set",
   mcpToolSettingsGet: "termloop:mcp-tool-settings-get",

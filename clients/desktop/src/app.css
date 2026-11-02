@@ -3671,3 +3671,6 @@ button.history-row-main { cursor: pointer; }
 .task-group.focused .task-session .row-title { flex: 0 1 auto; font-size: 12px; font-weight: 500; }
 .task-group.focused .task-session .session-state-line { flex: 1 1 0; }
 .task-group.focused .task-session :is(.row-agent, .row-subtitle) { display: none; }
+.agent-fork-prompt { display: grid; gap: 8px; margin: 0; }
+.agent-fork-prompt figcaption { color: var(--text-secondary); font: 12px/1.5 var(--font-ui); }
+.agent-fork-prompt pre { margin: 0; max-height: 320px; overflow: auto; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-raised); color: var(--text); font: 12px/1.55 var(--font-mono, ui-monospace, monospace); white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -16,10 +16,12 @@ import { UpdateSettings, type AppUpdateControls } from "./AppUpdate.js";
 import { MobileConnectDialog, type MobileConnectDialogProps } from "./MobileConnectDialog.js";
 import { IntegrationsSettings, type IntegrationActions } from "./IntegrationsSettings.js";
 import { AgentConnectionsPanel, type AgentConnectionActions } from "./AgentConnectionsPanel.js";
+import { AgentForkSettings, type AgentForkSettingsActions } from "./AgentForkSettings.js";
+import { SettingsSwitch } from "./SettingsSwitch.js";
 import type { ConnectionProfileSummary } from "../../connection-profile-types.js";
 import { connectionStatusSuffix } from "../connection-source-status.js";
 
-export type SettingsPage = "appearance" | "notifications" | "updates" | "servers" | "accounts" | "integrations" | "mobile";
+export type SettingsPage = "appearance" | "notifications" | "updates" | "servers" | "accounts" | "agentSettings" | "integrations" | "mobile";
 
 type SettingsNavItem = {
   page: SettingsPage;
@@ -37,6 +39,7 @@ const appNavItems: SettingsNavItem[] = [
 const computerNavItems: SettingsNavItem[] = [
   { page: "servers", title: "Computers", icon: "monitor", keywords: "servers remote ssh tailscale host share connection keep awake power" },
   { page: "accounts", title: "Agent accounts", icon: "agent", keywords: "claude codex account login sign in sign out switch default usage limits rate remove" },
+  { page: "agentSettings", title: "Agent settings", icon: "fork", keywords: "agent fork forks system prompt instructions source parallel claude codex" },
   { page: "integrations", title: "Integrations", icon: "link", keywords: "github gh azure devops az jira pull request pr build checks ci review token pat credentials providers" },
   { page: "mobile", title: "Pair phone", icon: "phone", keywords: "mobile iphone qr pairing voice transcription" },
 ];
@@ -55,6 +58,8 @@ type SettingsDialogProps = Omit<ConnectionProfilesDialogProps, "close" | "embedd
   update?: AppUpdateControls | undefined;
   /** Per-computer provider status. Absent hosts simply omit the page. */
   integrations?: { actions: IntegrationActions; openTaskSettings?: (() => void) | undefined } | undefined;
+  /** Per-computer Agent preferences. Absent hosts simply omit the page. */
+  agentSettings?: AgentForkSettingsActions | undefined;
 };
 
 export function SettingsDialog({
@@ -70,6 +75,7 @@ export function SettingsDialog({
   mobile,
   update,
   integrations,
+  agentSettings,
   ...connectionProps
 }: SettingsDialogProps) {
   const [selectedPage, setPage] = useState<SettingsPage>(initialPage);
@@ -90,6 +96,7 @@ export function SettingsDialog({
       items: computerNavItems.filter((item) => (item.page !== "mobile" || mobile)
         && (item.page !== "integrations" || integrations)
         && (item.page !== "accounts" || connectionProps.agentConnections)
+        && (item.page !== "agentSettings" || agentSettings)
         && matchesSettingsQuery(item, query)),
     },
   ].filter((group) => group.items.length > 0);
@@ -245,6 +252,8 @@ export function SettingsDialog({
             />
           ) : page === "accounts" && connectionProps.agentConnections ? (
             <AgentAccountsSettings key={accountsProfileId} actions={connectionProps.agentConnections} listProfiles={connectionProps.list} initialProfileId={accountsProfileId} />
+          ) : page === "agentSettings" && agentSettings ? (
+            <AgentForkSettings actions={agentSettings} listProfiles={connectionProps.list} initialProfileId={initialProfileId} />
           ) : page === "mobile" && mobile ? (
             <MobileConnectDialog {...mobile} embedded computerName={showScope ? localComputerName : undefined} close={close} />
           ) : (
@@ -535,39 +544,6 @@ function RemoteNotificationSection({
         change={(checked) => void update(target, "playSound", checked)}
       />
     </NotificationDeviceSection>
-  );
-}
-
-function SettingsSwitch({
-  accessibleName,
-  change,
-  checked,
-  description,
-  disabled,
-  title,
-}: {
-  accessibleName?: string;
-  change(checked: boolean): void;
-  checked: boolean;
-  description: string;
-  disabled: boolean;
-  title: string;
-}) {
-  return (
-    <div className={disabled ? "settings-row disabled" : "settings-row"}>
-      <div><strong>{title}</strong><small>{description}</small></div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        aria-label={accessibleName ?? title}
-        className={checked ? "settings-switch on" : "settings-switch"}
-        disabled={disabled}
-        onClick={() => change(!checked)}
-      >
-        <span />
-      </button>
-    </div>
   );
 }
 

@@ -497,6 +497,12 @@ handleIpc("termloop:keep-awake-get", () => controlCall("system.keepAwake.get"));
 handleIpc("termloop:keep-awake-set", (_event, params: KeepAwakeSetParams) =>
   controlCall("system.keepAwake.set", params),
 );
+handleIpc("termloop:agent-fork-settings-get", () => controlCall("agent.forkSettingsGet"));
+handleIpc(
+  "termloop:agent-fork-settings-set",
+  (_event, params: import("@termloop/contract/current").AgentForkSettingsSetParams) =>
+    controlCall("agent.forkSettingsSet", params),
+);
 handleIpc("termloop:voice-settings-get", () => controlCall("voice.settingsGet"));
 handleIpc(
   "termloop:voice-credentials-set",

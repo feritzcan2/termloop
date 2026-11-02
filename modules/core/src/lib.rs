@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+mod agent_fork_settings;
 pub mod companion_integrations;
 mod configuration_version;
 mod context_bank;

@@ -64,6 +64,7 @@ import { ContextBankEditorPanel } from "./ContextBankEditorPanel.js";
 import { ContextBankRail } from "./ContextBankRail.js";
 import { KeepAwakePanel, type KeepAwakeActions } from "./KeepAwakePanel.js";
 import type { IntegrationActions } from "./IntegrationsSettings.js";
+import type { AgentForkSettingsActions } from "./AgentForkSettings.js";
 import { computerScopeName, hasRemoteComputers } from "../settings-scope.js";
 import { LibraryScopeHeader } from "./LibraryScopeHeader.js";
 import type { McpSettingsMutationResult } from "../mcp-settings.js";
@@ -223,6 +224,7 @@ export type ShellProps = {
   connectionProfiles: readonly ConnectionProfileSummary[];
   computerKeepAwake: KeepAwakeActions;
   integrationActions?: IntegrationActions | undefined;
+  agentForkSettingsActions?: AgentForkSettingsActions | undefined;
   listConnectionProfiles(): Promise<ConnectionProfileSummary[]>;
   connectConnectionProfile(input: ConnectionProfileConnectInput): Promise<ConnectionProfileConnectResult>;
   sshSetup?: SshSetupActions;
@@ -2474,6 +2476,7 @@ export function Shell(props: ShellProps) {
           actions: props.integrationActions,
           openTaskSettings: props.selectedProject ? () => openStagePage({ kind: "taskSettings" }) : undefined,
         } : undefined}
+        agentSettings={props.agentForkSettingsActions}
         prepareRemoteMobileAccess={props.prepareRemoteMobileAccess}
         appearancePreference={selectedAppearancePreference}
         changeAppearancePreference={setAppearancePreference}

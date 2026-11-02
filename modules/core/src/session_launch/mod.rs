@@ -103,6 +103,9 @@ pub struct AgentLaunchPlan {
     fork_name: Option<String>,
     fork_worktree_plan: Option<TaskWorktreeLaunchPlan>,
     fork_worktree_observed: bool,
+    /// Captured from the global fork preference when the fork is planned, so
+    /// the inspected preview and the launch deliver the same instructions.
+    fork_system_prompt: bool,
     interactive_options: Option<AgentLaunchSelection>,
     quick_action: Option<QuickActionLaunch>,
     /// Set only for an Improve-with-agent launch against an existing
@@ -648,6 +651,7 @@ impl CoreRuntime {
             fork_name: None,
             fork_worktree_plan: None,
             fork_worktree_observed: false,
+            fork_system_prompt: false,
             interactive_options: None,
             quick_action: None,
             improver_configuration_id: None,
@@ -728,6 +732,7 @@ impl CoreRuntime {
         plan.fork_name = Some(fork_session_name(&source, &agent_id));
         plan.fork_source_session_id = Some(source.id);
         plan.fork_source_ref = Some(source_ref);
+        plan.fork_system_prompt = self.store.agent_fork_preference().system_prompt_enabled;
         if let Some(guard) = source.resume_launch_guard {
             let worktree_plan =
                 self.plan_task_worktree_launch(json!({ "taskId": guard.task_id }), false)?;
@@ -2667,6 +2672,21 @@ fn resolve_interactive_agent_launch_with_transport(
                 mcp,
             )
         }
+    } else if let (Some(options), Some(source_session_id), true) = (
+        &plan.interactive_options,
+        plan.fork_source_session_id.as_deref(),
+        plan.fork_system_prompt,
+    ) {
+        termloop_invocation::interactive_agent_fork_for_conversation(
+            &plan.agent_id,
+            &plan.cwd,
+            options,
+            source_session_id,
+            conversation,
+            observation,
+            mcp,
+            managed_worktree,
+        )
     } else if let Some(options) = &plan.interactive_options {
         if managed_worktree {
             termloop_invocation::configured_interactive_agent_for_managed_worktree_conversation(

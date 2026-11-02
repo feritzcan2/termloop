@@ -166,6 +166,8 @@ struct CurrentState {
     #[serde(default)]
     keep_awake_preference: KeepAwakePreference,
     #[serde(default)]
+    agent_fork_preference: termloop_domain::AgentForkPreference,
+    #[serde(default)]
     agent_plans: Vec<DurableAgentPlan>,
     #[serde(default)]
     agent_conversation_readiness: Vec<AgentConversationReadinessRecord>,
@@ -218,6 +220,7 @@ impl Default for CurrentState {
             last_agent_launch_selection: None,
             agent_accounts: termloop_domain::default_agent_accounts(),
             keep_awake_preference: KeepAwakePreference::default(),
+            agent_fork_preference: termloop_domain::AgentForkPreference::default(),
             agent_plans: vec![],
             agent_conversation_readiness: vec![],
             sessions: vec![],
@@ -370,6 +373,10 @@ impl Store {
     }
     pub fn keep_awake_preference(&self) -> KeepAwakePreference {
         self.state.keep_awake_preference
+    }
+
+    pub fn agent_fork_preference(&self) -> termloop_domain::AgentForkPreference {
+        self.state.agent_fork_preference
     }
     pub fn tasks(&self) -> &[TaskRecord] {
         &self.state.tasks
