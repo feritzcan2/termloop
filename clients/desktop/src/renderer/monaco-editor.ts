@@ -25,8 +25,12 @@ import "monaco-editor/features/wordHighlighter/register.js";
 import "monaco-editor/features/wordOperations/register.js";
 import "monaco-editor/languages/definitions/register.all.js";
 
+/// The worker is built next to index.html, while this module is bundled into
+/// a chunk under `chunks/`; resolving against the page keeps the URL right
+/// wherever the bundler places this code. A missing worker never fails loudly:
+/// Monaco just never finishes a diff.
 (self as { MonacoEnvironment?: monaco.Environment }).MonacoEnvironment = {
-  getWorker: () => new Worker(new URL("./monaco-editor.worker.js", import.meta.url), { type: "module" }),
+  getWorker: () => new Worker(new URL("monaco-editor.worker.js", document.baseURI), { type: "module" }),
 };
 
 export { monaco };
