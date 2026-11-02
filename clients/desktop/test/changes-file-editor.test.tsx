@@ -100,6 +100,22 @@ describe("Editing local changes in their diff", () => {
     expect(diff.modified.model?.value).toBe("after");
   });
 
+  it("creates the diff in its final layout and keeps it invisible until the first result", async () => {
+    const editor = new FileEditor({ read, write: (path) => write(path) });
+    const list = vi.fn<ChangesOverlayProps["list"]>(async () => changeList("local-1", [entry("a-1", "src/alpha.ts", "unstaged")]));
+    const createDiffEditor = vi.spyOn(fake.current!.monaco.editor, "createDiffEditor");
+    await act(async () => root.render(<Harness editor={editor} list={list} />));
+    await settle();
+    expect(createDiffEditor.mock.calls[0]![1]).toMatchObject({ renderSideBySide: false, hideUnchangedRegions: { enabled: true } });
+    const surface = container.querySelector<HTMLElement>(".changes-diff-editor .file-editor-surface")!;
+    expect(surface.style.visibility).toBe("hidden");
+    expect(container.querySelector(".changes-diff-pending")?.textContent).toBe("Comparing…");
+
+    await act(async () => fake.current!.finishDiff([{}]));
+    expect(surface.style.visibility).toBe("");
+    expect(container.querySelector(".changes-diff-pending")).toBeNull();
+  });
+
   it("falls back to the read-only patch when the first editable diff comes out empty", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const editor = new FileEditor({ read, write: (path) => write(path) });

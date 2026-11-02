@@ -110,4 +110,7 @@
 .file-editor-status > span:first-child { flex: 1; min-width: 0; overflow: hidden; font-family: var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
 .file-editor-message { margin: 28px; color: var(--text-secondary); line-height: 1.6; }
 .file-editor-message > p { margin: 0 0 12px; }
+/* Shown over the still-invisible diff until Monaco's first result lays it out. */
+.changes-diff-editor { position: relative; }
+.changes-diff-pending { position: absolute; top: 0; left: 0; }
 .files-sidebar.library-sidebar { grid-template-rows: auto minmax(0, 1fr); }

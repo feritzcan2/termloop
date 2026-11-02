@@ -68,6 +68,12 @@ export function ChangesDiffEditor({ editing, path, original, viewType, fullFile,
   savedRef.current = saved;
   const firstDiffRef = useRef({ expectsChanges, diffFailed });
   firstDiffRef.current = { expectsChanges, diffFailed };
+  const layout = { renderSideBySide: viewType === "split", hideUnchangedRegions: { enabled: !fullFile } };
+  const layoutRef = useRef(layout);
+  layoutRef.current = layout;
+  // Monaco first paints both files unaligned and uncollapsed; the surface
+  // stays invisible until the first diff result lays them out.
+  const [laidOut, setLaidOut] = useState(false);
 
   // Viewing a change opens its file only for as long as it is shown, unless
   // it was already open or still holds unsaved edits. A tab that was already
@@ -91,7 +97,7 @@ export function ChangesDiffEditor({ editing, path, original, viewType, fullFile,
       const diff = monaco.editor.createDiffEditor(host.current, {
         ...monacoAppearance(host.current), automaticLayout: true, minimap: { enabled: false }, scrollBeyondLastLine: false, glyphMargin: true,
         renderWhitespace: "selection", smoothScrolling: true, originalEditable: false, ignoreTrimWhitespace: false,
-        renderMarginRevertIcon: false,
+        renderMarginRevertIcon: false, ...layoutRef.current,
       });
       created = diff;
       const language = fileLanguage(path)?.id ?? "plaintext";
@@ -121,6 +127,7 @@ export function ChangesDiffEditor({ editing, path, original, viewType, fullFile,
         const modifiedText = modifiedModel.getValue();
         if (!final && lineChanges?.length === 0 && originalText === modifiedText) return;
         checked = true;
+        setLaidOut(true);
         clearTimeout(timer);
         firstResult?.dispose();
         const reason = monacoDiffFailure(lineChanges, originalText, modifiedText, firstDiffRef.current.expectsChanges);
@@ -145,13 +152,14 @@ export function ChangesDiffEditor({ editing, path, original, viewType, fullFile,
       models.forEach((model) => model.dispose());
       modified.current = undefined;
       setInstance(undefined);
+      setLaidOut(false);
     };
     // Later pre-image and saved-content changes arrive through the effects below.
   }, [editor, path, ready]);
 
   useEffect(() => { instance?.monaco.editor.setTheme(monacoTheme(theme)); }, [instance, theme]);
   useEffect(() => {
-    instance?.diff.updateOptions({ renderSideBySide: viewType === "split", hideUnchangedRegions: { enabled: !fullFile } });
+    instance?.diff.updateOptions(layoutRef.current);
   }, [fullFile, instance, viewType]);
   useEffect(() => {
     instance?.diff.getModifiedEditor().updateOptions({ readOnly: readOnly || !ready });
@@ -184,11 +192,12 @@ export function ChangesDiffEditor({ editing, path, original, viewType, fullFile,
 
   return <div className="file-editor-body changes-diff-editor">
     {tab ? <FileEditorBanners editor={editor} tab={tab} readOnly={readOnly} /> : null}
-    <div className="file-editor-surface" hidden={!ready}>
+    <div className="file-editor-surface" hidden={!ready} style={laidOut ? undefined : { visibility: "hidden" }}>
       {failure ? <p className="file-editor-message" role="alert">{failure}</p> : null}
       <div ref={host} className="file-editor-monaco" aria-label={`Editable diff of ${path}`} />
     </div>
     {tab ? <FileEditorState editor={editor} tab={tab} /> : <p className="file-editor-message" role="status">Opening file…</p>}
+    {ready && !laidOut && !failure ? <p className="file-editor-message changes-diff-pending" role="status">Comparing…</p> : null}
     {instance ? <NoteMarkers monaco={instance.monaco} diff={instance.diff} lines={[...targets.values()]} /> : null}
     {instance ? [...targets.values()].map((target) => (
       <ReviewZone
