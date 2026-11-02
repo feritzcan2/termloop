@@ -29,18 +29,4 @@ describe("saved message presentation", () => {
     expect(markup).toContain("Newer messages");
     expect(markup).toContain("Return to terminal");
   });
-
-  it("names a subagent transcript as live and offers the way back to the main agent", () => {
-    const markup = renderToStaticMarkup(createElement(ConversationHistory, { sessionId: "s", port: conversation, state: {
-      loading: false, hasNewer: false, subagent: { key: "0123456789abcdef", label: "Review the diff" },
-      page: { status: "available", next_before: null, incomplete: false,
-        messages: [{ role: "user", text: "Find the bug", truncated: false }, { role: "assistant", text: "▸ Bash · git diff", truncated: false }] },
-    } }));
-    expect(markup).toContain("Subagent · Review the diff");
-    expect(markup).toContain("Live transcript");
-    expect(markup).toContain("← Main agent");
-    expect(markup).toContain("<h3>Task</h3>");
-    expect(markup).toContain("<h3>Subagent</h3>");
-    expect(markup).not.toContain("Return to terminal");
-  });
 });

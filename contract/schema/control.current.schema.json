@@ -7832,12 +7832,6 @@
           "minimum": 1,
           "maximum": 9007199254740991,
           "x-rust-type": "u64"
-        },
-        "subagentKey": {
-          "type": "string",
-          "minLength": 16,
-          "maxLength": 16,
-          "pattern": "^[0-9a-f]{16}$"
         }
       }
     },

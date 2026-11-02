@@ -77,10 +77,4 @@ describe("agent subagent rows", () => {
     expect(markup).not.toContain("subagents running");
     expect(render(agentSession(), status([]))).not.toContain("agent-subagents");
   });
-
-  it("mark each row with its roster key so a click can open that subagent", () => {
-    const markup = render(agentSession(), status([subagent(10, { description: "Child" })]));
-    expect(markup).toContain('data-subagent-key="000000000000000a"');
-    expect(markup).toContain("view this subagent&#x27;s transcript");
-  });
 });

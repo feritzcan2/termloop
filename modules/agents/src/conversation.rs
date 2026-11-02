@@ -86,89 +86,6 @@ pub fn read_agent_conversation(
     ConversationPage::default()
 }
 
-/// Reads one page of an in-process Claude subagent's own transcript. Claude
-/// keeps each child beside its lead conversation as
-/// `projects/<folder>/<lead id>/subagents/agent-<child id>.jsonl`; the caller
-/// names the child only by the opaque roster key, so the provider child id is
-/// matched here and never leaves the daemon.
-pub fn read_claude_subagent_conversation(
-    account: &AgentAccountContext,
-    resume: &ResumeRef,
-    subagent_key: &str,
-    before: Option<u64>,
-    cancellation: &AtomicBool,
-) -> ConversationPage {
-    const MAX_SUBAGENT_FILES: usize = 512;
-    if resume.provider != ResumeProvider::Claude
-        || !resume.validate()
-        || account.agent_id != "claude"
-        || !crate::subagents::is_subagent_key(subagent_key)
-    {
-        return ConversationPage::default();
-    }
-    let Some(root) = account
-        .config_directory
-        .clone()
-        .or_else(|| user_home_directory().map(|home| home.join(".claude")))
-    else {
-        return ConversationPage::default();
-    };
-    let lead = format!("{}.jsonl", resume.native_session_id);
-    let Ok(leads) = discover_bounded_history_files_cancellable(
-        &root.join("projects"),
-        "jsonl",
-        1,
-        20_000,
-        cancellation,
-    ) else {
-        return ConversationPage::default();
-    };
-    for lead_file in leads {
-        if lead_file.path().file_name().and_then(|name| name.to_str()) != Some(lead.as_str()) {
-            continue;
-        }
-        let Some(folder) = lead_file.path().parent() else {
-            continue;
-        };
-        let directory = folder.join(&resume.native_session_id).join("subagents");
-        let Ok(children) = discover_bounded_history_files_cancellable(
-            &directory,
-            "jsonl",
-            0,
-            MAX_SUBAGENT_FILES,
-            cancellation,
-        ) else {
-            continue;
-        };
-        for child in children {
-            if cancellation.load(Ordering::Acquire) {
-                return ConversationPage::default();
-            }
-            let Some(child_id) = child
-                .path()
-                .file_stem()
-                .and_then(|stem| stem.to_str())
-                .and_then(|stem| stem.strip_prefix("agent-"))
-            else {
-                continue;
-            };
-            if crate::subagents::subagent_key(child_id) != subagent_key {
-                continue;
-            }
-            let Ok(window) =
-                read_bounded_history_file_window(&child, before, 256 * 1024, WINDOW_BYTES)
-            else {
-                return ConversationPage::default();
-            };
-            if !identifies_conversation(&window.head, resume) {
-                return ConversationPage::default();
-            }
-            return parse_page_for(&window.bytes, window.start, resume, Some(child_id));
-        }
-    }
-    ConversationPage::default()
-}
-
 /// Makes one provider conversation resumable from another account of the same
 /// provider by linking its transcript to the same relative path below the new
 /// account's provider root. Both accounts then share one file, so history keeps
@@ -297,17 +214,6 @@ fn identifies_conversation(bytes: &[u8], resume: &ResumeRef) -> bool {
 }
 
 fn parse_page(bytes: &[u8], start: u64, resume: &ResumeRef) -> ConversationPage {
-    parse_page_for(bytes, start, resume, None)
-}
-
-/// `subagent` names the provider child whose own transcript `bytes` came from;
-/// `None` reads the lead conversation.
-fn parse_page_for(
-    bytes: &[u8],
-    start: u64,
-    resume: &ResumeRef,
-    subagent: Option<&str>,
-) -> ConversationPage {
     let mut page = ConversationPage {
         available: true,
         ..ConversationPage::default()
@@ -339,7 +245,7 @@ fn parse_page_for(
                 continue;
             }
         };
-        if let Some(message) = visible_message_for(&record, resume, subagent) {
+        if let Some(message) = visible_message(&record, resume) {
             if page.messages.len() >= PAGE_MESSAGES || text_bytes + message.text.len() > PAGE_BYTES
             {
                 break;
@@ -361,16 +267,7 @@ fn parse_page_for(
     page
 }
 
-#[cfg(test)]
 fn visible_message(record: &Value, resume: &ResumeRef) -> Option<ConversationMessage> {
-    visible_message_for(record, resume, None)
-}
-
-fn visible_message_for(
-    record: &Value,
-    resume: &ResumeRef,
-    subagent: Option<&str>,
-) -> Option<ConversationMessage> {
     let message = match resume.provider {
         ResumeProvider::Codex => {
             // response_item is the recorded message; event_msg mirrors it and
@@ -387,20 +284,9 @@ fn visible_message_for(
             payload
         }
         ResumeProvider::Claude => {
-            let sidechain = record.get("isSidechain").and_then(Value::as_bool) == Some(true);
-            let meta = record.get("isMeta").and_then(Value::as_bool) == Some(true);
-            let visible_chain = match subagent {
-                None => !sidechain && !meta,
-                // A child's task arrives as its first, meta-flagged record;
-                // later meta records are injected context, not conversation.
-                Some(child) => {
-                    sidechain
-                        && record.get("agentId").and_then(Value::as_str) == Some(child)
-                        && (!meta || record.get("parentUuid").is_some_and(Value::is_null))
-                }
-            };
             if record.get("sessionId")?.as_str()? != resume.native_session_id
-                || !visible_chain
+                || record.get("isSidechain").and_then(Value::as_bool) == Some(true)
+                || record.get("isMeta").and_then(Value::as_bool) == Some(true)
                 || !matches!(
                     record.get("type").and_then(Value::as_str),
                     Some("user" | "assistant")
@@ -428,14 +314,13 @@ fn visible_message_for(
         content
             .as_array()?
             .iter()
-            .filter_map(|part| match part.get("type").and_then(Value::as_str) {
-                Some("text" | "input_text" | "output_text") => {
-                    part.get("text").and_then(Value::as_str).map(str::to_owned)
-                }
-                // A subagent works mostly through tools, so its view would be
-                // nearly empty without one line per call.
-                Some("tool_use") if subagent.is_some() => tool_use_line(part),
-                _ => None,
+            .filter_map(|part| {
+                matches!(
+                    part.get("type").and_then(Value::as_str),
+                    Some("text" | "input_text" | "output_text")
+                )
+                .then(|| part.get("text").and_then(Value::as_str))
+                .flatten()
             })
             .collect::<Vec<_>>()
             .join("\n")
@@ -468,39 +353,6 @@ fn visible_message_for(
         role,
         text: clean,
         truncated,
-    })
-}
-
-/// One bounded line naming a tool call and the input field that best says
-/// what it does.
-fn tool_use_line(part: &Value) -> Option<String> {
-    const MAX_SUMMARY_CHARS: usize = 240;
-    let name = part.get("name")?.as_str()?.trim();
-    if name.is_empty() {
-        return None;
-    }
-    let summary = part.get("input").and_then(|input| {
-        [
-            "description",
-            "command",
-            "file_path",
-            "path",
-            "pattern",
-            "query",
-            "url",
-            "prompt",
-        ]
-        .iter()
-        .find_map(|key| input.get(*key)?.as_str())
-        .and_then(|value| value.lines().map(str::trim).find(|line| !line.is_empty()))
-    });
-    Some(match summary {
-        Some(summary) if summary.chars().count() > MAX_SUMMARY_CHARS => format!(
-            "▸ {name} · {}…",
-            summary.chars().take(MAX_SUMMARY_CHARS).collect::<String>()
-        ),
-        Some(summary) => format!("▸ {name} · {summary}"),
-        None => format!("▸ {name}"),
     })
 }
 
@@ -752,96 +604,6 @@ mod tests {
         assert!(
             !read_agent_conversation(&account, &resume, None, &AtomicBool::new(false)).available
         );
-        std::fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn reads_a_claude_subagent_by_its_roster_key_with_one_line_per_tool_call() {
-        let root = std::env::temp_dir().join(format!(
-            "termloop-subagent-conversation-{}",
-            uuid::Uuid::new_v4()
-        ));
-        let resume = resume(ResumeProvider::Claude);
-        let account = AgentAccountContext {
-            agent_id: "claude".into(),
-            account_id: "work".into(),
-            name: "Work".into(),
-            config_directory: Some(root.clone()),
-        };
-        let folder = root.join("projects/-repo");
-        let children = folder.join(&resume.native_session_id).join("subagents");
-        std::fs::create_dir_all(&children).unwrap();
-        let session = resume.native_session_id.clone();
-        std::fs::write(
-            folder.join(format!("{session}.jsonl")),
-            format!("{}\n", json!({"type":"user","sessionId":session,"message":{"role":"user","content":"Lead"}})),
-        )
-        .unwrap();
-        let record = |extra: Value| {
-            let mut base = json!({"sessionId":session,"isSidechain":true,"agentId":"a1"});
-            base.as_object_mut()
-                .unwrap()
-                .extend(extra.as_object().unwrap().clone());
-            base.to_string()
-        };
-        let body = [
-            record(json!({"type":"user","isMeta":true,"parentUuid":null,"message":{"role":"user","content":"Find the bug"}})),
-            record(json!({"type":"user","isMeta":true,"parentUuid":"p","message":{"role":"user","content":"Injected context"}})),
-            record(json!({"type":"assistant","message":{"role":"assistant","content":[
-                {"type":"thinking","thinking":"hidden"},
-                {"type":"tool_use","name":"Bash","input":{"command":"git diff\nsecond line"}},
-                {"type":"tool_use","name":"Read","input":{"file_path":"/repo/AGENTS.md"}}]}})),
-            record(json!({"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"output"}]}})),
-            record(json!({"type":"assistant","agentId":"other","message":{"role":"assistant","content":"Not this child"}})),
-            record(json!({"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Found it"}]}})),
-        ]
-        .join("\n");
-        std::fs::write(children.join("agent-a1.jsonl"), format!("{body}\n")).unwrap();
-        std::fs::write(children.join("agent-a2.jsonl"), format!("{body}\n")).unwrap();
-
-        let key = crate::subagents::subagent_key("a1");
-        let read = |key: &str, cancelled: bool| {
-            read_claude_subagent_conversation(
-                &account,
-                &resume,
-                key,
-                None,
-                &AtomicBool::new(cancelled),
-            )
-        };
-        let page = read(&key, false);
-        assert!(page.available);
-        assert_eq!(
-            page.messages
-                .iter()
-                .map(|message| message.text.as_str())
-                .collect::<Vec<_>>(),
-            [
-                "Find the bug",
-                "▸ Bash · git diff\n▸ Read · /repo/AGENTS.md",
-                "Found it"
-            ]
-        );
-        assert!(!read(&crate::subagents::subagent_key("missing"), false).available);
-        assert!(!read("not-a-roster-key", false).available);
-        assert!(!read(&key, true).available);
-        let codex = AgentAccountContext {
-            agent_id: "codex".into(),
-            ..account.clone()
-        };
-        assert!(
-            !read_claude_subagent_conversation(
-                &codex,
-                &resume,
-                &key,
-                None,
-                &AtomicBool::new(false)
-            )
-            .available
-        );
-        // The lead page keeps hiding every sidechain record.
-        let lead = read_agent_conversation(&account, &resume, None, &AtomicBool::new(false));
-        assert_eq!(lead.messages.len(), 1);
         std::fs::remove_dir_all(root).unwrap();
     }
 }

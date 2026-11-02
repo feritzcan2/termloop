@@ -240,7 +240,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:d346a8bfec85f087ca41cdcdf9ece00f09718f91ad17b7d61459ceabfe9679ba";
+    "sha256:16de4c5baf8a40f581632b6ac700afc41da23ddacab7ca3faca2a1808ef8de4f";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -3609,8 +3609,6 @@ pub struct SessionConversationReadParams {
     pub session_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub before: Option<u64>,
-    #[serde(rename = "subagentKey", skip_serializing_if = "Option::is_none")]
-    pub subagent_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -17696,16 +17694,9 @@ fn validate_session_conversation_read_params(value: &Value) -> bool {
                             .is_some_and(|number| number <= 9007199254740991_u64))
                 })
             })
-            && object.get("subagentKey").is_none_or(|field| {
-                field.as_str().is_some_and(|text| {
-                    text.chars().count() >= 16
-                        && text.chars().count() <= 16
-                        && contract_pattern_matches("^[0-9a-f]{16}$", text)
-                })
-            })
-            && object.keys().all(|key| {
-                ["projectId", "sessionId", "before", "subagentKey"].contains(&key.as_str())
-            })
+            && object
+                .keys()
+                .all(|key| ["projectId", "sessionId", "before"].contains(&key.as_str()))
     })
 }
 

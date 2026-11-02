@@ -162,7 +162,7 @@ const terminalPresentation = withTerminalReconnect(
 );
 terminalPresentation.conversation = createConversationReader(
   (id) => projectionStore.getSnapshot().sessions.find((session) => session.id === id),
-  (projectId, id, before, subagentKey) => sourceApiForSession(id).sessionConversationRead(projectId, id, before, subagentKey),
+  (projectId, id, before) => sourceApiForSession(id).sessionConversationRead(projectId, id, before),
   (id, covered) => {
     terminalPool.presentationPort.cover?.(id, covered);
     if (!covered) terminalPool.focus(id);

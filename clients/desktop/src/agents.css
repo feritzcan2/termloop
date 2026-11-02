@@ -49,8 +49,6 @@
 .agent-subagent-line { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-subagent-lead { color: light-dark(#4f5759, #c3c8c9); }
 .agent-subagent-more { padding-left: 10px; }
-.agent-subagent[data-subagent-key] { cursor: pointer; border-radius: 3px; }
-.agent-subagent[data-subagent-key]:hover .agent-subagent-lead { text-decoration: underline; text-underline-offset: 2px; }
 .session-item.with-subagents { align-items: start; }
 @keyframes agent-subagent-pulse { 50% { opacity: .45; } }
 @media (prefers-reduced-motion: reduce) { .agent-subagent-dot { animation: none; } }

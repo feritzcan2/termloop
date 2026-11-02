@@ -14,18 +14,12 @@ import {
 } from "../session-presentation.js";
 import { Icon, agentIconName, type IconName } from "./Icon.js";
 import { useOptionalSidebarSessionDnd } from "./SidebarSessionDnd.js";
-import type { ConversationSubagent } from "../terminal-presentation.js";
 
 export type SessionMenuState = { sessionId: string; x: number; y: number; invoker: HTMLElement };
 
 /// Source Sessions with a fork request in flight. The child stays unpublished
 /// until the daemon confirms it, so the source row carries the wait.
 export const ForkingSessionsContext = createContext<ReadonlySet<string>>(new Set());
-
-/// Opens one running subagent's own transcript in place of its Agent's
-/// terminal. Absent where no terminal stage can show it.
-export type OpenSubagentTranscript = (sessionId: string, subagent: ConversationSubagent) => void;
-export const OpenSubagentTranscriptContext = createContext<OpenSubagentTranscript | undefined>(undefined);
 
 export type AskToSessionGroup = {
   source: Session;
@@ -217,7 +211,6 @@ export function SessionRowButton({ session, agentStatus, reviewReady = false, su
   const subagents = liveAgentStatus?.subagents ?? [];
   const subagentSummary = subagents.length ? `${subagents.length} ${subagents.length === 1 ? "subagent" : "subagents"} running` : undefined;
   const forking = useContext(ForkingSessionsContext).has(session.id);
-  const openSubagent = useContext(OpenSubagentTranscriptContext);
   return (
     <button
       className={`session-item ${session.kind === "Agent" ? "agent" : "terminal"}${subagents.length ? " with-subagents" : ""}${session.run_configuration_id ? " run" : ""}${sessionIsImprover(session) ? " improver" : ""}${active ? " active" : ""}${visible ? " visible" : ""} state-${state.tone}`}
@@ -234,7 +227,7 @@ export function SessionRowButton({ session, agentStatus, reviewReady = false, su
       aria-expanded={menuOpen}
       data-session-id={session.id}
       onPointerDown={(event) => {
-        if ((event.target as HTMLElement).closest("[data-agent-todo-dismiss], [data-title-key-link], [data-presence-badge], [data-subagent-key]")) return;
+        if ((event.target as HTMLElement).closest("[data-agent-todo-dismiss], [data-title-key-link], [data-presence-badge]")) return;
         dragListeners?.onPointerDown?.(event);
       }}
       title={session.process.cwd}
@@ -245,12 +238,6 @@ export function SessionRowButton({ session, agentStatus, reviewReady = false, su
         }
         if (openTitleKey && (event.target as HTMLElement).closest("[data-title-key-link]")) {
           openTitleKey();
-          return;
-        }
-        const subagentRow = openSubagent ? (event.target as HTMLElement).closest<HTMLElement>("[data-subagent-key]") : null;
-        const subagent = subagentRow ? subagents.find((candidate) => candidate.key === subagentRow.dataset.subagentKey) : undefined;
-        if (subagent && openSubagent) {
-          openSubagent(session.id, { key: subagent.key, label: agentSubagentRowText(subagent).lead });
           return;
         }
         if ((event.target as HTMLElement).closest("[data-agent-todo-dismiss]") && currentPlanKey) {
@@ -410,7 +397,7 @@ function AgentSubagentRows({ subagents }: { subagents: readonly AgentSubagent[] 
   return <span className="agent-subagents" aria-hidden="true">
     {visible.map((subagent, index) => {
       const { lead, trail } = agentSubagentRowText(subagent);
-      return <span key={`${subagent.startedAtEpochMs}:${index}`} className="agent-subagent" data-subagent-key={subagent.key} title={`${trail ? `${lead} · ${trail}` : lead}\nClick to view this subagent's transcript`}>
+      return <span key={`${subagent.startedAtEpochMs}:${index}`} className="agent-subagent" title={trail ? `${lead} · ${trail}` : lead}>
         <span className="agent-subagent-dot" />
         <span className="agent-subagent-line">
           <span className="agent-subagent-lead">{lead}</span>

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SessionConversationReadResult } from "@termloop/contract/current";
-import { SUBAGENT_REFRESH_MS, createConversationReader } from "../src/renderer/composition/conversation-reader.js";
+import { createConversationReader } from "../src/renderer/composition/conversation-reader.js";
 
 const target = { id: "scoped-session", project_id: "scoped-project", runtime_epoch: 1, process: { agent_id: "codex" } };
 const page = (text: string, next_before: number | null = null): SessionConversationReadResult => ({ status: "available", messages: [{ role: "assistant", text, truncated: false }], next_before, incomplete: false });
@@ -52,76 +52,5 @@ describe("saved conversation reader", () => {
     reader.retry(target.id); await tick();
     expect(reader.snapshot(target.id)?.page).toEqual(page("Recovered"));
     expect(reader.snapshot(target.id)?.error).toBeUndefined();
-  });
-
-  it("follows a subagent transcript live, switches in place, and returns to the terminal", async () => {
-    vi.useFakeTimers();
-    try {
-      const claude = { ...target, process: { agent_id: "claude" } };
-      const read = vi.fn().mockResolvedValueOnce(page("first"))
-        .mockRejectedValueOnce(new Error("Disconnected"))
-        .mockResolvedValueOnce(page("second", 400))
-        .mockResolvedValueOnce(page("older"))
-        .mockResolvedValue(page("other child"));
-      const cover = vi.fn();
-      const reader = createConversationReader(() => claude, read, cover);
-      const child = { key: "0123456789abcdef", label: "Review the diff" };
-      reader.open(claude.id, child);
-      await vi.advanceTimersByTimeAsync(0);
-      expect(read).toHaveBeenLastCalledWith(claude.project_id, claude.id, undefined, child.key);
-      expect(reader.snapshot(claude.id)).toMatchObject({ subagent: child, page: page("first") });
-      reader.open(claude.id, child);
-      expect(read).toHaveBeenCalledTimes(1);
-
-      // A failed background reread keeps the transcript and tries again.
-      await vi.advanceTimersByTimeAsync(SUBAGENT_REFRESH_MS);
-      expect(read).toHaveBeenCalledTimes(2);
-      expect(reader.snapshot(claude.id)).toMatchObject({ page: page("first"), loading: false });
-      expect(reader.snapshot(claude.id)?.error).toBeUndefined();
-      await vi.advanceTimersByTimeAsync(SUBAGENT_REFRESH_MS);
-      expect(reader.snapshot(claude.id)?.page).toEqual(page("second", 400));
-
-      // Older pages are fixed history and are not reread.
-      reader.older(claude.id);
-      await vi.advanceTimersByTimeAsync(0);
-      expect(read).toHaveBeenLastCalledWith(claude.project_id, claude.id, 400, child.key);
-      await vi.advanceTimersByTimeAsync(SUBAGENT_REFRESH_MS * 3);
-      expect(read).toHaveBeenCalledTimes(4);
-
-      const other = { key: "fedcba9876543210", label: "Explore" };
-      reader.open(claude.id, other);
-      await vi.advanceTimersByTimeAsync(0);
-      expect(read).toHaveBeenLastCalledWith(claude.project_id, claude.id, undefined, other.key);
-      expect(reader.snapshot(claude.id)).toMatchObject({ subagent: other, hasNewer: false });
-      expect(cover.mock.calls).toEqual([[claude.id, true]]);
-
-      reader.close(claude.id);
-      expect(cover).toHaveBeenLastCalledWith(claude.id, false);
-      const calls = read.mock.calls.length;
-      await vi.advanceTimersByTimeAsync(SUBAGENT_REFRESH_MS * 3);
-      expect(read).toHaveBeenCalledTimes(calls);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("stops following a subagent when its Session changes during a background read", async () => {
-    vi.useFakeTimers();
-    try {
-      let current = { ...target, process: { agent_id: "claude" } };
-      const read = vi.fn().mockResolvedValueOnce(page("live")).mockImplementation(async () => {
-        current = { ...current, runtime_epoch: 2 };
-        return page("from the old runtime");
-      });
-      const reader = createConversationReader(() => current, read, vi.fn());
-      reader.open(current.id, { key: "0123456789abcdef", label: "Child" });
-      await vi.advanceTimersByTimeAsync(0);
-      await vi.advanceTimersByTimeAsync(SUBAGENT_REFRESH_MS);
-      expect(reader.snapshot(current.id)?.error).toContain("Session changed");
-      await vi.advanceTimersByTimeAsync(SUBAGENT_REFRESH_MS * 3);
-      expect(read).toHaveBeenCalledTimes(2);
-    } finally {
-      vi.useRealTimers();
-    }
   });
 });

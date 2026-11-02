@@ -16,7 +16,6 @@ mod pending_wakes;
 pub use conversation::{
     ConversationMessage, ConversationPage, bridge_agent_conversation,
     claude_conversation_transcript_exists, read_agent_conversation,
-    read_claude_subagent_conversation,
 };
 pub use opencode::opencode_uses_server_configuration;
 pub use pending_wakes::{
@@ -28,7 +27,7 @@ mod session_history;
 mod subagents;
 pub use subagents::{
     AgentSubagent, AgentSubagentListing, AgentSubagentRoster, AgentSubagentUpdate,
-    MAX_AGENT_SUBAGENTS, is_subagent_key, normalize_claude_subagent_update,
+    MAX_AGENT_SUBAGENTS, normalize_claude_subagent_update,
 };
 
 pub use catalog::{
