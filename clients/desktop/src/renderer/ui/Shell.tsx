@@ -532,6 +532,7 @@ export function shellNativeOverlayOpen(state: {
   workflowClose?: boolean;
   archivedRail: boolean;
   playbook?: boolean;
+  jiraTaskProposal?: boolean;
 }): boolean {
   return Object.values(state).some(Boolean);
 }
@@ -725,6 +726,7 @@ export function Shell(props: ShellProps) {
   }, [workspaceView]);
   const [archivedRailOverlayOpen, setArchivedRailOverlayOpen] = useOverlayLeaseCount();
   const [playbookOverlayOpen, setPlaybookOverlayOpen] = useOverlayLeaseCount();
+  const [jiraProposalOverlayOpen, setJiraProposalOverlayOpen] = useOverlayLeaseCount();
   const howItWorksOverlay = useMemo(
     () => ({ container: props.overlayContainer, visibilityChanged: setPlaybookOverlayOpen }),
     [props.overlayContainer, setPlaybookOverlayOpen],
@@ -1228,6 +1230,7 @@ export function Shell(props: ShellProps) {
     workflowClose: Boolean(workflowCloseTarget),
     archivedRail: archivedRailOverlayOpen,
     playbook: playbookOverlayOpen,
+    jiraTaskProposal: jiraProposalOverlayOpen,
   });
   useEffect(() => {
     props.setNativeOverlayOpen(nativeOverlayOpen);
@@ -2581,6 +2584,8 @@ export function Shell(props: ShellProps) {
       /> : null}
       {props.jiraTaskProposals ? <JiraTaskProposalCards
         sessions={props.projectSessions}
+        selectedSessionId={props.selectedSession?.id}
+        reportOverlay={setJiraProposalOverlayOpen}
         actions={props.jiraTaskProposals}
         selectSession={selectSession}
         started={(session, approval, summary) => {

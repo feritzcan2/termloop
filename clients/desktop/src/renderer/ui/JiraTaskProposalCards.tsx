@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useOverlayLease } from "./overlay-lease.js";
 import type {
   JiraTaskProposalDto,
   ProjectLocalBranchListResult,
@@ -63,28 +64,53 @@ export function jiraTaskWorktreeParams(
   };
 }
 
-/** Agent-proposed Jira issues that wait for the user, one card per Agent. */
-export function JiraTaskProposalCards({ sessions, actions, selectSession, started }: {
+/**
+ * Agent-proposed Jira issues that wait for the user, shown one at a time as a
+ * modal. "Later" hides a proposal until its Agent is selected again or the
+ * Agent proposes anew, so the dialog never traps the rest of the window.
+ */
+export function JiraTaskProposalCards({ sessions, selectedSessionId, actions, selectSession, started, reportOverlay }: {
   sessions: readonly Session[];
+  selectedSessionId?: string | undefined;
   actions: JiraTaskProposalActions;
   selectSession(sessionId: string): void;
   started(session: Session, approval: Extract<JiraTaskProposalApproval, { outcome: "created" }>, summary: string): void;
+  /** Reports while the modal is open so the native terminal stops covering it. */
+  reportOverlay(open: boolean): void;
 }) {
-  const pending = sessions.filter((session) => session.jira_task_proposal);
-  if (!pending.length) return null;
-  return <aside className="jira-proposal-stack" aria-label="Jira issue proposals">
-    {pending.map((session) => <JiraTaskProposalCard
-      key={`${session.id}:${session.jira_task_proposal!.proposal_id}`}
+  const [deferred, setDeferred] = useState<ReadonlySet<string>>(new Set());
+  useEffect(() => {
+    if (!selectedSessionId) return;
+    setDeferred((current) => {
+      const stale = [...current].filter((key) => key.startsWith(`${selectedSessionId}:`));
+      if (!stale.length) return current;
+      const next = new Set(current);
+      for (const key of stale) next.delete(key);
+      return next;
+    });
+  }, [selectedSessionId]);
+  const session = sessions.find((candidate) => candidate.jira_task_proposal
+    && !deferred.has(`${candidate.id}:${candidate.jira_task_proposal.proposal_id}`));
+  useOverlayLease(Boolean(session), reportOverlay);
+  if (!session) return null;
+  const key = `${session.id}:${session.jira_task_proposal!.proposal_id}`;
+  const later = () => setDeferred((current) => new Set(current).add(key));
+  return <div className="dialog-layer jira-proposal-layer" onKeyDown={(event) => event.key === "Escape" && later()}>
+    <button className="dialog-backdrop" type="button" aria-label="Review the Jira issue proposal later" onClick={later} />
+    <JiraTaskProposalCard
+      key={key}
       session={session}
       proposal={session.jira_task_proposal!}
       actions={actions}
-      selectSession={selectSession}
+      selectSession={(sessionId) => { later(); selectSession(sessionId); }}
       started={started}
-    />)}
-  </aside>;
+      later={later}
+    />
+  </div>;
 }
 
-function JiraTaskProposalCard({ session, proposal, actions, selectSession, started }: {
+function JiraTaskProposalCard({ session, proposal, actions, selectSession, started, later }: {
+  later(): void;
   session: Session;
   proposal: JiraTaskProposalDto;
   actions: JiraTaskProposalActions;
@@ -157,7 +183,7 @@ function JiraTaskProposalCard({ session, proposal, actions, selectSession, start
   };
 
   const shownError = error ?? proposal.failure ?? undefined;
-  return <section className="jira-proposal-card" aria-labelledby={`jira-proposal-${proposal.proposal_id}`} aria-busy={disabled}>
+  return <section className="dialog-card jira-proposal-card" role="dialog" aria-modal="true" aria-labelledby={`jira-proposal-${proposal.proposal_id}`} aria-busy={disabled}>
     <header>
       <h3 id={`jira-proposal-${proposal.proposal_id}`}>Jira issue proposal</h3>
       <button type="button" className="link" onClick={() => selectSession(session.id)}>{sessionLabel(session)}</button>
@@ -174,13 +200,13 @@ function JiraTaskProposalCard({ session, proposal, actions, selectSession, start
       <label>Epic<input value={epicKey} maxLength={64} placeholder="None" disabled={disabled} onChange={(event) => setEpicKey(event.target.value.toUpperCase())} /></label>
     </div>
     <label>Summary<input value={summary} maxLength={255} disabled={disabled} onChange={(event) => setSummary(event.target.value)} /></label>
-    <label>Description<textarea value={description} maxLength={32767} rows={6} disabled={disabled} onChange={(event) => setDescription(event.target.value)} /></label>
+    <label>Description<textarea value={description} maxLength={32767} rows={12} disabled={disabled} onChange={(event) => setDescription(event.target.value)} /></label>
     {feedbackOpen ? <label>Feedback for the agent
       <textarea value={feedback} maxLength={4000} rows={3} autoFocus disabled={disabled} placeholder="For example: use epic PAY-9 and make it a Story" onChange={(event) => setFeedback(event.target.value)} />
     </label> : null}
     {shownError ? <p role="alert">{shownError}</p> : invalid && sources ? <p role="status">{invalid}</p> : null}
     <footer>
-      {creating ? <em>Creating in Jira…</em> : null}
+      {creating ? <em>Creating in Jira…</em> : <button type="button" className="jira-proposal-later" onClick={later}>Later</button>}
       <button type="button" disabled={disabled} onClick={() => void respond("dismiss")}>Dismiss</button>
       {feedbackOpen
         ? <button type="button" disabled={disabled || !feedback.trim()} onClick={() => void respond("revise")}>Send feedback</button>
