@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentStatus, BranchCommitSummary, GitHostProjection, RunConfiguration, RunRuntime, Session, Task, WorkflowExecution } from "../src/renderer/model.js";
-import { TaskRail, askToHelpersForSources, taskAttachedSessionIds, taskRelocationDropEnabled, type TaskRailProps } from "../src/renderer/ui/TaskRail.js";
+import { TaskRail, askToHelpersForSources, taskAttachedSessionIds, taskRelocationDropEnabled, taskSessions, type TaskRailProps } from "../src/renderer/ui/TaskRail.js";
 import { readTaskCollapsed, writeTaskCollapsed } from "../src/renderer/task-collapse-memory.js";
 import type { TaskProvisionWorktreeParams } from "@termloop/contract/current";
 import { fullAgentCapability, launchOnlyGeminiCapability, resumableOpenCodeCapability } from "./agent-capability-fixture.js";
@@ -1304,6 +1304,31 @@ describe("Task rail row anatomy", () => {
     expect(markup.indexOf('data-session-id="source"')).toBeLessThan(markup.indexOf('data-session-id="fork"'));
     expect(markup.indexOf('data-session-id="fork"')).toBeLessThan(markup.indexOf('data-session-id="nested"'));
     expect(markup).toContain("forked from fork");
+    expect(markup.match(/data-session-id="nested"/gu)).toHaveLength(1);
+  });
+
+  it("shows a fork that started in another Task's worktree only in that Task", () => {
+    const source = agentSession("source");
+    const otherTask: Task = {
+      ...launchableTask(),
+      id: "task-2",
+      title: "Follow-up",
+      branch: { repository_root: "/repository", name: "feature/follow-up" },
+      worktree: { path: "/repository/.worktrees/follow-up" },
+    };
+    const fork = { ...agentSession("fork"), fork_source_session_id: source.id,
+      process: { ...source.process, cwd: "/repository/.worktrees/follow-up" } };
+    const nested = { ...agentSession("nested"), fork_source_session_id: fork.id,
+      process: { ...source.process, cwd: "/repository/.worktrees/follow-up" } };
+    const sessions = new Map([source, fork, nested].map((session) => [session.id, session]));
+    const tasks = [launchableTask(), otherTask];
+    const attachedAnywhere = taskAttachedSessionIds(tasks, sessions);
+
+    expect(askToHelpersForSources(new Set([source.id]), sessions, new Set([fork.id, nested.id]))).toEqual(new Set());
+    expect(taskSessions(launchableTask(), sessions, attachedAnywhere).map((session) => session.id)).toEqual([source.id]);
+    expect(taskSessions(otherTask, sessions, attachedAnywhere).map((session) => session.id).sort()).toEqual([fork.id, nested.id]);
+    const markup = renderRail({ tasks, sessions: [source, fork, nested] });
+    expect(markup.match(/data-session-id="fork"/gu)).toHaveLength(1);
     expect(markup.match(/data-session-id="nested"/gu)).toHaveLength(1);
   });
 

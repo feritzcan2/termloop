@@ -1021,8 +1021,8 @@ export function Shell(props: ShellProps) {
     [dismissChanges],
   );
   const detailSessions = useMemo(
-    () => detailTask ? taskSessions(detailTask, sessionsById) : [],
-    [detailTask, sessionsById],
+    () => detailTask ? taskSessions(detailTask, sessionsById, attachedSessionIds) : [],
+    [detailTask, sessionsById, attachedSessionIds],
   );
   const selectProject = useCallback(
     (projectId: string) => dismissChangesBeforeNavigation(dismissChanges, props.selectProject, projectId),

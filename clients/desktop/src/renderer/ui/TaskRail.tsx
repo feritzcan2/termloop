@@ -101,9 +101,16 @@ export function taskRelocationDropEnabled(
 /// The Sessions a Task shows: the ones running in its checkout, plus the
 /// projected descendants those Sessions launched. Shared with the Task detail page so both
 /// surfaces answer "who is working on this Task" the same way.
-export function taskSessions(task: Task, sessionsById: ReadonlyMap<string, Session>): Session[] {
+/// `attachedToAnyTask` keeps a fork or helper that lives in another Task's
+/// worktree out of this Task, even though it still descends from one of ours.
+export function taskSessions(
+  task: Task,
+  sessionsById: ReadonlyMap<string, Session>,
+  attachedToAnyTask: ReadonlySet<string> = new Set(),
+): Session[] {
   const ids = taskAttachedSessionIds([task], sessionsById);
-  const nestedHelpers = askToHelpersForSources(ids, sessionsById);
+  const attachedElsewhere = new Set([...attachedToAnyTask].filter((sessionId) => !ids.has(sessionId)));
+  const nestedHelpers = askToHelpersForSources(ids, sessionsById, attachedElsewhere);
   const presentationIds = new Set([...ids, ...nestedHelpers]);
   return [...presentationIds].flatMap((sessionId) => {
     const session = sessionsById.get(sessionId);
@@ -181,8 +188,9 @@ export function openTasksByActivity(
   parkedTaskIds: ReadonlySet<string> = new Set(),
 ): Task[] {
   const quiet = Number.MAX_SAFE_INTEGER;
+  const attachedToAnyTask = taskAttachedSessionIds(tasks, sessionsById);
   const priority = (task: Task): number => {
-    const liveAgents = taskSessions(task, sessionsById)
+    const liveAgents = taskSessions(task, sessionsById, attachedToAnyTask)
       .filter((session) => session.kind === "Agent" && isLiveSession(session));
     return liveAgents.length === 0
       ? quiet
@@ -205,18 +213,19 @@ export function openTasksByActivity(
 
 /// Helper nesting is an independent exact source-Session projection. It does
 /// not make the helper Task-attached or place it under Task lifecycle authority.
+/// A helper in `attachedElsewhere` belongs to another Task's worktree, so it
+/// and its own descendants stay out of this one.
 export function askToHelpersForSources(
   sourceIds: ReadonlySet<string>,
   sessionsById: ReadonlyMap<string, Session>,
+  attachedElsewhere: ReadonlySet<string> = new Set(),
 ): ReadonlySet<string> {
   const helpers = new Set<string>();
   const attached = new Set(sourceIds);
+  // Helpers arrive parent-first, so a descendant joins only through a kept parent.
   for (const group of askToSessionGroups([...sessionsById.values()])) {
-    if (attached.has(group.source.id)) {
-      for (const helper of group.helpers) helpers.add(helper.session.id);
-      continue;
-    }
     for (const helper of group.helpers) {
+      if (attachedElsewhere.has(helper.session.id)) continue;
       if (attached.has(helper.source.id) || helpers.has(helper.source.id)) helpers.add(helper.session.id);
     }
   }
@@ -373,6 +382,10 @@ export function TaskRail(props: TaskRailProps) {
     () => new Map(props.branchCommitSummaries.map((summary) => [summary.task_id, summary])),
     [props.branchCommitSummaries],
   );
+  const attachedToAnyTask = useMemo(
+    () => taskAttachedSessionIds(props.tasks, props.sessionsById),
+    [props.tasks, props.sessionsById],
+  );
   const allOpenTasks = openTasksByActivity(
     props.tasks.filter((task) => task.status === "open"),
     props.sessionsById,
@@ -416,6 +429,7 @@ export function TaskRail(props: TaskRailProps) {
       runStateRevision={props.runStateRevision}
       openExternal={props.openExternal}
       sessionsById={props.sessionsById}
+      attachedToAnyTask={attachedToAnyTask}
       agentGroups={props.agentGroups}
       detachedRelationshipSessionIds={props.detachedRelationshipSessionIds}
       detachRelationship={props.detachRelationship}
@@ -709,6 +723,7 @@ type TaskGroupProps = {
   runStateRevision: number;
   openExternal(url: string, runSessionId?: string): Promise<void>;
   sessionsById: ReadonlyMap<string, Session>;
+  attachedToAnyTask: ReadonlySet<string>;
   agentGroups?: readonly AgentGroupLayout[] | undefined;
   detachedRelationshipSessionIds?: ReadonlySet<string> | undefined;
   detachRelationship?: ((sessionId: string) => void) | undefined;
@@ -799,8 +814,8 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
     : null;
   const integration = taskIntegration(props.gitHostProjection, props.branchCommitSummary);
   const sessions = useMemo(
-    () => taskSessions(task, sessionsById),
-    [task, sessionsById],
+    () => taskSessions(task, sessionsById, props.attachedToAnyTask),
+    [task, sessionsById, props.attachedToAnyTask],
   );
   const attention = useMemo(
     () => agentAttention(sessions, props.statusesById, props.reviewReadySessionIds),
