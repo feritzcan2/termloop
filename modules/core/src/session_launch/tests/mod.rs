@@ -6319,3 +6319,70 @@ fn quick_action_attachments_accept_up_to_the_invocation_limit() {
         Err(CoreError::InvalidParams(field)) if field == "attachments"
     ));
 }
+
+#[test]
+fn saved_profile_launch_accepts_a_launcher_provider_and_selection_override() {
+    let root = std::env::temp_dir().join(format!(
+        "termloop-core-profile-override-{}-{}",
+        std::process::id(),
+        Uuid::new_v4()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let root = termloop_platform::canonical_existing_directory_path(&root).unwrap();
+    let authority = termloop_store::issue_core_write_authority_for_composition();
+    let store = Store::open(root.join("state.json")).unwrap();
+    let mut runtime = CoreRuntime::new(store, authority, TerminalService::default(), 1).unwrap();
+    runtime.configure_agent_observations(crate::test_agent_observation_transport(
+        root.join("provider"),
+    ));
+    let project = runtime
+        .handle("project.create", json!({"name":"Demo","folderPath":root}))
+        .unwrap();
+    let profile_ref = "builtin.agent-profile.scattered-orchestration-finder";
+    // Saving the built-in profile pins Codex defaults in the agent library.
+    let library = runtime.handle("agent.libraryGet", json!({})).unwrap();
+    let saved = library["profiles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|profile| profile["id"] == profile_ref)
+        .unwrap();
+    runtime
+        .handle(
+            "agent.profileUpdate",
+            json!({"id": profile_ref, "name": saved["name"], "description": saved["description"],
+                "category": saved["category"], "instructions": "Find scattered orchestration.",
+                "agentId": "codex", "model": "default", "permission": "plan",
+                "reasoning": "high", "expectedRevision": library["revision"]}),
+        )
+        .unwrap();
+
+    let params = json!({
+        "projectId": project["id"], "cwd": root, "agentId": "claude", "model": "opus[1m]",
+        "permission": "bypassPermissions", "reasoning": "medium", "templateRef": profile_ref,
+        "bindings": { "prompt": "bul sorunları" }, "attachments": []
+    });
+    let preview = runtime.preview_quick_action(params.clone()).unwrap();
+    let mut launch_params = params;
+    launch_params["launchTicket"] = preview["launch_ticket"].clone();
+    let mut plan = runtime.take_quick_action_launch(launch_params).unwrap();
+    plan.prepare_runtime();
+    let launched = runtime.complete_agent_launch(&mut plan).unwrap();
+
+    let session_id = launched.session["id"].as_str().unwrap();
+    let session = runtime
+        .store
+        .sessions()
+        .iter()
+        .find(|session| session.id == session_id)
+        .unwrap()
+        .clone();
+    let pinned = runtime.store.session_agent_profile(session_id).unwrap();
+    assert_eq!(pinned.id, profile_ref);
+    assert_eq!(pinned.instructions, "Find scattered orchestration.");
+    assert_eq!(pinned.agent_id, "claude");
+    assert_eq!(pinned.selection, session.launch_selection);
+    assert_eq!(session.launch_selection.model, "opus[1m]");
+    let _ = runtime.terminal.terminate(session_id);
+    let _ = std::fs::remove_dir_all(root);
+}

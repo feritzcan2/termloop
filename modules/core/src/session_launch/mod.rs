@@ -2056,7 +2056,7 @@ impl CoreRuntime {
             self.store.insert_personal_agent_session(
                 &self.write_authority,
                 session.clone(),
-                profile.clone(),
+                launched_profile_snapshot(profile, &session),
                 remember_launch_selection,
             )
         } else if let Some(profile) = plan.helper_agent_profile.as_ref() {
@@ -2284,6 +2284,22 @@ fn resolve_quick_action_launch(
             mcp,
         )
     }
+}
+
+/// A saved profile supplies instructions plus launcher defaults; the user may
+/// override its provider and selection for one launch. The pinned snapshot
+/// records the provider and selection this Session actually started with, so
+/// the store's profile/Session agreement holds and resume stays unchanged.
+fn launched_profile_snapshot(
+    profile: &termloop_domain::PersonalAgent,
+    session: &SessionRecord,
+) -> termloop_domain::PersonalAgent {
+    let mut snapshot = profile.clone();
+    if let Some(agent_id) = session.process.agent_id.as_ref() {
+        snapshot.agent_id = agent_id.clone();
+    }
+    snapshot.selection = session.launch_selection.clone();
+    snapshot
 }
 
 fn improver_session_target(plan: &AgentLaunchPlan) -> Option<ImproverSessionTarget> {
