@@ -455,6 +455,9 @@ describe("workflow actions in the Agents rail", () => {
     expect(group.querySelector('[data-session-id="helper-a"] .row-state')?.textContent).toBe("Working");
     expect(container.querySelector('[data-session-id="ordinary"] .row-subtitle')?.textContent).toBe("feature-payments");
     expect(container.querySelectorAll('.active-agent-worktree-changes')).toHaveLength(1);
+    const chip = container.querySelector<HTMLElement>('.active-agent-worktree-changes')!;
+    expect(chip.closest<HTMLElement>('.active-agent-row')!.style.getPropertyValue("--active-agent-delivery-reserve"))
+      .toBe(`calc(${chip.textContent!.length}ch + 14px)`);
     await render(values, execution(), { ...overrides, worktreeChangesBySessionId: new Map([["lead", { taskId: "task-1", taskTitle: "Payments", changeCount: 9 }]]) });
     expect(container.querySelector('.workflow-agent-group-changes')?.textContent).toBe("9 changes");
   });

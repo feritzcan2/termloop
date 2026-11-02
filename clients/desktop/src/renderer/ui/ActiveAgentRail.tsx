@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import type { AgentGroupLayout } from "../../layout/model.js";
 import type { AgentStatus, GitHostProjection, Session } from "../model.js";
@@ -653,8 +653,22 @@ function ActiveAgentRow({ session, source, depth = 0, projectedSource, worktreeC
     ? undefined
     : props.taskIdentityBySessionId?.get(session.id);
   const taskTitled = Boolean(taskIdentity) && !nested;
-  const pullRequests = taskTitled ? taskIdentity!.pullRequests : [];
+  const pullRequests = (taskTitled ? taskIdentity!.pullRequests : []).map((pullRequest, index, all) => ({
+    pullRequest,
+    chip: pullRequestChip(pullRequest),
+    more: index === all.length - 1 ? taskIdentity!.morePullRequests : 0,
+  }));
   const delivery = Boolean(rowChanges) || pullRequests.length > 0;
+  /// The delivery strip floats over the state line's right side, so the state
+  /// line reserves room for it; a long branch then ellipsizes before the chips
+  /// instead of running underneath them.
+  const deliveryLabels = [
+    ...(rowChanges ? [taskChangeLabel(rowChanges.changeCount)] : []),
+    ...pullRequests.map(({ chip, more }) => `${chip.label}${more > 0 ? ` +${more}` : ""}`),
+  ];
+  const deliveryReserve = delivery
+    ? `calc(${deliveryLabels.reduce((total, label) => total + label.length, 0)}ch + ${deliveryLabels.length * 8 + 6}px)`
+    : undefined;
   const evaluationFork = props.playbookEvaluations
     ?.find((candidate) => candidate.sourceSessionId === session.id);
   const evaluation = evaluationFork
@@ -681,7 +695,8 @@ function ActiveAgentRow({ session, source, depth = 0, projectedSource, worktreeC
       onMouseEnter={hoveredTaskId ? () => props.taskHovered?.(hoveredTaskId) : undefined}
       onMouseLeave={hoveredTaskId ? () => props.taskHovered?.(undefined) : undefined}>
       {!compactWorkflow ? workflowActions : null}
-      <div className={`session-row active-agent-row${delivery ? " has-worktree-changes" : ""}${draggable.isDragging ? " dragging" : ""}${dropPlacement ? ` drop-${dropPlacement}` : ""}`}>
+      <div className={`session-row active-agent-row${delivery ? " has-worktree-changes" : ""}${draggable.isDragging ? " dragging" : ""}${dropPlacement ? ` drop-${dropPlacement}` : ""}`}
+        style={deliveryReserve ? { "--active-agent-delivery-reserve": deliveryReserve } as CSSProperties : undefined}>
         <SessionRowButton
         session={session}
         displayName={taskTitled ? taskIdentity!.title : workflowLabel}
@@ -733,9 +748,7 @@ function ActiveAgentRow({ session, source, depth = 0, projectedSource, worktreeC
           title={`Review ${taskChangeLabel(rowChanges.changeCount)} in ${rowChanges.taskTitle}`}
           onClick={(event) => { event.stopPropagation(); props.openTaskChanges(rowChanges.taskId); }}
           >{taskChangeLabel(rowChanges.changeCount)}</button> : null}
-          {pullRequests.map((pullRequest, index) => {
-            const chip = pullRequestChip(pullRequest);
-            const more = index === pullRequests.length - 1 ? taskIdentity!.morePullRequests : 0;
+          {pullRequests.map(({ pullRequest, chip, more }) => {
             return <button
               key={`${pullRequest.repository_owner}/${pullRequest.repository_name}#${pullRequest.number}`}
               type="button"

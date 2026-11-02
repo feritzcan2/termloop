@@ -2989,6 +2989,8 @@ button.folder-crumb:hover { background: light-dark(rgba(15,23,42,.07), rgba(255,
 /* Change count and up to two pull requests share the state line's free right
    side. The state line is short ("Working Claude"), so the strip sits on the
    same baseline; under width pressure the strip shrinks, never the title. */
+.active-agent-row.has-worktree-changes .session-state-line { padding-right: var(--active-agent-delivery-reserve, 0px); }
+.workflow-agent-group .active-agent-row.has-worktree-changes .session-state-line { padding-right: 0; }
 .active-agent-delivery { position: absolute; right: 20px; bottom: 4px; z-index: 2; display: flex; max-width: calc(100% - 120px); align-items: center; justify-content: flex-end; gap: 2px; overflow: hidden; }
 .active-agent-pull-request { min-width: 0; padding: 1px 3px; overflow: hidden; border: 0; border-radius: 4px; background: transparent; color: var(--sidebar-dimmer); font: 600 9px/1.3 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
 .active-agent-pull-request[data-tone="review"] { color: var(--agent-status-review); }
