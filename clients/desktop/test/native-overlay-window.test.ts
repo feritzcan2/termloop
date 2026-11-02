@@ -4,6 +4,7 @@ import {
   nativeOverlayPassiveVisible,
   nativeOverlayPassiveRegion,
   nativeOverlayPointerInteractiveAt,
+  overlayOpenTiming,
   terminalSurfaceVisible,
 } from "../src/renderer/composition/native-overlay-window.js";
 
@@ -178,6 +179,35 @@ describe("native overlay window request", () => {
     ]);
     expect(lines).toContainEqual(expect.stringContaining("setVisible visible=true from=passive-clickthrough"));
     info.mockRestore();
+  });
+
+  it("relays only the renderer's overlay timing lines into the main log", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    let consoleListener: ((details: { message?: unknown }) => void) | undefined;
+    const parent = {
+      on: vi.fn(), off: vi.fn(), isMinimized: vi.fn(() => false), isDestroyed: vi.fn(() => false),
+      getContentBounds: vi.fn(() => ({ x: 0, y: 0, width: 800, height: 600 })), focus: vi.fn(),
+      webContents: { on: vi.fn((name: string, listener: never) => {
+        if (name === "console-message") consoleListener = listener;
+      }) },
+    };
+    new NativeOverlayWindowManager(parent as never, vi.fn());
+
+    consoleListener?.({ message: "[overlay-diag] t rendererOpen clickToCommit=12ms ipc=3ms" });
+    consoleListener?.({ message: "unrelated renderer log with private text" });
+    consoleListener?.({ message: 42 });
+
+    expect(info.mock.calls.map(([line]) => String(line))).toEqual([
+      "[overlay-diag] t rendererOpen clickToCommit=12ms ipc=3ms",
+    ]);
+    info.mockRestore();
+  });
+
+  it("splits an overlay open into click-to-commit and IPC time", () => {
+    expect(overlayOpenTiming(100, 1_350.4, 1_362.6)).toContain("rendererOpen clickToCommit=1250ms ipc=12ms");
+    // A keyboard open or a stale pointer-down is not attributed to the click.
+    expect(overlayOpenTiming(undefined, 50, 60)).toContain("clickToCommit=unknown ipc=10ms");
+    expect(overlayOpenTiming(0, 9_000, 9_004)).toContain("clickToCommit=unknown ipc=4ms");
   });
 
   it("acquires the pet from the system cursor without waiting for a forwarded mousemove", () => {

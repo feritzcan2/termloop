@@ -45,6 +45,17 @@ export class NativeOverlayWindowManager {
     parent.on("minimize", this.#hideForParent);
     parent.on("restore", this.#restoreForParent);
     this.#traceMouseDown("parent", parent.webContents);
+    this.#forwardRendererDiagnostics(parent.webContents);
+  }
+
+  // The renderer measures click-to-render and IPC time for overlay opens; its
+  // console is not captured, so relay only its own diagnostic lines.
+  #forwardRendererDiagnostics(contents: InputEventSource | undefined): void {
+    contents?.on("console-message", (details: { message?: unknown }) => {
+      if (typeof details.message === "string" && details.message.startsWith("[overlay-diag] ")) {
+        console.info(details.message);
+      }
+    });
   }
 
   #mode(): string {

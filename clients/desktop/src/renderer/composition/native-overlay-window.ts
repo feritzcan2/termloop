@@ -113,6 +113,21 @@ export function nativeOverlayPassiveRegion(
   return { x: left, y: top, width: right - left, height: bottom - top };
 }
 
+// Temporary latency diagnostics for slow menu opens. Splits a pointer-down to
+// visible overlay into React render/commit time and the main-process IPC.
+let lastPointerDownAt: number | undefined;
+
+export function overlayOpenTiming(
+  pointerDownAt: number | undefined,
+  committedAt: number,
+  shownAt: number,
+): string {
+  const render = pointerDownAt === undefined || committedAt - pointerDownAt > 5_000
+    ? "unknown"
+    : `${Math.round(committedAt - pointerDownAt)}ms`;
+  return `[overlay-diag] ${new Date().toISOString()} rendererOpen clickToCommit=${render} ipc=${Math.round(shownAt - committedAt)}ms`;
+}
+
 export function useNativeOverlayWindow(
   enabled: boolean,
   visible: boolean,
@@ -126,6 +141,13 @@ export function useNativeOverlayWindow(
   const popupRef = useRef<Window | undefined>(undefined);
   const closeTimerRef = useRef<number | undefined>(undefined);
   const frameGenerationRef = useRef(0);
+
+  useEffect(() => {
+    if (!enabled) return;
+    const recordPointerDown = () => { lastPointerDownAt = performance.now(); };
+    window.addEventListener("pointerdown", recordPointerDown, true);
+    return () => window.removeEventListener("pointerdown", recordPointerDown, true);
+  }, [enabled]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -232,8 +254,11 @@ export function useNativeOverlayWindow(
       });
     };
     if (visible) sync();
+    const committedAt = performance.now();
+    const pointerDownAt = lastPointerDownAt;
     void setVisible(visible)
       .then(() => {
+        if (visible) console.info(overlayOpenTiming(pointerDownAt, committedAt, performance.now()));
         if (active && !visible) updateTerminalMasks(container, false);
       })
       .catch(() => undefined);
