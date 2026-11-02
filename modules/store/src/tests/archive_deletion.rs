@@ -230,3 +230,85 @@ fn readiness_migration_does_not_hide_missing_or_duplicate_live_records() {
     }
     std::fs::remove_file(&store.path).unwrap();
 }
+
+#[test]
+fn archived_task_deletion_frees_its_jira_issue_for_a_fresh_import() {
+    use termloop_domain::{
+        IssueLink, IssueLinkProvider, IssueLinkSyncAuthority, TaskSourceBranchNaming,
+        TaskSourceConfiguration, TaskSourceImportPolicy, TaskSourceProvider, TaskSourceScope,
+    };
+    let (mut store, authority) = archived_task_fixture();
+    store
+        .insert_task_source_configuration(
+            &authority,
+            TaskSourceConfiguration {
+                id: "source-1".into(),
+                project_id: "project-cleanup".into(),
+                provider: TaskSourceProvider::Jira,
+                name: "Jira work".into(),
+                enabled: true,
+                generation: 1,
+                site_base_url: "https://example.atlassian.net".into(),
+                scope: TaskSourceScope::AssignedToMe,
+                boards: vec![],
+                statuses: vec![],
+                import_policy: TaskSourceImportPolicy::Review,
+                auto_import_active_task_limit:
+                    termloop_domain::TASK_SOURCE_AUTO_IMPORT_ACTIVE_TASK_LIMIT_DEFAULT,
+                refresh_interval_seconds: 900,
+                ignored_external_ids: vec![],
+                branch_naming: TaskSourceBranchNaming::Title,
+                created_at_epoch_ms: 1,
+                updated_at_epoch_ms: 1,
+            },
+        )
+        .unwrap();
+    let link = |task_id: &str| IssueLink {
+        task_id: task_id.into(),
+        provider: IssueLinkProvider::Jira,
+        external_ref: "TERM-42".into(),
+        source_id: Some("source-1".into()),
+        external_id: Some("10042".into()),
+        external_updated_at: Some("2026-08-26T10:00:00.000+0000".into()),
+        url: Some("https://example.atlassian.net/browse/TERM-42".into()),
+        sync_authority: IssueLinkSyncAuthority::None,
+    };
+    store
+        .insert_task_jira_issue_link(&authority, link("archived-task"))
+        .unwrap();
+
+    store
+        .delete_archived_task_with_sessions(
+            &authority,
+            "archived-task",
+            100,
+            &["archived-agent".into()],
+        )
+        .unwrap();
+    assert!(store.issue_links().is_empty());
+
+    let reimported = TaskRecord {
+        id: "reimported-task".into(),
+        project_id: "project-cleanup".into(),
+        title: "Imported".into(),
+        brief: None,
+        developer_notes: vec![],
+        status: TaskStatus::Open,
+        archived_at_epoch_ms: None,
+        branch: None,
+        worktree: None,
+        worktree_generation: 0,
+        steward_brief_markdown: String::new(),
+        steward_brief_revision: 1,
+        rank: 0,
+        created_at_epoch_ms: 200,
+        updated_at_epoch_ms: 200,
+    };
+    store
+        .insert_task_from_source(&authority, reimported, link("reimported-task"))
+        .unwrap();
+    let reopened = Store::open(&store.path).unwrap();
+    assert_eq!(reopened.issue_links().len(), 1);
+    assert_eq!(reopened.issue_links()[0].task_id, "reimported-task");
+    std::fs::remove_file(&store.path).unwrap();
+}

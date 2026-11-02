@@ -5,6 +5,7 @@ import { Icon } from "./Icon.js";
 import { RailHeader } from "./RailHeader.js";
 import { OverlayPortal } from "./OverlayPortal.js";
 import { DeleteTaskDialog } from "./task-dialogs/delete-task-dialog.js";
+import { DeleteArchivedTasksDialog } from "./task-dialogs/delete-archived-tasks-dialog.js";
 import type { TaskWorktreeCleanupPreviewDto } from "@termloop/contract/current";
 import type { WorkspaceView } from "./WorkspaceViewSwitch.js";
 
@@ -93,16 +94,34 @@ export function archivedRailVisible(workspaceRailActive: boolean, workspaceView:
 export function ArchivedRail(props: ArchivedRailProps) {
   const [collapsed, setCollapsed] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<Task>();
-  useOverlayLease(Boolean(deleteTarget), props.overlayVisibilityChanged);
+  /// Bulk delete snapshots the page it opened on; deletions re-read the page
+  /// underneath, so the dialog must outlive the rail emptying itself.
+  const [bulkTargets, setBulkTargets] = useState<readonly Task[]>();
+  useOverlayLease(Boolean(deleteTarget || bulkTargets), props.overlayVisibilityChanged);
   /// Emptiness is owned here so the sidebar never has to predict it.
   const total = props.tasks.length;
-  if (total === 0) return null;
+  const anyDeleting = props.tasks.some((task) => props.deletingTaskIds.has(task.id));
+  const bulkDialog = bulkTargets ? <DeleteArchivedTasksDialog
+    tasks={bulkTargets}
+    inspect={props.inspectTaskWorktreeCleanup}
+    remove={props.deleteTask}
+    close={() => setBulkTargets(undefined)}
+  /> : null;
+  if (total === 0) return bulkDialog ? <OverlayPortal container={props.overlayContainer}>{bulkDialog}</OverlayPortal> : null;
   return (
     <section className="rail-section archived-section" data-rail="archived" aria-label="Archived items">
       <RailHeader collapsed={collapsed} label="Archived items" toggle={() => setCollapsed((value) => !value)}>
         <span className="rail-glyph" aria-hidden="true"><Icon name="archive" /></span>
         <h2>Archived</h2>
         <span className="count-badge" title={`${total} archived items`}>{total}</span>
+        <button
+          type="button"
+          className="archived-delete-all"
+          disabled={props.disabled || anyDeleting || Boolean(bulkTargets)}
+          aria-label="Delete all archived Tasks"
+          title="Delete every archived Task and its worktree; keep Git branches"
+          onClick={() => setBulkTargets([...props.tasks])}
+        >delete all</button>
       </RailHeader>
       {collapsed ? null : (
         <div className="archived-list" role="list" aria-label="Archived items">
@@ -133,6 +152,7 @@ export function ArchivedRail(props: ArchivedRailProps) {
         close={() => setDeleteTarget(undefined)}
         remove={(review) => { void props.deleteTask(deleteTarget, review); }}
       /> : null}
+      {bulkDialog}
       </OverlayPortal>
     </section>
   );

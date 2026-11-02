@@ -262,7 +262,7 @@ kbd { padding: 2px 5px; border: 1px solid light-dark(rgba(15,23,42,.07), rgba(25
 /* A small footer drawer shared by the Tasks and Agents views. It stays outside
    the scrolling rail, and its own list is bounded so live work keeps priority. */
 .archived-section { flex: none; border-top: 1px solid light-dark(rgba(15,23,42,.07), rgba(255,255,255,.07)); background: rgba(0,0,0,.06); }
-.archived-section .rail-header { grid-template-columns: 12px 13px minmax(0,1fr) auto; gap: 5px; height: 24px; padding: 0 10px 0 7px; }
+.archived-section .rail-header { grid-template-columns: 12px 13px minmax(0,1fr) auto auto; gap: 5px; height: 24px; padding: 0 10px 0 7px; }
 .archived-section .rail-header h2 { font: 650 10px/1 var(--font-mono); letter-spacing: .04em; text-transform: uppercase; }
 .archived-section .rail-toggle { width: 12px; height: 18px; }
 .archived-section .rail-toggle svg { width: 9px; height: 9px; }
@@ -286,6 +286,18 @@ kbd { padding: 2px 5px; border: 1px solid light-dark(rgba(15,23,42,.07), rgba(25
 .archived-delete svg { width: 9px; height: 9px; }
 .archived-delete:hover:not(:disabled) { background: rgba(225,117,126,.16); color: light-dark(#916366, #f0a3a9); }
 .archived-delete:focus-visible { outline: 1px solid var(--danger); outline-offset: 1px; }
+.archived-delete-all { flex: none; padding: 1px 5px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--sidebar-dimmer); font: 8.5px/1.45 var(--font-mono); }
+.archived-delete-all:hover:not(:disabled) { border-color: rgba(225,117,126,.35); background: rgba(225,117,126,.16); color: light-dark(#916366, #f0a3a9); }
+.archived-delete-all:focus-visible { outline: 1px solid var(--danger); outline-offset: 1px; }
+.archived-delete-all:disabled { opacity: .5; }
+.bulk-delete-list { max-height: 40vh; margin: 10px 0 0; padding: 0; overflow-y: auto; list-style: none; border: 1px solid var(--border); border-radius: 6px; }
+.bulk-delete-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px; align-items: center; padding: 5px 9px; font-size: 12px; }
+.bulk-delete-row + .bulk-delete-row { border-top: 1px solid var(--border); }
+.bulk-delete-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bulk-delete-note { max-width: 260px; overflow: hidden; color: var(--text-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.bulk-delete-row.skipped .bulk-delete-title, .bulk-delete-row.deleted .bulk-delete-title { opacity: .55; }
+.bulk-delete-row.deleted .bulk-delete-title { text-decoration: line-through; }
+.bulk-delete-row.failed .bulk-delete-note { color: var(--danger); }
 
 /* Deleted is deliberately adjacent to Archived but visually reads as a timed
    recycle bin: a warm edge, a retention line, and no permanent-delete action. */

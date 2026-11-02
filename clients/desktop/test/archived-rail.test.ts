@@ -124,6 +124,14 @@ describe("Archived rail layout", () => {
     expect(await renderArchived([archivedTask()], { disabled: true })).toContain("disabled");
   });
 
+  it("offers Delete all in the header, disabled while a Task is being removed", async () => {
+    const idle = await renderArchived([archivedTask()], { expand: false });
+    expect(idle).toContain('aria-label="Delete all archived Tasks"');
+    expect(idle).toMatch(/<button[^>]*class="archived-delete-all"(?![^>]*disabled)[^>]*>/);
+    const busy = await renderArchived([archivedTask()], { expand: false, deleting: true });
+    expect(busy).toMatch(/<button[^>]*class="archived-delete-all"[^>]*disabled/);
+  });
+
   it("shows Deleting while an archived Task is being removed", async () => {
     const markup = await renderArchived([archivedTask()], { deleting: true });
     expect(markup).toContain("Deleting…");
