@@ -2431,6 +2431,7 @@ export function Shell(props: ShellProps) {
         libraryProfiles={props.agentLibrary?.value?.profiles ?? []}
         initialTemplateRef={quickActionProfile}
         manageAgents={() => { setQuickActionOpen(false); setQuickActionProfile(undefined); updateFilesSidebar({ open: true, view: "agents" }); props.agentLibrary?.reload(); }}
+        openAgentAccounts={props.agentConnections ? () => { setQuickActionOpen(false); setQuickActionAgent(undefined); setQuickActionProfile(undefined); setSettingsPage("accounts"); } : undefined}
         {...(quickActionAgent ? { initialAgent: quickActionAgent } : {})}
         droppedFilePath={props.droppedFilePath}
         pasteImage={props.pasteQuickActionImage}

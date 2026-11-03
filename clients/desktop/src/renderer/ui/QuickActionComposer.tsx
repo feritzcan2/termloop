@@ -28,6 +28,7 @@ import { requireQuickActionPreview } from "../quick-action-result.js";
 import { quickActionShortcutUnavailable, type QuickActionShortcutDraft } from "../quick-action-shortcuts.js";
 import { QuickActionShortcutEditor } from "./QuickActionShortcutEditor.js";
 import { Icon } from "./Icon.js";
+import { agentCliProblem, launchErrorMessage, type AgentCliProblem } from "../control-error.js";
 
 const IMAGE_LIMIT_MESSAGE = `Quick Action supports up to ${QUICK_ACTION_IMAGE_LIMIT} image attachments.`;
 
@@ -63,7 +64,7 @@ const PuzzleGlyph = () => <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M
 const profileSupportsCapability = (profile: AgentProfileDto, capability: AgentCapabilityDto) =>
   profile.agent_ids.includes(capability.agent_id) && capability.permissions.length > 0;
 
-export function QuickActionComposer({ projects, selectedProject, tasks = [], capabilities, profiles, libraryProfiles = [], initialTemplateRef, manageAgents, initialAgent, loadAccounts, jiraTaskSourceAvailable, droppedFilePath, pasteImage, restoreImage, discardImage, preview, launch, createShortcut, close }: {
+export function QuickActionComposer({ projects, selectedProject, tasks = [], capabilities, profiles, libraryProfiles = [], initialTemplateRef, manageAgents, openAgentAccounts, initialAgent, loadAccounts, jiraTaskSourceAvailable, droppedFilePath, pasteImage, restoreImage, discardImage, preview, launch, createShortcut, close }: {
   projects: readonly Project[];
   selectedProject: Project | undefined;
   tasks?: readonly Task[];
@@ -72,6 +73,8 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
   libraryProfiles?: readonly AgentLibraryEntry[];
   initialTemplateRef?: string | undefined;
   manageAgents?: (() => void) | undefined;
+  /** Opens Settings → Agent accounts, where a missing Claude or Codex CLI can be installed. */
+  openAgentAccounts?: (() => void) | undefined;
   initialAgent?: AgentId;
   createShortcut?: ((draft: QuickActionShortcutDraft) => void) | undefined;
   loadAccounts?: ((projectId: string) => Promise<AgentAccountDto[]>) | undefined;
@@ -380,7 +383,7 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
   return (
     <div className="quick-action-layer" onKeyDown={keyDown}>
       <button className="quick-action-backdrop" type="button" aria-label="Dismiss Quick Action" onClick={close} />
-      <form className={`quick-action${advancedOpen || error ? " advanced-open" : ""}`} role="dialog" aria-modal="true" aria-labelledby="quick-action-title" onSubmit={submit}>
+      <form className={`quick-action${advancedOpen ? " advanced-open" : ""}`} role="dialog" aria-modal="true" aria-labelledby="quick-action-title" onSubmit={submit}>
         <header className="quick-action-header">
           <div className="quick-action-kind-slot">
             <AgentProfilePicker profiles={launchableProfiles} entries={libraryProfiles} value={templateRef} select={selectTemplate} manage={manageAgents} />
@@ -447,7 +450,7 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
         /> : null}
         <button className="quick-action-advanced-row" type="button" onClick={() => setAdvancedOpen((open) => !open)} aria-expanded={advancedOpen}><span aria-hidden="true"><PuzzleGlyph /></span><strong>Advanced {attachments.length}</strong><small>· project</small><i /> <em>{attachments.length ? `${attachments.length} image attachment${attachments.length === 1 ? "" : "s"} ·` : "No project rules ·"}</em><b>Advanced</b></button>
         {advancedOpen || error || profileUnavailable ? <section className="quick-action-preview">
-          {profileUnavailable ? <p role="alert">This agent is unavailable on the current connection. Choose another agent or Free prompt.</p> : error ? <p role="alert">{error}</p> : <>
+          {profileUnavailable ? <p role="alert">This agent is unavailable on the current connection. Choose another agent or Free prompt.</p> : error ? <QuickActionError error={error} openAgentAccounts={openAgentAccounts} /> : <>
             <nav className="quick-action-inspector-tabs" aria-label="Launch inspector views">
               <button type="button" className={inspectorTab === "preview" ? "active" : undefined} onClick={() => setInspectorTab("preview")}>Preview</button>
               <button type="button" className={inspectorTab === "raw" ? "active" : undefined} onClick={() => setInspectorTab("raw")}>Raw</button>
@@ -462,6 +465,41 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
       </form>
     </div>
   );
+}
+
+/** Each provider's CLI command is named after its agent id. */
+const AGENT_CLI_NAMES: Record<string, string> = { claude: "Claude Code", codex: "Codex CLI", gemini: "Gemini CLI", opencode: "OpenCode" };
+
+/** Settings → Agent accounts installs only these providers' official CLIs. */
+const ACCOUNT_INSTALLABLE_AGENTS = new Set(["claude", "codex"]);
+
+function QuickActionError({ error, openAgentAccounts }: { error: string; openAgentAccounts?: (() => void) | undefined }) {
+  const cli = agentCliProblem(error);
+  if (!cli) {
+    return <div className="quick-action-error" role="alert"><p>{launchErrorMessage(error)}</p></div>;
+  }
+  return <AgentCliProblemNotice problem={cli} openAgentAccounts={openAgentAccounts} />;
+}
+
+function AgentCliProblemNotice({ problem, openAgentAccounts }: { problem: AgentCliProblem; openAgentAccounts?: (() => void) | undefined }) {
+  const command = problem.agentId;
+  const name = AGENT_CLI_NAMES[command] ?? command;
+  const installable = ACCOUNT_INSTALLABLE_AGENTS.has(problem.agentId);
+  const missing = problem.problem === "missing";
+  return <div className="quick-action-error" role="alert">
+    <strong>{missing ? `${name} isn’t installed` : `${name} can’t be started`}</strong>
+    <p>
+      {missing
+        ? <>TermLoop couldn’t find the <code>{command}</code> command on the computer this Project runs on. </>
+        : <>TermLoop found the <code>{command}</code> command but couldn’t launch it. </>}
+      {installable
+        ? missing ? "Install it from Agent accounts, then run again." : "Reinstall it from Agent accounts, then run again."
+        : missing ? "Install it, then run again." : "Reinstall it, then run again."}
+    </p>
+    {installable && openAgentAccounts
+      ? <button type="button" onClick={openAgentAccounts}>{missing ? `Install ${name}` : `Reinstall ${name}`}…</button>
+      : null}
+  </div>;
 }
 
 function formatBytes(bytes: number): string {

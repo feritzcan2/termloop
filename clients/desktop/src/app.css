@@ -2038,6 +2038,13 @@ button.changes-branch-current:hover:not(:disabled) { border-color: rgba(102,179,
 .quick-action-preview { min-height: 0; padding: 8px 12px; overflow: auto; border-bottom: 1px solid var(--qa-rule); color: light-dark(#6d6f72, #8b9093); background: rgba(0,0,0,.18); font: 10px var(--qa-mono); }
 .quick-action-preview pre, .quick-action-preview p { max-height: 120px; margin: 6px 0 0; overflow: auto; color: light-dark(#686d6e, #bcc2c4); white-space: pre-wrap; }
 .quick-action-preview p { color: var(--danger); }
+.quick-action-preview .quick-action-error { display: grid; justify-items: start; gap: 4px; margin: 4px 0; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent); border-left-width: 3px; border-radius: 8px; background: color-mix(in srgb, var(--danger) 8%, transparent); font: 12px/1.5 var(--qa-font); }
+.quick-action-preview .quick-action-error strong { color: var(--qa-text); font-weight: 600; }
+.quick-action-preview .quick-action-error p { max-height: none; margin: 0; color: var(--qa-secondary); }
+.quick-action-preview .quick-action-error code { padding: 0 4px; border-radius: 4px; background: var(--qa-fill); color: var(--qa-text); font: 11px var(--qa-mono); }
+.quick-action-preview .quick-action-error button { margin-top: 4px; padding: 4px 10px; border: 1px solid var(--qa-rule); border-radius: 6px; background: var(--qa-fill); color: var(--qa-text); font: 500 11.5px var(--qa-font); cursor: pointer; }
+.quick-action-preview .quick-action-error button:hover { border-color: rgba(76,157,255,.5); background: rgba(76,157,255,.13); }
+.quick-action-preview .quick-action-error button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .quick-action.advanced-open .quick-action-preview { height: min(340px,calc(100vh - 335px)); padding: 0; }
 .quick-action-inspector-tabs { position: sticky; z-index: 1; top: 0; display: flex; align-items: center; gap: 5px; padding: 7px 10px; border-bottom: 1px solid var(--qa-rule); background: light-dark(#f8fafc, #202428); }
 .quick-action-inspector-tabs button { padding: 3px 8px; border: 1px solid var(--qa-rule); border-radius: 6px; background: transparent; color: var(--qa-secondary); font: 10px var(--qa-mono); }

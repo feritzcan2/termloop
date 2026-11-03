@@ -11,6 +11,22 @@ export function controlErrorMessage(error: unknown): string {
   return unwrapped === message ? message : unwrapped.replace(ERROR_CLASS, "");
 }
 
+export type AgentCliProblem = { agentId: string; problem: "missing" | "unusable" };
+
+/// The daemon refuses a launch whose provider CLI is absent or broken with a
+/// plain-text invocation error; recover the provider so the UI can explain it
+/// and offer installation instead of echoing the transport message.
+export function agentCliProblem(error: unknown): AgentCliProblem | undefined {
+  const match = /agent CLI for ([\w-]+) (was not found on the launch PATH|exists but cannot be launched)/u
+    .exec(controlErrorMessage(error));
+  return match ? { agentId: match[1]!, problem: match[2]!.startsWith("was") ? "missing" : "unusable" } : undefined;
+}
+
+/** A launch failure without the transport wrapper or the daemon's internal error category. */
+export function launchErrorMessage(error: unknown): string {
+  return controlErrorMessage(error).replace(/^terminal failed:\s*/u, "");
+}
+
 /** Renderer/client backpressure is retryable and does not mean the source disconnected. */
 export function controlErrorIsServiceBusy(error: unknown): boolean {
   return /(?:too many (?:control )?requests are already in flight|control service is busy)/iu
