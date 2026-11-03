@@ -59,6 +59,8 @@ pub struct DeletedSessionRestorePlan {
     deleted: DeletedSessionRecord,
     archived_worktree_paths: Vec<String>,
     project_folder: Option<String>,
+    /// A folder the user chose instead of the recorded one.
+    requested_cwd: Option<String>,
 }
 
 impl DeletedSessionRestorePlan {
@@ -71,7 +73,11 @@ impl DeletedSessionRestorePlan {
         terminal: TerminalService,
     ) -> Result<ObservedDeletedSessionRestore, CoreError> {
         let original_cwd = &self.deleted.session.process.cwd;
-        let (source, relocated_cwd) =
+        let (source, relocated_cwd) = if let Some(requested) = self.requested_cwd.clone() {
+            let source = crate::task_worktree::comparison_key(Path::new(&requested))
+                .map_err(|_| CoreError::InvalidParams("cwd".into()))?;
+            (source, (&requested != original_cwd).then_some(requested))
+        } else {
             match crate::task_worktree::comparison_key(Path::new(original_cwd)) {
                 Ok(source) => (source, None),
                 // The Agent's folder is gone; keep its conversation by restoring
@@ -86,7 +92,8 @@ impl DeletedSessionRestorePlan {
                             .map_err(|_| CoreError::InvalidParams("sourceUnavailable".into()))?;
                     (source, Some(project_folder))
                 }
-            };
+            }
+        };
         if comparable_existing_paths(&self.archived_worktree_paths)
             .iter()
             .any(|root| root.contains_or_equals(&source))
@@ -210,6 +217,7 @@ impl CoreRuntime {
             deleted,
             archived_worktree_paths: self.archived_worktree_paths(),
             project_folder,
+            requested_cwd: super::archive::requested_restore_cwd(&params)?,
         })
     }
 
@@ -270,3 +278,7 @@ fn comparable_existing_paths(paths: &[String]) -> Vec<termloop_domain::PathCompa
         .filter_map(|path| crate::task_worktree::comparison_key(Path::new(path)).ok())
         .collect()
 }
+
+#[cfg(test)]
+#[path = "restore_folder_tests.rs"]
+mod restore_folder_tests;

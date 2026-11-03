@@ -19,7 +19,8 @@ export type ArchivedTasksBinding = {
   reload(): Promise<void>;
   /// Settles once the restored Task has left the re-read archived page.
   restore(taskId: string): Promise<void>;
-  restoreSession(sessionId: string): void;
+  /// `cwd` reopens the Agent there instead of its recorded folder.
+  restoreSession(sessionId: string, cwd?: string): Promise<string | undefined>;
 };
 
 /// Archived Tasks are a separate paginated read rather than part of the active
@@ -34,7 +35,7 @@ export function useArchivedTasks(options: {
   list(projectId: string): Promise<Task[]>;
   listSessions(projectId: string): Promise<Session[]>;
   restore(taskId: string): Promise<string | undefined>;
-  restoreSession(sessionId: string): Promise<string | undefined>;
+  restoreSession(sessionId: string, cwd?: string): Promise<string | undefined>;
 }): ArchivedTasksBinding {
   const [tasks, setTasks] = useState<readonly Task[]>([]);
   const [sessions, setSessions] = useState<readonly Session[]>([]);
@@ -57,9 +58,12 @@ export function useArchivedTasks(options: {
     return restoreTask(taskId).then((failure) => { if (!failure) return reload(); });
   }, [restoreTask, reload]);
 
-  const restoreSession = useCallback((sessionId: string) => {
-    void options.restoreSession(sessionId).then((failure) => { if (!failure) reload(); });
-  }, [options.restoreSession, reload]);
+  const restoreSession = useCallback((sessionId: string, cwd?: string) => (
+    (cwd ? options.restoreSession(sessionId, cwd) : options.restoreSession(sessionId)).then((failure) => {
+      if (!failure) void reload();
+      return failure;
+    })
+  ), [options.restoreSession, reload]);
 
   return { tasks, sessions, loading, count: tasks.length, reload, restore, restoreSession };
 }

@@ -896,7 +896,7 @@
     },
     "session.restoreArchived": {
       "params": {
-        "$ref": "#/$defs/sessionCloseParams"
+        "$ref": "#/$defs/sessionRestoreParams"
       },
       "result": {
         "$ref": "#/$defs/sessionDto"
@@ -912,7 +912,7 @@
     },
     "session.restoreDeleted": {
       "params": {
-        "$ref": "#/$defs/sessionCloseParams"
+        "$ref": "#/$defs/sessionRestoreParams"
       },
       "result": {
         "$ref": "#/$defs/sessionDto"
@@ -9512,6 +9512,27 @@
         "candidateCount": {
           "type": "integer",
           "minimum": 0
+        }
+      }
+    },
+    "sessionRestoreParams": {
+      "x-codegen": true,
+      "x-codegen-name": "SessionRestoreParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sessionId"
+      ],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cwd": {
+          "description": "Existing absolute folder the restored Agent reopens in instead of its recorded folder.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
         }
       }
     },

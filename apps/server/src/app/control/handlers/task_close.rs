@@ -36,6 +36,11 @@ pub(in crate::app) async fn recreate_deleted_session_worktree(params: &Value, st
     let Some(session_id) = params.get("sessionId").and_then(Value::as_str) else {
         return;
     };
+    // A user-chosen folder replaces the recorded one, so the old Task worktree
+    // is not needed.
+    if params.get("cwd").is_some() {
+        return;
+    }
     let plan = state
         .core
         .lock()

@@ -50,7 +50,7 @@ import { dismissSessionDescriptor } from "./session-dismiss.js";
 import { createSessionRename } from "./session-rename.js";
 import { createQuickActionImageRestore } from "./quick-action-image-restore.js";
 import { closeWorkflowAgents as closeWorkflowAgentGroup } from "./workflow-close.js";
-import { restoreDeletedAgent, retryAgentSession } from "./session-resume.js";
+import { restoreDeletedAgent, restoreFailureMessage, retryAgentSession } from "./session-resume.js";
 import {
   createSessionActivation,
   type SessionActivationContext,
@@ -2060,13 +2060,14 @@ export function DesktopApp() {
       return message;
     }
   }, []);
-  const restoreArchivedSession = useCallback(async (sessionId: string) => {
+  const restoreArchivedSession = useCallback(async (sessionId: string, cwd?: string) => {
     try {
-      await sourceApiForSession(sessionId).sessionRestoreArchived(sessionId);
+      const api = sourceApiForSession(sessionId);
+      await (cwd ? api.sessionRestoreArchived(sessionId, cwd) : api.sessionRestoreArchived(sessionId));
       await refreshProjection();
       return undefined;
     } catch (error) {
-      const message = controlErrorMessage(error);
+      const message = restoreFailureMessage(error, cwd);
       projectionStore.setMessage(message);
       return message;
     }
@@ -2085,14 +2086,14 @@ export function DesktopApp() {
       return message;
     }
   }, []);
-  const restoreDeletedSession = useCallback(async (sessionId: string) => {
+  const restoreDeletedSession = useCallback(async (sessionId: string, cwd?: string) => {
     try {
-      const { resumeError } = await restoreDeletedAgent(sourceApiForSession(sessionId), sessionId);
+      const { resumeError } = await restoreDeletedAgent(sourceApiForSession(sessionId), sessionId, cwd);
       await refreshProjection();
       if (resumeError) projectionStore.setMessage(controlErrorMessage(resumeError));
       return undefined;
     } catch (error) {
-      const message = controlErrorMessage(error);
+      const message = restoreFailureMessage(error, cwd);
       projectionStore.setMessage(message);
       return message;
     }

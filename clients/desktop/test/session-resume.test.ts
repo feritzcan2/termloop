@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AgentLaunchPreviewResult, SessionDto } from "@termloop/contract/current";
-import { restoreDeletedAgent, retryAgentSession, type DeletedSessionRestoreApi, type SessionResumeApi } from "../src/renderer/composition/session-resume.js";
+import { restoreDeletedAgent, restoreFailureMessage, retryAgentSession, type DeletedSessionRestoreApi, type SessionResumeApi } from "../src/renderer/composition/session-resume.js";
 
 function preview(): AgentLaunchPreviewResult {
   return {
@@ -85,5 +85,14 @@ describe("deleted Agent restore", () => {
 
     expect(session.id).toBe("deleted-3");
     expect(resumeError).toBe(failure);
+  });
+});
+
+describe("restoreFailureMessage", () => {
+  it("names the chosen folder as the cause only when one was chosen", () => {
+    const refused = new Error("Error invoking remote method 'termloop:session-restore-deleted': Error: invalid params: cwd");
+    expect(restoreFailureMessage(refused, "/missing")).toBe("That folder does not exist or cannot be opened on this computer. Pick another folder.");
+    expect(restoreFailureMessage(new Error("TaskArchived containingTask"), "/repo/wt")).toBe("That folder belongs to an archived Task. Restore the Task first or pick another folder.");
+    expect(restoreFailureMessage(new Error("invalid params: cwd"))).toBe("invalid params: cwd");
   });
 });

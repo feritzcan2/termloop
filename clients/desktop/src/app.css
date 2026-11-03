@@ -3088,6 +3088,9 @@ button.history-row-main { cursor: pointer; }
 .history-action:hover:not(:disabled), .history-import:hover:not(:disabled) { border-color: rgba(102,179,255,.55); color: light-dark(#5f6972, #d5eaff); }
 .history-row-actions { display: flex; gap: 4px; margin-right: 6px; }
 .history-row-actions .history-action { margin-right: 0; }
+.history-action.history-restore-folder { display: inline-flex; align-items: center; justify-content: center; padding: 3px 5px; }
+.history-action.history-restore-folder svg { width: 11px; height: 11px; }
+.restore-folder-subtitle { margin: 2px 0 0; overflow: hidden; color: var(--text-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .history-action.destructive { border-color: rgba(222,104,104,.2); background: rgba(222,104,104,.06); color: light-dark(#845e58, #d99b92); }
 .history-subhead-actions { display: flex; align-items: center; gap: 6px; }
 .history-subhead-actions .history-action { margin-right: 0; padding: 3px 6px; letter-spacing: 0; text-transform: none; }

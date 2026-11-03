@@ -1565,14 +1565,17 @@ handleIpc("termloop:session-archive", (_event, sessionId: string, archiveTicket:
     operationId: createArchiveOperationId(),
   }),
 );
-handleIpc("termloop:session-restore-archived", (_event, sessionId: string) =>
-  controlCall("session.restoreArchived", { sessionId }),
+/// An optional folder reopens the Agent there instead of its recorded folder.
+const restoreFolderParams = (cwd: unknown) =>
+  typeof cwd === "string" && cwd.trim().length > 0 ? { cwd: cwd.trim() } : {};
+handleIpc("termloop:session-restore-archived", (_event, sessionId: string, cwd?: unknown) =>
+  controlCall("session.restoreArchived", { sessionId, ...restoreFolderParams(cwd) }),
 );
 handleIpc("termloop:session-delete-archived", (_event, sessionId: string) =>
   controlCall("session.deleteArchived", { sessionId }),
 );
-handleIpc("termloop:session-restore-deleted", (_event, sessionId: string) =>
-  controlCall("session.restoreDeleted", { sessionId }),
+handleIpc("termloop:session-restore-deleted", (_event, sessionId: string, cwd?: unknown) =>
+  controlCall("session.restoreDeleted", { sessionId, ...restoreFolderParams(cwd) }),
 );
 handleIpc(
   "termloop:terminal-attach",

@@ -803,4 +803,75 @@ describe("Session History rail", () => {
     container.remove();
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
+
+  it("restores an archived or deleted Agent into a folder chosen in Session History", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const restoreArchivedSession = vi.fn(async () => undefined);
+    const restoreDeletedSession = vi.fn(async () => "That folder is not available.");
+    const browse = vi.fn(async (path: string) => ({ path, parentPath: "/repo", entries: [] }));
+    const archived = agent("archived", { archived_at_epoch_ms: Date.now() });
+    const deleted: DeletedSessionDto = {
+      session: agent("deleted"),
+      deleted_at_epoch_ms: Date.now(),
+      purge_at_epoch_ms: Date.now() + 30 * 24 * 60 * 60 * 1_000,
+      source_available: true,
+      restore_blocker: null,
+    };
+    const render = (withPicker: boolean) => createElement(HistoryRail, {
+      projectId: "project-1",
+      projectPath: "/repo/termloop-next",
+      projectBranch: "main",
+      currentCwd: "/repo/termloop-next",
+      sessions: [],
+      archivedSessions: [archived],
+      tasks: [],
+      archivedTasks: [],
+      deletedSessions: [deleted],
+      favoriteSessionIds: new Set<string>(),
+      termLoopHistoryLoading: false,
+      selectedSessionId: undefined,
+      disabled: false,
+      load: async () => externalHistory,
+      loadTermLoopPreview: async () => termLoopPreview,
+      resumeExternal: async () => undefined,
+      selectSession: () => {},
+      resumeSession: () => {},
+      restoreArchivedSession,
+      deleteArchivedSession: () => {},
+      restoreDeletedSession,
+      reopenTask: vi.fn(),
+      restoreTask: vi.fn(),
+      overlayContainer: container,
+      restoreFolderPicker: withPicker
+        ? { actions: { defaultRoot: async () => ({ path: "/repo" }), browse }, sourceKey: "local" }
+        : undefined,
+    });
+
+    await act(async () => root.render(render(false)));
+    expect(container.querySelector('[aria-label="Restore archived in another folder"]')).toBeNull();
+
+    await act(async () => root.render(render(true)));
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Restore archived in another folder"]')!.click());
+    expect(container.querySelector("#restore-folder-title")?.textContent).toBe("Restore in folder");
+    expect(browse).toHaveBeenCalledWith("/repo/termloop-next");
+    const confirm = () => container.querySelector<HTMLButtonElement>(".dialog-actions .primary-button")!;
+    expect(confirm().textContent).toBe("Restore in termloop-next");
+    await act(async () => confirm().click());
+    expect(restoreArchivedSession).toHaveBeenCalledWith("archived", "/repo/termloop-next");
+    expect(container.querySelector("#restore-folder-title")).toBeNull();
+
+    // A refused folder keeps the dialog open with the daemon's reason.
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Restore deleted in another folder"]')!.click());
+    await act(async () => confirm().click());
+    expect(restoreDeletedSession).toHaveBeenCalledWith("deleted", "/repo/termloop-next");
+    expect(container.querySelector(".form-error")?.textContent).toBe("That folder is not available.");
+    expect(container.querySelector("#restore-folder-title")).not.toBeNull();
+
+    await act(async () => root.unmount());
+    container.remove();
+    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+  });
 });

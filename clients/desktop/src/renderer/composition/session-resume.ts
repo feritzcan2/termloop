@@ -1,4 +1,5 @@
 import type { AgentLaunchPreviewResult, SessionDto } from "@termloop/contract/current";
+import { controlErrorMessage } from "../control-error.js";
 import { isLiveSession } from "../model.js";
 
 export type SessionResumeApi = {
@@ -29,7 +30,7 @@ export function retryAgentSession(api: SessionResumeApi, sessionId: string): Pro
 }
 
 export type DeletedSessionRestoreApi = SessionResumeApi & {
-  sessionRestoreDeleted(sessionId: string): Promise<SessionDto>;
+  sessionRestoreDeleted(sessionId: string, cwd?: string): Promise<SessionDto>;
 };
 
 /// Deleted restore returns the descriptor as exited behind its output history.
@@ -38,12 +39,23 @@ export type DeletedSessionRestoreApi = SessionResumeApi & {
 export async function restoreDeletedAgent(
   api: DeletedSessionRestoreApi,
   sessionId: string,
+  cwd?: string,
 ): Promise<{ session: SessionDto; resumeError?: unknown }> {
-  const restored = await api.sessionRestoreDeleted(sessionId);
+  const restored = cwd ? await api.sessionRestoreDeleted(sessionId, cwd) : await api.sessionRestoreDeleted(sessionId);
   if (isLiveSession(restored) || !restored.retryable) return { session: restored };
   try {
     return { session: await retryAgentSession(api, sessionId) };
   } catch (resumeError) {
     return { session: restored, resumeError };
   }
+}
+
+/// A restore into a chosen folder fails on that folder far more often than on
+/// anything else, so those refusals say what to pick instead.
+export function restoreFailureMessage(error: unknown, cwd?: string): string {
+  const message = controlErrorMessage(error);
+  if (!cwd) return message;
+  if (/\bcwd\b/u.test(message)) return "That folder does not exist or cannot be opened on this computer. Pick another folder.";
+  if (/taskArchived|containingTask/u.test(message)) return "That folder belongs to an archived Task. Restore the Task first or pick another folder.";
+  return message;
 }

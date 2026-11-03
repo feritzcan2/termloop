@@ -240,7 +240,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:55ec006553dc4c39c99617c0fadc1e0abdf91604d44f3f632fcdce4fafef6c9d";
+    "sha256:732fca840d8bed2417ad7b26a21f64d11655f047ed1a8f5db104e0dbfaef3393";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -4216,6 +4216,15 @@ pub struct SessionRestartAgentsForClientLaunchResult {
     pub already_accepted: bool,
     #[serde(rename = "candidateCount")]
     pub candidate_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SessionRestoreParams {
+    #[serde(rename = "sessionId")]
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -9511,11 +9520,11 @@ pub type SessionListDeletedResult = Vec<DeletedSessionDto>;
 pub type SessionInspectArchiveParams = SessionCloseParams;
 pub type SessionInspectArchiveResult = SessionArchivePreviewDto;
 pub type SessionArchiveResult = SessionDto;
-pub type SessionRestoreArchivedParams = SessionCloseParams;
+pub type SessionRestoreArchivedParams = SessionRestoreParams;
 pub type SessionRestoreArchivedResult = SessionDto;
 pub type SessionDeleteArchivedParams = SessionCloseParams;
 pub type SessionDeleteArchivedResult = SessionCloseResult;
-pub type SessionRestoreDeletedParams = SessionCloseParams;
+pub type SessionRestoreDeletedParams = SessionRestoreParams;
 pub type SessionRestoreDeletedResult = SessionDto;
 pub type SessionRenameResult = SessionDto;
 pub type SessionPreviewResumeAgentResult = AgentLaunchPreviewResult;
@@ -19632,6 +19641,31 @@ fn validate_session_restart_agents_for_client_launch_result(value: &Value) -> bo
             && object
                 .keys()
                 .all(|key| ["alreadyAccepted", "candidateCount"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_session_restore_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("sessionId")
+            .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
+            && object.get("cwd").is_none_or(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 4096)
+            })
+            && object
+                .keys()
+                .all(|key| ["sessionId", "cwd"].contains(&key.as_str()))
     })
 }
 
@@ -34763,7 +34797,7 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
         }
         "session.restoreArchived" => {
             serde_json::from_value::<SessionRestoreArchivedParams>(params.clone()).is_ok()
-                && validate_session_close_params(params)
+                && validate_session_restore_params(params)
         }
         "session.deleteArchived" => {
             serde_json::from_value::<SessionDeleteArchivedParams>(params.clone()).is_ok()
@@ -34771,7 +34805,7 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
         }
         "session.restoreDeleted" => {
             serde_json::from_value::<SessionRestoreDeletedParams>(params.clone()).is_ok()
-                && validate_session_close_params(params)
+                && validate_session_restore_params(params)
         }
         "session.rename" => {
             serde_json::from_value::<SessionRenameParams>(params.clone()).is_ok()

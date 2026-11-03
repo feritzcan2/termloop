@@ -389,9 +389,9 @@ export type DesktopApi = {
   sessionListDeleted(projectId: string): Promise<DeletedSessionDto[]>;
   sessionInspectArchive(sessionId: string): Promise<SessionArchivePreviewDto>;
   sessionArchive(sessionId: string, archiveTicket: string): Promise<Session>;
-  sessionRestoreArchived(sessionId: string): Promise<Session>;
+  sessionRestoreArchived(sessionId: string, cwd?: string): Promise<Session>;
   sessionDeleteArchived(sessionId: string): Promise<{ sessionId: string; closed: boolean }>;
-  sessionRestoreDeleted(sessionId: string): Promise<Session>;
+  sessionRestoreDeleted(sessionId: string, cwd?: string): Promise<Session>;
   agentStatusList(): Promise<AgentStatus[]>;
   agentAccountList(): Promise<AgentAccountListResult>;
   agentAccountCreate(params: AgentAccountCreateParams): Promise<AgentAccountListResult>;

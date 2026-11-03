@@ -560,6 +560,7 @@ impl Store {
         &mut self,
         _authority: &CoreWriteAuthority,
         session_id: &str,
+        relocated_cwd: Option<&str>,
     ) -> Result<SessionRecord, StoreError> {
         if let Some(operation) = self
             .state
@@ -584,6 +585,9 @@ impl Store {
         session.archived_at_epoch_ms = None;
         session.lifecycle_state = "exited".into();
         session.resume_failure = None;
+        if let Some(cwd) = relocated_cwd {
+            session.process.cwd = cwd.to_owned();
+        }
         let restored = session.clone();
         self.commit_or_restore(previous)?;
         Ok(restored)

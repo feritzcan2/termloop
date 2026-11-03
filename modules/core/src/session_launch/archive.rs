@@ -294,16 +294,21 @@ impl CoreRuntime {
         if session.archived_at_epoch_ms.is_none() {
             return Ok(self.project_session(&session));
         }
+        let requested_cwd = requested_restore_cwd(&params)?;
+        let restore_key = crate::task_worktree::comparison_key(Path::new(
+            requested_cwd.as_deref().unwrap_or(&session.process.cwd),
+        ));
+        if requested_cwd.is_some() && restore_key.is_err() {
+            return Err(CoreError::InvalidParams("cwd".into()));
+        }
+        let restore_key = restore_key.ok();
         if self.store.tasks().iter().any(|task| {
             task.archived_at_epoch_ms.is_some()
                 && task.worktree.as_ref().is_some_and(|worktree| {
                     crate::task_worktree::comparison_key(Path::new(&worktree.path))
                         .ok()
-                        .zip(
-                            crate::task_worktree::comparison_key(Path::new(&session.process.cwd))
-                                .ok(),
-                        )
-                        .is_some_and(|(root, cwd)| root.contains_or_equals(&cwd))
+                        .zip(restore_key.as_ref())
+                        .is_some_and(|(root, cwd)| root.contains_or_equals(cwd))
                 })
         }) {
             return Err(CoreError::TaskArchived {
@@ -312,7 +317,13 @@ impl CoreRuntime {
         }
         let session = self
             .store
-            .restore_archived_session_descriptor(&self.write_authority, &session_id)
+            .restore_archived_session_descriptor(
+                &self.write_authority,
+                &session_id,
+                requested_cwd
+                    .as_deref()
+                    .filter(|cwd| *cwd != session.process.cwd),
+            )
             .map_err(store_error)?;
         Ok(self.project_session(&session))
     }
@@ -361,5 +372,17 @@ impl CoreRuntime {
             return Err(CoreError::InvalidParams("sessionArchiveInProgress".into()));
         }
         Ok(())
+    }
+}
+
+/// The optional folder a restored Agent reopens in. It must be absolute; the
+/// caller still proves it is an existing directory before using it.
+pub(super) fn requested_restore_cwd(params: &Value) -> Result<Option<String>, CoreError> {
+    match params.get("cwd") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(cwd)) if !cwd.trim().is_empty() && Path::new(cwd).is_absolute() => {
+            Ok(Some(cwd.clone()))
+        }
+        Some(_) => Err(CoreError::InvalidParams("cwd".into())),
     }
 }

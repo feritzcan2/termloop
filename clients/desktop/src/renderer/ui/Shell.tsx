@@ -333,9 +333,9 @@ export type ShellProps = {
   listArchivedSessions(projectId: string): Promise<Session[]>;
   listDeletedSessions(projectId: string): Promise<DeletedSessionDto[]>;
   archiveSession(sessionId: string): Promise<string | undefined>;
-  restoreArchivedSession(sessionId: string): Promise<string | undefined>;
+  restoreArchivedSession(sessionId: string, cwd?: string): Promise<string | undefined>;
   deleteArchivedSession(sessionId: string): Promise<string | undefined>;
-  restoreDeletedSession(sessionId: string): Promise<string | undefined>;
+  restoreDeletedSession(sessionId: string, cwd?: string): Promise<string | undefined>;
   closeTaskAndWorktree(taskId: string, review?: TaskDeleteWorktreeReview): Promise<TaskDeleteWorktreeResult>;
   deleteTaskAndWorktree(taskId: string, review?: TaskDeleteWorktreeReview): Promise<TaskDeleteWorktreeResult>;
   deleteArchivedTaskAndWorktree(task: Task, review?: TaskDeleteWorktreeReview): Promise<TaskDeleteWorktreeResult>;
@@ -1881,6 +1881,15 @@ export function Shell(props: ShellProps) {
               });
             }}
             restoreDeletedSession={deleted.restore}
+            restoreFolderPicker={{
+              actions: {
+                defaultRoot: () => props.defaultProjectsRoot(selectedConnectionProfileId),
+                browse: (folderPath) => props.browseDirectory(selectedConnectionProfileId, folderPath),
+                subscribeStatus: props.subscribeConnectionStatus,
+              },
+              sourceKey: selectedConnectionProfileId,
+              pickLocalFolder: selectedConnectionProfileId === "local" ? props.pickLocalFolder : undefined,
+            }}
             reopenTask={(taskId) => props.setTaskClosed(taskId, false)}
             restoreTask={archived.restore}
             inspectTaskWorktreeCleanup={props.inspectTaskWorktreeCleanup}

@@ -10,14 +10,15 @@ export type DeletedSessionsBinding = {
   sessions: readonly DeletedSessionDto[];
   loading: boolean;
   reload(): void;
-  restore(sessionId: string): void;
+  /// `cwd` reopens the Agent there instead of its recorded folder.
+  restore(sessionId: string, cwd?: string): Promise<string | undefined>;
 };
 
 export function useDeletedSessions(options: {
   projectId: string | undefined;
   activeSessionCount: number;
   list(projectId: string): Promise<DeletedSessionDto[]>;
-  restore(sessionId: string): Promise<string | undefined>;
+  restore(sessionId: string, cwd?: string): Promise<string | undefined>;
 }): DeletedSessionsBinding {
   const [sessions, setSessions] = useState<readonly DeletedSessionDto[]>([]);
   const [loading, setLoading] = useState(false);
@@ -32,9 +33,12 @@ export function useDeletedSessions(options: {
 
   useEffect(() => { reload(); }, [activeSessionCount, reload]);
 
-  const restore = useCallback((sessionId: string) => {
-    void restoreSession(sessionId).then((failure) => { if (!failure) reload(); });
-  }, [reload, restoreSession]);
+  const restore = useCallback((sessionId: string, cwd?: string) => (
+    (cwd ? restoreSession(sessionId, cwd) : restoreSession(sessionId)).then((failure) => {
+      if (!failure) reload();
+      return failure;
+    })
+  ), [reload, restoreSession]);
 
   return { sessions, loading, reload, restore };
 }

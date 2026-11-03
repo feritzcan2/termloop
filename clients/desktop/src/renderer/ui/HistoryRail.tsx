@@ -8,6 +8,7 @@ import { deletedRetentionLabel } from "./DeletedRail.js";
 import { Icon } from "./Icon.js";
 import { OverlayPortal } from "./OverlayPortal.js";
 import { useOverlayLease } from "./overlay-lease.js";
+import { RestoreFolderDialog, restoreFolderQuickJumps, type RestoreFolderPicker } from "./project-dialogs/restore-folder-dialog.js";
 import { BulkDeleteTasksDialog } from "./task-dialogs/bulk-delete-tasks-dialog.js";
 import { DeleteTaskDialog } from "./task-dialogs/delete-task-dialog.js";
 
@@ -35,9 +36,13 @@ export type HistoryRailProps = {
   resumeExternal(projectId: string, historyHandle: string): Promise<string | undefined>;
   selectSession(sessionId: string): void;
   resumeSession(sessionId: string): void;
-  restoreArchivedSession(sessionId: string): void;
+  /// `cwd` reopens the Agent in that folder instead of its recorded one. Both
+  /// resolve with a failure message, or undefined once restored.
+  restoreArchivedSession(sessionId: string, cwd?: string): void | Promise<string | undefined>;
   deleteArchivedSession(sessionId: string): void;
-  restoreDeletedSession(sessionId: string): void;
+  restoreDeletedSession(sessionId: string, cwd?: string): void | Promise<string | undefined>;
+  /// Offered with "Restore in folder…" only when the host can browse folders.
+  restoreFolderPicker?: RestoreFolderPicker | undefined;
   /// Both settle once the projection no longer lists the Task as closed, so
   /// the row can show its pending state until it leaves the list.
   reopenTask(taskId: string): void | Promise<unknown>;
@@ -188,7 +193,8 @@ export function HistoryRail(props: HistoryRailProps) {
   }, []);
   const [deleteTarget, setDeleteTarget] = useState<Task>();
   const [bulkDeleteTargets, setBulkDeleteTargets] = useState<readonly Task[]>();
-  useOverlayLease(Boolean(deleteTarget || bulkDeleteTargets), props.overlayVisibilityChanged ?? ignoreOverlayVisibility);
+  const [restoreFolderTarget, setRestoreFolderTarget] = useState<{ kind: "archived" | "deleted"; session: Session }>();
+  useOverlayLease(Boolean(deleteTarget || bulkDeleteTargets || restoreFolderTarget), props.overlayVisibilityChanged ?? ignoreOverlayVisibility);
   const canDeleteTasks = Boolean(props.deleteTask && props.inspectTaskWorktreeCleanup);
   const loadGenerationRef = useRef(0);
   const initialLoadProjectRef = useRef<string | undefined>(undefined);
@@ -538,7 +544,8 @@ export function HistoryRail(props: HistoryRailProps) {
                 <span className="history-disclosure" aria-hidden="true"><Icon name="chevronDown" /></span>
               </button>
               <span className="history-row-actions">
-                <button type="button" className="history-action" disabled={props.disabled} onClick={() => props.restoreArchivedSession(session.id)}>Restore</button>
+                <button type="button" className="history-action" disabled={props.disabled} onClick={() => void props.restoreArchivedSession(session.id)}>Restore</button>
+                <RestoreInFolderButton show={Boolean(props.restoreFolderPicker)} title={title} disabled={props.disabled} open={() => setRestoreFolderTarget({ kind: "archived", session })} />
                 <button type="button" className="history-action destructive" title="Move this archived Agent to Deleted" aria-label={`Delete archived Agent ${title}`} disabled={props.disabled} onClick={() => props.deleteArchivedSession(session.id)}>Delete</button>
               </span>
               {expanded ? <div className="history-detail history-preview">
@@ -565,7 +572,10 @@ export function HistoryRail(props: HistoryRailProps) {
                 </span>
                 <span className="history-disclosure" aria-hidden="true"><Icon name="chevronDown" /></span>
               </button>
-              <button type="button" className="history-action" title={blocker ?? (folderMissing ? DELETED_FOLDER_MISSING_HINT : undefined)} disabled={props.disabled || Boolean(blocker)} onClick={() => props.restoreDeletedSession(item.session.id)}>Restore</button>
+              <span className="history-row-actions">
+                <button type="button" className="history-action" title={blocker ?? (folderMissing ? DELETED_FOLDER_MISSING_HINT : undefined)} disabled={props.disabled || Boolean(blocker)} onClick={() => void props.restoreDeletedSession(item.session.id)}>Restore</button>
+                <RestoreInFolderButton show={Boolean(props.restoreFolderPicker)} title={title} disabled={props.disabled} open={() => setRestoreFolderTarget({ kind: "deleted", session: item.session })} />
+              </span>
               {expanded ? <div className="history-detail history-preview">
                 <TermLoopConversationPreview preview={preview} />
               </div> : null}
@@ -606,6 +616,21 @@ export function HistoryRail(props: HistoryRailProps) {
         </div>
       </section> : null}
       {showExternal && result?.cache_filled && result.truncated ? <p className="history-notice">Older provider conversations are outside this 100-item cache.</p> : null}
+      {restoreFolderTarget && props.restoreFolderPicker ? <OverlayPortal container={props.overlayContainer}>
+        <RestoreFolderDialog
+          key={`${restoreFolderTarget.kind}:${restoreFolderTarget.session.id}`}
+          title={sessionLabel(restoreFolderTarget.session)}
+          originalCwd={restoreFolderTarget.session.process.cwd}
+          initialPath={props.currentCwd ?? props.projectPath}
+          quickJumps={restoreFolderQuickJumps([props.projectPath, props.currentCwd, restoreFolderTarget.session.process.cwd])}
+          picker={props.restoreFolderPicker}
+          close={() => setRestoreFolderTarget(undefined)}
+          restore={async (cwd) => {
+            const restore = restoreFolderTarget.kind === "archived" ? props.restoreArchivedSession : props.restoreDeletedSession;
+            return (await restore(restoreFolderTarget.session.id, cwd)) ?? undefined;
+          }}
+        />
+      </OverlayPortal> : null}
       {props.deleteTask && props.inspectTaskWorktreeCleanup ? <OverlayPortal container={props.overlayContainer}>
         {deleteTarget ? <DeleteTaskDialog
           task={deleteTarget}
@@ -622,4 +647,11 @@ export function HistoryRail(props: HistoryRailProps) {
       </OverlayPortal> : null}
     </nav>
   );
+}
+
+/// Opens the folder chooser that restores an Agent somewhere other than the
+/// folder it last ran in.
+function RestoreInFolderButton({ show, title, disabled, open }: { show: boolean; title: string; disabled: boolean; open(): void }) {
+  if (!show) return null;
+  return <button type="button" className="history-action history-restore-folder" title="Restore in another folder…" aria-label={`Restore ${title} in another folder`} disabled={disabled} onClick={open}><Icon name="folder" /></button>;
 }
