@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DeletedSessionDto, SessionHistoryEntryDto, SessionHistoryListResult, SessionHistoryPreviewResult } from "@termloop/contract/current";
-import type { Session, Task } from "../model.js";
+import type { DeletedSessionDto, SessionHistoryEntryDto, SessionHistoryListResult, SessionHistoryPreviewResult, TaskWorktreeCleanupPreviewDto } from "@termloop/contract/current";
+import type { Session, Task, TaskDeleteWorktreeResult, TaskDeleteWorktreeReview } from "../model.js";
 import { basename, isLiveSession, sessionIsImprover, sessionLabel, taskJiraIssueKey } from "../model.js";
 import { taskCardTitle } from "../task-card-copy.js";
 import { isAssistantSession } from "./AssistantRail.js";
 import { deletedRetentionLabel } from "./DeletedRail.js";
 import { Icon } from "./Icon.js";
+import { OverlayPortal } from "./OverlayPortal.js";
+import { useOverlayLease } from "./overlay-lease.js";
+import { BulkDeleteTasksDialog } from "./task-dialogs/bulk-delete-tasks-dialog.js";
+import { DeleteTaskDialog } from "./task-dialogs/delete-task-dialog.js";
 
 export type HistoryRailProps = {
   projectId: string | undefined;
@@ -38,7 +42,15 @@ export type HistoryRailProps = {
   /// the row can show its pending state until it leaves the list.
   reopenTask(taskId: string): void | Promise<unknown>;
   restoreTask(taskId: string): void | Promise<unknown>;
+  /// Delete is offered only when the host wires all of these. Deleting a Task
+  /// drops its Jira link, so the issue can be imported again afterwards.
+  inspectTaskWorktreeCleanup?(taskId: string): Promise<TaskWorktreeCleanupPreviewDto>;
+  deleteTask?(task: Task, review: TaskDeleteWorktreeReview | undefined): Promise<TaskDeleteWorktreeResult>;
+  overlayVisibilityChanged?(visible: boolean): void;
+  overlayContainer?: Element | undefined;
 };
+
+const ignoreOverlayVisibility = () => {};
 
 type HistoryTask = { task: Task; archived: boolean; closedAt: number | null };
 
@@ -174,6 +186,10 @@ export function HistoryRail(props: HistoryRailProps) {
       });
     });
   }, []);
+  const [deleteTarget, setDeleteTarget] = useState<Task>();
+  const [bulkDeleteTargets, setBulkDeleteTargets] = useState<readonly Task[]>();
+  useOverlayLease(Boolean(deleteTarget || bulkDeleteTargets), props.overlayVisibilityChanged ?? ignoreOverlayVisibility);
+  const canDeleteTasks = Boolean(props.deleteTask && props.inspectTaskWorktreeCleanup);
   const loadGenerationRef = useRef(0);
   const initialLoadProjectRef = useRef<string | undefined>(undefined);
   const inactive = useMemo(() => inactiveHistorySessions(props.sessions), [props.sessions]);
@@ -448,7 +464,17 @@ export function HistoryRail(props: HistoryRailProps) {
       {failureMessage ? <p className="history-notice error" role="alert">{failureMessage}</p> : null}
       {showExternal && issues > 0 ? <p className="history-notice">{issues} local history file{issues === 1 ? "" : "s"} could not be read.</p> : null}
       {tab === "tasks" ? <section className="history-section" aria-labelledby="task-history-label">
-        <div className="rail-subhead" id="task-history-label"><span>Tasks</span><span>{visibleTasks.length}</span></div>
+        <div className="rail-subhead" id="task-history-label"><span>Tasks</span><span className="history-subhead-actions">
+          {canDeleteTasks && visibleTasks.length > 0 ? <button
+            type="button"
+            className="history-action destructive"
+            aria-label={filtersActive ? "Delete the shown Tasks" : "Delete all Tasks in history"}
+            title="Delete these Tasks and their worktrees; keep Git branches. Jira issues can be imported again."
+            disabled={props.disabled || bulkDeleteTargets !== undefined || visibleTasks.some(({ task }) => props.deletingTaskIds?.has(task.id) || pendingTaskIds.has(task.id))}
+            onClick={() => setBulkDeleteTargets(visibleTasks.map(({ task }) => task))}
+          >{filtersActive ? "Delete shown" : "Delete all"}</button> : null}
+          <span>{visibleTasks.length}</span>
+        </span></div>
         <div className="history-list">
           {visibleTasks.map(({ task, archived, closedAt }) => {
             const deleting = props.deletingTaskIds?.has(task.id) ?? false;
@@ -467,9 +493,12 @@ export function HistoryRail(props: HistoryRailProps) {
                     <small>{task.branch ? `${task.branch.name} · ` : ""}{deleting ? "Deleting…" : pending ? (archived ? "Restoring…" : "Reopening…") : archived ? "archived" : "closed"}{closedAt === null || deleting || pending ? "" : ` · ${historyDate(closedAt)}`}</small>
                   </span>
                 </span>
-                {archived
-                  ? <button type="button" className="history-action" title={deleting ? "Wait until the worktree is removed" : "Restore this Task and recover its resumable Agents"} aria-label={`Restore Task ${task.title}`} aria-busy={pending} disabled={props.disabled || deleting || pending} onClick={() => runTaskAction(task.id, props.restoreTask)}>{pending ? "Restoring…" : "Restore"}</button>
-                  : <button type="button" className="history-action" title={deleting ? "Wait until the worktree is removed" : "Reopen this Task"} aria-label={`Reopen Task ${task.title}`} aria-busy={pending} disabled={props.disabled || deleting || pending} onClick={() => runTaskAction(task.id, props.reopenTask)}>{pending ? "Reopening…" : "Reopen"}</button>}
+                <span className="history-row-actions">
+                  {archived
+                    ? <button type="button" className="history-action" title={deleting ? "Wait until the worktree is removed" : "Restore this Task and recover its resumable Agents"} aria-label={`Restore Task ${task.title}`} aria-busy={pending} disabled={props.disabled || deleting || pending} onClick={() => runTaskAction(task.id, props.restoreTask)}>{pending ? "Restoring…" : "Restore"}</button>
+                    : <button type="button" className="history-action" title={deleting ? "Wait until the worktree is removed" : "Reopen this Task"} aria-label={`Reopen Task ${task.title}`} aria-busy={pending} disabled={props.disabled || deleting || pending} onClick={() => runTaskAction(task.id, props.reopenTask)}>{pending ? "Reopening…" : "Reopen"}</button>}
+                  {canDeleteTasks ? <button type="button" className="history-action destructive" title="Delete this Task and its worktree; keep the Git branch" aria-label={`Delete Task ${task.title}`} disabled={props.disabled || deleting || pending || bulkDeleteTargets !== undefined} onClick={() => setDeleteTarget(task)}>Delete</button> : null}
+                </span>
               </article>
             );
           })}
@@ -577,6 +606,20 @@ export function HistoryRail(props: HistoryRailProps) {
         </div>
       </section> : null}
       {showExternal && result?.cache_filled && result.truncated ? <p className="history-notice">Older provider conversations are outside this 100-item cache.</p> : null}
+      {props.deleteTask && props.inspectTaskWorktreeCleanup ? <OverlayPortal container={props.overlayContainer}>
+        {deleteTarget ? <DeleteTaskDialog
+          task={deleteTarget}
+          inspect={props.inspectTaskWorktreeCleanup}
+          close={() => setDeleteTarget(undefined)}
+          remove={(review) => { void props.deleteTask!(deleteTarget, review); }}
+        /> : null}
+        {bulkDeleteTargets ? <BulkDeleteTasksDialog
+          tasks={bulkDeleteTargets}
+          inspect={props.inspectTaskWorktreeCleanup}
+          remove={props.deleteTask}
+          close={() => setBulkDeleteTargets(undefined)}
+        /> : null}
+      </OverlayPortal> : null}
     </nav>
   );
 }

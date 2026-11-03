@@ -4,7 +4,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentLaunchPreviewResult, DeletedSessionDto, SessionDto, SessionHistoryListResult, SessionHistoryPreviewResult } from "@termloop/contract/current";
-import type { Session, Task } from "../src/renderer/model.js";
+import type { Session, Task, TaskDeleteWorktreeResult, TaskDeleteWorktreeReview } from "../src/renderer/model.js";
 import { HistoryRail, inactiveHistorySessions } from "../src/renderer/ui/HistoryRail.js";
 import { resumeWorkspaceSession } from "../src/renderer/ui/Shell.js";
 import { retryAgentSession, type SessionResumeApi } from "../src/renderer/composition/session-resume.js";
@@ -590,6 +590,9 @@ describe("Session History rail", () => {
     expect(jiraRow.querySelector("strong")?.textContent).toBe("Unrelated chore");
     await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Reopen Task Closed but kept"]')!.click());
     expect(reopenTask).toHaveBeenCalledWith("task-3");
+    // Without a wired delete, History offers no destructive Task action.
+    expect(container.querySelector('[aria-label="Delete Task Closed but kept"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Delete all Tasks in history"]')).toBeNull();
     // The row says the reopen is running until the daemon settles it.
     const reopening = container.querySelector<HTMLButtonElement>('[aria-label="Reopen Task Closed but kept"]')!;
     expect(reopening.disabled).toBe(true);
@@ -616,6 +619,77 @@ describe("Session History rail", () => {
     const busyRestore = container.querySelector<HTMLButtonElement>('[aria-label="Restore Task Ship the history rail"]')!;
     expect(busyRestore.disabled).toBe(true);
     expect(container.textContent).toContain("Deleting…");
+
+    await act(async () => root.unmount());
+    container.remove();
+    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+  });
+
+  it("deletes one or every closed and archived Task from Session History", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const deleteTask = vi.fn(async (_task: Task, _review: TaskDeleteWorktreeReview | undefined): Promise<TaskDeleteWorktreeResult> => ({ status: "completed" }));
+    const base = {
+      id: "task-closed",
+      project_id: "project-1",
+      title: "Closed Jira work",
+      brief: null,
+      jira_url: "https://example.atlassian.net/browse/NUC-7",
+      status: "closed",
+      archived_at_epoch_ms: null,
+      branch: null,
+      worktree: null,
+      worktree_generation: 0,
+      rank: 0,
+      created_at_epoch_ms: 1,
+      updated_at_epoch_ms: 2,
+    } as Task;
+    const archivedTask = { ...base, id: "task-archived", title: "Archived Jira work", status: "open", archived_at_epoch_ms: 1 } as Task;
+    await act(async () => root.render(createElement(HistoryRail, {
+      projectId: "project-1",
+      projectPath: "/repo",
+      projectBranch: "main",
+      currentCwd: "/repo",
+      sessions: [],
+      archivedSessions: [],
+      tasks: [base, { ...base, id: "task-open", title: "Open work", status: "open" } as Task],
+      archivedTasks: [archivedTask],
+      deletedSessions: [],
+      favoriteSessionIds: new Set<string>(),
+      termLoopHistoryLoading: false,
+      selectedSessionId: undefined,
+      disabled: false,
+      load: async () => ({ ...externalHistory, entries: [] }),
+      loadTermLoopPreview: async () => termLoopPreview,
+      resumeExternal: async () => undefined,
+      selectSession: () => {},
+      resumeSession: () => {},
+      restoreArchivedSession: vi.fn(),
+      deleteArchivedSession: vi.fn(),
+      restoreDeletedSession: vi.fn(),
+      reopenTask: vi.fn(),
+      restoreTask: vi.fn(),
+      inspectTaskWorktreeCleanup: async () => { throw new Error("no worktree to inspect"); },
+      deleteTask,
+    })));
+    const tasksTab = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((tab) => tab.textContent === "Tasks")!;
+    await act(async () => tasksTab.click());
+
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Delete Task Closed Jira work"]')!.click());
+    expect(container.querySelector("#delete-task-title")?.textContent).toBe("Delete “Closed Jira work”?");
+    await act(async () => container.querySelector<HTMLButtonElement>(".dialog-actions .danger-button")!.click());
+    expect(deleteTask).toHaveBeenCalledWith(base, undefined);
+    deleteTask.mockClear();
+
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Delete all Tasks in history"]')!.click());
+    expect(container.querySelector("#bulk-delete-tasks-title")?.textContent).toBe("Delete 2 Tasks?");
+    const confirm = container.querySelector<HTMLButtonElement>(".dialog-actions .danger-button")!;
+    expect(confirm.textContent).toBe("Delete 2 Tasks");
+    await act(async () => confirm.click());
+    // The open Task is not in History, so it is never part of Delete all.
+    expect(deleteTask.mock.calls.map(([task]) => task.id).sort()).toEqual(["task-archived", "task-closed"]);
 
     await act(async () => root.unmount());
     container.remove();

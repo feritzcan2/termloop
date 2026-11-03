@@ -5,7 +5,7 @@ import { Icon } from "./Icon.js";
 import { RailHeader } from "./RailHeader.js";
 import { OverlayPortal } from "./OverlayPortal.js";
 import { DeleteTaskDialog } from "./task-dialogs/delete-task-dialog.js";
-import { DeleteArchivedTasksDialog } from "./task-dialogs/delete-archived-tasks-dialog.js";
+import { BulkDeleteTasksDialog } from "./task-dialogs/bulk-delete-tasks-dialog.js";
 import type { TaskWorktreeCleanupPreviewDto } from "@termloop/contract/current";
 import type { WorkspaceView } from "./WorkspaceViewSwitch.js";
 
@@ -101,7 +101,7 @@ export function ArchivedRail(props: ArchivedRailProps) {
   /// Emptiness is owned here so the sidebar never has to predict it.
   const total = props.tasks.length;
   const anyDeleting = props.tasks.some((task) => props.deletingTaskIds.has(task.id));
-  const bulkDialog = bulkTargets ? <DeleteArchivedTasksDialog
+  const bulkDialog = bulkTargets ? <BulkDeleteTasksDialog
     tasks={bulkTargets}
     inspect={props.inspectTaskWorktreeCleanup}
     remove={props.deleteTask}

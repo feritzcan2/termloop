@@ -3089,6 +3089,8 @@ button.history-row-main { cursor: pointer; }
 .history-row-actions { display: flex; gap: 4px; margin-right: 6px; }
 .history-row-actions .history-action { margin-right: 0; }
 .history-action.destructive { border-color: rgba(222,104,104,.2); background: rgba(222,104,104,.06); color: light-dark(#845e58, #d99b92); }
+.history-subhead-actions { display: flex; align-items: center; gap: 6px; }
+.history-subhead-actions .history-action { margin-right: 0; padding: 3px 6px; letter-spacing: 0; text-transform: none; }
 .history-detail { grid-column: 1 / -1; min-width: 0; margin: 0 7px 7px 36px; }
 .history-path { overflow: hidden; color: var(--sidebar-dimmer); font: 9px/1.35 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
 .history-preview { display: grid; gap: 4px; padding-left: 7px; border-left: 1px solid rgba(102,179,255,.22); }

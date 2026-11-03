@@ -531,6 +531,7 @@ export function shellNativeOverlayOpen(state: {
   projectWorkflow?: boolean;
   workflowClose?: boolean;
   archivedRail: boolean;
+  historyRail?: boolean;
   playbook?: boolean;
   jiraTaskProposal?: boolean;
 }): boolean {
@@ -725,6 +726,7 @@ export function Shell(props: ShellProps) {
     if (workspaceView !== "agents") setAgentSearchOpen(false);
   }, [workspaceView]);
   const [archivedRailOverlayOpen, setArchivedRailOverlayOpen] = useOverlayLeaseCount();
+  const [historyRailOverlayOpen, setHistoryRailOverlayOpen] = useOverlayLeaseCount();
   const [playbookOverlayOpen, setPlaybookOverlayOpen] = useOverlayLeaseCount();
   const [jiraProposalOverlayOpen, setJiraProposalOverlayOpen] = useOverlayLeaseCount();
   const howItWorksOverlay = useMemo(
@@ -1198,6 +1200,15 @@ export function Shell(props: ShellProps) {
     list: props.listDeletedSessions,
     restore: props.restoreDeletedSession,
   });
+  /// Active, closed, and archived Tasks delete through different commands;
+  /// an archived delete also re-reads the separate archived page.
+  const deleteAnyTask = async (task: Task, review?: TaskDeleteWorktreeReview): Promise<TaskDeleteWorktreeResult> => {
+    const result = task.archived_at_epoch_ms === null
+      ? await props.deleteTaskAndWorktree(task.id, review)
+      : await props.deleteArchivedTaskAndWorktree(task, review);
+    if (task.archived_at_epoch_ms !== null && result.status === "completed") void archived.reload();
+    return result;
+  };
   const projectActionDisabled = !props.selectedProject || props.connection !== "connected" || selectedSourceOffline;
   const shortcutsBlocked = projectWorkflowOverlayOpen || Boolean(workflowCloseTarget) || Boolean(settingsPage) || shellShortcutsBlocked({
     projectDialogOpen: props.projectDialogOpen,
@@ -1229,6 +1240,7 @@ export function Shell(props: ShellProps) {
     projectWorkflow: projectWorkflowOverlayOpen,
     workflowClose: Boolean(workflowCloseTarget),
     archivedRail: archivedRailOverlayOpen,
+    historyRail: historyRailOverlayOpen,
     playbook: playbookOverlayOpen,
     jiraTaskProposal: jiraProposalOverlayOpen,
   });
@@ -1871,6 +1883,10 @@ export function Shell(props: ShellProps) {
             restoreDeletedSession={deleted.restore}
             reopenTask={(taskId) => props.setTaskClosed(taskId, false)}
             restoreTask={archived.restore}
+            inspectTaskWorktreeCleanup={props.inspectTaskWorktreeCleanup}
+            deleteTask={deleteAnyTask}
+            overlayVisibilityChanged={setHistoryRailOverlayOpen}
+            overlayContainer={props.overlayContainer}
           /> : null}
           </div>
           {/* Terminals dock under the scrolling Agent rows so they keep one place as Agents come and go. */}
@@ -2379,13 +2395,7 @@ export function Shell(props: ShellProps) {
         close={() => setDeleteProjectOpen(false)}
         deleteProject={props.deleteProject}
         inspectTaskWorktreeCleanup={props.inspectTaskWorktreeCleanup}
-        deleteBlockingTask={async (task, review) => {
-          const result = task.archived_at_epoch_ms === null
-            ? await props.deleteTaskAndWorktree(task.id, review)
-            : await props.deleteArchivedTaskAndWorktree(task, review);
-          if (task.archived_at_epoch_ms !== null && result.status === "completed") archived.reload();
-          return result;
-        }}
+        deleteBlockingTask={deleteAnyTask}
         reviewTasks={() => { setDeleteProjectOpen(false); setWorkspaceView("overview"); }}
       /> : null}
       {renameTarget ? <RenameSessionDialog session={renameTarget} close={() => setRenameSessionId(undefined)} rename={(name) => props.renameSession(renameTarget.id, name)} /> : null}

@@ -6,9 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TaskWorktreeCleanupPreviewDto } from "@termloop/contract/current";
 import type { Task, TaskDeleteWorktreeResult, TaskDeleteWorktreeReview } from "../src/renderer/model.js";
 import {
-  DeleteArchivedTasksDialog,
-  planArchivedTaskBulkDelete,
-} from "../src/renderer/ui/task-dialogs/delete-archived-tasks-dialog.js";
+  BulkDeleteTasksDialog,
+  planTaskBulkDelete,
+} from "../src/renderer/ui/task-dialogs/bulk-delete-tasks-dialog.js";
 
 function task(overrides: Partial<Task> = {}): Task {
   return {
@@ -46,15 +46,15 @@ function preview(overrides: Partial<TaskWorktreeCleanupPreviewDto> = {}): TaskWo
   };
 }
 
-describe("Archived Task bulk delete plan", () => {
+describe("Task bulk delete plan", () => {
   it("deletes a Task without a worktree outright", () => {
-    expect(planArchivedTaskBulkDelete(task({ worktree: null }), undefined))
+    expect(planTaskBulkDelete(task({ worktree: null }), undefined))
       .toEqual({ kind: "delete", review: undefined, note: "No worktree" });
   });
 
   it("uses the reviewed cleanup for a clean worktree", () => {
     const value = preview();
-    expect(planArchivedTaskBulkDelete(task(), value))
+    expect(planTaskBulkDelete(task(), value))
       .toEqual({ kind: "delete", review: { preview: value, kind: "cleanup" }, note: "Worktree removed" });
   });
 
@@ -64,7 +64,7 @@ describe("Archived Task bulk delete plan", () => {
       blockers: ["trackedChanges"],
       destructive_cleanup: { status: "available", eligible_blockers: ["trackedChanges"] },
     });
-    const plan = planArchivedTaskBulkDelete(task(), value);
+    const plan = planTaskBulkDelete(task(), value);
     expect(plan).toMatchObject({ kind: "delete", review: { kind: "cleanup" } });
     expect(plan.kind === "delete" && plan.note).toContain("uncommitted changes discarded");
   });
@@ -75,7 +75,7 @@ describe("Archived Task bulk delete plan", () => {
       blockers: ["orphanedManagedDirectory"],
       stale_resolution: { forget_status: "available", disposal_status: "available", blockers: [] },
     });
-    expect(planArchivedTaskBulkDelete(task(), value))
+    expect(planTaskBulkDelete(task(), value))
       .toMatchObject({ kind: "delete", review: { kind: "forgetStaleBinding" } });
   });
 
@@ -85,7 +85,7 @@ describe("Archived Task bulk delete plan", () => {
       blockers: ["orphanedManagedDirectory"],
       stale_resolution: { forget_status: "unavailable", disposal_status: "available", blockers: [] },
     });
-    expect(planArchivedTaskBulkDelete(task(), value).kind).toBe("skip");
+    expect(planTaskBulkDelete(task(), value).kind).toBe("skip");
   });
 
   it("skips a blocked worktree and a failed inspection", () => {
@@ -93,12 +93,12 @@ describe("Archived Task bulk delete plan", () => {
       decision: "refused",
       blockers: ["pathRegistrationInconsistent"],
     });
-    expect(planArchivedTaskBulkDelete(task(), blocked).kind).toBe("skip");
-    expect(planArchivedTaskBulkDelete(task(), undefined).kind).toBe("skip");
+    expect(planTaskBulkDelete(task(), blocked).kind).toBe("skip");
+    expect(planTaskBulkDelete(task(), undefined).kind).toBe("skip");
   });
 });
 
-describe("Delete archived Tasks dialog", () => {
+describe("Bulk delete Tasks dialog", () => {
   const mounted: { root: ReturnType<typeof createRoot>; host: HTMLElement }[] = [];
 
   beforeEach(() => {
@@ -126,7 +126,7 @@ describe("Delete archived Tasks dialog", () => {
     const root = createRoot(host);
     mounted.push({ root, host });
     await act(async () => {
-      root.render(createElement(DeleteArchivedTasksDialog, { tasks: [clean, plain, blocked], inspect, remove, close: () => {} }));
+      root.render(createElement(BulkDeleteTasksDialog, { tasks: [clean, plain, blocked], inspect, remove, close: () => {} }));
     });
 
     const confirm = host.querySelector<HTMLButtonElement>(".danger-button")!;

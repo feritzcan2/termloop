@@ -8,19 +8,19 @@ import {
   type TaskDeleteWorktreeReview,
 } from "../../model.js";
 
-/// What bulk delete will do with one archived Task. It applies the same
+/// What bulk delete will do with one closed or archived Task. It applies the same
 /// unattended default as the single-Task dialog and never chooses an
 /// irreversible option that dialog would make the user pick explicitly:
 /// a Task whose only route is permanent deletion of an unverified folder,
 /// or whose worktree is blocked, is skipped and left for individual review.
-export type ArchivedTaskBulkDeletePlan =
+export type TaskBulkDeletePlan =
   | { kind: "delete"; review: TaskDeleteWorktreeReview | undefined; note: string }
   | { kind: "skip"; reason: string };
 
-export function planArchivedTaskBulkDelete(
+export function planTaskBulkDelete(
   task: Task,
   preview: TaskWorktreeCleanupPreviewDto | undefined,
-): ArchivedTaskBulkDeletePlan {
+): TaskBulkDeletePlan {
   if (!task.worktree) return { kind: "delete", review: undefined, note: "No worktree" };
   if (!preview) return { kind: "skip", reason: "Worktree check failed" };
   if (!taskDeletePreviewCanProceed(preview)) {
@@ -35,24 +35,25 @@ export function planArchivedTaskBulkDelete(
     return { kind: "skip", reason: "Unverified folder needs individual review" };
   }
   const discards = !(preview.decision === "allowed" && preview.blockers.length === 0);
-  return {
-    kind: "delete",
-    review: { preview, kind: "cleanup" },
-    note: discards ? "Worktree removed, uncommitted changes discarded" : "Worktree removed",
-  };
+  const agents = preview.presence?.attached_sessions.length ?? 0;
+  const notes = [
+    discards ? "Worktree removed, uncommitted changes discarded" : "Worktree removed",
+    ...(agents > 0 ? [`${agents} attached Session${agents === 1 ? "" : "s"} stopped`] : []),
+  ];
+  return { kind: "delete", review: { preview, kind: "cleanup" }, note: notes.join("; ") };
 }
 
 type Row = {
   task: Task;
-  plan: ArchivedTaskBulkDeletePlan | undefined;
+  plan: TaskBulkDeletePlan | undefined;
   outcome?: { ok: boolean; message?: string | undefined };
 };
 
 const INSPECT_CONCURRENCY = 4;
 
-export function DeleteArchivedTasksDialog({ tasks, inspect, remove, close }: {
-  /// A snapshot of the archived page when the dialog opened. Deletions re-read
-  /// the page underneath, so the dialog never follows the live list.
+export function BulkDeleteTasksDialog({ tasks, inspect, remove, close }: {
+  /// A snapshot of the list when the dialog opened. Deletions re-read the list
+  /// underneath, so the dialog never follows the live rows.
   tasks: readonly Task[];
   inspect(taskId: string): Promise<TaskWorktreeCleanupPreviewDto>;
   remove(task: Task, review: TaskDeleteWorktreeReview | undefined): Promise<TaskDeleteWorktreeResult>;
@@ -60,7 +61,7 @@ export function DeleteArchivedTasksDialog({ tasks, inspect, remove, close }: {
 }) {
   const [rows, setRows] = useState<readonly Row[]>(() => tasks.map((task) => ({
     task,
-    plan: task.worktree ? undefined : planArchivedTaskBulkDelete(task, undefined),
+    plan: task.worktree ? undefined : planTaskBulkDelete(task, undefined),
   })));
   const [phase, setPhase] = useState<"inspecting" | "ready" | "deleting" | "done">("inspecting");
   const [progress, setProgress] = useState(0);
@@ -74,9 +75,9 @@ export function DeleteArchivedTasksDialog({ tasks, inspect, remove, close }: {
     const worker = async () => {
       while (active && cursor < pending.length) {
         const task = pending[cursor++]!;
-        let plan: ArchivedTaskBulkDeletePlan;
+        let plan: TaskBulkDeletePlan;
         try {
-          plan = planArchivedTaskBulkDelete(task, await inspect(task.id));
+          plan = planTaskBulkDelete(task, await inspect(task.id));
         } catch (failure) {
           plan = { kind: "skip", reason: failure instanceof Error ? failure.message : String(failure) };
         }
@@ -130,11 +131,11 @@ export function DeleteArchivedTasksDialog({ tasks, inspect, remove, close }: {
             : `${deletable.length} ready to delete.`;
 
   return <div className="dialog-layer" onKeyDown={(event) => event.key === "Escape" && phase !== "deleting" && close()}>
-    <button className="dialog-backdrop" aria-label="Cancel deleting archived Tasks" disabled={phase === "deleting"} onClick={close} />
-    <section className="dialog-card task-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-archived-tasks-title" aria-busy={busy}>
-      <header className="dialog-header"><div><span className="dialog-eyebrow danger-eyebrow">Delete archived Tasks</span><h2 id="delete-archived-tasks-title">Delete all {tasks.length} archived Task{tasks.length === 1 ? "" : "s"}?</h2></div></header>
+    <button className="dialog-backdrop" aria-label="Cancel deleting Tasks" disabled={phase === "deleting"} onClick={close} />
+    <section className="dialog-card task-dialog" role="alertdialog" aria-modal="true" aria-labelledby="bulk-delete-tasks-title" aria-busy={busy}>
+      <header className="dialog-header"><div><span className="dialog-eyebrow danger-eyebrow">Delete Tasks</span><h2 id="bulk-delete-tasks-title">Delete {tasks.length} Task{tasks.length === 1 ? "" : "s"}?</h2></div></header>
       <div className="dialog-body">
-        <p className="confirm-copy">This permanently deletes each Task, its Jira link, its worktree contents, and its parked Agents. Git branches are kept. Jira issues can be imported again afterwards.</p>
+        <p className="confirm-copy">This permanently deletes each Task, its Jira link, its worktree contents, and its attached or parked Agents. Git branches are kept. Jira issues can be imported again afterwards.</p>
         <ul className="bulk-delete-list" aria-label="Archived Tasks">
           {rows.map((row) => <li key={row.task.id} className={`bulk-delete-row${row.plan?.kind === "skip" ? " skipped" : ""}${row.outcome ? row.outcome.ok ? " deleted" : " failed" : ""}`}>
             <span className="bulk-delete-title" title={row.task.title}>{row.task.title}</span>
