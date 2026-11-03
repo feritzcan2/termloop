@@ -17749,11 +17749,12 @@
       "x-codegen-name": "AgentForkSettingsSetParams",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "systemPromptEnabled"
-      ],
+      "minProperties": 1,
       "properties": {
         "systemPromptEnabled": {
+          "type": "boolean"
+        },
+        "autoContinueInterruptedEnabled": {
           "type": "boolean"
         }
       }
@@ -17766,11 +17767,21 @@
       "required": [
         "systemPromptEnabled",
         "systemPrompt",
-        "activeSourcePrompt"
+        "activeSourcePrompt",
+        "autoContinueInterruptedEnabled",
+        "restartContinuePrompt"
       ],
       "properties": {
         "systemPromptEnabled": {
           "type": "boolean"
+        },
+        "autoContinueInterruptedEnabled": {
+          "type": "boolean"
+        },
+        "restartContinuePrompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536
         },
         "systemPrompt": {
           "type": "string",

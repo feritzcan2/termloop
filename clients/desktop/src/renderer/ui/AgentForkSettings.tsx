@@ -63,14 +63,14 @@ function AgentForkSettingsPanel({ actions, profileId }: { actions: AgentForkSett
     );
     return () => { active = false; };
   }, [actions, profileId]);
-  const change = async (systemPromptEnabled: boolean) => {
+  const change = async (params: AgentForkSettingsSetParams) => {
     if (!settings || saving) return;
     const previous = settings;
-    setSettings({ ...settings, systemPromptEnabled });
+    setSettings({ ...settings, ...params });
     setSaving(true);
     setSaveError(undefined);
     try {
-      setSettings(await actions.set(profileId, { systemPromptEnabled }));
+      setSettings(await actions.set(profileId, params));
     } catch (error) {
       setSettings(previous);
       setSaveError(errorMessage(error));
@@ -95,7 +95,7 @@ function AgentForkSettingsPanel({ actions, profileId }: { actions: AgentForkSett
           disabled={saving}
           title="Tell forks they are a fork"
           description="Give each new fork the message below as standing instructions (Codex developer instructions, Claude session-start context), so it knows the source Agent is still running and waits for your instructions."
-          change={(checked) => void change(checked)}
+          change={(checked) => void change({ systemPromptEnabled: checked })}
         />
       </div>
       <figure className="agent-fork-prompt">
@@ -106,8 +106,25 @@ function AgentForkSettingsPanel({ actions, profileId }: { actions: AgentForkSett
         <figcaption>Added after it only when the source Agent is still working at fork time.</figcaption>
         <pre aria-label="Fork active source prompt">{settings.activeSourcePrompt}</pre>
       </figure>
-      {saveError ? <p className="settings-error" role="alert">Could not save Agent settings: {saveError}</p> : null}
       <p className="settings-footnote">Changes apply to forks started afterwards. Running forks keep the instructions they started with.</p>
+      <header>
+        <h4>Restarts</h4>
+        <p>Closing TermLoop interrupts Agents that are working. They resume when TermLoop opens again.</p>
+      </header>
+      <div className="settings-card">
+        <SettingsSwitch
+          checked={settings.autoContinueInterruptedEnabled}
+          disabled={saving}
+          title="Auto-continue interrupted tasks"
+          description="After an Agent that was working is resumed on restart, send it the message below so it continues the interrupted work instead of waiting for you."
+          change={(checked) => void change({ autoContinueInterruptedEnabled: checked })}
+        />
+      </div>
+      <figure className="agent-fork-prompt">
+        <figcaption>Message sent to each interrupted Agent after it resumes.</figcaption>
+        <pre aria-label="Restart continuation prompt">{settings.restartContinuePrompt}</pre>
+      </figure>
+      {saveError ? <p className="settings-error" role="alert">Could not save Agent settings: {saveError}</p> : null}
     </section>
   );
 }

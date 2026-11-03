@@ -12,7 +12,9 @@ const local: ConnectionProfileSummary = {
 };
 const PROMPT = "This Session is a fork.\n\n- Source Session ID: `{{source_session_id}}`";
 const ACTIVE = "The source Agent was still working when this fork started.";
-const SETTINGS = { systemPrompt: PROMPT, activeSourcePrompt: ACTIVE };
+const RESTART = "TermLoop restarted while you were working.";
+const SETTINGS = { systemPrompt: PROMPT, activeSourcePrompt: ACTIVE, restartContinuePrompt: RESTART };
+const CURRENT = { systemPromptEnabled: true, autoContinueInterruptedEnabled: false, ...SETTINGS };
 
 let host: HTMLDivElement;
 let root: Root;
@@ -29,13 +31,14 @@ async function render(actions: AgentForkSettingsActions) {
   await act(async () => root.render(<AgentForkSettings actions={actions} listProfiles={async () => [local]} />));
   await act(async () => {});
 }
-const toggle = () => host.querySelector<HTMLButtonElement>('button[role="switch"]')!;
+const toggle = () => host.querySelectorAll<HTMLButtonElement>('button[role="switch"]')[0]!;
+const restartToggle = () => host.querySelectorAll<HTMLButtonElement>('button[role="switch"]')[1]!;
 
 describe("Agent fork settings", () => {
   it("shows the daemon's fork prompt and saves the opt-out to that computer", async () => {
     const actions: AgentForkSettingsActions = {
-      get: vi.fn(async () => ({ systemPromptEnabled: true, ...SETTINGS })),
-      set: vi.fn(async (_profileId, params) => ({ ...params, ...SETTINGS })),
+      get: vi.fn(async () => CURRENT),
+      set: vi.fn(async (_profileId, params) => ({ ...CURRENT, ...params })),
     };
     await render(actions);
     expect(actions.get).toHaveBeenCalledWith("local");
@@ -48,9 +51,24 @@ describe("Agent fork settings", () => {
     expect(toggle().getAttribute("aria-checked")).toBe("false");
   });
 
+  it("shows the restart prompt and opts in to auto-continue without touching forks", async () => {
+    const actions: AgentForkSettingsActions = {
+      get: vi.fn(async () => CURRENT),
+      set: vi.fn(async (_profileId, params) => ({ ...CURRENT, ...params })),
+    };
+    await render(actions);
+    expect(restartToggle().getAttribute("aria-checked")).toBe("false");
+    expect(host.querySelector('pre[aria-label="Restart continuation prompt"]')?.textContent).toBe(RESTART);
+
+    await act(async () => restartToggle().click());
+    expect(actions.set).toHaveBeenCalledWith("local", { autoContinueInterruptedEnabled: true });
+    expect(restartToggle().getAttribute("aria-checked")).toBe("true");
+    expect(toggle().getAttribute("aria-checked")).toBe("true");
+  });
+
   it("restores the previous value when saving fails", async () => {
     const actions: AgentForkSettingsActions = {
-      get: vi.fn(async () => ({ systemPromptEnabled: true, ...SETTINGS })),
+      get: vi.fn(async () => CURRENT),
       set: vi.fn(async () => { throw new Error("daemon offline"); }),
     };
     await render(actions);

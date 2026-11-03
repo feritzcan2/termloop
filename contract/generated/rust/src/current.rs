@@ -240,7 +240,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:732fca840d8bed2417ad7b26a21f64d11655f047ed1a8f5db104e0dbfaef3393";
+    "sha256:6749cc420a4c6aaed92bafa8251fe94b58b96beda2f477ab8c64857116d9ad6a";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -7968,8 +7968,16 @@ pub struct AgentLibraryEntry {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct AgentForkSettingsSetParams {
-    #[serde(rename = "systemPromptEnabled")]
-    pub system_prompt_enabled: bool,
+    #[serde(
+        rename = "systemPromptEnabled",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub system_prompt_enabled: Option<bool>,
+    #[serde(
+        rename = "autoContinueInterruptedEnabled",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub auto_continue_interrupted_enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -7977,6 +7985,10 @@ pub struct AgentForkSettingsSetParams {
 pub struct AgentForkSettingsResult {
     #[serde(rename = "systemPromptEnabled")]
     pub system_prompt_enabled: bool,
+    #[serde(rename = "autoContinueInterruptedEnabled")]
+    pub auto_continue_interrupted_enabled: bool,
+    #[serde(rename = "restartContinuePrompt")]
+    pub restart_continue_prompt: String,
     #[serde(rename = "systemPrompt")]
     pub system_prompt: String,
     #[serde(rename = "activeSourcePrompt")]
@@ -30196,10 +30208,13 @@ fn validate_agent_fork_settings_set_params(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object
             .get("systemPromptEnabled")
-            .is_some_and(|field| field.is_boolean())
+            .is_none_or(|field| field.is_boolean())
             && object
-                .keys()
-                .all(|key| ["systemPromptEnabled"].contains(&key.as_str()))
+                .get("autoContinueInterruptedEnabled")
+                .is_none_or(|field| field.is_boolean())
+            && object.keys().all(|key| {
+                ["systemPromptEnabled", "autoContinueInterruptedEnabled"].contains(&key.as_str())
+            })
     })
 }
 
@@ -30217,6 +30232,14 @@ fn validate_agent_fork_settings_result(value: &Value) -> bool {
         object
             .get("systemPromptEnabled")
             .is_some_and(|field| field.is_boolean())
+            && object
+                .get("autoContinueInterruptedEnabled")
+                .is_some_and(|field| field.is_boolean())
+            && object.get("restartContinuePrompt").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 65536)
+            })
             && object.get("systemPrompt").is_some_and(|field| {
                 field
                     .as_str()
@@ -30228,8 +30251,14 @@ fn validate_agent_fork_settings_result(value: &Value) -> bool {
                     .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 65536)
             })
             && object.keys().all(|key| {
-                ["systemPromptEnabled", "systemPrompt", "activeSourcePrompt"]
-                    .contains(&key.as_str())
+                [
+                    "systemPromptEnabled",
+                    "autoContinueInterruptedEnabled",
+                    "restartContinuePrompt",
+                    "systemPrompt",
+                    "activeSourcePrompt",
+                ]
+                .contains(&key.as_str())
             })
     })
 }

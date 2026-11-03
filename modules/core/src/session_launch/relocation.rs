@@ -657,6 +657,7 @@ impl CoreRuntime {
             },
             prepared_launch: Some(preview.launch),
             pending_generated_input: None,
+            restart_interrupted: false,
             terminal: self.terminal.clone(),
             runtime_epoch,
             pty_spawned: false,

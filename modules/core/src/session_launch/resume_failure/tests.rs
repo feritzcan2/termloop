@@ -318,3 +318,36 @@ fn uncertain_cleanup_overrides_the_requested_reason_and_never_spawns_a_hold() {
     assert!(!fixture.core.terminal.contains_session("resume").unwrap());
     assert!(!fixture.core.resume_failure_reaps.contains("resume"));
 }
+
+fn committed_pending_template(restart_interrupted: bool, preference: bool) -> Option<String> {
+    let mut fixture = Fixture::new();
+    fixture
+        .core
+        .handle(
+            "agent.forkSettingsSet",
+            json!({ "autoContinueInterruptedEnabled": preference }),
+        )
+        .unwrap();
+    let mut plan = fixture.plan();
+    plan.restart_interrupted = restart_interrupted;
+    fixture.spawn(&mut plan);
+    fixture.core.resume_ready.insert("resume".into());
+    assert!(matches!(
+        fixture.core.complete_agent_resume(&mut plan).unwrap(),
+        AgentResumeCompletion::Committed(_)
+    ));
+    fixture.core.agent_observations["resume"]
+        .pending_generated_input
+        .as_ref()
+        .map(|submission| submission.provenance().template_ref.clone())
+}
+
+#[test]
+fn restart_interrupted_resume_queues_the_continuation_only_when_enabled() {
+    assert_eq!(
+        committed_pending_template(true, true).as_deref(),
+        Some("builtin.agent.restart-continue")
+    );
+    assert_eq!(committed_pending_template(true, false), None);
+    assert_eq!(committed_pending_template(false, true), None);
+}

@@ -37,6 +37,9 @@ pub struct AgentResumePlan {
     pub(super) preparation_kind: AgentResumePreparationKind,
     pub(super) prepared_launch: Option<termloop_invocation::LaunchPayload>,
     pub(super) pending_generated_input: Option<termloop_invocation::GeneratedTerminalSubmission>,
+    /// The plan seeded a restart interruption over an exact working turn, so
+    /// the restart-continuation preference may apply once it commits.
+    pub(super) restart_interrupted: bool,
     pub(super) terminal: TerminalService,
     pub(super) runtime_epoch: u64,
     pub(super) pty_spawned: bool,
@@ -1030,6 +1033,7 @@ impl CoreRuntime {
             runtime_epoch = termloop_platform::generate_runtime_epoch();
         }
         self.transition_generated_input_runtime_epoch(&session_id, runtime_epoch);
+        let restart_interrupted = restart_observation.is_some();
         self.agent_observations.insert(
             session_id.clone(),
             crate::AgentObservationCapability {
@@ -1089,6 +1093,7 @@ impl CoreRuntime {
                 },
                 prepared_launch: None,
                 pending_generated_input: None,
+                restart_interrupted,
                 terminal: self.terminal.clone(),
                 runtime_epoch,
                 pty_spawned: false,
@@ -1280,8 +1285,12 @@ impl CoreRuntime {
             );
         }
         self.refresh_ask_to_runtime_epoch(&plan.session_id, plan.runtime_epoch);
+        let pending_generated_input = plan
+            .pending_generated_input
+            .take()
+            .or_else(|| self.restart_continuation_submission(plan));
         if let Some(capability) = self.agent_observations.get_mut(&plan.session_id) {
-            capability.pending_generated_input = plan.pending_generated_input.take();
+            capability.pending_generated_input = pending_generated_input;
         }
         // Readiness was proven before this commit. If terminal delivery races a
         // transient provider state, retain the sequence for the next structured
@@ -1300,6 +1309,25 @@ impl CoreRuntime {
         Ok(super::AgentResumeCompletion::Committed(
             self.project_session(session),
         ))
+    }
+
+    /// A resume that seeded a restart interruption over a working turn may ask
+    /// the Agent to continue, but only when the user opted in. The preference
+    /// is read at commit so a change made while resume was preparing applies.
+    /// A launch-composed initial input (such as Ask-To recovery) takes
+    /// precedence, and composition failure leaves the Session interrupted.
+    fn restart_continuation_submission(
+        &self,
+        plan: &crate::AgentResumePlan,
+    ) -> Option<termloop_invocation::GeneratedTerminalSubmission> {
+        (plan.restart_interrupted
+            && self
+                .store
+                .agent_restart_preference()
+                .auto_continue_interrupted)
+            .then(termloop_invocation::agent_restart_continue_prompt)?
+            .ok()
+            .map(|prompt| prompt.terminal_submission())
     }
 
     pub fn agent_resume_readiness(&self, session_id: &str) -> Option<bool> {

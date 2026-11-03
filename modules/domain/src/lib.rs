@@ -1231,6 +1231,17 @@ impl Default for AgentForkPreference {
     }
 }
 
+/// The durable global preference for Agents interrupted by a graceful app or
+/// daemon restart.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct AgentRestartPreference {
+    /// Whether a Session whose working turn was interrupted by the restart
+    /// receives the visible continuation prompt once its resume commits.
+    /// Disabled unless the user opts in.
+    pub auto_continue_interrupted: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DurableAgentPlanSource {

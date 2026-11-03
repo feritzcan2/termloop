@@ -2,6 +2,7 @@ mod agent_accounts;
 mod agent_fork;
 pub(crate) mod agent_library;
 mod agent_plan;
+mod agent_restart;
 mod companion;
 pub(crate) mod configuration_version;
 mod deleted_session;

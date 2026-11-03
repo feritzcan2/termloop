@@ -5687,6 +5687,7 @@ fn prepared_resume_target_is_revalidated_before_final_commit() {
         preparation_kind: AgentResumePreparationKind::Resume,
         prepared_launch: None,
         pending_generated_input: None,
+        restart_interrupted: false,
         runtime_signal_sender: None,
         provider_runtime: Default::default(),
         terminal: terminal.clone(),
@@ -6168,6 +6169,18 @@ fn daemon_restart_handoff_interrupts_working_claude_and_codex() {
             .is_none()
     );
 
+    for (plan, expected) in [
+        (&claude_plan, true),
+        (&codex_plan, true),
+        (&stale_plan, false),
+    ] {
+        match plan {
+            crate::AgentResumePlanOutcome::Prepare(plan) => {
+                assert_eq!(plan.restart_interrupted, expected)
+            }
+            crate::AgentResumePlanOutcome::Current(_) => panic!("resume was not prepared"),
+        }
+    }
     drop(claude_plan);
     drop(codex_plan);
     drop(stale_plan);

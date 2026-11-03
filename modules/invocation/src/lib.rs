@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 mod agent_fork;
+mod agent_restart;
 mod assistant;
 mod jira_task;
 mod personal_agent;
@@ -14,6 +15,7 @@ pub use agent_fork::{
     agent_fork_active_source_template, agent_fork_notice_template,
     interactive_agent_fork_for_conversation,
 };
+pub use agent_restart::{agent_restart_continue_prompt, agent_restart_continue_template};
 pub use jira_task::{
     JIRA_TASK_PROPOSAL_FEEDBACK_MAX_CHARS, JiraTaskProposalAnswer, jira_task_intake_prompt,
     jira_task_proposal_answer_prompt, jira_task_proposal_created_prompt,
@@ -256,6 +258,7 @@ pub fn prompt_templates() -> &'static [PromptTemplate] {
         INTERACTIVE_AGENT_TEMPLATE,
         agent_fork::AGENT_FORK_TEMPLATE,
         agent_fork::AGENT_FORK_ACTIVE_SOURCE_TEMPLATE,
+        agent_restart::AGENT_RESTART_CONTINUE_TEMPLATE,
         QUICK_ACTION_TEMPLATE,
         personal_agent::PERSONAL_AGENT_TEMPLATE,
         profiles::SCATTERED_ORCHESTRATION_FINDER_TEMPLATE,
