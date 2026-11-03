@@ -254,6 +254,15 @@ impl std::fmt::Debug for CommandRequest {
 
 impl CommandRequest {
     pub fn new(program: impl Into<OsString>) -> Self {
+        Self::with_launch_environment(program, LaunchEnvironment::os_baseline())
+    }
+
+    /// Builds a request without consulting `os_baseline`, so the baseline's
+    /// own construction can run a bounded command without recursing.
+    pub(crate) fn with_launch_environment(
+        program: impl Into<OsString>,
+        launch_environment: LaunchEnvironment,
+    ) -> Self {
         Self {
             program: program.into(),
             args: Vec::new(),
@@ -261,7 +270,7 @@ impl CommandRequest {
             environment_delta: Vec::new(),
             stdin: None,
             process_record: None,
-            launch_environment: LaunchEnvironment::os_baseline(),
+            launch_environment,
             timeout: Duration::from_secs(30),
             output_limit: 8 * 1024 * 1024,
         }

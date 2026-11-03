@@ -1,5 +1,7 @@
 use std::ffi::{OsStr, OsString};
+use std::path::PathBuf;
 use std::process::Command;
+use std::sync::OnceLock;
 
 /// A complete child-process environment reconstructed from an explicit
 /// cross-platform baseline plus purpose-specific additions.
@@ -14,7 +16,7 @@ pub struct LaunchEnvironment {
 
 impl LaunchEnvironment {
     pub fn os_baseline() -> Self {
-        Self::baseline_from(std::env::vars_os())
+        Self::baseline_with_user_directories(std::env::vars_os(), user_executable_directories())
     }
 
     /// Minimal baseline for a TermLoop-owned helper that is launched by exact
@@ -74,7 +76,31 @@ impl LaunchEnvironment {
             .map(|(_, value)| value.as_os_str())
     }
 
+    #[cfg(test)]
     fn baseline_from<I>(variables: I) -> Self
+    where
+        I: IntoIterator<Item = (OsString, OsString)>,
+    {
+        Self::baseline_with_user_directories(variables, &[])
+    }
+
+    fn baseline_with_user_directories<I>(variables: I, user_directories: &[PathBuf]) -> Self
+    where
+        I: IntoIterator<Item = (OsString, OsString)>,
+    {
+        let mut environment = Self::allowlisted(variables);
+        repair_user_executable_path(&mut environment, user_directories);
+        environment.insert("TERM".into(), "xterm-256color".into());
+        environment.insert("COLORTERM".into(), "truecolor".into());
+        environment.insert("TERM_PROGRAM".into(), "TermLoop".into());
+        environment.insert(
+            "TERM_PROGRAM_VERSION".into(),
+            env!("CARGO_PKG_VERSION").into(),
+        );
+        environment
+    }
+
+    fn allowlisted<I>(variables: I) -> Self
     where
         I: IntoIterator<Item = (OsString, OsString)>,
     {
@@ -84,14 +110,6 @@ impl LaunchEnvironment {
                 environment.insert(key, value);
             }
         }
-        repair_user_executable_path(&mut environment);
-        environment.insert("TERM".into(), "xterm-256color".into());
-        environment.insert("COLORTERM".into(), "truecolor".into());
-        environment.insert("TERM_PROGRAM".into(), "TermLoop".into());
-        environment.insert(
-            "TERM_PROGRAM_VERSION".into(),
-            env!("CARGO_PKG_VERSION").into(),
-        );
         environment
     }
 
@@ -109,11 +127,16 @@ impl LaunchEnvironment {
     }
 }
 
-fn repair_user_executable_path(_environment: &mut LaunchEnvironment) {
+/// Appends the directories a user's own terminal would search to the inherited
+/// PATH. Apps opened from the Dock or Finder inherit launchd's bare system PATH,
+/// so a CLI installed through Homebrew, nvm, Volta, mise and similar managers
+/// was otherwise invisible to the daemon. The inherited order still wins.
+fn repair_user_executable_path(
+    _environment: &mut LaunchEnvironment,
+    _user_directories: &[PathBuf],
+) {
     #[cfg(not(windows))]
     {
-        use std::path::PathBuf;
-
         let home = _environment
             .entries
             .iter()
@@ -135,10 +158,88 @@ fn repair_user_executable_path(_environment: &mut LaunchEnvironment) {
                     .filter(|path| !candidates.iter().any(|candidate| candidate == path)),
             );
         }
+        for directory in _user_directories {
+            if !paths.contains(directory) {
+                paths.push(directory.clone());
+            }
+        }
         if let Ok(path) = std::env::join_paths(paths) {
             _environment.insert("PATH".into(), path);
         }
     }
+}
+
+/// The user's login-shell PATH entries plus well-known package-manager
+/// directories, resolved once per process. A failed or slow shell degrades to
+/// the well-known directories only.
+fn user_executable_directories() -> &'static [PathBuf] {
+    static DIRECTORIES: OnceLock<Vec<PathBuf>> = OnceLock::new();
+    DIRECTORIES.get_or_init(|| {
+        #[cfg(windows)]
+        {
+            Vec::new()
+        }
+        #[cfg(not(windows))]
+        {
+            let environment = LaunchEnvironment::allowlisted(std::env::vars_os());
+            let mut directories = login_shell_path(&environment)
+                .map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
+                .unwrap_or_default();
+            for directory in ["/opt/homebrew/bin", "/usr/local/bin"].map(PathBuf::from) {
+                if !directories.contains(&directory) && directory.is_dir() {
+                    directories.push(directory);
+                }
+            }
+            directories.retain(|directory| directory.is_absolute());
+            directories
+        }
+    })
+}
+
+#[cfg(not(windows))]
+const LOGIN_SHELL_PATH_MARKER: &str = "__TERMLOOP_LOGIN_PATH__";
+
+/// Asks the user's interactive login shell for its PATH, the same startup files
+/// a TermLoop terminal runs. Only `PATH` is read back; markers isolate it from
+/// anything the startup files print. `+m` disables job control: the probe runs
+/// in its own process group, and an interactive shell that tried to take a
+/// controlling terminal would be stopped until the timeout. Shells that reject
+/// these flags fail fast and leave only the well-known directories.
+#[cfg(not(windows))]
+fn login_shell_path(environment: &LaunchEnvironment) -> Option<OsString> {
+    use std::os::unix::ffi::OsStringExt;
+
+    let shell = environment
+        .value("SHELL")
+        .filter(|shell| !shell.is_empty())?;
+    let script = format!(
+        "printf '%s' '{LOGIN_SHELL_PATH_MARKER}'; printenv PATH; printf '%s' '{LOGIN_SHELL_PATH_MARKER}'"
+    );
+    let outcome = crate::run_command(
+        crate::CommandRequest::with_launch_environment(shell, environment.clone())
+            .args(["+m", "-i", "-l", "-c", script.as_str()])
+            .timeout(std::time::Duration::from_secs(5))
+            .output_limit(64 * 1024),
+    )
+    .ok()?;
+    if !outcome.success() || outcome.stdout_truncated {
+        return None;
+    }
+    login_shell_path_from_output(&outcome.stdout).map(OsString::from_vec)
+}
+
+#[cfg(not(windows))]
+fn login_shell_path_from_output(stdout: &[u8]) -> Option<Vec<u8>> {
+    let marker = LOGIN_SHELL_PATH_MARKER.as_bytes();
+    let start = stdout
+        .windows(marker.len())
+        .position(|window| window == marker)?
+        + marker.len();
+    let length = stdout[start..]
+        .windows(marker.len())
+        .position(|window| window == marker)?;
+    let path = stdout[start..start + length].trim_ascii();
+    (!path.is_empty()).then(|| path.to_vec())
 }
 
 impl std::fmt::Debug for LaunchEnvironment {
@@ -435,6 +536,82 @@ mod tests {
         for key in ["LANG", "SYSTEMROOT"] {
             assert!(restricted_key_allowed(OsStr::new(key)));
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn login_shell_path_is_isolated_from_startup_file_output() {
+        let output = format!(
+            "Welcome!\n\x1b]0;title\x07{LOGIN_SHELL_PATH_MARKER}/opt/homebrew/bin:/usr/bin\n{LOGIN_SHELL_PATH_MARKER}bye"
+        );
+        assert_eq!(
+            login_shell_path_from_output(output.as_bytes()).as_deref(),
+            Some(b"/opt/homebrew/bin:/usr/bin".as_slice())
+        );
+        assert_eq!(login_shell_path_from_output(b"no markers"), None);
+        let unterminated = format!("{LOGIN_SHELL_PATH_MARKER}/usr/bin");
+        assert_eq!(login_shell_path_from_output(unterminated.as_bytes()), None);
+        let empty = format!("{LOGIN_SHELL_PATH_MARKER}\n{LOGIN_SHELL_PATH_MARKER}");
+        assert_eq!(login_shell_path_from_output(empty.as_bytes()), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn user_directories_extend_a_bare_inherited_path_without_reordering_it() {
+        let environment = LaunchEnvironment::baseline_with_user_directories(
+            [
+                ("PATH".into(), "/usr/bin:/bin".into()),
+                ("HOME".into(), "/safe/home".into()),
+            ],
+            &[
+                PathBuf::from("/opt/homebrew/bin"),
+                PathBuf::from("/usr/bin"),
+                PathBuf::from("/safe/home/.nvm/versions/node/v22/bin"),
+            ],
+        );
+        assert_eq!(
+            environment.value("PATH"),
+            Some(OsStr::new(
+                "/safe/home/.local/bin:/safe/home/.bun/bin:/usr/bin:/bin:/opt/homebrew/bin:/safe/home/.nvm/versions/node/v22/bin"
+            ))
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn login_shell_probe_reads_the_users_path_from_a_real_shell() {
+        let home = std::env::temp_dir().join(format!(
+            "termloop-login-shell-{}-{}",
+            std::process::id(),
+            crate::generate_opaque_id()
+        ));
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::write(
+            home.join(".profile"),
+            "echo profile noise\nPATH=/termloop/login/bin:$PATH; export PATH\n",
+        )
+        .unwrap();
+        let environment = LaunchEnvironment::allowlisted([
+            ("PATH".into(), "/usr/bin:/bin".into()),
+            ("HOME".into(), home.as_os_str().to_owned()),
+            ("SHELL".into(), "/bin/sh".into()),
+        ]);
+        let started = std::time::Instant::now();
+        let path = login_shell_path(&environment).expect("login shell PATH");
+        assert!(started.elapsed() < std::time::Duration::from_secs(4));
+        assert!(
+            std::env::split_paths(&path)
+                .any(|entry| entry == std::path::Path::new("/termloop/login/bin")),
+            "{path:?}"
+        );
+        assert_eq!(
+            login_shell_path(&LaunchEnvironment::allowlisted([(
+                "HOME".into(),
+                home.as_os_str().to_owned()
+            )])),
+            None
+        );
+        std::fs::remove_dir_all(home).unwrap();
     }
 
     #[cfg(unix)]
