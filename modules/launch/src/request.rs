@@ -13,6 +13,9 @@ pub struct LaunchRequest<'a> {
     pub mcp: Option<McpConnection<'a>>,
     pub provider_instructions_source: Option<&'a PromptTemplate>,
     pub provider_instructions: Option<&'a str>,
+    /// Visible instructions appended after the provider instructions for a
+    /// launch into a managed Task worktree. Claude and Codex only.
+    pub task_worktree_instructions: Option<&'a PromptTemplate>,
     pub attachments: &'a [ImageAttachment],
     pub codex_project_trust: CodexProjectTrust,
     pub executable_directory: Option<&'a Path>,
@@ -45,6 +48,7 @@ impl<'a> LaunchRequest<'a> {
             mcp: None,
             provider_instructions_source: None,
             provider_instructions: None,
+            task_worktree_instructions: None,
             attachments: &[],
             codex_project_trust: CodexProjectTrust::Inherit,
             executable_directory: None,

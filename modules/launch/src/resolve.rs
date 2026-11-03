@@ -11,7 +11,8 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
         observation,
         mcp,
         provider_instructions_source,
-        provider_instructions,
+        provider_instructions: explicit_provider_instructions,
+        task_worktree_instructions,
         attachments,
         codex_project_trust,
         executable_directory,
@@ -22,7 +23,7 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
         approved_external_tools,
         read_only_workspace,
     } = request;
-    if let Some(instructions) = provider_instructions
+    if let Some(instructions) = explicit_provider_instructions
         && (instructions.trim().is_empty() || instructions.len() > 64 * 1024)
     {
         return Err(InvocationError::InvalidDeveloperInstructions);
@@ -79,6 +80,27 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
     let interactive_template = mcp.as_ref().and_then(|mcp| mcp.instructions);
     let interactive_provider_instructions =
         interactive_template.map(|template| template.authored_body);
+    let base_provider_instructions =
+        explicit_provider_instructions.or(interactive_provider_instructions);
+    // A managed Task worktree adds its visible instructions after whatever the
+    // launch already delivers, through the same provider channel.
+    let task_worktree_instructions =
+        task_worktree_instructions.filter(|_| matches!(agent_id, "claude" | "codex"));
+    let composed_instructions = task_worktree_instructions.map(|task_worktree| {
+        match base_provider_instructions {
+            Some(base) => format!("{}\n\n{}", base.trim_end(), task_worktree.authored_body),
+            None => task_worktree.authored_body.to_owned(),
+        }
+    });
+    if composed_instructions
+        .as_ref()
+        .is_some_and(|instructions| instructions.len() > 64 * 1024)
+    {
+        return Err(InvocationError::InvalidDeveloperInstructions);
+    }
+    let provider_instructions = composed_instructions
+        .as_deref()
+        .or(explicit_provider_instructions);
     let delivered_provider_instructions =
         provider_instructions.or(interactive_provider_instructions);
     validate_agent_configuration(agent_id, model, permission, reasoning)?;
@@ -354,14 +376,14 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
             )]
         })
         .unwrap_or_default();
-    if let Some(instructions) = delivered_provider_instructions {
+    if let Some(instructions) = base_provider_instructions {
         content_parts.push(content_part(
-            if provider_instructions.is_some() {
+            if explicit_provider_instructions.is_some() {
                 "persistent-assistant-instructions"
             } else {
                 "interactive-session-protocol"
             },
-            if provider_instructions.is_some() {
+            if explicit_provider_instructions.is_some() {
                 "providerInstructions"
             } else {
                 "developerInstructions"
@@ -372,12 +394,20 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
                     .ok_or(InvocationError::UnprovenancedPrompt)?;
                 format!("resources/prompts/{}@{}", source.id, source.version)
             },
-            match agent_id {
-                "codex" => "codexDeveloperInstructions",
-                "claude" => "claudeAppendedSystemPrompt",
-                _ => unreachable!("agent id was validated"),
-            },
+            instruction_delivery(agent_id),
             instructions,
+        ));
+    }
+    if let Some(task_worktree) = task_worktree_instructions {
+        content_parts.push(content_part(
+            "task-worktree-instructions",
+            "providerInstructions",
+            format!(
+                "resources/prompts/{}@{}",
+                task_worktree.id, task_worktree.version
+            ),
+            instruction_delivery(agent_id),
+            task_worktree.authored_body,
         ));
     }
     content_parts.extend(attachments.iter().enumerate().map(|(index, attachment)| {
@@ -541,4 +571,13 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
         bindings: vec![],
         delivered_prompt: prompt.map(|_| delivered),
     })
+}
+
+/// Only Claude and Codex reach the provider-instruction channel.
+fn instruction_delivery(agent_id: &str) -> &'static str {
+    match agent_id {
+        "codex" => "codexDeveloperInstructions",
+        "claude" => "claudeAppendedSystemPrompt",
+        _ => unreachable!("provider instructions are limited to Claude and Codex"),
+    }
 }

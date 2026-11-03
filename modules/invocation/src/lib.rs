@@ -54,6 +54,13 @@ const INTERACTIVE_AGENT_TEMPLATE: PromptTemplate = PromptTemplate {
     version: 7,
     authored_body: include_str!("../../../resources/prompts/builtin.agent.interactive.md"),
 };
+/// Appended to the provider instructions of every Claude or Codex launch into a
+/// managed Task worktree, so the Task's Git work stays where TermLoop sees it.
+const TASK_WORKTREE_AGENT_TEMPLATE: PromptTemplate = PromptTemplate {
+    id: "builtin.agent.task-worktree",
+    version: 1,
+    authored_body: include_str!("../../../resources/prompts/builtin.agent.task-worktree.md"),
+};
 #[cfg(test)]
 const CODEX_DISABLE_STARTUP_UPDATE_CHECK: &str = "check_for_update_on_startup=false";
 pub const QUICK_ACTION_FREE_PROMPT_TEMPLATE_REF: &str = "builtin.quick-action.free-prompt";
@@ -256,6 +263,7 @@ const AGENT_TASK_WORKFLOW_TEMPLATE: PromptTemplate = PromptTemplate {
 pub fn prompt_templates() -> &'static [PromptTemplate] {
     &[
         INTERACTIVE_AGENT_TEMPLATE,
+        TASK_WORKTREE_AGENT_TEMPLATE,
         agent_fork::AGENT_FORK_TEMPLATE,
         agent_fork::AGENT_FORK_ACTIVE_SOURCE_TEMPLATE,
         agent_restart::AGENT_RESTART_CONTINUE_TEMPLATE,

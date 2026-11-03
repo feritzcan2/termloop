@@ -157,3 +157,51 @@ fn fork_notice_template_is_visible_and_rejects_invalid_source_ids() {
         ));
     }
 }
+
+#[test]
+fn managed_worktree_fork_appends_task_worktree_instructions_after_the_notice() {
+    let selection = AgentLaunchSelection::new("default", "default", "default");
+    for agent in ["codex", "claude"] {
+        let source_ref = source_ref(agent);
+        let launch = interactive_agent_fork_for_conversation(
+            agent,
+            "/tmp",
+            &selection,
+            SOURCE_SESSION_ID,
+            false,
+            AgentConversationLaunch::Fork {
+                source_ref: &source_ref,
+            },
+            (agent == "claude").then(claude_observation),
+            None,
+            true,
+        )
+        .unwrap();
+        let manifest = launch.inspectable_manifest();
+        let task_worktree = manifest
+            .content_parts
+            .iter()
+            .find(|part| part.id == "task-worktree-instructions")
+            .unwrap();
+        assert_eq!(
+            task_worktree.source,
+            "resources/prompts/builtin.agent.task-worktree@1"
+        );
+        let delivered = if agent == "codex" {
+            launch
+                .codex_app_server_developer_instructions()
+                .unwrap()
+                .to_owned()
+        } else {
+            launch
+                .environment()
+                .entries()
+                .find(|(key, _)| *key == "TERMLOOP_SESSION_START_CONTEXT")
+                .map(|(_, value)| value.to_string_lossy().into_owned())
+                .unwrap()
+        };
+        assert!(delivered.starts_with("# Agent fork notice"));
+        assert!(delivered.ends_with(task_worktree.content.as_str()));
+        assert!(delivered.contains("`git worktree add`"));
+    }
+}

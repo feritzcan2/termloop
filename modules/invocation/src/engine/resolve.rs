@@ -214,7 +214,10 @@ fn resolve_launch_manifest_with_environment(
         agent_id, cwd, template, model, permission, reasoning,
         prompt: prompt.map(|_| delivered.as_str()), conversation, observation,
         mcp: mcp.map(AgentMcpLaunch::connection), provider_instructions_source,
-        provider_instructions, attachments, codex_project_trust, executable_directory,
+        provider_instructions,
+        task_worktree_instructions: (codex_project_trust == CodexProjectTrust::ManagedWorkspace)
+            .then_some(&TASK_WORKTREE_AGENT_TEMPLATE),
+        attachments, codex_project_trust, executable_directory,
         explicit_configuration: template.id == QUICK_ACTION_FREE_PROMPT_TEMPLATE_REF,
         execution: None, workspace_network: None, approved_tools: &[], approved_external_tools: &[],
         read_only_workspace: false,

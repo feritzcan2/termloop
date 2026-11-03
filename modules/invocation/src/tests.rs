@@ -1770,6 +1770,110 @@ fn codex_app_server_endpoint_is_non_secret_launch_metadata() {
 }
 
 #[test]
+fn managed_worktree_launch_appends_task_worktree_instructions_to_the_system_prompt() {
+    let mcp = || AgentMcpLaunch {
+        endpoint: "http://127.0.0.1:1234/mcp",
+        token: "secret-mcp-token",
+        claude_config_path: "/tmp/claude-mcp.json",
+        profile: AgentMcpProfile::Interactive,
+    };
+    let task_worktree = TASK_WORKTREE_AGENT_TEMPLATE.authored_body;
+    let expected = format!(
+        "{}\n\n{task_worktree}",
+        INTERACTIVE_AGENT_TEMPLATE.authored_body.trim_end()
+    );
+    for agent in ["claude", "codex"] {
+        let managed = interactive_agent_for_managed_worktree_conversation(
+            agent,
+            "/tmp/worktree",
+            AgentConversationLaunch::Fresh { resume_ref: None },
+            None,
+            Some(mcp()),
+        )
+        .unwrap();
+        let args = provider_args(&managed);
+        if agent == "claude" {
+            let position = args
+                .iter()
+                .position(|arg| arg == "--append-system-prompt")
+                .unwrap();
+            assert_eq!(args[position + 1], expected);
+            assert_eq!(
+                args.iter()
+                    .filter(|arg| *arg == "--append-system-prompt")
+                    .count(),
+                1
+            );
+        } else {
+            let developer = args
+                .iter()
+                .filter(|arg| arg.starts_with("developer_instructions="))
+                .collect::<Vec<_>>();
+            assert_eq!(
+                developer,
+                [&format!(
+                    "developer_instructions={}",
+                    serde_json::to_string(&expected).unwrap()
+                )]
+            );
+            assert_eq!(
+                managed.codex_app_server_developer_instructions(),
+                Some(expected.as_str())
+            );
+        }
+        let manifest = managed.inspectable_manifest();
+        assert_eq!(manifest.transport.delivered_content, expected);
+        let ids = manifest
+            .content_parts
+            .iter()
+            .map(|part| (part.id.as_str(), part.source.as_str()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            ids,
+            [
+                (
+                    "interactive-session-protocol",
+                    "resources/prompts/builtin.agent.interactive@7"
+                ),
+                (
+                    "task-worktree-instructions",
+                    "resources/prompts/builtin.agent.task-worktree@1"
+                ),
+            ]
+        );
+        assert_eq!(managed.provenance().template_ref, "builtin.agent.interactive");
+
+        let project = interactive_agent_for_conversation(
+            agent,
+            "/tmp/project",
+            AgentConversationLaunch::Fresh { resume_ref: None },
+            None,
+            Some(mcp()),
+        )
+        .unwrap();
+        assert!(!project.args().join(" ").contains("git worktree add"));
+        assert!(
+            project
+                .inspectable_manifest()
+                .content_parts
+                .iter()
+                .all(|part| part.id != "task-worktree-instructions")
+        );
+    }
+
+    // Providers without an instruction channel launch unchanged.
+    let gemini = interactive_agent_for_managed_worktree_conversation(
+        "gemini",
+        "/tmp/worktree",
+        AgentConversationLaunch::Fresh { resume_ref: None },
+        None,
+        None,
+    )
+    .unwrap();
+    assert!(!gemini.args().join(" ").contains("git worktree add"));
+}
+
+#[test]
 fn managed_worktree_trust_is_exact_inspectable_and_codex_scoped() {
     let cwd = "/tmp/managed.project \"quoted\"\\worktree";
     let quoted_cwd = serde_json::to_string(cwd).unwrap();
