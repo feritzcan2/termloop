@@ -30,6 +30,6 @@
     "typescript": "7.0.2",
     "node-addon-api": "8.9.2",
     "node-gyp": "12.4.0",
-    "electron": "43.3.0"
+    "electron": "43.8.1"
   }
 }
