@@ -21,7 +21,7 @@ fn restart_continuation_delivers_the_visible_cataloged_asset() {
     assert!(
         prompt
             .delivered_prompt()
-            .contains("Continue the interrupted work")
+            .ends_with("\n\nContinue your work.")
     );
     let submission = prompt.terminal_submission();
     assert_eq!(

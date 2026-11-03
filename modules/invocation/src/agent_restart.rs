@@ -2,7 +2,7 @@ use crate::{AskToTerminalPrompt, InvocationError, PromptTemplate, assistant, ter
 
 pub(super) const AGENT_RESTART_CONTINUE_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.agent.restart-continue",
-    version: 1,
+    version: 2,
     authored_body: include_str!("../../../resources/prompts/builtin.agent.restart-continue.md"),
 };
 
