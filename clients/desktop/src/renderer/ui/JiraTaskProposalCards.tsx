@@ -88,7 +88,8 @@ export function jiraTaskWorktreeParams(
 /**
  * Agent-proposed Jira issues that wait for the user, shown one at a time as a
  * modal. "Later" hides a proposal until its Agent is selected again or the
- * Agent proposes anew, so the dialog never traps the rest of the window.
+ * Agent proposes anew, so the dialog never traps the rest of the window; the
+ * close button and "Dismiss" drop it without telling the Agent.
  */
 export function JiraTaskProposalCards({ sessions, selectedSessionId, actions, selectSession, started, reportOverlay }: {
   sessions: readonly Session[];
@@ -217,7 +218,7 @@ function JiraTaskProposalCard({ session, proposal, actions, selectSession, start
         <h2 id={id("title")}>Review before creating</h2>
         <p className="jira-proposal-origin">Proposed by <button type="button" className="jira-proposal-agent" onClick={() => selectSession(session.id)}>{sessionLabel(session)}</button></p>
       </div>
-      <button type="button" className="icon-button quiet" aria-label="Review the Jira issue proposal later" onClick={later}><Icon name="close" /></button>
+      <button type="button" className="icon-button quiet" aria-label="Dismiss the Jira issue proposal" disabled={disabled} onClick={() => void respond("dismiss")}><Icon name="close" /></button>
     </header>
     <div className="dialog-body jira-proposal-body">
       {proposal.rationale ? <p className="jira-proposal-rationale">{proposal.rationale}</p> : null}

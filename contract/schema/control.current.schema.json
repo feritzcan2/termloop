@@ -9342,7 +9342,7 @@
     "sessionJiraTaskProposalRespondParams": {
       "x-codegen": true,
       "x-codegen-name": "SessionJiraTaskProposalRespondParams",
-      "description": "Answer a pending proposal without creating it: revise sends the user's feedback to the Agent so it proposes again; dismiss tells the Agent to continue without a Jira issue.",
+      "description": "Answer a pending proposal without creating it: revise sends the user's feedback to the Agent so it proposes again; dismiss only closes the proposal and tells the Agent nothing.",
       "type": "object",
       "additionalProperties": false,
       "required": ["sessionId", "proposalId", "decision", "feedback"],
@@ -9378,7 +9378,7 @@
         },
         "status": {
           "type": "string",
-          "enum": ["submitting"]
+          "enum": ["submitting", "dismissed"]
         }
       }
     },

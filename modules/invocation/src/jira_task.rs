@@ -1,6 +1,7 @@
 //! Visible prompts for the Quick Action "Create Jira issue and Task" flow: the
 //! instruction appended to the user's first message, and the messages that
-//! carry the user's answer to a proposal back to the Agent.
+//! carry the user's feedback or the created issue back to the Agent. A
+//! dismissal tells the Agent nothing.
 
 use crate::{AskToTerminalPrompt, InvocationError, PromptTemplate};
 
@@ -17,14 +18,6 @@ pub(super) const JIRA_TASK_PROPOSAL_REVISE_TEMPLATE: PromptTemplate = PromptTemp
     version: 1,
     authored_body: include_str!(
         "../../../resources/prompts/builtin.agent.jira-task-proposal-revise.md"
-    ),
-};
-
-pub(super) const JIRA_TASK_PROPOSAL_DISMISS_TEMPLATE: PromptTemplate = PromptTemplate {
-    id: "builtin.agent.jira-task-proposal-dismiss",
-    version: 1,
-    authored_body: include_str!(
-        "../../../resources/prompts/builtin.agent.jira-task-proposal-dismiss.md"
     ),
 };
 
@@ -50,39 +43,22 @@ pub fn jira_task_intake_prompt(prompt: &str) -> Result<String, InvocationError> 
     crate::bind_ordered(JIRA_TASK_INTAKE_TEMPLATE.body(), &[("prompt", prompt)])
 }
 
-/// How the user answered a pending proposal without approving it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum JiraTaskProposalAnswer {
-    /// Propose again with the user's corrections.
-    Revise,
-    /// Continue without a Jira issue.
-    Dismiss,
-}
-
-/// The visible message that tells the Agent how the user answered.
-pub fn jira_task_proposal_answer_prompt(
-    answer: JiraTaskProposalAnswer,
+/// The visible message that asks the Agent to propose again with the user's
+/// corrections.
+pub fn jira_task_proposal_revise_prompt(
     feedback: &str,
 ) -> Result<AskToTerminalPrompt, InvocationError> {
     let feedback = feedback.trim();
-    if feedback.chars().count() > JIRA_TASK_PROPOSAL_FEEDBACK_MAX_CHARS
+    if feedback.is_empty()
+        || feedback.chars().count() > JIRA_TASK_PROPOSAL_FEEDBACK_MAX_CHARS
         || feedback
             .chars()
             .any(|character| character.is_control() && !matches!(character, '\n' | '\t'))
-        || (answer == JiraTaskProposalAnswer::Revise && feedback.is_empty())
     {
         return Err(InvocationError::InvalidPromptBinding);
     }
-    let template = match answer {
-        JiraTaskProposalAnswer::Revise => &JIRA_TASK_PROPOSAL_REVISE_TEMPLATE,
-        JiraTaskProposalAnswer::Dismiss => &JIRA_TASK_PROPOSAL_DISMISS_TEMPLATE,
-    };
+    let template = &JIRA_TASK_PROPOSAL_REVISE_TEMPLATE;
     crate::assistant::validate_template_asset(template)?;
-    let feedback = if feedback.is_empty() {
-        "(none)"
-    } else {
-        feedback
-    };
     let delivered = crate::bind_ordered(template.body(), &[("feedback", feedback)])?;
     crate::terminal_prompt(
         template,
@@ -131,22 +107,15 @@ mod tests {
     }
 
     #[test]
-    fn an_answer_carries_the_feedback_under_its_own_template() {
-        let revise =
-            jira_task_proposal_answer_prompt(JiraTaskProposalAnswer::Revise, " Use epic PAY-9 ")
-                .unwrap();
+    fn feedback_carries_the_user_corrections_under_the_revise_template() {
+        let revise = jira_task_proposal_revise_prompt(" Use epic PAY-9 ").unwrap();
         assert_eq!(
             revise.provenance().template_ref,
             "builtin.agent.jira-task-proposal-revise"
         );
         assert!(revise.delivered_prompt().contains("\nUse epic PAY-9\n"));
-        let dismiss =
-            jira_task_proposal_answer_prompt(JiraTaskProposalAnswer::Dismiss, "").unwrap();
-        assert!(dismiss.delivered_prompt().contains("User note: (none)"));
-        assert!(jira_task_proposal_answer_prompt(JiraTaskProposalAnswer::Revise, " ").is_err());
-        assert!(
-            jira_task_proposal_answer_prompt(JiraTaskProposalAnswer::Dismiss, "a\u{1b}b").is_err()
-        );
+        assert!(jira_task_proposal_revise_prompt(" ").is_err());
+        assert!(jira_task_proposal_revise_prompt("a\u{1b}b").is_err());
     }
 
     #[test]

@@ -455,19 +455,16 @@ impl CoreRuntime {
             .map(|task| task.id.clone())
     }
 
-    /// Answers a pending proposal without creating it and tells the Agent.
+    /// Answers a pending proposal without creating it. Feedback goes to the
+    /// Agent so it proposes again; a dismissal only closes the proposal.
     pub fn respond_jira_task_proposal(&mut self, params: &Value) -> Result<Value, CoreError> {
         let session_id = required(params, "sessionId")?;
         let proposal_id = required(params, "proposalId")?;
-        let answer = match params.get("decision").and_then(Value::as_str) {
-            Some("revise") => termloop_invocation::JiraTaskProposalAnswer::Revise,
-            Some("dismiss") => termloop_invocation::JiraTaskProposalAnswer::Dismiss,
+        let revise = match params.get("decision").and_then(Value::as_str) {
+            Some("revise") => true,
+            Some("dismiss") => false,
             _ => return Err(CoreError::InvalidParams("decision".into())),
         };
-        let feedback = params
-            .get("feedback")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
         let proposal = self
             .live_jira_task_proposal(&session_id)
             .filter(|proposal| proposal.proposal_id == proposal_id)
@@ -475,7 +472,15 @@ impl CoreRuntime {
         if proposal.state != JiraTaskProposalState::AwaitingUser {
             return Err(CoreError::InvalidParams("proposalId".into()));
         }
-        let prompt = termloop_invocation::jira_task_proposal_answer_prompt(answer, feedback)
+        if !revise {
+            self.jira_task_proposals.remove(&session_id);
+            return Ok(json!({ "sessionId": session_id, "status": "dismissed" }));
+        }
+        let feedback = params
+            .get("feedback")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let prompt = termloop_invocation::jira_task_proposal_revise_prompt(feedback)
             .map_err(|_| CoreError::InvalidParams("feedback".into()))?;
         self.submit_generated_terminal_input(&session_id, prompt.terminal_submission())?;
         self.jira_task_proposals.remove(&session_id);
@@ -1065,6 +1070,30 @@ mod tests {
         assert_eq!(
             fixture.runtime.jira_task_proposal_projection(SESSION_ID)["state"],
             "awaitingUser"
+        );
+    }
+
+    #[test]
+    fn a_dismissal_closes_the_proposal_without_telling_the_agent() {
+        let mut fixture = fixture(true);
+        fixture
+            .runtime
+            .propose_jira_task(TOKEN, &proposal(), 5)
+            .unwrap();
+        let proposal_id =
+            fixture.runtime.jira_task_proposal_projection(SESSION_ID)["proposal_id"].clone();
+        let dismissed = fixture
+            .runtime
+            .respond_jira_task_proposal(&json!({
+                "sessionId": SESSION_ID,
+                "proposalId": proposal_id,
+                "decision": "dismiss",
+            }))
+            .unwrap();
+        assert_eq!(dismissed["status"], "dismissed");
+        assert_eq!(
+            fixture.runtime.jira_task_proposal_projection(SESSION_ID),
+            Value::Null
         );
     }
 

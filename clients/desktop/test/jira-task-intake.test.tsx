@@ -155,6 +155,15 @@ describe("Jira task proposal card", () => {
     await act(async () => [...host.querySelectorAll("button")].find((button) => button.textContent === "Dismiss")!.click());
     expect(respond).toHaveBeenCalledWith("session-1", proposal.proposal_id, "dismiss", "");
   });
+
+  it("dismisses from the close button instead of deferring", async () => {
+    const respond = vi.fn<JiraTaskProposalActions["respond"]>(async () => undefined);
+    const actions: JiraTaskProposalActions = { loadSources: async () => [{ id: "source-1", name: "Jira" }], approve: vi.fn(), respond, forkIntoTask: vi.fn() };
+    await act(async () => root.render(<JiraTaskProposalCards reportOverlay={vi.fn()} sessions={[session(proposal)]} actions={actions} selectSession={vi.fn()} started={vi.fn()} />));
+    await act(async () => {});
+    await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Dismiss the Jira issue proposal"]')!.click());
+    expect(respond).toHaveBeenCalledWith("session-1", proposal.proposal_id, "dismiss", "");
+  });
 });
 
 describe("Jira task worktree", () => {

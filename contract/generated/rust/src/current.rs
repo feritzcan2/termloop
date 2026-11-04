@@ -240,7 +240,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:ce4bda7400df7a6b590b1abbb692e6cb3437eb53f7ff4a4ea4e0ac732727a2d0";
+    "sha256:5e7d2bb3bee72160a969a10e2834c431662c3101e3650347dac78de24c715dc9";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -19414,7 +19414,7 @@ fn validate_session_jira_task_proposal_respond_result(value: &Value) -> bool {
             && object.get("status").is_some_and(|field| {
                 field
                     .as_str()
-                    .is_some_and(|text| ["submitting"].contains(&text))
+                    .is_some_and(|text| ["submitting", "dismissed"].contains(&text))
             })
             && object
                 .keys()
