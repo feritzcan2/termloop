@@ -283,9 +283,20 @@ impl ClientLaunchRestartRegistry {
     }
 }
 
+/// Debug builds also enable the pull request refresh diagnostics.
+fn default_tracing_filter() -> String {
+    if cfg!(debug_assertions) {
+        // `git_host_diag` is the pull request refresh trace target in
+        // `control::handlers::git_host`; lines carry IDs, counts, and states.
+        "termloop_server=warn,git_host_diag=info".to_owned()
+    } else {
+        "termloop_server=warn".to_owned()
+    }
+}
+
 pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let tracing_filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("termloop_server=warn"));
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(default_tracing_filter()));
     tracing_subscriber::fmt()
         .with_env_filter(tracing_filter)
         .with_writer(std::io::stderr)

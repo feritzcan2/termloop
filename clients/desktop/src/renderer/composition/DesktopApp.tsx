@@ -11,7 +11,7 @@ import { emptyLayoutDocument, panes, type LayoutDocument, type SplitDirection, t
 import { desktopApi, type SourceDesktopApi } from "../transport/desktop-api.js";
 import { taskBindBranchFailureMessage } from "../transport/task-branch-binding.js";
 import { provisionTaskWorktree as submitTaskWorktreeProvisioning, taskProvisionWorktreeFailureMessage } from "../transport/task-worktree-provisioning.js";
-import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget, ConfigurationVersionDto, GitHostRepositoryPullRequestFilter, QuickActionParams, SettingsImproverTarget, ProjectLocalBranchListResult, ProtocolErrorDetails, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, TaskBranchCommitSummaryDto, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, VersionedConfigurationTarget, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
+import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget, ConfigurationVersionDto, GitHostRepositoryPullRequestFilter, GitHostTaskProjectionDto, QuickActionParams, SettingsImproverTarget, ProjectLocalBranchListResult, ProtocolErrorDetails, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, TaskBranchCommitSummaryDto, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, VersionedConfigurationTarget, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
 import { rememberPromptImproverSession } from "../prompt-improver-session-link.js";
 import { taskLaunchFailureMessage } from "../transport/task-launch.js";
 import { onGatewayState } from "../transport/terminal-port.js";
@@ -77,7 +77,7 @@ import { readLastQuickActionAgentSelection, readQuickActionPreset, readTaskAgent
 import { createLayoutPersistence } from "../state/layout-persistence.js";
 import { requireQuickActionSession } from "../quick-action-result.js";
 import { quickActionShortcutUnavailable, type QuickActionShortcutSelection } from "../quick-action-shortcuts.js";
-import { GitHostRefreshCoordinator, type GitHostRefreshRequestOptions } from "./git-host-refresh.js";
+import { GitHostRefreshCoordinator, gitHostApplyDiagnostics, gitHostDiagnostic, type GitHostRefreshRequestOptions } from "./git-host-refresh.js";
 import { BranchCommitRefreshQueue } from "./branch-commit-refresh.js";
 import { connectionSnapshotRefresh } from "./connection-refresh.js";
 import { withTerminalReconnect } from "./terminal-reconnect.js";
@@ -181,13 +181,32 @@ let statusBaselineReady = false;
 let previousAgentStatuses = new Map<string, string>();
 const dismissingSessions = new Set<string>();
 const closingWorkflows = new Map<string, Promise<string | undefined>>();
+/// Applies one daemon pull request result to the selected Project and reports
+/// any Task whose shown PR count moved or that kept an older projection.
+function applyGitHostResult(
+  projectId: string,
+  requestedTaskIds: readonly string[],
+  projections: readonly GitHostTaskProjectionDto[],
+  source: "automatic" | "explicit",
+): void {
+  if (presentationStore.getState().selectedProjectId !== projectId) {
+    gitHostDiagnostic("resultDropped", { project: projectId.slice(0, 8), source, tasks: requestedTaskIds.length, reason: "notSelected" });
+    return;
+  }
+  const before = projectionStore.getSnapshot().gitHostProjections;
+  projectionStore.applyGitHostPatch(requestedTaskIds, projections);
+  const after = projectionStore.getSnapshot().gitHostProjections;
+  for (const fields of gitHostApplyDiagnostics(requestedTaskIds, projections, before, after)) {
+    gitHostDiagnostic("applied", { source, ...fields });
+  }
+}
+
 const gitHostRefreshCoordinator = new GitHostRefreshCoordinator(
   (projectId, taskIds) => sourceApiForProject(projectId).gitHostPullRequestList(projectId, taskIds),
-  (projectId, requestedTaskIds, projections) => {
-    if (presentationStore.getState().selectedProjectId === projectId) {
-      projectionStore.applyGitHostPatch(requestedTaskIds, projections);
-    }
-  },
+  (projectId, requestedTaskIds, projections) => applyGitHostResult(projectId, requestedTaskIds, projections, "automatic"),
+  Date.now,
+  undefined,
+  gitHostDiagnostic,
 );
 
 const runImproverKindLabels: Record<string, string> = {
@@ -2008,9 +2027,7 @@ export function DesktopApp() {
     const results = await Promise.allSettled([
       task.worktree ? api.taskWorktreeChangeList(taskId) : Promise.resolve(undefined),
       api.gitHostPullRequestList(projectId, [taskId], true).then((projections) => {
-        if (presentationStore.getState().selectedProjectId === projectId) {
-          projectionStore.applyGitHostPatch([taskId], projections);
-        }
+        applyGitHostResult(projectId, [taskId], projections, "explicit");
       }),
       refreshBranchCommitProjection(projectId, [taskId]),
     ]);

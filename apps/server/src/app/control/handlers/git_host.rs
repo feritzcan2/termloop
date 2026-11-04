@@ -328,6 +328,12 @@ async fn git_host_pull_request_list_with_priority(
         if let Some(cached) = cached {
             let mut result = cached.result;
             bound_git_host_result(&mut result)?;
+            tracing::info!(
+                target: "git_host_diag",
+                tasks = params.task_ids.len(),
+                refresh_due = cached.refresh_due,
+                "served cached pull request projections"
+            );
             if cached.refresh_due {
                 let state = state.clone();
                 tokio::spawn(async move {
@@ -430,6 +436,7 @@ async fn observe_git_host_pull_request_list(
         .observation_sequence
         .fetch_max(observation_sequence, Ordering::Relaxed);
     bound_git_host_result(&mut result)?;
+    diagnose_git_host_observation(&result, priority, &invalidated);
     if !invalidated.is_empty() {
         let _ = state.invalidations.send(ProjectionInvalidatedPayload {
             topics: vec![ProjectionTopic::GitHost],
@@ -473,6 +480,76 @@ where
     }
     pending.abort_all();
     completed
+}
+
+/// One line per observation, plus one per Task whose projection changed, so a
+/// card that keeps showing an older PR list can be traced to whether the daemon
+/// observed the change and announced it.
+fn diagnose_git_host_observation(
+    result: &serde_json::Value,
+    priority: ObservationPriority,
+    invalidated: &[String],
+) {
+    let projections = result.as_array().map(Vec::as_slice).unwrap_or_default();
+    tracing::info!(
+        target: "git_host_diag",
+        ?priority,
+        tasks = projections.len(),
+        changed = invalidated.len(),
+        "observed pull request projections"
+    );
+    for projection in projections {
+        let task_id = projection
+            .get("task_id")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        if !invalidated.iter().any(|id| id == task_id) {
+            continue;
+        }
+        let matches = projection
+            .get("matches")
+            .and_then(serde_json::Value::as_array)
+            .map(|matches| {
+                matches
+                    .iter()
+                    .map(|summary| {
+                        format!(
+                            "{}:{}",
+                            summary
+                                .get("number")
+                                .and_then(serde_json::Value::as_u64)
+                                .unwrap_or_default(),
+                            summary
+                                .get("state")
+                                .and_then(serde_json::Value::as_str)
+                                .unwrap_or("?")
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",")
+            })
+            .unwrap_or_default();
+        let field = |name: &str| {
+            projection
+                .get(name)
+                .map(|value| {
+                    value
+                        .as_str()
+                        .map_or_else(|| value.to_string(), str::to_owned)
+                })
+                .unwrap_or_default()
+        };
+        tracing::info!(
+            target: "git_host_diag",
+            task = task_id,
+            matches = %matches,
+            freshness = %field("freshness"),
+            reason = %field("reason"),
+            generation = %field("freshness_generation"),
+            candidate_truncated = %field("candidate_truncated"),
+            "pull request projection changed; invalidation sent"
+        );
+    }
 }
 
 fn bound_git_host_result(result: &mut serde_json::Value) -> Result<(), CoreError> {
@@ -520,6 +597,21 @@ fn bound_git_host_result(result: &mut serde_json::Value) -> Result<(), CoreError
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn git_host_diagnostics_tolerate_partial_and_malformed_projections() {
+        let result = serde_json::json!([
+            { "task_id": "changed", "matches": [{ "number": 15418, "state": "merged" }], "freshness": "fresh", "freshness_generation": 7 },
+            { "task_id": "unchanged" },
+            "not a projection",
+        ]);
+        diagnose_git_host_observation(
+            &result,
+            ObservationPriority::Background,
+            &["changed".into()],
+        );
+        diagnose_git_host_observation(&serde_json::json!({}), ObservationPriority::Explicit, &[]);
+    }
 
     #[test]
     fn git_host_result_drops_match_tails_at_serialized_cap() {

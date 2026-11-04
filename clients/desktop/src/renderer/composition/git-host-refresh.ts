@@ -35,6 +35,62 @@ type CachedTaskRefresh = {
   readonly completedAtEpochMs: number;
 };
 
+/// One `[githost-diag]` line: an event name and identifier/count fields only.
+export type GitHostDiagnostic = (event: string, fields: Readonly<Record<string, string | number | boolean | undefined>>) => void;
+
+export const gitHostDiagnostic: GitHostDiagnostic = (event, fields) => {
+  const detail = Object.entries(fields)
+    .filter(([, value]) => value !== undefined)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(" ");
+  console.info(`[githost-diag] ${new Date().toISOString()} ${event}${detail ? ` ${detail}` : ""}`);
+};
+
+type DiagnosedProjection = Pick<GitHostTaskProjectionDto, "task_id" | "matches" | "freshness" | "freshness_generation" | "reason">;
+
+function projectionFacts(projection: DiagnosedProjection | undefined): string {
+  return projection ? `${projection.matches.length}@${projection.freshness_generation}` : "none";
+}
+
+/**
+ * Per-Task outcome of applying one daemon result to the renderer projection:
+ * the previous, incoming, and finally shown match count and generation. Only
+ * Tasks whose count moved, or whose shown projection is not the incoming one,
+ * are reported, so a steady refresh stays quiet.
+ */
+export function gitHostApplyDiagnostics(
+  requestedTaskIds: readonly string[],
+  incoming: readonly DiagnosedProjection[],
+  before: readonly DiagnosedProjection[],
+  after: readonly DiagnosedProjection[],
+): Array<Record<string, string | number | boolean | undefined>> {
+  const byTask = (projections: readonly DiagnosedProjection[]) =>
+    new Map(projections.map((projection) => [projection.task_id, projection]));
+  const incomingByTask = byTask(incoming);
+  const beforeByTask = byTask(before);
+  const afterByTask = byTask(after);
+  return [...new Set(requestedTaskIds)].flatMap((taskId) => {
+    const received = incomingByTask.get(taskId);
+    const previous = beforeByTask.get(taskId);
+    const shown = afterByTask.get(taskId);
+    const keptOlder = received !== undefined
+      && shown !== undefined
+      && (shown.freshness_generation !== received.freshness_generation
+        || shown.matches.length !== received.matches.length);
+    const countMoved = (previous?.matches.length ?? -1) !== (received?.matches.length ?? -1);
+    if (!keptOlder && !countMoved) return [];
+    return [{
+      task: taskId.slice(0, 8),
+      previous: projectionFacts(previous),
+      incoming: projectionFacts(received),
+      shown: projectionFacts(shown),
+      freshness: received?.freshness,
+      reason: received?.reason ?? undefined,
+      keptOlder,
+    }];
+  });
+}
+
 export type GitHostRefreshRequestOptions = {
   /** A daemon invalidation must bypass the short renderer cache. */
   readonly force?: boolean;
@@ -77,6 +133,7 @@ export class GitHostRefreshCoordinator {
   readonly #apply: GitHostProjectionApply;
   readonly #now: () => number;
   readonly #ttlMs: number;
+  readonly #diagnose: GitHostDiagnostic;
   readonly #completedByProject = new Map<string, Map<string, CachedTaskRefresh>>();
   #activeProjectId: string | undefined;
   #state: ProjectRefreshState | undefined;
@@ -86,11 +143,13 @@ export class GitHostRefreshCoordinator {
     apply: GitHostProjectionApply,
     now: () => number = Date.now,
     ttlMs: number = GIT_HOST_REFRESH_TTL_MS,
+    diagnose: GitHostDiagnostic = () => {},
   ) {
     this.#request = request;
     this.#apply = apply;
     this.#now = now;
     this.#ttlMs = ttlMs;
+    this.#diagnose = diagnose;
   }
 
   activateProject(projectId: string | undefined): void {
@@ -109,19 +168,42 @@ export class GitHostRefreshCoordinator {
     taskIds: readonly string[],
     options: GitHostRefreshRequestOptions = {},
   ): Promise<void> {
-    if (projectId !== this.#activeProjectId) return Promise.resolve();
+    const source = options.force ? "invalidation" : "automatic";
+    if (projectId !== this.#activeProjectId) {
+      this.#diagnose("requestIgnored", { project: projectId.slice(0, 8), source, tasks: taskIds.length, reason: "inactiveProject" });
+      return Promise.resolve();
+    }
     let state = this.#state;
     if (state?.cancelled) state = undefined;
+    let skippedFresh = 0;
+    let skippedRunning = 0;
     const requested = [...new Set(taskIds)].flatMap((taskId) => {
       const cacheKey = options.cacheKeys?.get(taskId);
-      if (!options.force && this.#isFresh(projectId, taskId, cacheKey)) return [];
+      if (!options.force && this.#isFresh(projectId, taskId, cacheKey)) {
+        skippedFresh += 1;
+        return [];
+      }
       if (
         !options.force
         && state?.runningTaskIds.has(taskId)
         && state.runningCacheKeys.get(taskId) === cacheKey
-      ) return [];
+      ) {
+        skippedRunning += 1;
+        return [];
+      }
       return [{ taskId, cacheKey }];
     });
+    if (options.force || requested.length > 0) {
+      this.#diagnose("request", {
+        project: projectId.slice(0, 8),
+        source,
+        tasks: taskIds.length,
+        queued: requested.length,
+        skippedFresh,
+        skippedRunning,
+        joinsInFlight: state?.inFlight !== undefined,
+      });
+    }
     if (requested.length === 0) return state?.inFlight ?? Promise.resolve();
     if (!state) {
       state = {
@@ -164,6 +246,12 @@ export class GitHostRefreshCoordinator {
         if (batch && this.#isCurrent(projectId, state)) {
           this.#apply(projectId, batch.requestedTaskIds, batch.projections);
           this.#recordCompleted(projectId, batch.requestedTaskIds, cacheKeys);
+        } else {
+          this.#diagnose("resultDropped", {
+            project: projectId.slice(0, 8),
+            tasks: taskIds.length,
+            reason: batch ? "superseded" : "cancelled",
+          });
         }
         state.runningTaskIds.clear();
         state.runningCacheKeys.clear();

@@ -106,6 +106,7 @@ import { loadWindowsTerminalAddon } from "./platform/windows-terminal.js";
 import { WindowsTerminalSurfaceManager } from "./main/windows-terminal-surfaces.js";
 import { GhosttySurfaceManager, type SurfaceFrame } from "./main/ghostty-surfaces.js";
 import { NativeOverlayWindowManager, type NativeOverlayPassiveRegion } from "./main/native-overlay-window.js";
+import { forwardDevelopmentRendererDiagnostics } from "./main/renderer-diagnostics.js";
 import { QuickActionImageStore } from "./platform/quick-action-image-store.js";
 import { uploadQuickActionImage } from "./main/attachment-upload.js";
 import { ForwardManager } from "./main/forwarding.js";
@@ -1771,6 +1772,7 @@ if (ownsSingleInstance) void app.whenReady().then(async () => {
     }, cursorScreenPoint)
     : undefined;
   nativeOverlayWindow = nativeOverlayManager;
+  forwardDevelopmentRendererDiagnostics(window.webContents, app.isPackaged);
   window.webContents.setWindowOpenHandler((details) =>
     nativeOverlayManager?.handleWindowOpen(details) ?? { action: "deny" });
   window.webContents.on("did-create-window", (child, details) => nativeOverlayManager?.adopt(child, details));
