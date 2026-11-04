@@ -30,8 +30,32 @@ function Invoke-TermLoopBuildCommand {
     }
 }
 
+function Stop-TermLoopMobileAccess {
+    param([string]$AppPath, [int]$SessionId, [System.Collections.Generic.List[object]]$StoppedTasks)
+
+    # The Mobile Access gateway runs this build's executable as Node from a
+    # Scheduled Task that outlives the window and restarts failed gateways, so
+    # stop the owning task instead of waiting for (or killing) the process.
+    $gateways = @(Get-CimInstance Win32_Process -Filter "Name='TermLoop Next.exe'" | Where-Object {
+        $_.ExecutablePath -eq $AppPath -and $_.SessionId -eq $SessionId -and
+            $_.CommandLine -like '*mobile-access-gateway.mjs*'
+    })
+    if ($gateways.Count -eq 0) { return }
+
+    $tasks = @(Get-ScheduledTask -TaskPath '\' -TaskName 'ai.termloop.mobile-access.*' -ErrorAction SilentlyContinue | Where-Object {
+        $directory = $_.Actions[0].WorkingDirectory.TrimEnd('\') + '\'
+        $_.State -eq 'Running' -and @($gateways | Where-Object {
+            $_.CommandLine.IndexOf($directory, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+        }).Count -gt 0
+    })
+    foreach ($task in $tasks) {
+        Stop-ScheduledTask -InputObject $task
+        $StoppedTasks.Add($task)
+    }
+}
+
 function Stop-TermLoopDesktop {
-    param([string]$AppPath)
+    param([string]$AppPath, [System.Collections.Generic.List[object]]$StoppedMobileAccessTasks)
 
     $sessionId = [System.Diagnostics.Process]::GetCurrentProcess().SessionId
     # The name only narrows discovery. Only this exact executable in this
@@ -48,6 +72,7 @@ function Stop-TermLoopDesktop {
             throw "Could not close TermLoop (PID $($process.Id)). Close its window and retry."
         }
     }
+    Stop-TermLoopMobileAccess -AppPath $AppPath -SessionId $sessionId -StoppedTasks $StoppedMobileAccessTasks
 
     # Closing the window flushes desktop state and shuts down its owned daemon.
     # Wait for Electron helpers too, so packaging can replace their locked files.
@@ -86,6 +111,7 @@ function Open-TermLoopDesktop {
     $appDirectory = Join-Path $checkout 'clients/desktop/out/win-unpacked'
     $appPath = Join-Path $appDirectory 'TermLoop Next.exe'
 
+    $stoppedMobileAccessTasks = [System.Collections.Generic.List[object]]::new()
     Push-Location -LiteralPath $checkout
     try {
         # Fail before closing the running app if a build prerequisite is missing.
@@ -99,12 +125,17 @@ function Open-TermLoopDesktop {
         Invoke-TermLoopBuildCommand 'node.exe' @('tools/skills-manager/fetch-cli.mjs', '--output', 'target/release/skills-manager-cli.exe')
 
         Write-Output 'Closing the previous TermLoop build...'
-        Stop-TermLoopDesktop -AppPath $appPath
+        Stop-TermLoopDesktop -AppPath $appPath -StoppedMobileAccessTasks $stoppedMobileAccessTasks
 
         Write-Output 'Packaging the new Windows build...'
         Invoke-TermLoopBuildCommand 'pnpm.cmd' @('--filter', '@termloop/desktop', 'exec', 'electron-builder', '--dir', '--config', 'electron-builder.yml')
     } finally {
         Pop-Location
+        # A stopped task does not restart on its own; resume Mobile Access even
+        # when packaging failed so phones keep their gateway.
+        foreach ($task in $stoppedMobileAccessTasks) {
+            Start-ScheduledTask -InputObject $task
+        }
     }
 
     if (-not (Test-Path -LiteralPath $appPath -PathType Leaf)) {
