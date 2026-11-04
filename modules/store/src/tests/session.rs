@@ -1108,3 +1108,87 @@ fn fork_source_migrates_from_schema_65_survives_reopen_and_rejects_invalid_descr
     assert!(matches!(Store::open(&path), Err(StoreError::CorruptRecord)));
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn moving_an_inactive_agent_replaces_its_descriptor_in_one_durable_commit() {
+    let path = std::env::temp_dir().join(format!(
+        "termloop-store-move-agent-{}-{}.json",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let authority = issue_core_write_authority_for_composition();
+    let mut store = Store::open(&path).unwrap();
+    let resume_ref = ResumeRef::for_provider(
+        ResumeProvider::Claude,
+        "123e4567-e89b-42d3-a456-426614174000".into(),
+    )
+    .unwrap();
+    let agent = |id: &str, project_id: &str, lifecycle_state: &str| SessionRecord {
+        launch_selection: Default::default(),
+        id: id.into(),
+        project_id: project_id.into(),
+        name: None,
+        kind: SessionKind::Agent,
+        process: ProcessDescriptor {
+            program: "claude".into(),
+            args: vec![],
+            cwd: "/tmp".into(),
+            agent_id: Some("claude".into()),
+            template_ref: Some("builtin.agent.interactive".into()),
+            template_version: Some(1),
+        },
+        lifecycle_state: lifecycle_state.into(),
+        runtime_epoch: 1,
+        archived_at_epoch_ms: None,
+        ask_to_source_session_id: None,
+        fork_source_session_id: None,
+        run_configuration_id: None,
+        improver_target: None,
+        ask_to_continuation: None,
+        resume_ref: Some(resume_ref.clone()),
+        resume_launch_guard: None,
+        resume_failure: None,
+    };
+    store
+        .insert_session(&authority, agent("source", "project-b", "running"))
+        .unwrap();
+    // A running Agent and a same-Project target are refused without a write.
+    let refuse = |store: &mut Store, target_project: &str| {
+        let revision = store.revision();
+        assert!(
+            store
+                .insert_session_moving_agent_descriptor(
+                    &authority,
+                    agent("moved", target_project, "running"),
+                    "source",
+                    false,
+                )
+                .is_err()
+        );
+        assert_eq!(store.revision(), revision);
+    };
+    refuse(&mut store, "project-a");
+    store.mark_session_exited(&authority, "source").unwrap();
+    refuse(&mut store, "project-b");
+    store
+        .insert_session_moving_agent_descriptor(
+            &authority,
+            agent("moved", "project-a", "running"),
+            "source",
+            false,
+        )
+        .unwrap();
+    drop(store);
+
+    let reopened = Store::open(&path).unwrap();
+    let ids = reopened
+        .sessions()
+        .iter()
+        .map(|session| (session.id.as_str(), session.project_id.as_str()))
+        .collect::<Vec<_>>();
+    assert_eq!(ids, vec![("moved", "project-a")]);
+    let _ = std::fs::remove_file(path);
+}

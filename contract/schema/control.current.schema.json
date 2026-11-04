@@ -7939,7 +7939,8 @@
       "type": "string",
       "enum": [
         "exact",
-        "related"
+        "related",
+        "outside"
       ]
     },
     "sessionHistoryPreviewRole": {
@@ -8030,6 +8031,7 @@
         "model",
         "updated_at_epoch_ms",
         "project_match",
+        "owner_project_name",
         "preview_messages"
       ],
       "properties": {
@@ -8074,6 +8076,15 @@
         },
         "project_match": {
           "$ref": "#/$defs/sessionHistoryProjectMatch"
+        },
+        "owner_project_name": {
+          "description": "Name of the other TermLoop Project whose inactive Agent owns this conversation. Importing it moves that Agent into the requested Project.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 120
         },
         "preview_messages": {
           "type": "array",

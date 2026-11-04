@@ -240,7 +240,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:6749cc420a4c6aaed92bafa8251fe94b58b96beda2f477ab8c64857116d9ad6a";
+    "sha256:6490b1b92cea9ed158296d2456e964c0c519aa47dbc18b136729a1033a2ca2ce";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -3660,6 +3660,8 @@ pub enum SessionHistoryProjectMatch {
     Exact,
     #[serde(rename = "related")]
     Related,
+    #[serde(rename = "outside")]
+    Outside,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -3702,6 +3704,8 @@ pub struct SessionHistoryEntryDto {
     pub model: Option<String>,
     pub updated_at_epoch_ms: u64,
     pub project_match: SessionHistoryProjectMatch,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub owner_project_name: Option<String>,
     pub preview_messages: Vec<SessionHistoryPreviewMessageDto>,
 }
 
@@ -17856,7 +17860,7 @@ fn validate_session_history_provider(value: &Value) -> bool {
 fn validate_session_history_project_match(value: &Value) -> bool {
     value
         .as_str()
-        .is_some_and(|text| ["exact", "related"].contains(&text))
+        .is_some_and(|text| ["exact", "related", "outside"].contains(&text))
 }
 
 #[allow(
@@ -18004,6 +18008,12 @@ fn validate_session_history_entry_dto(value: &Value) -> bool {
             && object
                 .get("project_match")
                 .is_some_and(|field| validate_session_history_project_match(field))
+            && object.get("owner_project_name").is_some_and(|field| {
+                (field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 120)
+                    || field.is_null())
+            })
             && object.get("preview_messages").is_some_and(|field| {
                 field.as_array().is_some_and(|items| {
                     items.len() <= 3
@@ -18022,6 +18032,7 @@ fn validate_session_history_entry_dto(value: &Value) -> bool {
                     "model",
                     "updated_at_epoch_ms",
                     "project_match",
+                    "owner_project_name",
                     "preview_messages",
                 ]
                 .contains(&key.as_str())

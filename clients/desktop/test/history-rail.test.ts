@@ -47,6 +47,7 @@ const externalHistory: SessionHistoryListResult = {
     model: "claude-sonnet-4-5",
     updated_at_epoch_ms: 1_700_000_000_000,
     project_match: "exact",
+    owner_project_name: null,
     preview_messages: [
       { role: "user", text: "Find the release failure" },
       { role: "assistant", text: "The packaging target is stale." },
@@ -450,6 +451,16 @@ describe("Session History rail", () => {
         branch: "legacy",
         updated_at_epoch_ms: now - 40 * 24 * 60 * 60 * 1_000,
       },
+      {
+        ...externalHistory.entries[0]!,
+        history_handle: "5".repeat(64),
+        title: "Agent from another project",
+        cwd: "/other/nucleus",
+        branch: "feature/dlq",
+        updated_at_epoch_ms: now - 20 * 24 * 60 * 60 * 1_000,
+        project_match: "outside",
+        owner_project_name: "Nucleus",
+      },
     ];
     const filteredHistory = { ...externalHistory, entries };
 
@@ -520,6 +531,16 @@ describe("Session History rail", () => {
     await change("Filter Session History by location", "cwd");
     expect(container.querySelectorAll(".history-row.external")).toHaveLength(1);
     expect(container.textContent).toContain("termloop");
+
+    await change("Filter Session History by location", "all");
+    expect(container.textContent).not.toContain("Agent from another project");
+    await change("Filter Session History by location", "other");
+    const outsideRows = container.querySelectorAll(".history-row.external");
+    expect(outsideRows).toHaveLength(1);
+    expect(outsideRows[0]!.textContent).toContain("Agent from another project");
+    expect(outsideRows[0]!.textContent).toContain("Nucleus · nucleus");
+    expect(outsideRows[0]!.querySelector(".history-import")!.textContent).toBe("Move & Resume");
+    expect(container.textContent).toContain("No matching TermLoop Sessions.");
 
     await act(async () => root.unmount());
     container.remove();

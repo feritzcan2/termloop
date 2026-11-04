@@ -67,7 +67,9 @@ type HistorySourceFilter = "all" | "termloop" | "claude" | "codex";
 type HistoryTab = "agents" | "tasks";
 type HistoryStateFilter = "all" | "favorited" | "inactive" | "archived" | "deleted";
 type HistoryTimeFilter = "all" | "today" | "7d" | "30d";
-type HistoryLocationFilter = "all" | "project" | "branch" | "cwd";
+/// `all` stays within this Project's folders; `other` lists only the
+/// conversations outside them, including inactive Agents of other Projects.
+type HistoryLocationFilter = "all" | "project" | "branch" | "cwd" | "other";
 type HistoryRelationship = "ask-to" | "fork";
 type TermLoopPreviewState =
   | { state: "loading" }
@@ -271,7 +273,8 @@ export function HistoryRail(props: HistoryRailProps) {
   useEffect(() => setTermLoopPreviews(new Map()), [props.projectId]);
 
   useEffect(() => {
-    if ((locationFilter === "branch" && (!props.projectBranch || sourceFilter === "termloop"))
+    if (((locationFilter === "branch" || locationFilter === "other") && sourceFilter === "termloop")
+      || (locationFilter === "branch" && !props.projectBranch)
       || (locationFilter === "cwd" && !props.currentCwd)
       || (locationFilter === "project" && !props.projectPath)) {
       setLocationFilter("all");
@@ -331,7 +334,9 @@ export function HistoryRail(props: HistoryRailProps) {
       || entry.model?.toLowerCase().includes(normalizedQuery)
       || entry.branch?.toLowerCase().includes(normalizedQuery)
       || entry.preview_messages.some((message) => message.text.toLowerCase().includes(normalizedQuery));
-    const matchesLocation = locationFilter === "all"
+    const outside = entry.project_match === "outside";
+    const matchesLocation = (locationFilter === "all" && !outside)
+      || (locationFilter === "other" && outside)
       || (locationFilter === "project" && samePath(entry.cwd, props.projectPath))
       || (locationFilter === "branch" && Boolean(props.projectBranch) && entry.branch === props.projectBranch)
       || (locationFilter === "cwd" && samePath(entry.cwd, props.currentCwd));
@@ -461,10 +466,11 @@ export function HistoryRail(props: HistoryRailProps) {
           <option value="deleted">Deleted</option>
         </select>
         <select className="history-location-filter" aria-label="Filter Session History by location" value={locationFilter} onChange={(event) => setLocationFilter(event.currentTarget.value as HistoryLocationFilter)}>
-          <option value="all">Any location</option>
+          <option value="all">Anywhere in this project</option>
           <option value="project" disabled={!props.projectPath}>This project root</option>
           <option value="branch" disabled={!props.projectBranch || sourceFilter === "termloop"}>{props.projectBranch ? `Branch · ${props.projectBranch}` : "Current branch unavailable"}</option>
           <option value="cwd" disabled={!props.currentCwd}>{props.currentCwd ? `Folder · ${basename(props.currentCwd)}` : "Current folder unavailable"}</option>
+          <option value="other" disabled={sourceFilter === "termloop"}>Other projects &amp; folders</option>
         </select></> : null}
       </div>
       {failureMessage ? <p className="history-notice error" role="alert">{failureMessage}</p> : null}
@@ -591,19 +597,21 @@ export function HistoryRail(props: HistoryRailProps) {
           {external.map((entry) => {
             const rowKey = `external:${entry.history_handle}`;
             const expanded = expandedRowKey === rowKey;
+            const owner = entry.owner_project_name;
+            const importLabel = owner ? "Move & Resume" : "Import & Resume";
             return <article key={entry.history_handle} className={`history-row external${expanded ? " expanded" : ""}`}>
               <button type="button" className="history-row-main" aria-expanded={expanded} aria-label={`${expanded ? "Collapse" : "Expand"} ${entry.title}`} onClick={() => toggleExpanded(rowKey)}>
                 <span className={`history-provider ${entry.provider}`} aria-hidden="true"><Icon name={providerIcon(entry.provider)} /></span>
                 <span className="history-copy">
                   <strong title={entry.title}>{entry.title}</strong>
-                  <small>{basename(entry.cwd)}{entry.branch ? ` · ${entry.branch}` : ""}</small>
+                  <small title={entry.cwd}>{owner ? `${owner} · ` : ""}{basename(entry.cwd)}{entry.branch ? ` · ${entry.branch}` : ""}</small>
                 </span>
                 <span className="history-disclosure" aria-hidden="true"><Icon name="chevronDown" /></span>
               </button>
-              <button type="button" className="history-import" disabled={props.disabled || Boolean(importingHandle)} onClick={() => void importAndResume(entry)}>{importingHandle === entry.history_handle ? "Importing…" : "Import & Resume"}</button>
+              <button type="button" className="history-import" title={owner ? `Move this Agent from ${owner} into this Project; it keeps running in ${entry.cwd}.` : entry.project_match === "outside" ? `Resume in ${entry.cwd}` : undefined} disabled={props.disabled || Boolean(importingHandle)} onClick={() => void importAndResume(entry)}>{importingHandle === entry.history_handle ? (owner ? "Moving…" : "Importing…") : importLabel}</button>
               {importFailure && importFailure.projectId === props.projectId && importFailure.handle === entry.history_handle ? <p className="history-notice error history-import-error" role="alert">{importFailure.message}</p> : null}
               {expanded ? <div className="history-detail history-preview">
-                <span className="history-meta">{entry.model ?? entry.provider} · {historyDate(entry.updated_at_epoch_ms)}{entry.project_match === "related" ? " · worktree" : ""}</span>
+                <span className="history-meta">{entry.model ?? entry.provider} · {historyDate(entry.updated_at_epoch_ms)}{entry.project_match === "related" ? " · worktree" : ""}{entry.project_match === "outside" ? ` · ${entry.cwd}` : ""}</span>
                 {entry.preview_messages.slice(-2).map((message, index) => <p key={`${message.role}-${index}`}><b>{message.role === "user" ? "You" : entry.provider}</b>{message.text}</p>)}
                 {entry.preview_messages.length === 0 ? <p>No conversation preview is available.</p> : null}
               </div> : null}

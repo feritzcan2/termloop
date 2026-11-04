@@ -56,7 +56,16 @@ impl SessionHistoryScanPlan {
 struct CachedHistoryEntry {
     handle: String,
     project_match: &'static str,
+    /// Inactive Agent in another Project that owns this conversation; an
+    /// import moves it into the listing Project.
+    owner: Option<HistoryOwner>,
     conversation: DiscoveredAgentConversation,
+}
+
+#[derive(Clone)]
+struct HistoryOwner {
+    session_id: String,
+    project_name: String,
 }
 
 #[derive(Clone)]
@@ -91,6 +100,15 @@ pub(crate) struct SessionHistoryRuntime {
 impl SessionHistoryRuntime {
     pub(crate) fn clear_accounts(&mut self) {
         self.projects.clear();
+    }
+
+    /// A moved Agent no longer belongs to its old Project's managed history.
+    pub(crate) fn forget_managed_session(&mut self, session_id: &str) {
+        for cached in self.projects.values_mut() {
+            cached
+                .managed_entries
+                .retain(|entry| entry.session_id != session_id);
+        }
     }
 }
 
@@ -226,9 +244,12 @@ impl CoreRuntime {
                     })
             })
             .collect::<Vec<_>>();
+        let foreign_worktrees = self.foreign_task_worktrees(&observed.plan.project_id);
         let mut matching = Vec::new();
+        let mut outside = Vec::new();
         let mut managed_entries = Vec::new();
         for conversation in observed.scan.conversations {
+            let mut owner = None;
             if let Some((_, session_id, session_project_id)) =
                 known_resume_refs
                     .iter()
@@ -242,14 +263,28 @@ impl CoreRuntime {
                         session_id: session_id.clone(),
                         conversation,
                     });
+                    continue;
                 }
-                continue;
+                let Some(found) = self.movable_history_owner(session_id, &observed.plan.project_id)
+                else {
+                    continue;
+                };
+                owner = Some(found);
             }
             let Ok(cwd_identity) = termloop_platform::existing_directory_comparison_input(
                 Path::new(&conversation.cwd),
             ) else {
                 continue;
             };
+            if owner.is_some() {
+                if !foreign_worktrees
+                    .iter()
+                    .any(|tree| contains_directory(tree, &cwd_identity))
+                {
+                    outside.push((owner, conversation));
+                }
+                continue;
+            }
             let Some(project_match) = scope_identities.iter().find_map(|scope| {
                 if scope.root() != cwd_identity.root()
                     || !cwd_identity.segments().starts_with(scope.segments())
@@ -262,11 +297,20 @@ impl CoreRuntime {
                     "related"
                 })
             }) else {
+                if !foreign_worktrees
+                    .iter()
+                    .any(|tree| contains_directory(tree, &cwd_identity))
+                {
+                    outside.push((None, conversation));
+                }
                 continue;
             };
             matching.push((project_match, conversation));
         }
         matching.sort_by(|(_, left), (_, right)| {
+            right.updated_at_epoch_ms.cmp(&left.updated_at_epoch_ms)
+        });
+        outside.sort_by(|(_, left), (_, right)| {
             right.updated_at_epoch_ms.cmp(&left.updated_at_epoch_ms)
         });
         managed_entries.sort_by(|left, right| {
@@ -279,6 +323,9 @@ impl CoreRuntime {
         let truncated =
             observed.scan.candidate_limit_reached || matching.len() > MAX_CACHED_HISTORY;
         matching.truncate(MAX_CACHED_HISTORY);
+        // Conversations outside this Project get their own bound so they never
+        // crowd this Project's own history out of the cache.
+        outside.truncate(MAX_CACHED_HISTORY);
         let existing_handles = self
             .session_history
             .projects
@@ -302,7 +349,13 @@ impl CoreRuntime {
             .unwrap_or_default();
         let entries = matching
             .into_iter()
-            .map(|(project_match, conversation)| CachedHistoryEntry {
+            .map(|(project_match, conversation)| (project_match, None, conversation))
+            .chain(
+                outside
+                    .into_iter()
+                    .map(|(owner, conversation)| ("outside", owner, conversation)),
+            )
+            .map(|(project_match, owner, conversation)| CachedHistoryEntry {
                 handle: existing_handles
                     .iter()
                     .find(|((resume_ref, account_id), _)| {
@@ -312,6 +365,7 @@ impl CoreRuntime {
                     .map(|(_, handle)| handle.clone())
                     .unwrap_or_else(termloop_platform::generate_opaque_runtime_token),
                 project_match,
+                owner,
                 conversation,
             })
             .collect();
@@ -543,7 +597,7 @@ impl CoreRuntime {
         let project_id = required_string(params, "projectId")?;
         let history_handle = required_string(params, "historyHandle")?;
         let current_scope_paths = self.session_history_scope_paths(&project_id)?;
-        let conversation = self
+        let entry = self
             .session_history
             .projects
             .get(&project_id)
@@ -554,14 +608,14 @@ impl CoreRuntime {
                     .iter()
                     .find(|entry| entry.handle == history_handle)
             })
-            .map(|entry| entry.conversation.clone())
             .ok_or_else(|| CoreError::InvalidParams("historyHandle".into()))?;
-        if self
-            .store
-            .sessions()
-            .iter()
-            .any(|session| same_account_conversation(session, &conversation))
-        {
+        let moved_session_id = entry.owner.as_ref().map(|owner| owner.session_id.clone());
+        let conversation = entry.conversation.clone();
+        if !self.history_conversation_available(
+            &conversation,
+            moved_session_id.as_deref(),
+            &project_id,
+        ) {
             return Err(CoreError::InvalidParams("historyHandle".into()));
         }
         Ok(SessionHistoryResumePlan {
@@ -594,17 +648,32 @@ impl CoreRuntime {
                     .find(|entry| entry.handle == observed.plan.history_handle)
             })
             .ok_or_else(|| CoreError::InvalidParams("historyHandle".into()))?;
+        let moved_session_id = cached.owner.as_ref().map(|owner| owner.session_id.clone());
         if cached.conversation.account_id != observed.plan.conversation.account_id
             || cached.conversation.resume_ref != observed.plan.conversation.resume_ref
-            || project_match(&current_scope_paths, &observed.cwd).is_none()
-            || self
-                .store
-                .sessions()
-                .iter()
-                .any(|session| same_account_conversation(session, &observed.plan.conversation))
+            || (cached.project_match != "outside"
+                && project_match(&current_scope_paths, &observed.cwd).is_none())
+            || (cached.project_match == "outside"
+                && self.inside_foreign_task_worktree(&observed.plan.project_id, &observed.cwd))
+            || !self.history_conversation_available(
+                &observed.plan.conversation,
+                moved_session_id.as_deref(),
+                &observed.plan.project_id,
+            )
         {
             return Err(CoreError::InvalidParams("historyHandle".into()));
         }
+        // A moved Agent keeps the name the person gave it in its old Project.
+        let history_name = moved_session_id
+            .as_deref()
+            .and_then(|session_id| {
+                self.store
+                    .sessions()
+                    .iter()
+                    .find(|session| session.id == session_id)
+                    .and_then(|session| session.name.clone())
+            })
+            .unwrap_or_else(|| observed.plan.conversation.title.clone());
         let mut launch_params = json!({
             "projectId": observed.plan.project_id,
             "cwd": observed.cwd,
@@ -620,9 +689,124 @@ impl CoreRuntime {
         launch.resume_ref = None;
         launch.history_source_handle = Some(observed.plan.history_handle);
         launch.history_source_ref = Some(observed.plan.conversation.resume_ref.clone());
-        launch.history_name = Some(observed.plan.conversation.title.clone());
+        launch.history_name = Some(history_name);
+        launch.history_moved_session_id = moved_session_id;
         launch.history_source = Some(observed.plan.conversation);
         self.cache_agent_launch_preview(launch)
+    }
+
+    /// Task worktrees of other Projects. Their cleanup gates see only their
+    /// own Project's Sessions, so no Session of this Project may run in one.
+    fn foreign_task_worktrees(
+        &self,
+        project_id: &str,
+    ) -> Vec<termloop_platform::PathComparisonInput> {
+        self.store
+            .tasks()
+            .iter()
+            .filter(|task| task.project_id != project_id)
+            .filter_map(|task| task.worktree.as_ref())
+            .filter_map(|worktree| {
+                termloop_platform::existing_directory_comparison_input(Path::new(&worktree.path))
+                    .ok()
+            })
+            .collect()
+    }
+
+    fn inside_foreign_task_worktree(&self, project_id: &str, cwd: &str) -> bool {
+        let Ok(cwd) = termloop_platform::existing_directory_comparison_input(Path::new(cwd)) else {
+            return true;
+        };
+        self.foreign_task_worktrees(project_id)
+            .iter()
+            .any(|tree| contains_directory(tree, &cwd))
+    }
+
+    /// No Session may own the conversation except the one inactive Agent in
+    /// another Project that this import moves, and that Agent must still be
+    /// safe to move.
+    fn history_conversation_available(
+        &self,
+        conversation: &DiscoveredAgentConversation,
+        moved_session_id: Option<&str>,
+        project_id: &str,
+    ) -> bool {
+        if moved_session_id
+            .is_some_and(|session_id| self.movable_history_owner(session_id, project_id).is_none())
+        {
+            return false;
+        }
+        !self.store.sessions().iter().any(|session| {
+            Some(session.id.as_str()) != moved_session_id
+                && same_account_conversation(session, conversation)
+        }) && !self
+            .store
+            .deleted_sessions()
+            .iter()
+            .any(|deleted| same_account_conversation(&deleted.session, conversation))
+    }
+
+    /// An ordinary inactive Agent owned by another Project, with no process,
+    /// reservation, archive, relocation, or assistant role holding it.
+    fn movable_history_owner(&self, session_id: &str, project_id: &str) -> Option<HistoryOwner> {
+        let session = self
+            .store
+            .sessions()
+            .iter()
+            .find(|session| session.id == session_id)?;
+        let ordinary = session.kind == termloop_domain::SessionKind::Agent
+            && session.project_id != project_id
+            && session.archived_at_epoch_ms.is_none()
+            && matches!(
+                session.lifecycle_state.as_str(),
+                "exited" | "stale" | "resumeFailed"
+            )
+            && !matches!(
+                session.resume_failure,
+                Some(
+                    termloop_domain::ResumeFailureReason::RuntimeOwnershipUncertain
+                        | termloop_domain::ResumeFailureReason::RuntimeConflict
+                )
+            )
+            && session.run_configuration_id.is_none()
+            && session.improver_target.is_none()
+            && session.ask_to_source_session_id.is_none()
+            && session.process.template_ref.as_deref() != Some("builtin.agent.ask-to-helper");
+        let held = self.resume_reservations.contains(session_id)
+            || self
+                .provider_history_repair_reservations
+                .contains(session_id)
+            || self.codex_runtimes.contains_key(session_id)
+            || self.session_is_archive_suspended(session_id)
+            || self
+                .store
+                .session_archive_operations()
+                .iter()
+                .any(|operation| operation.session_id == session_id)
+            || self
+                .store
+                .session_relocation_operations()
+                .iter()
+                .any(|operation| operation.session_id == session_id)
+            || self
+                .store
+                .steward_project_for_executor_session(session_id)
+                .is_some()
+            || self.terminal.contains_session(session_id).unwrap_or(true);
+        if !ordinary || held {
+            return None;
+        }
+        let project_name = self
+            .store
+            .projects()
+            .iter()
+            .find(|project| project.id == session.project_id)?
+            .name
+            .clone();
+        Some(HistoryOwner {
+            session_id: session.id.clone(),
+            project_name,
+        })
     }
 
     fn session_history_scope_paths(&self, project_id: &str) -> Result<Vec<String>, CoreError> {
@@ -656,12 +840,12 @@ impl CoreRuntime {
             .history_source_ref
             .as_ref()
             .ok_or_else(|| CoreError::InvalidParams("historyHandle".into()))?;
-        let valid = self
+        let entry = self
             .session_history
             .projects
             .get(&plan.project_id)
-            .is_some_and(|cached| {
-                cached.entries.iter().any(|entry| {
+            .and_then(|cached| {
+                cached.entries.iter().find(|entry| {
                     entry.handle == handle
                         && &entry.conversation.resume_ref == source_ref
                         && plan.account.as_ref().is_some_and(|account| {
@@ -669,19 +853,16 @@ impl CoreRuntime {
                         })
                 })
             });
-        if !valid
-            || self.store.sessions().iter().any(|session| {
-                session.resume_ref.as_ref() == Some(source_ref)
-                    && plan.account.as_ref().is_some_and(|account| {
-                        session
-                            .launch_selection
-                            .account_id
-                            .as_deref()
-                            .unwrap_or("default")
-                            == account.account_id
-                    })
-            })
-        {
+        let valid = entry.is_some_and(|entry| {
+            entry.owner.as_ref().map(|owner| owner.session_id.as_str())
+                == plan.history_moved_session_id.as_deref()
+                && self.history_conversation_available(
+                    &entry.conversation,
+                    plan.history_moved_session_id.as_deref(),
+                    &plan.project_id,
+                )
+        });
+        if !valid {
             return Err(CoreError::InvalidParams("historyHandle".into()));
         }
         Ok(())
@@ -711,6 +892,7 @@ fn history_result(cached: &CachedProjectHistory) -> Value {
                 "model": entry.conversation.model,
                 "updated_at_epoch_ms": entry.conversation.updated_at_epoch_ms,
                 "project_match": entry.project_match,
+                "owner_project_name": entry.owner.as_ref().map(|owner| owner.project_name.as_str()),
                 "preview_messages": entry.conversation.preview_messages.iter().map(|message| json!({
                     "role": match message.role {
                         AgentHistoryPreviewRole::User => "user",
@@ -767,6 +949,13 @@ fn issue_counts(issues: &[AgentHistoryScanIssue]) -> HistoryIssueCounts {
         }
     }
     counts
+}
+
+fn contains_directory(
+    root: &termloop_platform::PathComparisonInput,
+    path: &termloop_platform::PathComparisonInput,
+) -> bool {
+    root.root() == path.root() && path.segments().starts_with(root.segments())
 }
 
 fn project_match(scope_paths: &[String], cwd: &str) -> Option<&'static str> {
@@ -869,13 +1058,16 @@ mod tests {
         (runtime, project_id, native_id, root, conversation)
     }
 
-    #[test]
-    fn task_agent_tail_is_scoped_to_ordinary_sessions_in_the_task_worktree() {
-        let (mut runtime, project_id, native_id, root, mut conversation) = fixture();
-        let worktree = root.join("task-worktree");
+    fn provision_task_worktree(
+        runtime: &mut CoreRuntime,
+        project_id: &str,
+        root: &Path,
+        task_id: &str,
+    ) -> String {
+        let project_id = project_id.to_owned();
+        let worktree = root.join(format!("{task_id}-worktree"));
         std::fs::create_dir_all(&worktree).unwrap();
         let worktree = worktree.to_string_lossy().into_owned();
-        let task_id = "task-with-agent";
         runtime
             .store
             .insert_task(
@@ -974,6 +1166,14 @@ mod tests {
             .store
             .clear_task_worktree_provisioning(&runtime.write_authority, task_id, operation_id)
             .unwrap();
+        worktree
+    }
+
+    #[test]
+    fn task_agent_tail_is_scoped_to_ordinary_sessions_in_the_task_worktree() {
+        let (mut runtime, project_id, native_id, root, mut conversation) = fixture();
+        let task_id = "task-with-agent";
+        let worktree = provision_task_worktree(&mut runtime, &project_id, &root, task_id);
         conversation.cwd = worktree.clone();
         let session_id = "task-agent-session";
         runtime
@@ -1376,6 +1576,219 @@ mod tests {
             "available"
         );
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    fn history_agent(
+        id: &str,
+        project_id: &str,
+        conversation: &DiscoveredAgentConversation,
+        lifecycle_state: &str,
+    ) -> SessionRecord {
+        SessionRecord {
+            id: id.into(),
+            project_id: project_id.into(),
+            name: Some("Named elsewhere".into()),
+            kind: SessionKind::Agent,
+            process: ProcessDescriptor {
+                program: "claude".into(),
+                args: Vec::new(),
+                cwd: conversation.cwd.clone(),
+                agent_id: Some("claude".into()),
+                template_ref: Some("builtin.agent.interactive".into()),
+                template_version: Some(1),
+            },
+            launch_selection: Default::default(),
+            lifecycle_state: lifecycle_state.into(),
+            runtime_epoch: 1,
+            archived_at_epoch_ms: None,
+            ask_to_source_session_id: None,
+            fork_source_session_id: None,
+            run_configuration_id: None,
+            improver_target: None,
+            ask_to_continuation: None,
+            resume_ref: Some(conversation.resume_ref.clone()),
+            resume_launch_guard: None,
+            resume_failure: None,
+        }
+    }
+
+    fn list_once(
+        runtime: &mut CoreRuntime,
+        project_id: &str,
+        conversation: DiscoveredAgentConversation,
+    ) -> Value {
+        let plan = match runtime
+            .plan_session_history_list(json!({"projectId": project_id, "force": true}))
+            .unwrap()
+        {
+            SessionHistoryListPlanOutcome::Observe(plan) => plan,
+            SessionHistoryListPlanOutcome::Current(_) => panic!("forced list must scan"),
+        };
+        runtime
+            .complete_session_history_list(ObservedSessionHistoryScan {
+                plan,
+                scan: AgentHistoryScan {
+                    conversations: vec![conversation],
+                    issues: Vec::new(),
+                    candidate_limit_reached: false,
+                },
+            })
+            .unwrap()
+    }
+
+    fn other_project(runtime: &mut CoreRuntime, root: &Path) -> (String, String) {
+        let folder = root.join("other-checkout");
+        std::fs::create_dir_all(&folder).unwrap();
+        let project = runtime
+            .handle(
+                "project.create",
+                json!({"name":"Other project","folderPath":folder}),
+            )
+            .unwrap();
+        (
+            project["id"].as_str().unwrap().to_owned(),
+            folder.display().to_string(),
+        )
+    }
+
+    #[test]
+    fn conversations_outside_the_project_are_listed_and_import_in_their_own_folder() {
+        let (mut runtime, project_id, _native_id, root, mut conversation) = fixture();
+        let outside = root.join("loose-folder");
+        std::fs::create_dir_all(&outside).unwrap();
+        conversation.cwd = outside.display().to_string();
+        let result = list_once(&mut runtime, &project_id, conversation);
+        assert_eq!(result["entries"][0]["project_match"], "outside");
+        assert_eq!(result["entries"][0]["owner_project_name"], Value::Null);
+        let handle = result["entries"][0]["history_handle"].clone();
+
+        let resume_params = json!({"projectId": project_id, "historyHandle": handle});
+        let observed = runtime
+            .plan_session_history_resume(&resume_params)
+            .unwrap()
+            .observe()
+            .unwrap();
+        let preview = runtime
+            .complete_session_history_resume_preview(observed, &resume_params)
+            .unwrap();
+        let mut launch = runtime
+            .take_agent_launch(json!({
+                "projectId": project_id,
+                "historyHandle": handle,
+                "launchTicket": preview["launch_ticket"],
+            }))
+            .unwrap();
+        assert_eq!(
+            std::fs::canonicalize(&launch.cwd).unwrap(),
+            std::fs::canonicalize(&outside).unwrap()
+        );
+        assert!(launch.history_moved_session_id.is_none());
+        launch.prepare_runtime();
+        runtime.validate_history_launch_plan(&launch).unwrap();
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn an_inactive_agent_of_another_project_is_moved_by_import() {
+        let (mut runtime, project_id, _native_id, root, mut conversation) = fixture();
+        let (other_id, other_folder) = other_project(&mut runtime, &root);
+        conversation.cwd = other_folder;
+        let moved = history_agent("moved-agent", &other_id, &conversation, "exited");
+        runtime
+            .store
+            .insert_session(&runtime.write_authority, moved.clone())
+            .unwrap();
+
+        // The owning Project keeps it as its own managed Agent, not an import.
+        let owner_view = list_once(&mut runtime, &other_id, conversation.clone());
+        assert_eq!(owner_view["entries"], json!([]));
+
+        let result = list_once(&mut runtime, &project_id, conversation.clone());
+        assert_eq!(result["entries"][0]["project_match"], "outside");
+        assert_eq!(result["entries"][0]["owner_project_name"], "Other project");
+        let handle = result["entries"][0]["history_handle"].clone();
+
+        let resume_params = json!({"projectId": project_id, "historyHandle": handle});
+        let observed = runtime
+            .plan_session_history_resume(&resume_params)
+            .unwrap()
+            .observe()
+            .unwrap();
+        let preview = runtime
+            .complete_session_history_resume_preview(observed, &resume_params)
+            .unwrap();
+        let mut launch = runtime
+            .take_agent_launch(json!({
+                "projectId": project_id,
+                "historyHandle": handle,
+                "launchTicket": preview["launch_ticket"],
+            }))
+            .unwrap();
+        assert_eq!(
+            launch.history_moved_session_id.as_deref(),
+            Some("moved-agent")
+        );
+        assert_eq!(launch.history_name.as_deref(), Some("Named elsewhere"));
+        launch.prepare_runtime();
+        runtime.validate_history_launch_plan(&launch).unwrap();
+
+        let replacement = history_agent("replacement", &project_id, &conversation, "running");
+        runtime
+            .store
+            .insert_session_moving_agent_descriptor(
+                &runtime.write_authority,
+                replacement,
+                "moved-agent",
+                false,
+            )
+            .unwrap();
+        let sessions = runtime.store.sessions();
+        assert!(!sessions.iter().any(|session| session.id == "moved-agent"));
+        assert!(sessions.iter().any(|session| {
+            session.id == "replacement"
+                && session.project_id == project_id
+                && session.resume_ref == moved.resume_ref
+        }));
+        // The handle cannot import the same conversation a second time.
+        assert!(runtime.validate_history_launch_plan(&launch).is_err());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn conversations_inside_another_projects_task_worktree_are_not_offered() {
+        let (mut runtime, project_id, _native_id, root, mut conversation) = fixture();
+        let (other_id, _other_folder) = other_project(&mut runtime, &root);
+        conversation.cwd = provision_task_worktree(&mut runtime, &other_id, &root, "other-task");
+        let unowned = list_once(&mut runtime, &project_id, conversation.clone());
+        assert_eq!(unowned["entries"], json!([]));
+        runtime
+            .store
+            .insert_session(
+                &runtime.write_authority,
+                history_agent("task-agent", &other_id, &conversation, "exited"),
+            )
+            .unwrap();
+        let owned = list_once(&mut runtime, &project_id, conversation);
+        assert_eq!(owned["entries"], json!([]));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_running_or_archived_agent_of_another_project_is_not_offered() {
+        for (lifecycle_state, archived_at_epoch_ms) in [("running", None), ("exited", Some(1))] {
+            let (mut runtime, project_id, _native_id, root, mut conversation) = fixture();
+            let (other_id, other_folder) = other_project(&mut runtime, &root);
+            conversation.cwd = other_folder;
+            let mut owner = history_agent("owner", &other_id, &conversation, lifecycle_state);
+            owner.archived_at_epoch_ms = archived_at_epoch_ms;
+            runtime
+                .store
+                .insert_session(&runtime.write_authority, owner)
+                .unwrap();
+            let result = list_once(&mut runtime, &project_id, conversation);
+            assert_eq!(result["entries"], json!([]), "{lifecycle_state}");
+            let _ = std::fs::remove_dir_all(root);
+        }
     }
 
     #[test]

@@ -98,6 +98,9 @@ pub struct AgentLaunchPlan {
     history_source: Option<termloop_agents::DiscoveredAgentConversation>,
     history_source_validated: bool,
     history_name: Option<String>,
+    /// Inactive Agent in another Project whose conversation this history
+    /// import moves; its descriptor is removed in the admitting commit.
+    history_moved_session_id: Option<String>,
     fork_source_session_id: Option<String>,
     fork_source_ref: Option<termloop_domain::ResumeRef>,
     fork_name: Option<String>,
@@ -659,6 +662,7 @@ impl CoreRuntime {
             history_source: None,
             history_source_validated: false,
             history_name: None,
+            history_moved_session_id: None,
             fork_source_session_id: None,
             fork_source_ref: None,
             fork_name: None,
@@ -2144,6 +2148,13 @@ impl CoreRuntime {
                 profile.clone(),
                 false,
             )
+        } else if let Some(moved_session_id) = plan.history_moved_session_id.as_deref() {
+            self.store.insert_session_moving_agent_descriptor(
+                &self.write_authority,
+                session.clone(),
+                moved_session_id,
+                remember_launch_selection,
+            )
         } else if remember_launch_selection {
             self.store
                 .insert_session_and_remember_agent_launch(&self.write_authority, session.clone())
@@ -2175,6 +2186,13 @@ impl CoreRuntime {
             self.codex_runtimes.insert(session.id.clone(), runtime);
         }
         self.consume_history_handle(plan);
+        if let Some(moved_session_id) = plan.history_moved_session_id.as_deref() {
+            // Movability proved the moved Agent had no process-owning runtime.
+            let retired_runtime = self.retire_closed_session_runtime(moved_session_id);
+            debug_assert!(retired_runtime.is_none());
+            self.session_history
+                .forget_managed_session(moved_session_id);
+        }
         Ok(AgentLaunchCommit {
             session: self.project_session(&session),
             state_revision,

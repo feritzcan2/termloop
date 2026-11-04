@@ -556,6 +556,77 @@ impl Store {
         Ok(removed)
     }
 
+    /// Moves an inactive Agent's conversation into another Project: the
+    /// moved descriptor and its sidecars are removed and the fresh Session
+    /// that resumes the same conversation is admitted in one commit, so the
+    /// conversation is never owned by two Sessions nor by none.
+    pub fn insert_session_moving_agent_descriptor(
+        &mut self,
+        _authority: &CoreWriteAuthority,
+        session: SessionRecord,
+        moved_session_id: &str,
+        remember_launch: bool,
+    ) -> Result<u64, StoreError> {
+        let index = self
+            .state
+            .sessions
+            .iter()
+            .position(|value| value.id == moved_session_id)
+            .ok_or(StoreError::NotFound)?;
+        let moved = &self.state.sessions[index];
+        if moved.kind != SessionKind::Agent
+            || session.kind != SessionKind::Agent
+            || moved.project_id == session.project_id
+            || moved.archived_at_epoch_ms.is_some()
+            || moved.resume_ref.is_none()
+            || moved.resume_ref != session.resume_ref
+            || moved.launch_selection.account_id != session.launch_selection.account_id
+            || !matches!(
+                moved.lifecycle_state.as_str(),
+                "exited" | "stale" | "resumeFailed"
+            )
+            || matches!(
+                moved.resume_failure,
+                Some(
+                    ResumeFailureReason::RuntimeOwnershipUncertain
+                        | ResumeFailureReason::RuntimeConflict
+                )
+            )
+        {
+            return Err(StoreError::ConstraintViolation);
+        }
+        if let Some(operation_id) = self.archive_journal_holding_session(moved_session_id) {
+            return Err(StoreError::JournalConflict { operation_id });
+        }
+        if let Some(operation) = self
+            .state
+            .session_relocation_operations
+            .iter()
+            .find(|operation| operation.session_id == moved_session_id)
+        {
+            return Err(StoreError::JournalConflict {
+                operation_id: operation.operation_id.clone(),
+            });
+        }
+        let previous = self.state.clone();
+        clear_executor_session_references(&mut self.state, [moved_session_id]);
+        let _ = clear_ask_to_continuations_for_session(&mut self.state.sessions, moved_session_id);
+        self.state
+            .session_relocation_receipts
+            .retain(|receipt| receipt.session_id != moved_session_id);
+        super::agent_plan::remove_agent_plans_for_sessions(&mut self.state, [moved_session_id]);
+        self.state.sessions.remove(index);
+        remove_agent_conversation_readiness(&mut self.state, [moved_session_id]);
+        let admitted = self.admit_fresh_session(
+            session,
+            FreshSessionAdmission::Standalone { remember_launch },
+        );
+        if admitted.is_err() {
+            self.state = previous;
+        }
+        admitted
+    }
+
     pub fn restore_archived_session_descriptor(
         &mut self,
         _authority: &CoreWriteAuthority,
