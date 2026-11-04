@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
@@ -36,6 +37,7 @@ import {
   visibleChangeTreeEntries,
 } from "../change-tree.js";
 import { Icon } from "./Icon.js";
+import { ChangesFilesResizeHandle, useChangesFilesWidth } from "./ChangesFilesResizeHandle.js";
 import {
   ChangeBadge,
   ChangeSection,
@@ -139,6 +141,9 @@ export function ChangesOverlay({
   editing,
 }: ChangesOverlayProps) {
   const overlayRef = useRef<HTMLElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const filesWidth = useChangesFilesWidth(bodyRef);
+  const [filesResizing, setFilesResizing] = useState(false);
   // Composition rebuilds these adapters on unrelated projection renders. Keep
   // effects keyed to the change source while still invoking the newest adapter.
   const readsRef = useRef({ list, diff, preImage, listCommits, listCommitChanges, commitDiff, commitPreImage, listPullRequestChanges, pullRequestDiff });
@@ -789,7 +794,11 @@ export function ChangesOverlay({
         />
         {error ? <div className="changes-error" role="alert">{error}</div> : null}
       </div>
-      <div className="changes-body">
+      <div
+        ref={bodyRef}
+        className={`changes-body${filesResizing ? " resizing" : ""}`}
+        style={{ "--changes-files-width": `${filesWidth.width}px` } as CSSProperties}
+      >
         <aside className="changes-files" aria-label="Changed files">
           {currentEntries.length > 0 && reviewScopeKey ? <div className="changes-file-review-progress" aria-live="polite">
             <span><strong>{reviewedEntryIds.size}/{currentEntries.length}</strong> reviewed</span>
@@ -815,6 +824,7 @@ export function ChangesOverlay({
           ))}
           {currentListTruncated ? <p className="changes-warning">File list truncated at the safe limit.</p> : null}
         </aside>
+        <ChangesFilesResizeHandle width={filesWidth.width} body={bodyRef} resize={filesWidth.resize} reset={filesWidth.reset} draggingChanged={setFilesResizing} />
         <main className="changes-diff" aria-label="Selected file diff">
           {selected ? <div className="changes-file-heading"><ChangeBadge entry={selected} /><strong>{selected.display_path}</strong>{selected.path_encoding === "lossy" ? <span title="The exact path is represented by an opaque identifier.">lossy display</span> : null}
             {editableDiff ? <span className="changes-edit-hint">{editing?.readOnly ? "Read-only on this computer" : "Edit the right side · ⌘S saves"}</span> : null}</div> : null}
