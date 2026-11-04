@@ -48,7 +48,7 @@ pub struct AgentProfile {
 
 impl AgentProfile {
     pub fn instructions(&self) -> &'static str {
-        self.template.authored_body
+        self.template.body()
     }
 
     pub(super) fn template(&self) -> &PromptTemplate {

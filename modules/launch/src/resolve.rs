@@ -79,7 +79,7 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
         });
     let interactive_template = mcp.as_ref().and_then(|mcp| mcp.instructions);
     let interactive_provider_instructions =
-        interactive_template.map(|template| template.authored_body);
+        interactive_template.map(|template| template.body());
     let base_provider_instructions =
         explicit_provider_instructions.or(interactive_provider_instructions);
     // A managed Task worktree adds its visible instructions after whatever the
@@ -88,8 +88,8 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
         task_worktree_instructions.filter(|_| matches!(agent_id, "claude" | "codex"));
     let composed_instructions = task_worktree_instructions.map(|task_worktree| {
         match base_provider_instructions {
-            Some(base) => format!("{}\n\n{}", base.trim_end(), task_worktree.authored_body),
-            None => task_worktree.authored_body.to_owned(),
+            Some(base) => format!("{}\n\n{}", base.trim_end(), task_worktree.body()),
+            None => task_worktree.body().to_owned(),
         }
     });
     if composed_instructions
@@ -407,7 +407,7 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
                 task_worktree.id, task_worktree.version
             ),
             instruction_delivery(agent_id),
-            task_worktree.authored_body,
+            task_worktree.body(),
         ));
     }
     content_parts.extend(attachments.iter().enumerate().map(|(index, attachment)| {

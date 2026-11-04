@@ -46,23 +46,20 @@ fn agent_fork_provider_instructions(
         return Err(InvocationError::InvalidPromptBinding);
     }
     let mut notice = crate::bind_ordered(
-        AGENT_FORK_TEMPLATE.authored_body,
+        AGENT_FORK_TEMPLATE.body(),
         &[("source_session_id", source_session_id)],
     )?;
     if source_active {
         notice = format!(
             "{}\n\n{}",
             notice.trim_end(),
-            AGENT_FORK_ACTIVE_SOURCE_TEMPLATE.authored_body
+            AGENT_FORK_ACTIVE_SOURCE_TEMPLATE.body()
         );
     }
     let instructions = if agent_id == "codex"
         && mcp.is_some_and(|mcp| mcp.profile.includes_interactive_instructions())
     {
-        format!(
-            "{}\n\n{notice}",
-            crate::INTERACTIVE_AGENT_TEMPLATE.authored_body
-        )
+        format!("{}\n\n{notice}", crate::INTERACTIVE_AGENT_TEMPLATE.body())
     } else {
         notice
     };

@@ -3706,7 +3706,12 @@ fn agent_profile_preview_is_catalog_backed_read_only_and_ticket_bound() {
             .as_ref()
             .unwrap()
             .codex_app_server_developer_instructions()
-            .is_some_and(|instructions| instructions.contains(profile_ref))
+            .is_some_and(|instructions| {
+                instructions
+                    == termloop_invocation::agent_profile(profile_ref)
+                        .unwrap()
+                        .instructions()
+            })
     );
     assert_eq!(
         super::launch_session_name(&plan).as_deref(),

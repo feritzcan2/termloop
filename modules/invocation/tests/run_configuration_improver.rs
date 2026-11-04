@@ -36,7 +36,7 @@ fn dev_server_improvers_deliver_visible_checkout_isolation_guidance() {
             assert_eq!(launch.provenance().template_ref, template_ref);
             assert_eq!(launch.provenance().template_version, expected_version);
             let delivered = launch.delivered_prompt().unwrap();
-            assert!(delivered.contains(&format!("version: {expected_version}")));
+            assert!(!delivered.contains(&format!("version: {expected_version}")));
             assert!(!delivered.contains("{{"));
             let normalized = delivered.split_whitespace().collect::<Vec<_>>().join(" ");
             for requirement in [

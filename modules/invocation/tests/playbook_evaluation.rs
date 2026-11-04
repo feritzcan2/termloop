@@ -3,6 +3,16 @@ use termloop_invocation::{
     AgentConversationLaunch, AgentMcpLaunch, AgentMcpProfile, playbook_evaluator_for_conversation,
 };
 
+/// The delivered form of an asset file: its text without the provenance header.
+fn asset_body(authored_body: &'static str) -> &'static str {
+    termloop_invocation::PromptTemplate {
+        id: "asset",
+        version: 1,
+        authored_body,
+    }
+    .body()
+}
+
 #[test]
 fn evaluation_forks_apply_selected_model_and_permissions_with_visible_instructions() {
     for (provider, identity) in [
@@ -48,7 +58,9 @@ fn evaluation_forks_apply_selected_model_and_permissions_with_visible_instructio
             assert_eq!(launch.inspectable_manifest().target.permission, permission);
             assert_eq!(
                 launch.delivered_prompt().unwrap(),
-                include_str!("../../../resources/prompts/builtin.agent.playbook-evaluator.md")
+                asset_body(include_str!(
+                    "../../../resources/prompts/builtin.agent.playbook-evaluator.md"
+                ))
             );
             let prompt = launch.delivered_prompt().unwrap();
             assert!(prompt.contains("600 UTF-8 bytes"));
@@ -104,8 +116,10 @@ fn an_open_evaluation_reminder_is_visible_versioned_and_names_the_tools() {
     assert_eq!(prompt.bindings().count(), 0);
     assert_eq!(
         prompt.delivered_prompt(),
-        include_str!("../../../resources/prompts/builtin.agent.playbook-evaluator-retry.md")
-            .trim_end()
+        asset_body(include_str!(
+            "../../../resources/prompts/builtin.agent.playbook-evaluator-retry.md"
+        ))
+        .trim_end()
     );
     let delivered = prompt.delivered_prompt().replace('\n', " ");
     assert!(delivered.contains("`playbook_evaluation_read`"));

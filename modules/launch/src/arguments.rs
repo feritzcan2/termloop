@@ -136,7 +136,7 @@ fn mcp_args(
             if include_interactive_instructions && mcp.instructions.is_some() {
                 args.extend([
                     "--append-system-prompt".into(),
-                    mcp.instructions.expect("checked instructions").authored_body.into(),
+                    mcp.instructions.expect("checked instructions").body().into(),
                 ]);
             }
             Ok(args)
@@ -153,7 +153,7 @@ fn mcp_args(
             ];
             if include_interactive_instructions && mcp.instructions.is_some() {
                 args.extend(codex_developer_instructions_args(
-                    mcp.instructions.expect("checked instructions").authored_body,
+                    mcp.instructions.expect("checked instructions").body(),
                 )?);
             }
             Ok(args)

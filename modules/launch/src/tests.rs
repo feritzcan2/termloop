@@ -822,3 +822,39 @@ fn opencode_reasoning_uses_model_options_in_both_cli_generations() {
     }
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+fn template_body_drops_only_the_leading_provenance_header() {
+    let body = |authored: &'static str| {
+        PromptTemplate {
+            id: "builtin.test",
+            version: 1,
+            authored_body: authored,
+        }
+        .body()
+    };
+    assert_eq!(
+        body(
+            "# Title\n\n- id: `builtin.test`\n- version: `1`\n- delivery: `terminalInput`\n- binding: `x`\n\nDo {{x}}.\n\n- id: `kept`\n"
+        ),
+        "Do {{x}}.\n\n- id: `kept`\n"
+    );
+    assert_eq!(
+        body("---\nid: `builtin.test`\nversion: 1\n---\n\nHello\n- request: `{{r}}`\n"),
+        "Hello\n- request: `{{r}}`\n"
+    );
+    assert_eq!(
+        body("# Title\nid: `builtin.test`\nversion: 5\n\nBody\n"),
+        "Body\n"
+    );
+    assert_eq!(
+        body("# Title\n\nTemplate id: `builtin.test`\n\nBody\n"),
+        "Body\n"
+    );
+    assert_eq!(
+        body("# Title\n\n- id: `builtin.test`\n- version: `1`\n\n---\n\n{{message}}\n"),
+        "{{message}}\n"
+    );
+    // Text without an identifying header is delivered unchanged.
+    assert_eq!(body("# Heading\n\nBody\n"), "# Heading\n\nBody\n");
+}

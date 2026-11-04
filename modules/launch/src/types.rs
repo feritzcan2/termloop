@@ -11,6 +11,48 @@ pub struct PromptTemplate {
     pub authored_body: &'static str,
 }
 
+impl PromptTemplate {
+    /// The asset text an agent receives: the authored body without its leading
+    /// provenance header (title, id, version, delivery, and binding lines, or a
+    /// `---` front matter block). Provenance travels structurally with every
+    /// delivery, so the header only identifies the asset file.
+    pub fn body(&self) -> &'static str {
+        without_provenance_header(self.authored_body)
+    }
+}
+
+fn without_provenance_header(authored: &str) -> &str {
+    if let Some(front_matter) = authored.strip_prefix("---\n") {
+        return front_matter
+            .split_once("\n---\n")
+            .map_or(authored, |(_, body)| body.trim_start_matches('\n'));
+    }
+    let mut body = authored;
+    let mut identified = false;
+    let mut first = true;
+    while !body.is_empty() {
+        let (line, rest) = body.split_once('\n').unwrap_or((body, ""));
+        let line = line.trim();
+        let metadata = ["- id: `", "id: `", "Template id: `"]
+            .iter()
+            .any(|prefix| line.starts_with(prefix));
+        let header = metadata
+            || line.is_empty()
+            || (first && line.starts_with("# "))
+            || ["- version: `", "version: ", "- delivery: `", "- binding: `"]
+                .iter()
+                .any(|prefix| line.starts_with(prefix))
+            || (identified && line == "---");
+        if !header {
+            break;
+        }
+        identified |= metadata;
+        first = false;
+        body = rest;
+    }
+    if identified { body } else { authored }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImageAttachment {
     pub attachment_id: String,

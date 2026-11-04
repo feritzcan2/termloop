@@ -65,7 +65,7 @@ fn fork_notice_is_delivered_as_instructions_and_matches_the_preview() {
         let instructions = &part.content;
         // Only a source that may still be working earns the concurrency warning.
         assert_eq!(
-            instructions.ends_with(agent_fork_active_source_template().authored_body),
+            instructions.ends_with(agent_fork_active_source_template().body()),
             source_active
         );
         assert!(instructions.contains(&format!("Source Session ID: `{SOURCE_SESSION_ID}`")));
@@ -79,7 +79,7 @@ fn fork_notice_is_delivered_as_instructions_and_matches_the_preview() {
         // travels with the notice. Claude keeps the source's system prompt,
         // which already carries that protocol, and learns only the notice.
         assert_eq!(
-            instructions.starts_with("# Interactive agent launch"),
+            instructions.starts_with("This is an interactive TermLoop Session."),
             with_mcp && agent == "codex",
         );
         if agent == "codex" {
@@ -200,7 +200,7 @@ fn managed_worktree_fork_appends_task_worktree_instructions_after_the_notice() {
                 .map(|(_, value)| value.to_string_lossy().into_owned())
                 .unwrap()
         };
-        assert!(delivered.starts_with("# Agent fork notice"));
+        assert!(delivered.starts_with("This Session is a fork."));
         assert!(delivered.ends_with(task_worktree.content.as_str()));
         assert!(delivered.contains("`git worktree add`"));
     }

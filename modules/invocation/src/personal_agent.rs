@@ -19,7 +19,7 @@ pub(super) fn personal_agent_provider_instructions(
         return Err(InvocationError::InvalidDeveloperInstructions);
     }
     let instructions = crate::bind_ordered(
-        PERSONAL_AGENT_TEMPLATE.authored_body,
+        PERSONAL_AGENT_TEMPLATE.body(),
         &[
             ("profileRef", profile.id.as_str()),
             ("profileVersion", profile.version.to_string().as_str()),
@@ -29,7 +29,7 @@ pub(super) fn personal_agent_provider_instructions(
     let instructions = if mcp.is_some_and(|mcp| mcp.profile.includes_interactive_instructions()) {
         format!(
             "{}\n\n{instructions}",
-            crate::INTERACTIVE_AGENT_TEMPLATE.authored_body
+            crate::INTERACTIVE_AGENT_TEMPLATE.body()
         )
     } else {
         instructions

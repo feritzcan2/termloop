@@ -16,10 +16,10 @@ impl CoreRuntime {
         let restart = self.store.agent_restart_preference();
         json!({
             "systemPromptEnabled": preference.system_prompt_enabled,
-            "systemPrompt": termloop_invocation::agent_fork_notice_template().authored_body,
-            "activeSourcePrompt": termloop_invocation::agent_fork_active_source_template().authored_body,
+            "systemPrompt": termloop_invocation::agent_fork_notice_template().body(),
+            "activeSourcePrompt": termloop_invocation::agent_fork_active_source_template().body(),
             "autoContinueInterruptedEnabled": restart.auto_continue_interrupted,
-            "restartContinuePrompt": termloop_invocation::agent_restart_continue_template().authored_body,
+            "restartContinuePrompt": termloop_invocation::agent_restart_continue_template().body(),
         })
     }
 
@@ -136,12 +136,7 @@ mod tests {
         .unwrap();
         let initial = runtime.handle("agent.forkSettingsGet", json!({})).unwrap();
         assert_eq!(initial["autoContinueInterruptedEnabled"], false);
-        assert!(
-            initial["restartContinuePrompt"]
-                .as_str()
-                .unwrap()
-                .contains("builtin.agent.restart-continue")
-        );
+        assert_eq!(initial["restartContinuePrompt"], "Continue your work.\n");
         assert!(matches!(
             runtime.handle(
                 "agent.forkSettingsSet",

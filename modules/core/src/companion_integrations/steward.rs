@@ -1909,7 +1909,7 @@ mod tests {
             projected["promptContext"]["initialPrompt"]
                 .as_str()
                 .unwrap()
-                .contains("Persistent Assistant Activation")
+                .contains("TermLoop has launched this persistent Project Steward Session.")
         );
         assert_eq!(
             projected["promptContext"]["instructionsPrompt"],

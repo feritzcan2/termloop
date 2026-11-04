@@ -618,7 +618,7 @@ fn profile_provider_instructions(
     let instructions = if mcp.is_some_and(|mcp| mcp.profile.includes_interactive_instructions()) {
         format!(
             "{}\n\n{}",
-            INTERACTIVE_AGENT_TEMPLATE.authored_body,
+            INTERACTIVE_AGENT_TEMPLATE.body(),
             profile.instructions()
         )
     } else {
@@ -794,11 +794,11 @@ impl ImproverTarget<'_> {
         match *self {
             Self::WorkflowCreator { context } => {
                 bounded_embedded_document(context, false, 256 * 1024)?;
-                bind_ordered(template.authored_body, &[("context", context)])
+                bind_ordered(template.body(), &[("context", context)])
             }
             Self::AgentCreator { project_name } => {
                 bounded_binding(project_name, 200)?;
-                bind_ordered(template.authored_body, &[("project_name", project_name)])
+                bind_ordered(template.body(), &[("project_name", project_name)])
             }
             Self::SettingsEntry {
                 kind,
@@ -822,7 +822,7 @@ impl ImproverTarget<'_> {
                     }
                 }
                 bindings.push(("max_bytes", &max_bytes));
-                bind_ordered(template.authored_body, &bindings)
+                bind_ordered(template.body(), &bindings)
             }
             Self::RunConfiguration {
                 configuration_id,
@@ -831,7 +831,7 @@ impl ImproverTarget<'_> {
                 bounded_binding(configuration_id, 64)?;
                 bounded_binding(configuration_name, 80)?;
                 bind_ordered(
-                    template.authored_body,
+                    template.body(),
                     &[
                         ("configuration_name", configuration_name),
                         ("configuration_id", configuration_id),
@@ -847,7 +847,7 @@ impl ImproverTarget<'_> {
                 bounded_binding(kind_label, 40)?;
                 bounded_binding(name, 80)?;
                 bind_ordered(
-                    template.authored_body,
+                    template.body(),
                     &[
                         ("run_kind_label", kind_label),
                         ("run_name", name),
@@ -863,7 +863,7 @@ impl ImproverTarget<'_> {
                 bounded_binding(project_name, 200)?;
                 bounded_document(built_in_instructions, false, PROMPT_DOCUMENT_MAX_BYTES)?;
                 bind_ordered(
-                    template.authored_body,
+                    template.body(),
                     &[
                         ("project_name", project_name),
                         ("built_in_instructions", built_in_instructions),
@@ -883,7 +883,7 @@ impl ImproverTarget<'_> {
                 bounded_binding(project_name, 200)?;
                 bounded_document(built_in_instructions, false, PROMPT_DOCUMENT_MAX_BYTES)?;
                 bind_ordered(
-                    template.authored_body,
+                    template.body(),
                     &[
                         ("routine_name", routine_name),
                         ("project_name", project_name),
@@ -905,7 +905,7 @@ impl ImproverTarget<'_> {
                     ROUTINE_BUILDER_SUMMARY_MAX_BYTES,
                 )?;
                 bind_ordered(
-                    template.authored_body,
+                    template.body(),
                     &[
                         ("project_name", project_name),
                         ("routine_summary", routine_summary),
@@ -916,7 +916,7 @@ impl ImproverTarget<'_> {
             Self::Playbook { project_name } => {
                 bounded_binding(project_name, 200)?;
                 bind_ordered(
-                    template.authored_body,
+                    template.body(),
                     &[
                         ("project_name", project_name),
                         ("task_evidence_policy", task_evidence_policy_body()),
@@ -1268,7 +1268,7 @@ pub fn configured_interactive_agent_for_worktree_relocation(
         ("source_cwd", source_cwd),
         ("target_cwd", target_cwd),
     ];
-    let delivered_prompt = bind_ordered(template.authored_body, &bindings)?;
+    let delivered_prompt = bind_ordered(template.body(), &bindings)?;
     let mut resolved = resolve_launch_manifest_for_managed_worktree(
         agent_id,
         target_cwd,
@@ -1325,7 +1325,7 @@ pub fn configured_interactive_agent_for_project_relocation(
         ("source_cwd", source_cwd),
         ("target_cwd", target_cwd),
     ];
-    let delivered_prompt = bind_ordered(template.authored_body, &bindings)?;
+    let delivered_prompt = bind_ordered(template.body(), &bindings)?;
     let mut resolved = resolve_launch_manifest(
         agent_id,
         target_cwd,
@@ -1434,7 +1434,7 @@ fn configured_ask_to_helper_for_conversation_resume_with_codex_project_trust(
             {
                 return Err(InvocationError::InvalidPromptBinding);
             }
-            bind_ordered(template.authored_body, &[("request_id", request_id)])
+            bind_ordered(template.body(), &[("request_id", request_id)])
         })
         .transpose()?;
     let provider_instructions = profile
@@ -1595,7 +1595,7 @@ fn ask_to_helper_agent_for_conversation_with_codex_project_trust(
     {
         return Err(InvocationError::UnprovenancedPrompt);
     }
-    let delivered = bind_ask_to_prompt(template.authored_body, request_id, message)?;
+    let delivered = bind_ask_to_prompt(template.body(), request_id, message)?;
     let provider_instructions = profile
         .map(|profile| personal_agent::personal_agent_provider_instructions(profile, Some(&mcp)))
         .transpose()?;
@@ -1663,7 +1663,7 @@ pub fn ask_to_follow_up_prompt(
     // Agent TUIs can keep Return in multiline-edit mode when a pasted payload
     // ends on a blank line. The visible delivered form is intentionally
     // trailing-trimmed before both preview and terminal submission.
-    let delivered_prompt = bind_ask_to_prompt(template.authored_body, request_id, message)?;
+    let delivered_prompt = bind_ask_to_prompt(template.body(), request_id, message)?;
     terminal_prompt(
         template,
         vec![
@@ -1706,7 +1706,7 @@ pub fn ask_to_reply_prompt(
         ("helper_session_id", helper_session_id),
         ("message", message),
     ];
-    let delivered_prompt = bind_ordered(template.authored_body, &bindings)?;
+    let delivered_prompt = bind_ordered(template.body(), &bindings)?;
     terminal_prompt(
         template,
         bindings
@@ -1735,7 +1735,7 @@ pub fn steward_agent_message_prompt(message: &str) -> Result<AskToTerminalPrompt
         .find(|template| template.id == "builtin.steward.agent-message")
         .ok_or(InvocationError::TemplateMissing)?;
     assistant::validate_template_asset(template)?;
-    let delivered_prompt = bind_ordered(template.authored_body, &[("message", message)])?;
+    let delivered_prompt = bind_ordered(template.body(), &[("message", message)])?;
     terminal_prompt(
         template,
         vec![("message".into(), message.into())],
@@ -1772,7 +1772,7 @@ pub fn agent_handoff_prompt(
         ("source_session_id", source_session_id),
         ("message", message),
     ];
-    let delivered_prompt = bind_ordered(template.authored_body, &bindings)?;
+    let delivered_prompt = bind_ordered(template.body(), &bindings)?;
     terminal_prompt(
         template,
         bindings
@@ -1796,7 +1796,7 @@ pub fn agent_menu_ask_to_prompt(
         .find(|template| template.id == "builtin.agent.menu-ask-to")
         .ok_or(InvocationError::TemplateMissing)?;
     assistant::validate_template_asset(template)?;
-    let delivered_prompt = bind_ordered(template.authored_body, &[("target_agent", target_agent)])?;
+    let delivered_prompt = bind_ordered(template.body(), &[("target_agent", target_agent)])?;
     terminal_prompt(
         template,
         vec![("target_agent".into(), target_agent.into())],
@@ -1825,10 +1825,8 @@ pub fn agent_menu_handover_to_prompt(
         .find(|template| template.id == "builtin.agent.menu-handover-to")
         .ok_or(InvocationError::TemplateMissing)?;
     assistant::validate_template_asset(template)?;
-    let delivered_prompt = bind_ordered(
-        template.authored_body,
-        &[("target_session_id", target_session_id)],
-    )?;
+    let delivered_prompt =
+        bind_ordered(template.body(), &[("target_session_id", target_session_id)])?;
     terminal_prompt(
         template,
         vec![("target_session_id".into(), target_session_id.into())],
@@ -2001,11 +1999,7 @@ fn compose_task_kickoff(
         .find(|template| template.id == "builtin.agent.task-kickoff")
         .ok_or(InvocationError::TemplateMissing)?;
     assistant::validate_template_asset(template)?;
-    let message_template = template
-        .authored_body
-        .split_once("\n---\n")
-        .map(|(_, message)| message.trim_start())
-        .ok_or(InvocationError::UnprovenancedPrompt)?;
+    let message_template = template.body();
     let delivered_bindings = [
         ("kickoff_message", kickoff_message),
         ("title", title),
@@ -2225,11 +2219,7 @@ fn compose_task_workflow(
         })
         .ok_or(InvocationError::TemplateMissing)?;
     assistant::validate_template_asset(template)?;
-    let message_template = template
-        .authored_body
-        .split_once("\n---\n")
-        .map(|(_, message)| message.trim_start())
-        .ok_or(InvocationError::UnprovenancedPrompt)?;
+    let message_template = template.body();
     let delivered_bindings = [
         ("workflow_name", workflow.name.as_str()),
         ("goal", goal),
@@ -2499,7 +2489,7 @@ fn compose_steward_task_assignment(
         ("brief", brief),
         ("assignment", assignment),
     ];
-    let delivered_prompt = bind_ordered(template.authored_body, &bindings)?;
+    let delivered_prompt = bind_ordered(template.body(), &bindings)?;
     Ok(ComposedStewardTaskAssignment {
         template,
         bindings: bindings
@@ -2511,12 +2501,7 @@ fn compose_steward_task_assignment(
 }
 
 fn task_evidence_policy_body() -> &'static str {
-    TASK_EVIDENCE_POLICY_TEMPLATE
-        .authored_body
-        .splitn(3, "\n\n")
-        .nth(2)
-        .expect("Task evidence policy has metadata and instructions")
-        .trim()
+    TASK_EVIDENCE_POLICY_TEMPLATE.body().trim()
 }
 
 fn bind_task_evidence_policy(authored: &str) -> Result<String, InvocationError> {

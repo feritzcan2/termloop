@@ -17,12 +17,8 @@ fn restart_continuation_delivers_the_visible_cataloged_asset() {
     );
     assert_eq!(prompt.provenance().template_version, template.version);
     assert_eq!(prompt.bindings().count(), 0);
-    assert_eq!(prompt.delivered_prompt(), template.authored_body.trim_end());
-    assert!(
-        prompt
-            .delivered_prompt()
-            .ends_with("\n\nContinue your work.")
-    );
+    assert_eq!(prompt.delivered_prompt(), template.body().trim_end());
+    assert_eq!(prompt.delivered_prompt(), "Continue your work.");
     let submission = prompt.terminal_submission();
     assert_eq!(
         submission.provenance().template_ref,

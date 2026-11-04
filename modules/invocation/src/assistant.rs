@@ -79,10 +79,11 @@ impl ProvenancedPrompt {
 pub fn executor_prompt(role: ExecutorRole) -> Result<ProvenancedPrompt, InvocationError> {
     let template = role.template();
     validate_template_asset(template)?;
-    let preview = if template.authored_body.contains("{{task_evidence_policy}}") {
-        bind_task_evidence_policy(template.authored_body)?
+    let body = template.body();
+    let preview = if body.contains("{{task_evidence_policy}}") {
+        bind_task_evidence_policy(body)?
     } else {
-        template.authored_body.to_owned()
+        body.to_owned()
     };
     Ok(ProvenancedPrompt {
         provenance: Provenance {
@@ -158,12 +159,7 @@ pub fn editable_steward_system_prompt(configured: &str) -> &str {
 }
 
 pub fn default_steward_system_prompt() -> &'static str {
-    STEWARD_EXECUTOR_TEMPLATE
-        .authored_body
-        .splitn(3, "\n\n")
-        .nth(2)
-        .expect("Steward prompt asset has metadata and instructions")
-        .trim()
+    STEWARD_EXECUTOR_TEMPLATE.body().trim()
 }
 
 pub fn effective_steward_system_prompt(configured: &str) -> String {
@@ -226,13 +222,10 @@ pub fn tracker_assignment_prompt(role: ExecutorRole) -> Result<ProvenancedPrompt
     }
     let template = role.template();
     validate_template_asset(template)?;
-    let instructions = template
-        .authored_body
-        .splitn(3, "\n\n")
-        .nth(2)
-        .filter(|body| !body.trim().is_empty())
-        .ok_or(InvocationError::UnprovenancedPrompt)?;
-    let instructions = bind_task_evidence_policy(instructions)?;
+    if template.body().trim().is_empty() {
+        return Err(InvocationError::UnprovenancedPrompt);
+    }
+    let instructions = bind_task_evidence_policy(template.body())?;
     Ok(ProvenancedPrompt {
         provenance: Provenance {
             template_ref: template.id.to_owned(),
@@ -254,7 +247,7 @@ pub fn assistant_activation_message(
         _ => return Err(InvocationError::InvalidAssistantConfiguration),
     };
     let delivered = ASSISTANT_ACTIVATION_TEMPLATE
-        .authored_body
+        .body()
         .replace("{{ROLE}}", role_name)
         .replace("{{INSTRUCTIONS}}", instructions);
     if delivered.contains("{{") || delivered.len() > 4 * 1024 {
@@ -398,7 +391,7 @@ pub fn assistant_wake_message(
         "Read the current Project context through your TermLoop tools, evaluate this Project activity, and respond through the reporting tool required by your role."
     };
     let mut delivered = ASSISTANT_WAKE_TEMPLATE
-        .authored_body
+        .body()
         .replace("{{ROLE}}", role_name)
         .replace("{{REASON}}", reason.label())
         .replace("{{CHECK}}", &check)

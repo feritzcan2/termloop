@@ -20,11 +20,7 @@ pub(super) const PLAYBOOK_EVALUATOR_RETRY_TEMPLATE: PromptTemplate = PromptTempl
 pub fn playbook_evaluator_retry_prompt() -> Result<AskToTerminalPrompt, InvocationError> {
     let template = &PLAYBOOK_EVALUATOR_RETRY_TEMPLATE;
     assistant::validate_template_asset(template)?;
-    terminal_prompt(
-        template,
-        Vec::new(),
-        bind_ordered(template.authored_body, &[])?,
-    )
+    terminal_prompt(template, Vec::new(), bind_ordered(template.body(), &[])?)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -59,10 +55,10 @@ pub fn playbook_evaluator_for_conversation(
         },
     )?;
     resolved.positional_message(
-        template.authored_body,
+        template.body(),
         "resources/prompts/builtin.agent.playbook-evaluator.md",
         "Task Playbook evaluation",
     )?;
-    resolved.set_provenance_content(template.authored_body);
+    resolved.set_provenance_content(template.body());
     Ok(resolved.into_payload())
 }

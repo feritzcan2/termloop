@@ -580,14 +580,17 @@ fn agent_profile_catalog_is_versioned_and_read_only() {
         assert_eq!(profile.supported_agent_ids, ["claude", "codex"]);
         assert!(
             profile
-                .instructions()
+                .template()
+                .authored_body
                 .contains(&format!("id: `{}`", profile.id))
         );
         assert!(
             profile
-                .instructions()
+                .template()
+                .authored_body
                 .contains(&format!("version: `{}`", profile.version))
         );
+        assert!(!profile.instructions().contains("- id: `"));
         assert!(
             prompt_templates()
                 .iter()
@@ -750,8 +753,9 @@ fn agent_profile_preserves_the_interactive_termloop_protocol() {
         })
         .collect::<Vec<_>>();
     assert_eq!(developer_instructions.len(), 1);
-    assert!(developer_instructions[0][1].contains(profile.id));
-    assert!(developer_instructions[0][1].contains("Interactive agent launch"));
+    assert!(developer_instructions[0][1].contains("This is an interactive TermLoop Session"));
+    assert!(developer_instructions[0][1].contains("write-side operations"));
+    assert!(!developer_instructions[0][1].contains("- id: `"));
     assert!(
         !launch
             .args()
@@ -1285,7 +1289,7 @@ fn persistent_assistants_apply_their_selected_permission() {
             _ => unreachable!(),
         }
         assert!(steward.initial_input().is_some_and(|input| {
-            input.contains("Persistent Assistant Activation")
+            input.contains("TermLoop has launched this persistent Project Steward Session.")
                 && input.contains("**Initial activation**")
                 && input.contains("mutation-receipt")
                 && input.contains("silent-idle")
@@ -1350,7 +1354,7 @@ fn persistent_assistants_apply_their_selected_permission() {
             _ => unreachable!(),
         }
         assert!(steward.initial_input().is_some_and(|input| {
-            input.contains("Persistent Assistant Activation")
+            input.contains("TermLoop has launched this persistent Project Steward Session.")
                 && !input.contains("Answer briefly in Turkish.")
                 && input.ends_with('\r')
         }));
@@ -1394,7 +1398,9 @@ fn persistent_steward_custom_instructions_cannot_erase_the_runtime_protocol() {
     assert_eq!(steward.inspectable_manifest().target.reasoning, "high");
 
     let delivered = steward.delivered_prompt().expect("activation prompt");
-    assert!(delivered.contains("Persistent Assistant Activation"));
+    assert!(
+        delivered.starts_with("TermLoop has launched this persistent Project Steward Session.")
+    );
     assert!(!delivered.contains(custom));
     let instructions = steward
         .inspectable_manifest()
@@ -1777,10 +1783,10 @@ fn managed_worktree_launch_appends_task_worktree_instructions_to_the_system_prom
         claude_config_path: "/tmp/claude-mcp.json",
         profile: AgentMcpProfile::Interactive,
     };
-    let task_worktree = TASK_WORKTREE_AGENT_TEMPLATE.authored_body;
+    let task_worktree = TASK_WORKTREE_AGENT_TEMPLATE.body();
     let expected = format!(
         "{}\n\n{task_worktree}",
-        INTERACTIVE_AGENT_TEMPLATE.authored_body.trim_end()
+        INTERACTIVE_AGENT_TEMPLATE.body().trim_end()
     );
     for agent in ["claude", "codex"] {
         let managed = interactive_agent_for_managed_worktree_conversation(
@@ -1841,7 +1847,10 @@ fn managed_worktree_launch_appends_task_worktree_instructions_to_the_system_prom
                 ),
             ]
         );
-        assert_eq!(managed.provenance().template_ref, "builtin.agent.interactive");
+        assert_eq!(
+            managed.provenance().template_ref,
+            "builtin.agent.interactive"
+        );
 
         let project = interactive_agent_for_conversation(
             agent,
@@ -2066,7 +2075,7 @@ fn provider_resume_arguments_are_private_and_preserve_observation_args() {
             "--mcp-config",
             "/tmp/termloop-mcp.json",
             "--append-system-prompt",
-            INTERACTIVE_AGENT_TEMPLATE.authored_body,
+            INTERACTIVE_AGENT_TEMPLATE.body(),
         ]
     );
     assert!(
@@ -2265,7 +2274,7 @@ fn launch_local_mcp_keeps_bearer_out_of_arguments_and_debug() {
             "--mcp-config",
             "/private/runtime/agent-mcp.json",
             "--append-system-prompt",
-            INTERACTIVE_AGENT_TEMPLATE.authored_body,
+            INTERACTIVE_AGENT_TEMPLATE.body(),
         ]
     );
     assert!(!claude.args().join(" ").contains("secret-mcp-token"));

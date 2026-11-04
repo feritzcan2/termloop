@@ -123,8 +123,9 @@ fn profile_instructions_configure_the_remote_codex_app_server() {
     let instructions = launch
         .codex_app_server_developer_instructions()
         .expect("profile launch carries model-visible Codex instructions");
-    assert!(instructions.contains("Interactive agent launch"));
-    assert!(instructions.contains(profile.id));
+    assert!(instructions.starts_with("This is an interactive TermLoop Session."));
+    assert!(instructions.ends_with(profile.instructions()));
+    assert!(!instructions.contains("- id: `"));
 
     let app_server = codex_app_server(
         "ws://127.0.0.1:4567",
@@ -143,5 +144,6 @@ fn profile_instructions_configure_the_remote_codex_app_server() {
         })
         .collect::<Vec<_>>();
     assert_eq!(developer_instructions.len(), 1);
-    assert!(developer_instructions[0][1].contains(profile.id));
+    assert!(developer_instructions[0][1].contains("This is an interactive TermLoop Session."));
+    assert!(!developer_instructions[0][1].contains("- id: `"));
 }

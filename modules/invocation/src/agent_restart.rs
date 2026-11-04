@@ -18,5 +18,5 @@ pub fn agent_restart_continue_template() -> &'static PromptTemplate {
 pub fn agent_restart_continue_prompt() -> Result<AskToTerminalPrompt, InvocationError> {
     let template = &AGENT_RESTART_CONTINUE_TEMPLATE;
     assistant::validate_template_asset(template)?;
-    terminal_prompt(template, vec![], template.authored_body.to_owned())
+    terminal_prompt(template, vec![], template.body().to_owned())
 }

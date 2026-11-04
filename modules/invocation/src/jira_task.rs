@@ -47,10 +47,7 @@ pub fn jira_task_intake_prompt(prompt: &str) -> Result<String, InvocationError> 
         return Err(InvocationError::InvalidPrompt);
     }
     crate::assistant::validate_template_asset(&JIRA_TASK_INTAKE_TEMPLATE)?;
-    crate::bind_ordered(
-        JIRA_TASK_INTAKE_TEMPLATE.authored_body,
-        &[("prompt", prompt)],
-    )
+    crate::bind_ordered(JIRA_TASK_INTAKE_TEMPLATE.body(), &[("prompt", prompt)])
 }
 
 /// How the user answered a pending proposal without approving it.
@@ -86,7 +83,7 @@ pub fn jira_task_proposal_answer_prompt(
     } else {
         feedback
     };
-    let delivered = crate::bind_ordered(template.authored_body, &[("feedback", feedback)])?;
+    let delivered = crate::bind_ordered(template.body(), &[("feedback", feedback)])?;
     crate::terminal_prompt(
         template,
         vec![("feedback".to_owned(), feedback.to_owned())],
@@ -108,7 +105,7 @@ pub fn jira_task_proposal_created_prompt(
     let template = &JIRA_TASK_PROPOSAL_CREATED_TEMPLATE;
     crate::assistant::validate_template_asset(template)?;
     let bindings = [("issue_key", issue_key), ("issue_url", issue_url)];
-    let delivered = crate::bind_ordered(template.authored_body, &bindings)?;
+    let delivered = crate::bind_ordered(template.body(), &bindings)?;
     crate::terminal_prompt(
         template,
         bindings
