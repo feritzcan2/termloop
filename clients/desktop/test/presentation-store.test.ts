@@ -57,6 +57,14 @@ describe("presentation store", () => {
 
     presentationStore.getState().updateInterruptedSessions([{ ...interrupted, observedAtEpochMs: 11 }]);
     expect(presentationStore.getState().acknowledgedInterruptedSessionObservations).toEqual(new Map());
+
+    // Another client attached to the same daemon looked at the new one.
+    presentationStore.getState().updateInterruptedSessions([
+      { ...interrupted, observedAtEpochMs: 11, attentionAcknowledgedAtEpochMs: 11 },
+    ]);
+    expect(presentationStore.getState().acknowledgedInterruptedSessionObservations).toEqual(
+      new Map([["session-a", 11]]),
+    );
   });
 
   it("keeps one Session selection per Project without storing daemon state", () => {

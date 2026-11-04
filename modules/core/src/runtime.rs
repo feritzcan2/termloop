@@ -1,6 +1,7 @@
 //! Private serialized command/transaction runtime.
 
 mod agent_accounts;
+mod agent_attention;
 pub use agent_accounts::AgentAccountSwitchPlan;
 mod codex_thread_name;
 pub(crate) mod generated_input_delivery;
@@ -88,6 +89,7 @@ impl CoreRuntime {
             "session.deleteArchived" => self.delete_archived_session(params),
             "session.rename" => self.rename_session(params),
             "agent.statusList" => self.agent_status_list(),
+            "agent.attentionAcknowledge" => self.acknowledge_agent_attention(params),
             "companion.transcriptList" => self.list_companion_transcript(params),
             "companion.transcriptClear" => self.clear_companion_transcript(params),
             "steward.configurationGet" => self.get_steward_configuration(params),

@@ -747,6 +747,25 @@ fn scope_name(scope: Option<ClientScope>) -> &'static str {
     }
 }
 
+/// Runtime-only presentation acknowledgement. It never moves the durable
+/// revision, so publish the Agent status topic directly whenever the
+/// acknowledgement actually advanced; every attached client then re-reads the
+/// projection and stops presenting that observation as needing attention.
+async fn agent_attention_acknowledge(
+    params: Value,
+    state: &AppState,
+) -> Result<Value, termloop_core::CoreError> {
+    let (result, state_revision) = {
+        let mut core = state.core.lock().await;
+        let result = core.handle("agent.attentionAcknowledge", params)?;
+        (result, core.state_revision())
+    };
+    if result["acknowledged"] == true {
+        queue_durable_commit_invalidation(state, CommitImpact::AgentStatus, state_revision).await;
+    }
+    Ok(result)
+}
+
 async fn dispatch_inner(
     request: ControlRequest,
     state: &AppState,
@@ -1772,6 +1791,9 @@ async fn dispatch_inner(
             }
             "gitHost.projectRepository" => {
                 super::handlers::git_host_project_repository(request.params, state).await
+            }
+            "agent.attentionAcknowledge" => {
+                agent_attention_acknowledge(request.params, state).await
             }
             "integration.statusList" => {
                 super::handlers::integration_status_list(request.params, state).await

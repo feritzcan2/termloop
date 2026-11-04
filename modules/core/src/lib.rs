@@ -190,6 +190,7 @@ pub struct CoreRuntime {
     pub(crate) ask_to_delivery_completions:
         HashMap<String, session_launch::ask_to::AskToGeneratedInputCompletion>,
     pub(crate) agent_conversation_activity: HashSet<String>,
+    pub(crate) agent_attention_acknowledgements: HashMap<String, u64>,
     pub(crate) agent_runtime_signals: Option<Receiver<AgentRuntimeSignal>>,
     pub(crate) agent_runtime_sender: Sender<AgentRuntimeSignal>,
     pub(crate) generated_input_deliveries:
@@ -701,6 +702,7 @@ impl CoreRuntime {
             ask_to_conversations,
             ask_to_delivery_completions: HashMap::new(),
             agent_conversation_activity: HashSet::new(),
+            agent_attention_acknowledgements: HashMap::new(),
             agent_runtime_signals: Some(agent_runtime_signals),
             agent_runtime_sender,
             generated_input_deliveries:
@@ -2485,6 +2487,8 @@ impl CoreRuntime {
                     "status": agent_state_name(state),
                     "source": agent_source_name(source),
                     "observedAtEpochMs": observed_at_epoch_ms,
+                    "attentionAcknowledgedAtEpochMs":
+                        self.agent_attention_acknowledged_at(&session.id),
                     "plan": plan,
                     "generatedInputDelivery": generated_input_delivery,
                     "pendingWakes": pending_wakes,

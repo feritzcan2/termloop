@@ -28,7 +28,12 @@ import {
 import { createProjectionRefreshQueue, KeyedProjectionRefreshQueue } from "../state/projection-refresh.js";
 import { ProfileProjectionRefresh } from "./profile-projection-refresh.js";
 import { newlyAwaitingSessions } from "../state/agent-attention-policy.js";
-import { newlyReviewReadySessions } from "../state/agent-review-policy.js";
+import {
+  attentionAcknowledgedByDaemon,
+  locallyAcknowledgedAttention,
+  newlyReviewReadySessions,
+  type AgentAttentionPresentation,
+} from "../state/agent-review-policy.js";
 import { presentationStore } from "../state/presentation-store.js";
 import { TerminalPool } from "../terminal/terminal-pool.js";
 import { XtermSurface } from "@termloop/terminal-surface/xterm";
@@ -286,7 +291,21 @@ const persistLayout = createLayoutPersistence(
 );
 let observedLayoutRevision = 0;
 let observedProjectSnapshotId: string | undefined;
+let observedAttention: AgentAttentionPresentation = presentationStore.getState();
 presentationStore.subscribe((state) => {
+  const acknowledgements = locallyAcknowledgedAttention(
+    observedAttention,
+    state,
+    projectionStore.getSnapshot().agentStatuses,
+  );
+  observedAttention = state;
+  for (const { status, observedAtEpochMs } of acknowledgements) {
+    /// Best effort: an older daemon without the command keeps the previous
+    /// client-local behavior, and the local dismissal already happened.
+    void desktopApi.source(connectionProfileIdOf(status))
+      .agentAttentionAcknowledge(status.sessionId, observedAtEpochMs)
+      .catch(() => undefined);
+  }
   gitHostRefreshCoordinator.activateProject(state.selectedProjectId);
   if (state.selectedProjectId !== observedProjectSnapshotId) {
     observedProjectSnapshotId = state.selectedProjectId;
@@ -468,7 +487,9 @@ function reconcileSourceProjection(availableProfiles: readonly ConnectionProfile
       void desktopApi.source(connectionProfileIdOf(session)).notifyAgentAttention(sessionId);
     }
     presentationStore.getState().updateReviewReadySessions(
-      agentStatuses.filter((status) => status.status === "idle").map((status) => status.sessionId),
+      agentStatuses
+        .filter((status) => status.status === "idle" && !attentionAcknowledgedByDaemon(status))
+        .map((status) => status.sessionId),
       newlyReviewReadySessions(previousAgentStatuses, agentStatuses),
     );
   }

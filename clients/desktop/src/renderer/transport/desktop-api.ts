@@ -472,6 +472,7 @@ export type DesktopApi = {
   companionSuggestionAccept(params: CompanionSuggestionAcceptParams): Promise<CompanionSuggestionAcceptResult>;
   companionTranscriptClear(params: CompanionTranscriptClearParams): Promise<CompanionTranscriptClearResult>;
   notifyAgentAttention(sessionId: string): Promise<{ accepted: boolean }>;
+  agentAttentionAcknowledge(sessionId: string, observedAtEpochMs: number): Promise<{ acknowledged: boolean }>;
   sessionRename(sessionId: string, name: string | null): Promise<Session>;
   terminalLaunch(projectId: string): Promise<Session>;
   agentPreview(projectId: string, agentId: string, model?: string, permission?: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning?: QuickActionParams["reasoning"]): Promise<AgentLaunchPreviewResult>;

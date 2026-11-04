@@ -19,6 +19,7 @@ import {
   type SplitDirection,
 } from "../../layout/model.js";
 import type { AgentStatus } from "../model.js";
+import { attentionAcknowledgedByDaemon } from "./agent-review-policy.js";
 import { connectionEntityIdentity } from "../../connection-scope.js";
 
 export type PresentationState = {
@@ -140,6 +141,12 @@ export const presentationStore = createStore<PresentationState>((set, get) => ({
           interruptedSessionObservations.get(sessionId) === observedAtEpochMs
         ),
     );
+    /// Another client attached to the same daemon already looked at it.
+    for (const status of statuses) {
+      if (status.status === "interrupted" && attentionAcknowledgedByDaemon(status)) {
+        acknowledgedInterruptedSessionObservations.set(status.sessionId, status.observedAtEpochMs);
+      }
+    }
     set({ interruptedSessionObservations, acknowledgedInterruptedSessionObservations });
   },
   navigateSession: (projectId, sessionId) => get().selectSession(projectId, sessionId),

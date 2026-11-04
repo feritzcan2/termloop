@@ -1064,6 +1064,14 @@
         }
       }
     },
+    "agent.attentionAcknowledge": {
+      "params": {
+        "$ref": "#/$defs/agentAttentionAcknowledgeParams"
+      },
+      "result": {
+        "$ref": "#/$defs/agentAttentionAcknowledgeResult"
+      }
+    },
     "agent.observe": {
       "params": {
         "$ref": "#/$defs/agentObserveParams"
@@ -2510,6 +2518,7 @@
         "agent.capabilityList",
         "agent.profileList",
         "agent.statusList",
+        "agent.attentionAcknowledge",
         "agent.observe",
         "steward.configurationGet",
         "steward.configurationSet",
@@ -9855,6 +9864,41 @@
         }
       }
     },
+    "agentAttentionAcknowledgeParams": {
+      "x-codegen": true,
+      "x-codegen-name": "AgentAttentionAcknowledgeParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sessionId",
+        "observedAtEpochMs"
+      ],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "observedAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "agentAttentionAcknowledgeResult": {
+      "x-codegen": true,
+      "x-codegen-name": "AgentAttentionAcknowledgeResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "acknowledged"
+      ],
+      "properties": {
+        "acknowledged": {
+          "type": "boolean"
+        }
+      }
+    },
     "agentStatusDto": {
       "x-codegen": true,
       "x-codegen-name": "AgentStatusDto",
@@ -9879,6 +9923,14 @@
         },
         "observedAtEpochMs": {
           "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "attentionAcknowledgedAtEpochMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
           "minimum": 0,
           "x-rust-type": "u64"
         },

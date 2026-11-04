@@ -1354,6 +1354,11 @@ handleIpc("termloop:agent-attention-notify", async (_event, sessionId: string) =
   notification.show();
   return { accepted: true };
 });
+handleIpc(
+  "termloop:agent-attention-acknowledge",
+  (_event, sessionId: string, observedAtEpochMs: number) =>
+    controlCall("agent.attentionAcknowledge", { sessionId, observedAtEpochMs }),
+);
 handleIpc("termloop:session-rename", (_event, sessionId: string, name: string | null) =>
   controlCall("session.rename", { sessionId, name }),
 );

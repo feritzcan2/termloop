@@ -240,7 +240,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:6490b1b92cea9ed158296d2456e964c0c519aa47dbc18b136729a1033a2ca2ce";
+    "sha256:ce4bda7400df7a6b590b1abbb692e6cb3437eb53f7ff4a4ea4e0ac732727a2d0";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -370,6 +370,7 @@ pub const METHODS: &[&str] = &[
     "agent.capabilityList",
     "agent.profileList",
     "agent.statusList",
+    "agent.attentionAcknowledge",
     "agent.observe",
     "steward.configurationGet",
     "steward.configurationSet",
@@ -4367,6 +4368,21 @@ pub struct GeneratedInputDeliveryDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
+pub struct AgentAttentionAcknowledgeParams {
+    #[serde(rename = "sessionId")]
+    pub session_id: String,
+    #[serde(rename = "observedAtEpochMs")]
+    pub observed_at_epoch_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct AgentAttentionAcknowledgeResult {
+    pub acknowledged: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct AgentStatusDto {
     #[serde(rename = "sessionId")]
     pub session_id: String,
@@ -4374,6 +4390,11 @@ pub struct AgentStatusDto {
     pub source: AgentStatusSource,
     #[serde(rename = "observedAtEpochMs")]
     pub observed_at_epoch_ms: u64,
+    #[serde(
+        rename = "attentionAcknowledgedAtEpochMs",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub attention_acknowledged_at_epoch_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plan: Option<AgentPlanDto>,
     #[serde(
@@ -10336,6 +10357,7 @@ fn validate_method(value: &Value) -> bool {
             "agent.capabilityList",
             "agent.profileList",
             "agent.statusList",
+            "agent.attentionAcknowledge",
             "agent.observe",
             "steward.configurationGet",
             "steward.configurationSet",
@@ -20052,6 +20074,52 @@ fn validate_generated_input_delivery_dto(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_agent_attention_acknowledge_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("sessionId")
+            .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
+            && object.get("observedAtEpochMs").is_some_and(|field| {
+                field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                })
+            })
+            && object
+                .keys()
+                .all(|key| ["sessionId", "observedAtEpochMs"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_agent_attention_acknowledge_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("acknowledged")
+            .is_some_and(|field| field.is_boolean())
+            && object
+                .keys()
+                .all(|key| ["acknowledged"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_agent_status_dto(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object
@@ -20069,6 +20137,14 @@ fn validate_agent_status_dto(value: &Value) -> bool {
                         && (number.as_u64().is_some_and(|number| number >= 0_u64))
                 })
             })
+            && object
+                .get("attentionAcknowledgedAtEpochMs")
+                .is_none_or(|field| {
+                    (field.as_number().is_some_and(|number| {
+                        (number.as_i64().is_some() || number.as_u64().is_some())
+                            && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                    }) || field.is_null())
+                })
             && object
                 .get("plan")
                 .is_none_or(|field| (validate_agent_plan_dto(field) || field.is_null()))
@@ -20089,6 +20165,7 @@ fn validate_agent_status_dto(value: &Value) -> bool {
                     "status",
                     "source",
                     "observedAtEpochMs",
+                    "attentionAcknowledgedAtEpochMs",
                     "plan",
                     "generatedInputDelivery",
                     "pendingWakes",
@@ -34918,6 +34995,10 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<AgentStatusListParams>(params.clone()).is_ok()
                 && validate_empty_params(params)
         }
+        "agent.attentionAcknowledge" => {
+            serde_json::from_value::<AgentAttentionAcknowledgeParams>(params.clone()).is_ok()
+                && validate_agent_attention_acknowledge_params(params)
+        }
         "agent.observe" => {
             serde_json::from_value::<AgentObserveParams>(params.clone()).is_ok()
                 && validate_agent_observe_params(params)
@@ -35862,6 +35943,10 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
                 && result
                     .as_array()
                     .is_some_and(|items| items.iter().all(|item| validate_agent_status_dto(item)))
+        }
+        "agent.attentionAcknowledge" => {
+            serde_json::from_value::<AgentAttentionAcknowledgeResult>(result.clone()).is_ok()
+                && validate_agent_attention_acknowledge_result(result)
         }
         "agent.observe" => {
             serde_json::from_value::<AgentObserveResult>(result.clone()).is_ok()

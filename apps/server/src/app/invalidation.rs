@@ -36,6 +36,7 @@ pub(super) enum CommitImpact {
     TaskSessionAgent,
     Session,
     SessionAgent,
+    AgentStatus,
     SessionWorkflow,
     SessionRun,
     TaskTerminalLaunch,
@@ -70,6 +71,7 @@ impl CommitImpact {
             Self::SessionAgent => {
                 vec![ProjectionTopic::Session, ProjectionTopic::AgentStatus]
             }
+            Self::AgentStatus => vec![ProjectionTopic::AgentStatus],
             Self::SessionWorkflow => vec![ProjectionTopic::Session, ProjectionTopic::Workflow],
             Self::SessionRun => vec![ProjectionTopic::Session, ProjectionTopic::Run],
             Self::TaskTerminalLaunch => vec![

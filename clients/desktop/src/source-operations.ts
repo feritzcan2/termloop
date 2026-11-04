@@ -193,6 +193,7 @@ export const PROFILED_DESKTOP_OPERATIONS = {
   companionSuggestionAccept: "termloop:companion-suggestion-accept",
   companionTranscriptClear: "termloop:companion-transcript-clear",
   notifyAgentAttention: "termloop:agent-attention-notify",
+  agentAttentionAcknowledge: "termloop:agent-attention-acknowledge",
   sessionRename: "termloop:session-rename",
   terminalLaunch: "termloop:terminal-launch",
   agentPreview: "termloop:agent-preview",
