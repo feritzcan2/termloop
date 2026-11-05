@@ -368,6 +368,44 @@ describe("Task Sources panel", () => {
     expect(api.calls.some((call) => call.startsWith("automationSet:"))).toBe(false);
   });
 
+  it("retries an import once when only the global state revision moved since the queue was read", async () => {
+    const api = actions({ sources: [source()], candidates: [candidate()] });
+    let daemonRevision = 10;
+    const list = api.list;
+    api.list = async (projectId) => ({ ...(await list(projectId)), stateRevision: daemonRevision });
+    const inner = api.importCandidate;
+    const attempts: number[] = [];
+    api.importCandidate = async (params) => {
+      attempts.push(params.expectedRevision);
+      if (params.expectedRevision !== daemonRevision) throw new Error("state revision changed; refresh and try again");
+      return inner(params);
+    };
+    await render(api);
+    await flush();
+    daemonRevision = 15; // an unrelated Session write elsewhere in the daemon
+    await act(async () => { [...host.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Import as Task")!.click(); });
+    const options = host.querySelector('[aria-label="Import ACME-1 as Task"]')!;
+    await act(async () => { [...options.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Create Task")!.click(); });
+    await flush();
+    expect(attempts).toEqual([10, 15]);
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(host.textContent).toContain("is now Task");
+  });
+
+  it("surfaces a stale import when the candidate itself changed", async () => {
+    const api = actions({ sources: [source()], candidates: [candidate()] });
+    let attempts = 0;
+    api.importCandidate = async () => { attempts += 1; throw new Error("state revision changed; refresh and try again"); };
+    await render(api);
+    await flush();
+    await act(async () => { [...host.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Import as Task")!.click(); });
+    const options = host.querySelector('[aria-label="Import ACME-1 as Task"]')!;
+    await act(async () => { [...options.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Create Task")!.click(); });
+    await flush();
+    expect(attempts).toBe(2);
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain("The list was reloaded; try again.");
+  });
+
   it("keeps a deleted workflow visible and blocks import until the user changes the choice", async () => {
     const api = actions({ sources: [source()], candidates: [candidate()], automation: {
       projectId: "project-1", createWorktree: true, worktreePrefix: "feature",

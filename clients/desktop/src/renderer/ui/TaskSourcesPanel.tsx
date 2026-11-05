@@ -288,11 +288,14 @@ export function TaskSourcesPanel(props: TaskSourcesPanelProps) {
       if (alive.current) {
         setNotice({ tone: "error", text: isStaleExpectationMessage(message) ? `${message} The list was reloaded; try again.` : message });
       }
-      if (isStaleExpectationMessage(message)) await loadSources();
+      if (isStaleExpectationMessage(message)) {
+        await loadSources();
+        if (selectedSourceId) await loadCandidates(selectedSourceId);
+      }
     } finally {
       if (alive.current) setBusy(undefined);
     }
-  }, [busy, loadSources]);
+  }, [busy, loadCandidates, loadSources, selectedSourceId]);
 
   const refreshSource = (source: TaskSourceDto) => mutate(`refresh:${source.id}`, async () => {
     const result = await props.actions.refresh({ sourceId: source.id, expectedGeneration: source.generation });
@@ -387,13 +390,33 @@ export function TaskSourcesPanel(props: TaskSourcesPanelProps) {
     return { tone: "info", text: `${source.name} was removed. Tasks it added keep their Jira links.` };
   });
 
-  const candidateParams = (candidate: TaskSourceCandidateDto, source: TaskSourceDto): TaskSourceCandidateMutationParams => ({
+  const candidateParams = (
+    candidate: TaskSourceCandidateDto,
+    source: TaskSourceDto,
+    expectedRevision: number,
+  ): TaskSourceCandidateMutationParams => ({
     sourceId: source.id,
     externalId: candidate.externalId,
     expectedGeneration: source.generation,
     expectedObservationSequence: candidate.observationSequence,
-    expectedRevision: stateRevision,
+    expectedRevision,
   });
+
+  /// The daemon state revision is global, so any Session or Task write elsewhere
+  /// advances it between rendering this queue and the user's click. A candidate
+  /// command stays pinned to its exact source generation and observation
+  /// sequence, so one stale rejection is retried once against a freshly read
+  /// revision; a candidate that really changed is still rejected by those proofs.
+  const withCurrentRevision = async <T,>(run: (expectedRevision: number) => Promise<T>): Promise<T> => {
+    try {
+      return await run(stateRevision);
+    } catch (error) {
+      if (!isStaleExpectationMessage(controlErrorMessage(error))) throw error;
+      const current = await props.actions.list(props.projectId);
+      if (alive.current) setStateRevision(current.stateRevision);
+      return run(current.stateRevision);
+    }
+  };
 
   const importCandidate = (candidate: TaskSourceCandidateDto, source: TaskSourceDto, choice: TaskImportChoice) =>
     mutate(`import:${candidate.externalId}`, async () => {
@@ -401,10 +424,10 @@ export function TaskSourcesPanel(props: TaskSourcesPanelProps) {
       // exact selection rather than `inherit`: a Project default that moved
       // between the prompt and the confirm must not change this import.
       rememberTaskImportChoice(props.projectId, choice);
-      const result = await props.actions.importCandidate({
-        ...candidateParams(candidate, source),
+      const result = await withCurrentRevision((expectedRevision) => props.actions.importCandidate({
+        ...candidateParams(candidate, source, expectedRevision),
         ...taskCreationIntent(choice),
-      });
+      }));
       setImportChoice(undefined);
       await loadSources();
       await loadCandidates(source.id);
@@ -412,8 +435,10 @@ export function TaskSourcesPanel(props: TaskSourcesPanelProps) {
     });
 
   const ignoreCandidate = (candidate: TaskSourceCandidateDto, source: TaskSourceDto, ignore: boolean) => mutate(`ignore:${candidate.externalId}`, async () => {
-    const params = candidateParams(candidate, source);
-    await (ignore ? props.actions.ignoreCandidate(params) : props.actions.unignoreCandidate(params));
+    await withCurrentRevision((expectedRevision) => {
+      const params = candidateParams(candidate, source, expectedRevision);
+      return ignore ? props.actions.ignoreCandidate(params) : props.actions.unignoreCandidate(params);
+    });
     await loadSources();
     await loadCandidates(source.id);
     return undefined;
