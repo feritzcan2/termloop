@@ -211,6 +211,16 @@ export function openTasksByActivity(
     .map((entry) => entry.task);
 }
 
+/// Playbook evaluators belong to the Steward panel, so Task cards drop them.
+export function withoutPlaybookEvaluators(
+  sessionsById: ReadonlyMap<string, Session>,
+  evaluations: readonly { sessionId: string | null }[],
+): ReadonlyMap<string, Session> {
+  const evaluatorIds = new Set(evaluations.flatMap((evaluation) => evaluation.sessionId ? [evaluation.sessionId] : []));
+  if (evaluatorIds.size === 0) return sessionsById;
+  return new Map([...sessionsById].filter(([sessionId]) => !evaluatorIds.has(sessionId)));
+}
+
 /// Helper nesting is an independent exact source-Session projection. It does
 /// not make the helper Task-attached or place it under Task lifecycle authority.
 /// A helper in `attachedElsewhere` belongs to another Task's worktree, so it

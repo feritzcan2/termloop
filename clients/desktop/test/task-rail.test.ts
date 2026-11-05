@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentStatus, BranchCommitSummary, GitHostProjection, RunConfiguration, RunRuntime, Session, Task, WorkflowExecution } from "../src/renderer/model.js";
-import { TaskRail, askToHelpersForSources, taskAttachedSessionIds, taskRelocationDropEnabled, taskSessions, type TaskRailProps } from "../src/renderer/ui/TaskRail.js";
+import { TaskRail, askToHelpersForSources, taskAttachedSessionIds, taskRelocationDropEnabled, taskSessions, withoutPlaybookEvaluators, type TaskRailProps } from "../src/renderer/ui/TaskRail.js";
 import { readTaskCollapsed, writeTaskCollapsed } from "../src/renderer/task-collapse-memory.js";
 import type { TaskProvisionWorktreeParams } from "@termloop/contract/current";
 import { fullAgentCapability, launchOnlyGeminiCapability, resumableOpenCodeCapability } from "./agent-capability-fixture.js";
@@ -2130,5 +2130,15 @@ describe("Task rail live activity", () => {
     container.remove();
     window.localStorage.removeItem("termloop.taskCollapse.v1");
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+  });
+});
+
+describe("withoutPlaybookEvaluators", () => {
+  it("drops Playbook evaluator Sessions so Task cards never list them", () => {
+    const lead = { id: "lead" } as Session;
+    const fork = { id: "fork" } as Session;
+    const sessionsById = new Map([[lead.id, lead], [fork.id, fork]]);
+    expect([...withoutPlaybookEvaluators(sessionsById, [{ sessionId: "fork" }, { sessionId: null }]).keys()]).toEqual(["lead"]);
+    expect(withoutPlaybookEvaluators(sessionsById, [{ sessionId: null }])).toBe(sessionsById);
   });
 });

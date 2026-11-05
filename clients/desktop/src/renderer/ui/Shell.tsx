@@ -34,7 +34,7 @@ import { ProjectCheckoutHeader } from "./ProjectCheckoutHeader.js";
 import { ProjectSourceRefreshButton } from "./ProjectSourceRefreshButton.js";
 import { SessionRail } from "./SessionRail.js";
 import { ForkingSessionsContext, SessionContextMenu, type SessionAgentActions, type SessionMenuState, type SessionRunDevServer } from "./SessionRow.js";
-import { TaskRail, askToHelpersForSources, taskAttachedSessionIds, taskSessions } from "./TaskRail.js";
+import { TaskRail, askToHelpersForSources, taskAttachedSessionIds, taskSessions, withoutPlaybookEvaluators } from "./TaskRail.js";
 import { TaskDetailPanel } from "./TaskDetailPanel.js";
 import { OverlayPortal } from "./OverlayPortal.js";
 import { DEV_SERVER_SEED, RunEditorDialog } from "./TaskRuns.js";
@@ -742,6 +742,10 @@ export function Shell(props: ShellProps) {
   const doubleShiftRef = useRef(new DoubleShiftDetector());
   const platform = useMemo(() => keyboardPlatform(navigator.userAgent), []);
   const sessionsById = useMemo(() => new Map(props.projectSessions.map((session) => [session.id, session])), [props.projectSessions]);
+  const taskRailSessionsById = useMemo(
+    () => withoutPlaybookEvaluators(sessionsById, props.playbookRuntime?.evaluations ?? []),
+    [props.playbookRuntime, sessionsById],
+  );
   const statusesById = useMemo(() => new Map(props.agentStatuses.map((status) => [status.sessionId, status])), [props.agentStatuses]);
   useEffect(() => {
     const projectId = props.selectedProject?.id;
@@ -1746,7 +1750,7 @@ export function Shell(props: ShellProps) {
             agentProfiles={props.agentLibrary?.value?.profiles ?? []}
             runRuntimes={props.runRuntimes}
             runStateRevision={props.runStateRevision}
-            sessionsById={sessionsById}
+            sessionsById={taskRailSessionsById}
             agentGroups={scopedAgentGroups}
             detachedRelationshipSessionIds={props.detachedRelationshipSessionIds}
             detachRelationship={props.detachAgentRelationship}
