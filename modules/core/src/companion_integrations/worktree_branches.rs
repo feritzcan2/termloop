@@ -10,7 +10,27 @@ pub(super) struct ObservedBranchFacts {
     /// Remote-tracking refs holding this worktree's own commits, whatever
     /// branch name they were pushed under.
     pub(super) pushed: Vec<GitRefName>,
+    pub(super) pushed_state: PushedRefsState,
     pub(super) candidate_truncated: bool,
+}
+
+/// Whether `pushed` comes from this observation, from the last one that read
+/// it because this read failed, or is missing because no read has succeeded.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum PushedRefsState {
+    Observed,
+    Reused,
+    Unavailable,
+}
+
+impl PushedRefsState {
+    pub(super) fn label(self) -> &'static str {
+        match self {
+            Self::Observed => "observed",
+            Self::Reused => "reused",
+            Self::Unavailable => "unavailable",
+        }
+    }
 }
 
 pub(super) fn observe(
@@ -50,6 +70,7 @@ pub(super) fn observe(
     }
 
     let mut pushed = Vec::new();
+    let mut pushed_state = PushedRefsState::Observed;
     if let Some(worktree_path) = worktree_path {
         let observed = deadline
             .remaining()
@@ -68,7 +89,10 @@ pub(super) fn observe(
                 candidate_truncated |= observed.truncated;
                 pushed = observed.references;
             }
-            Err(_) => candidate_truncated = true,
+            Err(_) => {
+                candidate_truncated = true;
+                pushed_state = PushedRefsState::Unavailable;
+            }
         }
     }
 
@@ -117,6 +141,7 @@ pub(super) fn observe(
     Ok(ObservedBranchFacts {
         branches,
         pushed,
+        pushed_state,
         candidate_truncated,
     })
 }

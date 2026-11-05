@@ -188,6 +188,10 @@ struct LocalFactsInner {
 #[derive(Clone)]
 struct LocalFactsEntry {
     result: Result<worktree_branches::ObservedBranchFacts, GitHostProjectionReason>,
+    /// Pushed remote refs from the newest observation that read them. They
+    /// outlive the TTL and later failures so a timed-out pushed-ref read does
+    /// not make a pushed-only PR branch (and its PR) vanish from the card.
+    last_pushed: Option<Vec<termloop_gitio::GitRefName>>,
     observed_at: u64,
     sequence: u64,
 }
@@ -206,28 +210,49 @@ impl GitHostLocalFactsCache {
         key: &LocalFactsKey,
         now: u64,
     ) -> Option<Result<worktree_branches::ObservedBranchFacts, GitHostProjectionReason>> {
-        let mut inner = self.inner.lock().expect("Git-host local facts mutex");
+        // Expired entries stay (bounded by MAX_LOCAL_FACTS) so the next insert
+        // can carry their last pushed refs forward.
+        let inner = self.inner.lock().expect("Git-host local facts mutex");
         let entry = inner.entries.get(key)?;
         if now.saturating_sub(entry.observed_at) >= LOCAL_FACTS_TTL_MS {
-            inner.entries.remove(key);
             return None;
         }
         Some(entry.result.clone())
     }
 
+    /// Stores a fresh observation and returns it, with the last successfully
+    /// observed pushed refs substituted when this observation could not read them.
     fn insert(
         &self,
         key: LocalFactsKey,
-        result: Result<worktree_branches::ObservedBranchFacts, GitHostProjectionReason>,
+        mut result: Result<worktree_branches::ObservedBranchFacts, GitHostProjectionReason>,
         now: u64,
-    ) {
+    ) -> Result<worktree_branches::ObservedBranchFacts, GitHostProjectionReason> {
         let mut inner = self.inner.lock().expect("Git-host local facts mutex");
+        let previous_pushed = inner
+            .entries
+            .get(&key)
+            .and_then(|entry| entry.last_pushed.clone());
+        let last_pushed = match &mut result {
+            Ok(facts) if facts.pushed_state == worktree_branches::PushedRefsState::Observed => {
+                Some(facts.pushed.clone())
+            }
+            Ok(facts) => {
+                if let Some(pushed) = &previous_pushed {
+                    facts.pushed = pushed.clone();
+                    facts.pushed_state = worktree_branches::PushedRefsState::Reused;
+                }
+                previous_pushed
+            }
+            Err(_) => previous_pushed,
+        };
         inner.sequence = inner.sequence.wrapping_add(1);
         let sequence = inner.sequence;
         inner.entries.insert(
             key,
             LocalFactsEntry {
-                result,
+                result: result.clone(),
+                last_pushed,
                 observed_at: now,
                 sequence,
             },
@@ -257,6 +282,7 @@ impl GitHostLocalFactsCache {
                 inner.entries.remove(&oldest);
             }
         }
+        result
     }
 
     fn clear(&self) {
@@ -272,11 +298,31 @@ pub struct ObservedGitHostPullRequestList {
     snapshots: Vec<TaskSnapshot>,
     projections: Vec<GitHostTaskProjection>,
     follow_up_task_ids: Vec<String>,
+    local_diagnostics: Vec<GitHostLocalDiagnostic>,
+}
+
+/// Per-Task local branch evidence summary for diagnostics. It carries counts
+/// and states only, never branch or ref names.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GitHostLocalDiagnostic {
+    pub task_id: String,
+    pub candidates: usize,
+    pub candidate_truncated: bool,
+    /// `observed`, `reused`, `unavailable`, or `none` when local facts failed.
+    pub pushed: &'static str,
+    pub cached: bool,
+}
+
+impl ObservedGitHostPullRequestList {
+    pub fn local_diagnostics(&self) -> &[GitHostLocalDiagnostic] {
+        &self.local_diagnostics
+    }
 }
 
 pub struct PreparedGitHostPullRequestList {
     snapshots: Vec<TaskSnapshot>,
     task_observations: Vec<LocalObservation>,
+    local_diagnostics: Vec<GitHostLocalDiagnostic>,
     rows: BTreeMap<String, ProviderCacheRow>,
     cache: ProviderCacheHandle,
     jobs: Vec<GitHostProviderQueryJob>,
@@ -478,7 +524,7 @@ impl CoreRuntime {
             azure: self.azure_devops_client.clone(),
             local_facts: self.git_host_local_facts.clone(),
             observed_at,
-            deadline: termloop_platform::MonotonicDeadline::after(Duration::from_secs(10))
+            deadline: termloop_platform::MonotonicDeadline::after(Duration::from_secs(20))
                 .map_err(|_| CoreError::GitObservationTimedOut)?,
         })
     }
@@ -668,23 +714,28 @@ impl GitHostPullRequestListPlan {
                 .map(|task| local_unavailable(task, reason))
                 .collect(),
             follow_up_task_ids: Vec::new(),
+            local_diagnostics: Vec::new(),
         }
     }
 
     pub fn prepare(self) -> PreparedGitHostPullRequestList {
+        let mut pushed_states = vec![None; self.tasks.len()];
+        let mut cached = vec![false; self.tasks.len()];
         let mut task_observations = self
             .tasks
             .iter()
-            .map(|task| {
+            .enumerate()
+            .map(|(index, task)| {
                 let Some(key) = local_facts_key(task) else {
                     return Some(local_observation_failure(
                         task,
                         GitHostProjectionReason::NoBranch,
                     ));
                 };
-                self.local_facts
-                    .get(&key, self.observed_at)
-                    .map(|result| local_observation_from_facts(task, result))
+                let result = self.local_facts.get(&key, self.observed_at)?;
+                cached[index] = true;
+                pushed_states[index] = pushed_state(&result);
+                Some(local_observation_from_facts(task, result))
             })
             .collect::<Vec<_>>();
         if task_observations.iter().any(Option::is_none) {
@@ -699,14 +750,22 @@ impl GitHostPullRequestListPlan {
                 });
             match discovered {
                 Ok(runner) => {
-                    for (task, observation) in self.tasks.iter().zip(task_observations.iter_mut()) {
+                    for ((task, observation), state) in self
+                        .tasks
+                        .iter()
+                        .zip(task_observations.iter_mut())
+                        .zip(pushed_states.iter_mut())
+                    {
                         if observation.is_some() {
                             continue;
                         }
                         let key = local_facts_key(task).expect("missing local facts key");
-                        let result = observe_local_facts(task, self.deadline, &runner);
-                        self.local_facts
-                            .insert(key, result.clone(), self.observed_at);
+                        let result = self.local_facts.insert(
+                            key,
+                            observe_local_facts(task, self.deadline, &runner),
+                            self.observed_at,
+                        );
+                        *state = pushed_state(&result);
                         *observation = Some(local_observation_from_facts(task, result));
                     }
                 }
@@ -717,7 +776,7 @@ impl GitHostPullRequestListPlan {
                             continue;
                         }
                         let key = local_facts_key(task).expect("missing local facts key");
-                        self.local_facts.insert(key, Err(reason), self.observed_at);
+                        let _ = self.local_facts.insert(key, Err(reason), self.observed_at);
                         *observation = Some(local_observation_failure(task, reason));
                     }
                 }
@@ -728,6 +787,18 @@ impl GitHostPullRequestListPlan {
             .map(|observation| observation.expect("every local observation resolved"))
             .collect::<Vec<_>>();
         admit_candidates(&mut task_observations);
+        let local_diagnostics = task_observations
+            .iter()
+            .zip(pushed_states)
+            .zip(cached)
+            .map(|((observation, pushed), cached)| GitHostLocalDiagnostic {
+                task_id: observation.snapshot.task_id.clone(),
+                candidates: observation.candidates.len(),
+                candidate_truncated: observation.candidate_truncated,
+                pushed: pushed.map_or("none", worktree_branches::PushedRefsState::label),
+                cached,
+            })
+            .collect();
 
         let mut pending = Vec::new();
         let mut follow_up_task_ids = BTreeSet::new();
@@ -817,6 +888,7 @@ impl GitHostPullRequestListPlan {
         PreparedGitHostPullRequestList {
             snapshots: self.tasks,
             task_observations,
+            local_diagnostics,
             rows,
             cache: self.cache,
             jobs,
@@ -865,6 +937,7 @@ impl PreparedGitHostPullRequestList {
                 .map(|task| local_unavailable(task, reason))
                 .collect(),
             follow_up_task_ids: Vec::new(),
+            local_diagnostics: Vec::new(),
         }
     }
 
@@ -915,6 +988,7 @@ impl PreparedGitHostPullRequestList {
             snapshots: self.snapshots,
             projections,
             follow_up_task_ids: self.follow_up_task_ids,
+            local_diagnostics: self.local_diagnostics,
         }
     }
 }
@@ -1126,6 +1200,12 @@ fn observe_local_facts(
         deadline,
     )
     .map_err(|error| map_git_error(&error))
+}
+
+fn pushed_state(
+    result: &Result<worktree_branches::ObservedBranchFacts, GitHostProjectionReason>,
+) -> Option<worktree_branches::PushedRefsState> {
+    result.as_ref().ok().map(|facts| facts.pushed_state)
 }
 
 fn local_observation_from_facts(
@@ -2027,8 +2107,68 @@ mod tests {
                 })
                 .collect(),
             pushed: vec![],
+            pushed_state: worktree_branches::PushedRefsState::Observed,
             candidate_truncated: false,
         }
+    }
+
+    #[test]
+    fn failed_pushed_ref_read_reuses_last_observed_pushed_refs() {
+        use worktree_branches::PushedRefsState;
+        let cache = GitHostLocalFactsCache::default();
+        let key = LocalFactsKey {
+            repository_root: PathBuf::from("/repo"),
+            branch_name: "termloop/task".into(),
+            worktree_path: Some(PathBuf::from("/repo-worktree")),
+            worktree_generation: 1,
+            recorded_branches: vec![],
+        };
+        let pushed_ref =
+            termloop_gitio::GitRefName::from_bytes(b"refs/remotes/origin/NUCLEUS-2994".to_vec())
+                .unwrap();
+        let unavailable = || {
+            let mut facts = azure_worktree_facts(&["termloop/task"]);
+            facts.pushed_state = PushedRefsState::Unavailable;
+            facts.candidate_truncated = true;
+            facts
+        };
+
+        // No earlier read: the failure stays visible as unavailable.
+        let stored = cache.insert(key.clone(), Ok(unavailable()), 1).unwrap();
+        assert_eq!(stored.pushed_state, PushedRefsState::Unavailable);
+        assert!(stored.pushed.is_empty());
+
+        let mut observed = azure_worktree_facts(&["termloop/task"]);
+        observed.pushed = vec![pushed_ref.clone()];
+        let _ = cache.insert(key.clone(), Ok(observed), 2);
+
+        // After TTL expiry and an intervening local failure, a failed pushed
+        // read still carries the last observed pushed refs forward.
+        let later = 2 + LOCAL_FACTS_TTL_MS;
+        assert!(cache.get(&key, later).is_none());
+        let _ = cache.insert(key.clone(), Err(GitHostProjectionReason::Timeout), later);
+        let stored = cache
+            .insert(key.clone(), Ok(unavailable()), later + 1)
+            .unwrap();
+        assert_eq!(stored.pushed_state, PushedRefsState::Reused);
+        assert_eq!(stored.pushed, vec![pushed_ref.clone()]);
+        assert!(stored.candidate_truncated);
+        assert_eq!(
+            cache.get(&key, later + 1).unwrap().unwrap().pushed,
+            vec![pushed_ref]
+        );
+
+        // A successful read that finds no pushed refs replaces the carried set.
+        let _ = cache.insert(
+            key.clone(),
+            Ok(azure_worktree_facts(&["termloop/task"])),
+            later + 2,
+        );
+        let stored = cache
+            .insert(key.clone(), Ok(unavailable()), later + 3)
+            .unwrap();
+        assert_eq!(stored.pushed_state, PushedRefsState::Reused);
+        assert!(stored.pushed.is_empty());
     }
 
     #[test]
@@ -2082,7 +2222,7 @@ mod tests {
     fn local_facts_cache_is_bounded_expires_and_can_be_invalidated() {
         let cache = GitHostLocalFactsCache::default();
         for index in 0..=MAX_LOCAL_FACTS {
-            cache.insert(
+            let _ = cache.insert(
                 LocalFactsKey {
                     repository_root: PathBuf::from(format!("/repo/{index:03}")),
                     branch_name: "main".into(),
@@ -2111,7 +2251,7 @@ mod tests {
         assert!(cache.get(&oldest, 1).is_none());
         assert!(cache.get(&newest, LOCAL_FACTS_TTL_MS).is_some());
         assert!(cache.get(&newest, LOCAL_FACTS_TTL_MS + 1).is_none());
-        cache.insert(
+        let _ = cache.insert(
             newest.clone(),
             Err(GitHostProjectionReason::RepositoryUnavailable),
             100,
@@ -2442,7 +2582,7 @@ mod tests {
         };
         let facts = azure_worktree_facts(&["UKIE-835", "termloop/generated"]);
         let local_facts = GitHostLocalFactsCache::default();
-        local_facts.insert(local_facts_key(&snapshot).unwrap(), Ok(facts), observed_at);
+        let _ = local_facts.insert(local_facts_key(&snapshot).unwrap(), Ok(facts), observed_at);
         let directory = std::env::temp_dir().join(format!(
             "termloop-git-host-two-candidate-wave-{}",
             uuid::Uuid::new_v4()
@@ -2492,7 +2632,7 @@ mod tests {
         };
         let facts = azure_worktree_facts(&["UKIE-835-current", "termloop/generated", "UKIE-835"]);
         let local_facts = GitHostLocalFactsCache::default();
-        local_facts.insert(local_facts_key(&snapshot).unwrap(), Ok(facts), observed_at);
+        let _ = local_facts.insert(local_facts_key(&snapshot).unwrap(), Ok(facts), observed_at);
         let directory = std::env::temp_dir().join(format!(
             "termloop-git-host-deferred-wave-{}",
             uuid::Uuid::new_v4()
@@ -2595,7 +2735,7 @@ mod tests {
         };
         let facts = azure_worktree_facts(&["UKIE-835-current", "termloop/generated", "UKIE-835"]);
         let local_facts = GitHostLocalFactsCache::default();
-        local_facts.insert(local_facts_key(&snapshot).unwrap(), Ok(facts), observed_at);
+        let _ = local_facts.insert(local_facts_key(&snapshot).unwrap(), Ok(facts), observed_at);
         let directory = std::env::temp_dir().join(format!(
             "termloop-git-host-wave-rotation-{}",
             uuid::Uuid::new_v4()

@@ -474,6 +474,7 @@ fn gate_candidates(
         &worktree_branches::ObservedBranchFacts {
             branches,
             pushed,
+            pushed_state: worktree_branches::PushedRefsState::Observed,
             candidate_truncated: false,
         },
     ))

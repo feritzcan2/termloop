@@ -12,7 +12,7 @@ use crate::{
 pub const WORKTREE_BRANCH_REFLOG_ENTRY_LIMIT: usize = 256;
 const BRANCH_CREATION_REFLOG_ENTRY_LIMIT: usize = 1024;
 const WORKTREE_BRANCH_OUTPUT_LIMIT: usize = 128 * 1024;
-const WORKTREE_BRANCH_OBSERVATION_DEADLINE: Duration = Duration::from_millis(2_500);
+const WORKTREE_BRANCH_OBSERVATION_DEADLINE: Duration = Duration::from_secs(5);
 const PUSHED_REMOTE_REF_LIMIT: usize = 32;
 const CHECKOUT_PREFIX: &[u8] = b"checkout: moving from ";
 const CHECKOUT_SEPARATOR: &[u8] = b" to ";

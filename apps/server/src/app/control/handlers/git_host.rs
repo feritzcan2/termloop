@@ -356,7 +356,7 @@ async fn observe_git_host_pull_request_list(
     state: &AppState,
     priority: ObservationPriority,
 ) -> Result<serde_json::Value, CoreError> {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + Duration::from_secs(20);
     let plan = {
         let core = state.core.lock().await;
         core.plan_git_host_pull_request_list(
@@ -415,6 +415,22 @@ async fn observe_git_host_pull_request_list(
     } else {
         degraded
     };
+    // Cached local facts repeat the previous line; log fresh observations only.
+    for local in observed
+        .local_diagnostics()
+        .iter()
+        .filter(|local| !local.cached)
+    {
+        tracing::info!(
+            target: "git_host_diag",
+            task = %local.task_id,
+            candidates = local.candidates,
+            candidate_truncated = local.candidate_truncated,
+            pushed = local.pushed,
+            cached = local.cached,
+            "local branch evidence"
+        );
+    }
     let (mut result, invalidated, state_revision, observation_sequence) = {
         let mut core = state.core.lock().await;
         let (result, mut changed, follow_up, nudged) =
