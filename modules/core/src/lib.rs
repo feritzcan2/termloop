@@ -156,10 +156,16 @@ pub fn normalize_claude_transcript_model(tail: &str, native_session_id: &str) ->
     termloop_agents::normalize_claude_transcript_model(tail, native_session_id)
 }
 
+pub use termloop_agents::ClaudeTurnOutcome;
+
 /// Claude fires no hook for a user interrupt either, so the daemon asks the
-/// same bounded tail whether the exact running turn was cut off.
-pub fn claude_turn_interrupted(tail: &str, native_session_id: &str, prompt_id: &str) -> bool {
-    termloop_agents::claude_turn_interrupted(tail, native_session_id, prompt_id)
+/// same bounded tail whether the exact running turn was cut off or replaced.
+pub fn claude_turn_outcome(
+    tail: &str,
+    native_session_id: &str,
+    prompt_id: &str,
+) -> ClaudeTurnOutcome {
+    termloop_agents::claude_turn_outcome(tail, native_session_id, prompt_id)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2326,6 +2332,52 @@ impl CoreRuntime {
         Ok(observation_projection_changed(previous, next))
     }
 
+    /// Moves the watch onto a newer turn the transcript proved started after
+    /// the watched one. `Esc` with a queued message starts that turn without a
+    /// `UserPromptSubmit` hook, so without this the poll would report the old
+    /// turn's interruption over a turn that is actually running. The same
+    /// revalidation as `apply_claude_interrupt_observation` applies; the
+    /// observation itself is unchanged.
+    pub fn follow_superseding_claude_turn(
+        &mut self,
+        check: &ClaudeInterruptCheck,
+        prompt_id: &str,
+    ) -> Result<(), CoreError> {
+        if prompt_id.is_empty() || prompt_id.len() > MAX_CLAUDE_PROMPT_ID_BYTES {
+            return Err(CoreError::InvalidParams("promptId".into()));
+        }
+        if self
+            .running_claude_agent_session(&check.session_id)
+            .ok_or(CoreError::CapabilityDenied)?
+            .resume_ref
+            .as_ref()
+            .is_none_or(|reference| reference.native_session_id != check.native_session_id)
+        {
+            return Err(CoreError::CapabilityDenied);
+        }
+        let observation_current = self
+            .agent_observations
+            .get(&check.session_id)
+            .filter(|capability| capability.runtime_epoch == check.runtime_epoch)
+            .and_then(|capability| capability.observation)
+            .is_some_and(|observation| {
+                claude_turn_can_be_interrupted(observation.state)
+                    && observation.sequence == check.observation_sequence
+            });
+        let watch = self
+            .claude_turn_watches
+            .get_mut(&check.session_id)
+            .filter(|watch| {
+                observation_current
+                    && watch.prompt_id == check.prompt_id
+                    && watch.transcript_path == check.transcript_path
+                    && watch.runtime_epoch == check.runtime_epoch
+            })
+            .ok_or(CoreError::CapabilityDenied)?;
+        watch.prompt_id = prompt_id.to_owned();
+        Ok(())
+    }
+
     /// True when a live Agent Session may still change shared state on its
     /// own: it is working, waiting on a permission, compacting, resting with
     /// background work or a scheduled wake, or not yet observed. An idle,
@@ -3108,6 +3160,33 @@ mod tests {
         assert_eq!(checks[0].prompt_id, "prompt-1");
         assert_eq!(checks[0].native_session_id, native_session_id);
         assert_eq!(checks[0].transcript_path, transcript);
+
+        // `Esc` with a queued message starts a newer turn without a hook: the
+        // watch follows it, and the stale question about the old turn can no
+        // longer be applied as an interruption.
+        assert!(matches!(
+            runtime.follow_superseding_claude_turn(&checks[0], ""),
+            Err(CoreError::InvalidParams(field)) if field == "promptId"
+        ));
+        runtime
+            .follow_superseding_claude_turn(&checks[0], "prompt-queued")
+            .unwrap();
+        assert!(matches!(
+            runtime.apply_claude_interrupt_observation(&checks[0], 2, 2),
+            Err(CoreError::CapabilityDenied)
+        ));
+        assert!(matches!(
+            runtime.follow_superseding_claude_turn(&checks[0], "prompt-other"),
+            Err(CoreError::CapabilityDenied)
+        ));
+        let followed = runtime.plan_claude_interrupt_checks().remove(0);
+        assert_eq!(followed.prompt_id, "prompt-queued");
+        let status = runtime.agent_status_list().unwrap();
+        assert_eq!(status[0]["status"], "working");
+        // Restore the original question for the remaining assertions.
+        runtime
+            .follow_superseding_claude_turn(&followed, "prompt-1")
+            .unwrap();
 
         // A replacement process can resume the same conversation and prompt;
         // that does not make an earlier process's pending read current again.

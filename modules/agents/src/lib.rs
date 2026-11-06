@@ -36,8 +36,8 @@ pub use catalog::{
     supports_generated_input_coordination, supports_tracked_helpers,
 };
 pub use claude_transcript::{
-    ClaudeObservedModel, claude_observed_model, claude_observed_permission,
-    claude_observed_reasoning, claude_turn_interrupted, normalize_claude_transcript_model,
+    ClaudeObservedModel, ClaudeTurnOutcome, claude_observed_model, claude_observed_permission,
+    claude_observed_reasoning, claude_turn_outcome, normalize_claude_transcript_model,
 };
 pub use codex_history::{
     CodexThreadHistoryInspection, CodexThreadHistoryProbeError, CodexThreadHistoryRepair,

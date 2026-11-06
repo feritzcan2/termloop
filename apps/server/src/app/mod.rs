@@ -1012,17 +1012,32 @@ async fn reconcile_claude_interrupts(state: AppState) {
         }
         // Reading files while holding the serialized core lock is forbidden,
         // and a blocking read belongs off the async worker regardless.
-        let Ok(interrupted) = tokio::task::spawn_blocking(move || {
+        let Ok(outcomes) = tokio::task::spawn_blocking(move || {
             checks
                 .into_iter()
-                .filter(crate::hook::claude_turn_was_interrupted)
+                .map(|check| {
+                    let outcome = crate::hook::claude_turn_outcome(&check);
+                    (check, outcome)
+                })
                 .collect::<Vec<_>>()
         })
         .await
         else {
             continue;
         };
-        for check in interrupted {
+        for (check, outcome) in outcomes {
+            match outcome {
+                termloop_core::ClaudeTurnOutcome::Running => continue,
+                termloop_core::ClaudeTurnOutcome::Superseded { prompt_id } => {
+                    let _ = state
+                        .core
+                        .lock()
+                        .await
+                        .follow_superseding_claude_turn(&check, &prompt_id);
+                    continue;
+                }
+                termloop_core::ClaudeTurnOutcome::Interrupted => {}
+            }
             let (changed, state_revision, observation_sequence) = {
                 let mut core = state.core.lock().await;
                 let Ok(observation_sequence) = core.next_observation_sequence() else {

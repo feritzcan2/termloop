@@ -38,10 +38,15 @@ pub(crate) async fn run_hook_client() -> Result<(), Box<dyn std::error::Error>> 
 ///
 /// Blocking: the caller runs it off the async workers and never under the core
 /// lock.
-pub(crate) fn claude_turn_was_interrupted(check: &termloop_core::ClaudeInterruptCheck) -> bool {
-    claude_transcript_tail(&check.transcript_path).is_some_and(|tail| {
-        termloop_core::claude_turn_interrupted(&tail, &check.native_session_id, &check.prompt_id)
-    })
+pub(crate) fn claude_turn_outcome(
+    check: &termloop_core::ClaudeInterruptCheck,
+) -> termloop_core::ClaudeTurnOutcome {
+    claude_transcript_tail(&check.transcript_path).map_or(
+        termloop_core::ClaudeTurnOutcome::Running,
+        |tail| {
+            termloop_core::claude_turn_outcome(&tail, &check.native_session_id, &check.prompt_id)
+        },
+    )
 }
 
 fn accept_hook_response(

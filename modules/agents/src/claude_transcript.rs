@@ -208,20 +208,38 @@ pub fn normalize_claude_transcript_model(tail: &str, native_session_id: &str) ->
     })
 }
 
-/// Reports whether the exact turn started by `prompt_id` was interrupted by the
-/// user. Claude fires no hook at all for `Esc`, so this transcript record is the
-/// only provider-authored proof that a working turn ended without finishing.
+/// What the bounded transcript tail proves about the watched Claude turn.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ClaudeTurnOutcome {
+    /// Nothing newer than the watched turn's own start: it is still running,
+    /// or the tail does not prove otherwise.
+    Running,
+    /// The user cut the watched turn short.
+    Interrupted,
+    /// A newer main-thread turn started after the watched one. A message
+    /// dequeued by `Esc` starts its own turn without a `UserPromptSubmit`
+    /// hook, so this is the only proof that the watch must follow it.
+    Superseded { prompt_id: String },
+}
+
+/// Reports what happened to the exact turn started by `prompt_id`. Claude
+/// fires no hook at all for `Esc`, so this transcript record is the only
+/// provider-authored proof that a working turn ended without finishing.
 ///
 /// `interruptedMessageId` is the structured marker; the accompanying
 /// `[Request interrupted by user]` text is display copy and is never matched.
 /// The prompt identity alone is not exact: a message submitted while a turn is
 /// still working cuts that turn short, and Claude files the interruption under
-/// the new message's `promptId` immediately before the message itself. Only the
-/// newest record for the prompt therefore decides; a prompt submitted after the
-/// interruption means the running turn began after it.
-pub fn claude_turn_interrupted(tail: &str, native_session_id: &str, prompt_id: &str) -> bool {
+/// either prompt immediately before the new message itself. Only the newest
+/// deciding record therefore counts: the watched turn's interruption, the
+/// watched turn's own start, or a newer turn's start.
+pub fn claude_turn_outcome(
+    tail: &str,
+    native_session_id: &str,
+    prompt_id: &str,
+) -> ClaudeTurnOutcome {
     if prompt_id.is_empty() {
-        return false;
+        return ClaudeTurnOutcome::Running;
     }
     tail.lines()
         .rev()
@@ -230,22 +248,35 @@ pub fn claude_turn_interrupted(tail: &str, native_session_id: &str, prompt_id: &
             if entry.entry_type != "user"
                 || entry.is_sidechain
                 || entry.session_id.as_deref() != Some(native_session_id)
-                || entry.prompt_id.as_deref() != Some(prompt_id)
             {
                 return None;
             }
-            if entry.records_interruption() {
-                Some(true)
+            let entry_prompt = entry
+                .prompt_id
+                .as_deref()
+                .filter(|value| !value.is_empty())?;
+            if entry_prompt == prompt_id {
+                if entry.records_interruption() {
+                    Some(ClaudeTurnOutcome::Interrupted)
+                } else {
+                    entry.starts_turn().then_some(ClaudeTurnOutcome::Running)
+                }
             } else {
-                entry.starts_turn().then_some(false)
+                entry.starts_turn().then(|| ClaudeTurnOutcome::Superseded {
+                    prompt_id: entry_prompt.to_owned(),
+                })
             }
         })
-        .unwrap_or(false)
+        .unwrap_or(ClaudeTurnOutcome::Running)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn claude_turn_interrupted(tail: &str, native_session_id: &str, prompt_id: &str) -> bool {
+        claude_turn_outcome(tail, native_session_id, prompt_id) == ClaudeTurnOutcome::Interrupted
+    }
 
     fn assistant(session_id: &str, model: &str, sidechain: bool) -> String {
         format!(
@@ -334,7 +365,13 @@ mod tests {
         // The running turn is prompt-2 in session-a: the only prompt-2
         // interruption belongs to another conversation.
         assert!(!claude_turn_interrupted(&tail, "session-a", "prompt-2"));
-        assert!(claude_turn_interrupted(&tail, "session-a", "prompt-1"));
+        // A watch still on prompt-1 must follow the newer turn instead.
+        assert_eq!(
+            claude_turn_outcome(&tail, "session-a", "prompt-1"),
+            ClaudeTurnOutcome::Superseded {
+                prompt_id: "prompt-2".into()
+            }
+        );
         assert!(!claude_turn_interrupted(&tail, "session-a", ""));
         assert!(!claude_turn_interrupted("", "session-a", "prompt-1"));
         assert!(!claude_turn_interrupted(
@@ -403,6 +440,36 @@ mod tests {
         ]
         .join("\n");
         assert!(!claude_turn_interrupted(&tail, "session-a", "prompt-1"));
+    }
+
+    #[test]
+    fn a_message_dequeued_by_esc_supersedes_the_interrupted_turn() {
+        // Measured on Claude Code: `Esc` with a queued message files the
+        // interruption under the running prompt, then starts the queued
+        // message as a new prompt without a `UserPromptSubmit` hook.
+        let mut tail = vec![
+            typed_prompt("session-a", "prompt-1"),
+            assistant("session-a", "claude-opus-5", false),
+            interrupt("session-a", "prompt-1"),
+        ];
+        assert!(claude_turn_interrupted(
+            &tail.join("\n"),
+            "session-a",
+            "prompt-1"
+        ));
+        tail.push(typed_prompt("session-a", "prompt-2"));
+        tail.push(interrupt("session-b", "prompt-3"));
+        tail.push(tool_result("session-a", "prompt-2"));
+        assert_eq!(
+            claude_turn_outcome(&tail.join("\n"), "session-a", "prompt-1"),
+            ClaudeTurnOutcome::Superseded {
+                prompt_id: "prompt-2".into()
+            }
+        );
+        assert_eq!(
+            claude_turn_outcome(&tail.join("\n"), "session-a", "prompt-2"),
+            ClaudeTurnOutcome::Running
+        );
     }
 
     #[test]
