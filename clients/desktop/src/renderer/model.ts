@@ -15,6 +15,7 @@ import type {
   TaskWorktreeCleanupWarning,
   TaskWorktreeStaleResolutionBlocker,
   TaskBranchCommitSummaryDto,
+  TaskArchivePreviewDto,
 } from "@termloop/contract/current";
 import type { ConnectionScope } from "../connection-scope.js";
 
@@ -376,4 +377,37 @@ export function taskWorktreeInlineAction(task: Task): TaskWorktreeInlineAction {
   if (health?.launch_ready) return "launch";
   if (health?.path_state === "absent" || health?.registration_state === "mismatch") return "repair";
   return "unavailable";
+}
+
+const taskArchiveBlockerMessages: Record<string, string> = {
+  protectedAssistantRole: "it is an Ask-To helper or Steward Session",
+  lifecycleInProgress: "a resume or lifecycle operation is still in progress",
+  runningGenericTerminal: "it is a running terminal; close it first",
+  agentNotResumable: "it is running without a resumable conversation; stop or close it first",
+  runtimeOwnershipUncertain: "it is marked running but TermLoop does not own its process",
+};
+
+const taskArchiveTaskBlockerMessages: Record<string, string> = {
+  lifecycleInProgress: "A Session is being moved into this Task.",
+  provisioningInProgress: "Worktree creation is still in progress.",
+  cleanupInProgress: "A worktree cleanup is already in progress.",
+  repairInProgress: "Worktree repair is still in progress.",
+  staleResolutionInProgress: "A stale-worktree resolution is still in progress.",
+};
+
+export function taskArchiveBlockedMessage(preview: TaskArchivePreviewDto): string {
+  const reasons: string[] = [];
+  const sessionBlockers = new Set<string>();
+  for (const session of preview.sessions) {
+    if (!session.blocker) continue;
+    sessionBlockers.add(session.blocker);
+    const label = session.name?.trim() || (session.kind === "Terminal" ? "Terminal" : session.agent_id ?? "Agent");
+    reasons.push(`${label}: ${taskArchiveBlockerMessages[session.blocker] ?? session.blocker}.`);
+  }
+  for (const blocker of preview.blockers) {
+    if (sessionBlockers.has(blocker)) continue;
+    reasons.push(taskArchiveTaskBlockerMessages[blocker] ?? `${blocker}.`);
+  }
+  if (reasons.length === 0) reasons.push("archive refused.");
+  return `Task was not closed; its Agents could not be parked safely. ${reasons.join(" ")}`;
 }

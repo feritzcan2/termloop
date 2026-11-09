@@ -424,3 +424,27 @@ describe("Task presentation metadata", () => {
     }, "session-1")).toBe(true);
   });
 });
+
+describe("taskArchiveBlockedMessage", () => {
+  it("names each blocking Session and Task-level blockers once", async () => {
+    const { taskArchiveBlockedMessage } = await import("../src/renderer/model.js");
+    const message = taskArchiveBlockedMessage({
+      task_id: "task-1",
+      archive_ticket: "ticket",
+      expires_in_ms: 1,
+      can_archive: false,
+      blockers: ["agentNotResumable", "cleanupInProgress"],
+      sessions: [
+        { session_id: "s1", name: "Claude", kind: "Agent", agent_id: "claude", lifecycle_state: "running", disposition: "blocksArchive", blocker: "agentNotResumable" },
+        { session_id: "s2", name: null, kind: "Terminal", agent_id: null, lifecycle_state: "running", disposition: "blocksArchive", blocker: "runningGenericTerminal" },
+        { session_id: "s3", name: "Other", kind: "Agent", agent_id: "codex", lifecycle_state: "running", disposition: "willParkAndResume", blocker: null },
+      ],
+    });
+    expect(message).toContain("Task was not closed");
+    expect(message).toContain("Claude: it is running without a resumable conversation");
+    expect(message).toContain("Terminal: it is a running terminal");
+    expect(message).toContain("A worktree cleanup is already in progress.");
+    expect(message).not.toContain("Other");
+    expect(message.match(/resumable conversation/g)).toHaveLength(1);
+  });
+});

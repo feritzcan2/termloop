@@ -49,7 +49,7 @@ import { AgentLaunchInspector } from "../ui/AgentLaunchInspector.js";
 import { createPromptSettingsActions } from "./prompt-settings-actions.js";
 import { taskRowRenders } from "../ui/TaskRail.js";
 import { agentForkErrorMessage, agentForkRequiresProviderHistoryRepair, controlErrorIsServiceBusy, controlErrorMessage, projectDeleteErrorMessage, sessionDismissErrorMessage, sessionRequiresProviderHistoryRepair } from "../control-error.js";
-import { automaticGitHostTaskIds, isLiveSession, sessionDismissCommand, sessionLabel, type Session, type Task, type TaskDeleteWorktreeResult, type TaskDeleteWorktreeReview } from "../model.js";
+import { automaticGitHostTaskIds, isLiveSession, sessionDismissCommand, sessionLabel, taskArchiveBlockedMessage, type Session, type Task, type TaskDeleteWorktreeResult, type TaskDeleteWorktreeReview } from "../model.js";
 import { orchestrateTaskDelete } from "./task-delete-orchestration.js";
 import { dismissSessionDescriptor } from "./session-dismiss.js";
 import { createSessionRename } from "./session-rename.js";
@@ -2201,13 +2201,16 @@ export function DesktopApp() {
         await refreshProjection();
         return { status: "completed" };
       }
-      if (!review) return { status: "failed", message: "Inspect the worktree before removing it." };
+      if (!review) {
+        const message = "Inspect the worktree before removing it.";
+        projectionStore.setMessage(message);
+        return { status: "failed", message };
+      }
       const archivePreview = await api.taskInspectArchive(taskId);
       if (!archivePreview.can_archive) {
-        return {
-          status: "failed",
-          message: `Task Agents could not be parked safely: ${archivePreview.blockers.join(", ") || "archive refused"}.`,
-        };
+        const message = taskArchiveBlockedMessage(archivePreview);
+        projectionStore.setMessage(message);
+        return { status: "failed", message };
       }
       const archived = await api.taskArchive(taskId, archivePreview.archive_ticket);
       let currentTask: Task | undefined = archived.task;
