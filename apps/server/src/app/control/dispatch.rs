@@ -1049,6 +1049,18 @@ async fn dispatch_inner(
                                 state.clone(),
                             )
                             .await;
+                            if let Err(error) = &result
+                                && state
+                                    .companion_wakes
+                                    .first_refusal(&params.project_id, wake.wake_id)
+                            {
+                                tracing::warn!(
+                                    %error,
+                                    project_id = %params.project_id,
+                                    generation = params.generation,
+                                    "Steward wake refused; it stays in flight and is retried without blocking other Projects"
+                                );
+                            }
                             result.map(|admission| match admission {
                                 StewardWakeAdmission::Admitted => {
                                     json!({"admitted":true,"coalesced":false})

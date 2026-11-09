@@ -117,12 +117,25 @@ fn wake_priority(reason: &CompanionWakeReason) -> u8 {
     }
 }
 
+/// A wake stays in flight until the Steward confirms it, so one Project whose
+/// wake cannot complete must never starve other Projects. Every in-flight
+/// Project rotates through `retry` while fresh Projects in `order` go first.
 #[derive(Default)]
 struct WakeState {
     order: VecDeque<String>,
     pending: HashMap<String, PendingWake>,
-    in_flight: Option<(String, PendingWake)>,
+    in_flight: HashMap<String, PendingWake>,
+    retry: VecDeque<String>,
+    refusal_logged: HashMap<String, u64>,
     next_wake_id: u64,
+}
+
+impl WakeState {
+    fn release_in_flight(&mut self, project_id: &str) {
+        self.in_flight.remove(project_id);
+        self.retry.retain(|queued| queued != project_id);
+        self.refusal_logged.remove(project_id);
+    }
 }
 
 #[derive(Clone, Default)]
@@ -174,14 +187,26 @@ impl CompanionWakeQueue {
         let state = self.state.lock().expect("Companion wake queue");
         state
             .in_flight
-            .as_ref()
-            .filter(|(in_flight_project_id, pending)| {
-                in_flight_project_id == project_id && pending.generation == generation
-            })
-            .map(|(_, pending)| InFlightWake {
+            .get(project_id)
+            .filter(|pending| pending.generation == generation)
+            .map(|pending| InFlightWake {
                 reason: pending.reason.clone(),
                 wake_id: pending.wake_id,
             })
+    }
+
+    /// Returns true only for the first refusal of the exact in-flight wake so
+    /// a retried wake is diagnosable without logging every retry.
+    pub(super) fn first_refusal(&self, project_id: &str, wake_id: u64) -> bool {
+        let mut state = self.state.lock().expect("Companion wake queue");
+        if state
+            .in_flight
+            .get(project_id)
+            .is_none_or(|pending| pending.wake_id != wake_id)
+        {
+            return false;
+        }
+        state.refusal_logged.insert(project_id.to_owned(), wake_id) != Some(wake_id)
     }
 
     pub(super) async fn next(&self, wait_milliseconds: u64) -> CompanionWakeNextResult {
@@ -205,42 +230,41 @@ impl CompanionWakeQueue {
 
     fn pop(&self) -> Option<CompanionWakeNextResult> {
         let mut state = self.state.lock().expect("Companion wake queue");
-        if let Some((project_id, pending)) = state.in_flight.as_ref() {
-            return Some(CompanionWakeNextResult {
-                project_id: Some(project_id.clone()),
-                reason: Some(pending.reason.clone()),
-                generation: pending.generation,
-            });
-        }
         while let Some(project_id) = state.order.pop_front() {
+            if state.in_flight.contains_key(&project_id) {
+                continue;
+            }
             let Some(pending) = state.pending.get(&project_id).cloned() else {
                 continue;
             };
-            state.in_flight = Some((project_id.clone(), pending.clone()));
+            state.in_flight.insert(project_id.clone(), pending.clone());
+            state.retry.push_back(project_id.clone());
             return Some(CompanionWakeNextResult {
                 project_id: Some(project_id),
                 reason: Some(pending.reason),
                 generation: pending.generation,
             });
         }
-        None
+        let project_id = state.retry.pop_front()?;
+        let pending = state.in_flight.get(&project_id).cloned()?;
+        state.retry.push_back(project_id.clone());
+        Some(CompanionWakeNextResult {
+            project_id: Some(project_id),
+            reason: Some(pending.reason),
+            generation: pending.generation,
+        })
     }
 
     pub(super) fn acknowledge(&self, project_id: &str, generation: u64, wake_id: u64) {
         let mut state = self.state.lock().expect("Companion wake queue");
-        let exact_in_flight =
-            state
-                .in_flight
-                .as_ref()
-                .is_some_and(|(in_flight_project_id, pending)| {
-                    in_flight_project_id == project_id
-                        && pending.generation == generation
-                        && pending.wake_id == wake_id
-                });
+        let exact_in_flight = state
+            .in_flight
+            .get(project_id)
+            .is_some_and(|pending| pending.generation == generation && pending.wake_id == wake_id);
         if !exact_in_flight {
             return;
         }
-        state.in_flight = None;
+        state.release_in_flight(project_id);
         let is_exact = state
             .pending
             .get(project_id)
@@ -259,13 +283,7 @@ impl CompanionWakeQueue {
         let mut state = self.state.lock().expect("Companion wake queue");
         state.pending.remove(project_id);
         state.order.retain(|queued| queued != project_id);
-        if state
-            .in_flight
-            .as_ref()
-            .is_some_and(|(in_flight_project_id, _)| in_flight_project_id == project_id)
-        {
-            state.in_flight = None;
-        }
+        state.release_in_flight(project_id);
     }
 }
 
@@ -484,6 +502,53 @@ mod tests {
         assert_eq!(queue.next(0).await.project_id.as_deref(), Some("project-1"));
         queue.acknowledge("project-1", 2, in_flight.wake_id);
         assert_eq!(queue.next(1).await.project_id, None);
+    }
+
+    #[tokio::test]
+    async fn unconfirmed_wake_cannot_starve_another_projects_wake() {
+        let queue = CompanionWakeQueue::default();
+        assert!(queue.enqueue("stuck".into(), CompanionWakeReason::StartupRefresh, 12, 2));
+        assert_eq!(queue.next(0).await.project_id.as_deref(), Some("stuck"));
+        assert_eq!(queue.next(0).await.project_id.as_deref(), Some("stuck"));
+
+        assert!(queue.enqueue(
+            "fresh".into(),
+            CompanionWakeReason::ConfigurationChanged,
+            4,
+            2,
+        ));
+        let fresh = queue.next(0).await;
+        assert_eq!(fresh.project_id.as_deref(), Some("fresh"));
+        assert_eq!(fresh.generation, 4);
+        assert!(queue.in_flight_wake("stuck", 12).is_some());
+        let fresh_wake = queue.in_flight_wake("fresh", 4).unwrap();
+
+        // Both unconfirmed wakes keep rotating instead of one pinning the head.
+        let mut seen = [
+            queue.next(0).await.project_id.unwrap(),
+            queue.next(0).await.project_id.unwrap(),
+        ];
+        seen.sort();
+        assert_eq!(seen, ["fresh".to_owned(), "stuck".to_owned()]);
+
+        queue.acknowledge("fresh", 4, fresh_wake.wake_id);
+        assert!(queue.in_flight_wake("fresh", 4).is_none());
+        assert_eq!(queue.next(0).await.project_id.as_deref(), Some("stuck"));
+        queue.discard("stuck");
+        assert_eq!(queue.next(0).await.project_id, None);
+    }
+
+    #[tokio::test]
+    async fn refusal_is_reported_once_per_in_flight_wake() {
+        let queue = CompanionWakeQueue::default();
+        assert!(queue.enqueue("project-1".into(), CompanionWakeReason::UserMessage, 1, 1));
+        assert_eq!(queue.next(0).await.generation, 1);
+        let wake = queue.in_flight_wake("project-1", 1).unwrap();
+        assert!(!queue.first_refusal("project-1", wake.wake_id + 1));
+        assert!(queue.first_refusal("project-1", wake.wake_id));
+        assert!(!queue.first_refusal("project-1", wake.wake_id));
+        queue.acknowledge("project-1", 1, wake.wake_id);
+        assert!(!queue.first_refusal("project-1", wake.wake_id));
     }
 
     #[tokio::test]
