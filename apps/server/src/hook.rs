@@ -38,15 +38,31 @@ pub(crate) async fn run_hook_client() -> Result<(), Box<dyn std::error::Error>> 
 ///
 /// Blocking: the caller runs it off the async workers and never under the core
 /// lock.
+///
+/// `Esc` before the first response token leaves no transcript record at all:
+/// Claude returns the prompt to the composer and fires no `Stop`. When the
+/// transcript still shows the turn running, Claude's own settled `idle` live
+/// status for the same conversation proves that the user cut it short.
 pub(crate) fn claude_turn_outcome(
     check: &termloop_core::ClaudeInterruptCheck,
+    now_epoch_ms: u64,
 ) -> termloop_core::ClaudeTurnOutcome {
-    claude_transcript_tail(&check.transcript_path).map_or(
+    let outcome = claude_transcript_tail(&check.transcript_path).map_or(
         termloop_core::ClaudeTurnOutcome::Running,
         |tail| {
             termloop_core::claude_turn_outcome(&tail, &check.native_session_id, &check.prompt_id)
         },
-    )
+    );
+    if outcome == termloop_core::ClaudeTurnOutcome::Running
+        && termloop_core::claude_turn_withdrawn(
+            hook_forwarder::claude_live_statuses(&check.transcript_path, &check.native_session_id),
+            check.turn_started_at_epoch_ms,
+            now_epoch_ms,
+        )
+    {
+        return termloop_core::ClaudeTurnOutcome::Interrupted;
+    }
+    outcome
 }
 
 fn accept_hook_response(

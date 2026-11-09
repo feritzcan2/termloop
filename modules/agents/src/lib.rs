@@ -5,6 +5,7 @@ mod claude_profile;
 pub use account_context::AgentAccountContext;
 
 mod catalog;
+mod claude_live_status;
 mod claude_transcript;
 mod codex_history;
 mod codex_name;
@@ -34,6 +35,10 @@ pub use catalog::{
     AgentDescriptor, BuiltinAgentAdapter, ResumeIdentityScope, agent_catalog, agent_descriptor,
     has_global_resume_identity, is_supported_agent, reasoning_for_model,
     supports_generated_input_coordination, supports_tracked_helpers,
+};
+pub use claude_live_status::{
+    CLAUDE_TURN_WITHDRAWAL_SETTLE_MS, ClaudeLiveStatus, claude_turn_withdrawn,
+    parse_claude_live_status,
 };
 pub use claude_transcript::{
     ClaudeObservedModel, ClaudeTurnOutcome, claude_observed_model, claude_observed_permission,

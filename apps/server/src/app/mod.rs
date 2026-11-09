@@ -1012,11 +1012,12 @@ async fn reconcile_claude_interrupts(state: AppState) {
         }
         // Reading files while holding the serialized core lock is forbidden,
         // and a blocking read belongs off the async worker regardless.
+        let now_epoch_ms = current_epoch_ms();
         let Ok(outcomes) = tokio::task::spawn_blocking(move || {
             checks
                 .into_iter()
                 .map(|check| {
-                    let outcome = crate::hook::claude_turn_outcome(&check);
+                    let outcome = crate::hook::claude_turn_outcome(&check, now_epoch_ms);
                     (check, outcome)
                 })
                 .collect::<Vec<_>>()

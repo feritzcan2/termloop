@@ -392,6 +392,53 @@ pub fn claude_transcript_tail(path: &std::path::Path) -> Option<String> {
     Some(String::from_utf8_lossy(&tail).into_owned())
 }
 
+/// Claude keeps one small live record per interactive process in the
+/// `sessions` directory of the same configuration directory that owns
+/// `projects/<project>/<conversation>.jsonl`, so the transcript the hook named
+/// also locates the records without any extra launch input.
+const MAX_LIVE_STATUS_RECORDS: usize = 512;
+const MAX_LIVE_STATUS_RECORD_BYTES: usize = 16 * 1024;
+
+pub fn claude_live_statuses(
+    transcript_path: &std::path::Path,
+    native_session_id: &str,
+) -> Vec<termloop_agents::ClaudeLiveStatus> {
+    let Some(directory) = transcript_path
+        .parent()
+        .and_then(std::path::Path::parent)
+        .filter(|projects| projects.file_name().is_some_and(|name| name == "projects"))
+        .and_then(std::path::Path::parent)
+        .map(|configuration| configuration.join("sessions"))
+    else {
+        return Vec::new();
+    };
+    let Ok(Some(names)) =
+        termloop_platform::plain_file_names_if_present(&directory, MAX_LIVE_STATUS_RECORDS)
+    else {
+        return Vec::new();
+    };
+    names
+        .into_iter()
+        .filter(|name| {
+            std::path::Path::new(name)
+                .extension()
+                .is_some_and(|extension| extension == "json")
+        })
+        .filter_map(|name| {
+            let bytes = termloop_platform::read_bounded_file_if_present(
+                &directory.join(name),
+                MAX_LIVE_STATUS_RECORD_BYTES,
+            )
+            .ok()
+            .flatten()?;
+            termloop_agents::parse_claude_live_status(
+                std::str::from_utf8(&bytes).ok()?,
+                native_session_id,
+            )
+        })
+        .collect()
+}
+
 fn observed_model(
     signal: &str,
     payload: &serde_json::Value,

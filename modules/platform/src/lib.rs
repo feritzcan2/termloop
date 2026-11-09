@@ -64,9 +64,10 @@ pub use env::{
 pub use fs::{
     SweptDirectory, atomic_replace_file_preserving_permissions, atomic_replace_private_file,
     backup_and_atomic_replace_private_file, create_private_file, ensure_private_directory,
-    link_or_copy_private_file, read_bounded_file, read_bounded_file_if_present,
-    read_file_tail_if_present, remove_dir_if_empty, remove_file_if_present, runtime_directory,
-    state_directory, sweep_directory_files, take_bounded_file, write_private_file,
+    link_or_copy_private_file, plain_file_names_if_present, read_bounded_file,
+    read_bounded_file_if_present, read_file_tail_if_present, remove_dir_if_empty,
+    remove_file_if_present, runtime_directory, state_directory, sweep_directory_files,
+    take_bounded_file, write_private_file,
 };
 pub use keep_awake::{
     KeepAwakeError, KeepAwakeHold, KeepAwakeOverride, KeepAwakeRequest, keep_awake_overrides,

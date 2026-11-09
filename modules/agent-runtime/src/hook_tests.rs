@@ -121,3 +121,42 @@ fn subagent_observations_carry_an_opaque_key_instead_of_the_provider_id() {
     assert!(wire["children"][0]["agentType"].is_null());
     assert!(!wire.to_string().contains("a89b41394dcd804b3"));
 }
+
+#[test]
+fn live_statuses_are_read_beside_the_named_transcript_for_one_conversation() {
+    let root = std::env::temp_dir().join(format!(
+        "termloop-claude-live-status-{}-{}",
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    ));
+    let transcript = root
+        .join("projects")
+        .join("-work")
+        .join("conversation.jsonl");
+    let sessions = root.join("sessions");
+    std::fs::create_dir_all(transcript.parent().unwrap()).unwrap();
+    assert!(claude_live_statuses(&transcript, "conversation").is_empty());
+    std::fs::create_dir_all(&sessions).unwrap();
+    std::fs::write(
+        sessions.join("101.json"),
+        r#"{"pid":101,"sessionId":"conversation","status":"idle","statusUpdatedAt":20}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        sessions.join("102.json"),
+        r#"{"pid":102,"sessionId":"other","status":"idle","statusUpdatedAt":30}"#,
+    )
+    .unwrap();
+    std::fs::write(sessions.join("101.secret.key"), "not a record").unwrap();
+
+    let statuses = claude_live_statuses(&transcript, "conversation");
+    assert_eq!(statuses.len(), 1);
+    assert!(termloop_agents::claude_turn_withdrawn(
+        statuses,
+        20,
+        20 + termloop_agents::CLAUDE_TURN_WITHDRAWAL_SETTLE_MS
+    ));
+    // A transcript outside `<config>/projects/<project>/` names no record.
+    assert!(claude_live_statuses(&root.join("conversation.jsonl"), "conversation").is_empty());
+    let _ = std::fs::remove_dir_all(root);
+}

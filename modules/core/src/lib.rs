@@ -158,6 +158,16 @@ pub fn normalize_claude_transcript_model(tail: &str, native_session_id: &str) ->
 
 pub use termloop_agents::ClaudeTurnOutcome;
 
+/// Whether Claude's own live status proves a running turn ended without any
+/// hook or transcript record; see `termloop_agents::claude_turn_withdrawn`.
+pub fn claude_turn_withdrawn(
+    statuses: impl IntoIterator<Item = termloop_agents::ClaudeLiveStatus>,
+    turn_started_at_epoch_ms: u64,
+    now_epoch_ms: u64,
+) -> bool {
+    termloop_agents::claude_turn_withdrawn(statuses, turn_started_at_epoch_ms, now_epoch_ms)
+}
+
 /// Claude fires no hook for a user interrupt either, so the daemon asks the
 /// same bounded tail whether the exact running turn was cut off or replaced.
 pub fn claude_turn_outcome(
@@ -276,6 +286,9 @@ pub(crate) struct ClaudeTurnWatch {
     pub runtime_epoch: u64,
     pub transcript_path: std::path::PathBuf,
     pub prompt_id: String,
+    /// When the daemon observed the watched turn's `UserPromptSubmit`; a
+    /// provider live status older than this describes an earlier turn.
+    pub started_at_epoch_ms: u64,
 }
 
 /// One bounded transcript question, planned under the core lock and answered
@@ -286,6 +299,7 @@ pub struct ClaudeInterruptCheck {
     pub transcript_path: std::path::PathBuf,
     pub native_session_id: String,
     pub prompt_id: String,
+    pub turn_started_at_epoch_ms: u64,
     runtime_epoch: u64,
     observation_sequence: u64,
 }
@@ -1016,6 +1030,7 @@ impl CoreRuntime {
                     session_id,
                     &turn_watch.transcript_path,
                     &turn_watch.prompt_id,
+                    observed_at_epoch_ms,
                 );
             }
             if let Some(provider_model_id) = normalized.provider_model_id.as_deref() {
@@ -2200,6 +2215,7 @@ impl CoreRuntime {
         session_id: &str,
         transcript_path: &str,
         prompt_id: &str,
+        started_at_epoch_ms: u64,
     ) -> Result<(), CoreError> {
         let runtime_epoch = self
             .authorized_agent_observation(session_id, token)?
@@ -2217,6 +2233,7 @@ impl CoreRuntime {
                 runtime_epoch,
                 transcript_path: path,
                 prompt_id: prompt_id.to_owned(),
+                started_at_epoch_ms,
             },
         );
         Ok(())
@@ -2272,6 +2289,7 @@ impl CoreRuntime {
                     transcript_path: watch.transcript_path.clone(),
                     native_session_id,
                     prompt_id: watch.prompt_id.clone(),
+                    turn_started_at_epoch_ms: watch.started_at_epoch_ms,
                     runtime_epoch: watch.runtime_epoch,
                     observation_sequence: observation.sequence,
                 })
@@ -3116,11 +3134,12 @@ mod tests {
                 "claude-live",
                 &transcript.display().to_string(),
                 "prompt-1",
+                1,
             ),
             Err(CoreError::CapabilityDenied)
         ));
         assert!(matches!(
-            runtime.record_claude_turn_watch("token-live", "claude-live", "relative.jsonl", "p"),
+            runtime.record_claude_turn_watch("token-live", "claude-live", "relative.jsonl", "p", 1),
             Err(CoreError::InvalidParams(field)) if field == "transcriptPath"
         ));
         assert!(matches!(
@@ -3129,6 +3148,7 @@ mod tests {
                 "claude-live",
                 &transcript.display().to_string(),
                 "",
+                1,
             ),
             Err(CoreError::InvalidParams(field)) if field == "promptId"
         ));
@@ -3140,6 +3160,7 @@ mod tests {
                 "claude-live",
                 &transcript.display().to_string(),
                 "prompt-1",
+                1,
             )
             .unwrap();
         assert!(runtime.plan_claude_interrupt_checks().is_empty());
@@ -3160,6 +3181,7 @@ mod tests {
         assert_eq!(checks[0].prompt_id, "prompt-1");
         assert_eq!(checks[0].native_session_id, native_session_id);
         assert_eq!(checks[0].transcript_path, transcript);
+        assert_eq!(checks[0].turn_started_at_epoch_ms, 1);
 
         // `Esc` with a queued message starts a newer turn without a hook: the
         // watch follows it, and the stale question about the old turn can no
@@ -3248,6 +3270,7 @@ mod tests {
                 "claude-live",
                 &transcript.display().to_string(),
                 "prompt-2",
+                1,
             )
             .unwrap();
         runtime
@@ -3358,6 +3381,7 @@ mod tests {
                 "claude-live",
                 &transcript.display().to_string(),
                 "prompt-3",
+                1,
             )
             .unwrap();
         for (sequence, event) in [
@@ -3396,6 +3420,7 @@ mod tests {
                 "claude-live",
                 &transcript.display().to_string(),
                 "prompt-4",
+                1,
             )
             .unwrap();
         for (sequence, event) in [(17, "UserPromptSubmit"), (18, "PermissionRequest")] {

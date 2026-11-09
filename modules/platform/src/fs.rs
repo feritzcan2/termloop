@@ -468,6 +468,42 @@ pub fn read_bounded_file_if_present(
     }
 }
 
+/// Names the plain files directly inside one directory, at most `limit` of
+/// them. Non-following and non-recursive: a symlink, nested directory, or any
+/// other entry kind is skipped, and a symlinked directory is refused. More
+/// than `limit` entries is an error rather than a silently partial answer.
+/// `None` is the absent fact.
+pub fn plain_file_names_if_present(
+    path: &Path,
+    limit: usize,
+) -> Result<Option<Vec<std::ffi::OsString>>, PlatformError> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "listing target is not a plain directory",
+        )
+        .into());
+    }
+    let mut names = Vec::new();
+    for (observed, entry) in fs::read_dir(path)?.enumerate() {
+        if observed >= limit {
+            return Err(
+                io::Error::new(io::ErrorKind::InvalidData, "listing entry limit exceeded").into(),
+            );
+        }
+        let entry = entry?;
+        if entry.file_type()?.is_file() {
+            names.push(entry.file_name());
+        }
+    }
+    Ok(Some(names))
+}
+
 /// Removes one file, reporting whether it was there. Absence is success: a
 /// caller discarding an already-gone file has the outcome it asked for.
 pub fn remove_file_if_present(path: &Path) -> Result<bool, PlatformError> {
@@ -844,6 +880,32 @@ mod tests {
         assert_eq!(std::fs::read(&path).unwrap(), replacement);
         assert_eq!(std::fs::read(&backup).unwrap(), original);
         assert_eq!(backup.parent(), path.parent());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn plain_file_listing_is_bounded_and_skips_other_entry_kinds() {
+        let root = std::env::temp_dir().join(format!(
+            "termloop-plain-files-{}-{}",
+            std::process::id(),
+            crate::current_epoch_ms()
+        ));
+        assert!(
+            super::plain_file_names_if_present(&root, 8)
+                .unwrap()
+                .is_none()
+        );
+        std::fs::create_dir_all(root.join("nested")).unwrap();
+        std::fs::write(root.join("a.json"), b"{}").unwrap();
+        std::fs::write(root.join("b.key"), b"k").unwrap();
+
+        let mut names = super::plain_file_names_if_present(&root, 8)
+            .unwrap()
+            .unwrap();
+        names.sort();
+        assert_eq!(names, ["a.json", "b.key"]);
+        assert!(super::plain_file_names_if_present(&root, 2).is_err());
+        assert!(super::plain_file_names_if_present(&root.join("a.json"), 8).is_err());
         let _ = std::fs::remove_dir_all(root);
     }
 
