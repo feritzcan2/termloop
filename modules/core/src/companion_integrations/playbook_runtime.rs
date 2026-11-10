@@ -17,7 +17,7 @@ use sha2::{Digest, Sha256};
 pub use termloop_domain::PlaybookStepVerdict;
 use termloop_domain::{
     PendingRoutineFinding, PlaybookConfiguration, PlaybookGateKind, PlaybookMilestone,
-    PlaybookPosition, PlaybookStepProgress, ROUTINE_PENDING_FINDINGS_MAX,
+    PlaybookPosition, PlaybookStepEvaluator, PlaybookStepProgress, ROUTINE_PENDING_FINDINGS_MAX,
     ROUTINE_RECENT_SOURCE_KEYS_MAX, ROUTINE_RELATED_TASKS_MAX, RoutineActionHandling, TaskRecord,
     TaskStatus, TrackerConfiguration, TrackerReport, TrackerReportKind, pipeline_position,
 };
@@ -604,12 +604,16 @@ impl CoreRuntime {
                 decided_at_epoch_ms: completed_at_epoch_ms,
                 next_attempt_at_epoch_ms: (verdict.verdict != PlaybookStepVerdict::Passed).then(
                     || {
-                        completed_at_epoch_ms.saturating_add(
-                            assignment
-                                .milestone
-                                .retry_delay_seconds
-                                .saturating_mul(1_000),
-                        )
+                        let previous = self.store.playbook_step_progress().iter().find(|answer| {
+                            answer.task_id == verdict.task_id
+                                && answer.milestone_id == assignment.milestone.id
+                        });
+                        completed_at_epoch_ms.saturating_add(repeated_answer_delay_ms(
+                            &assignment.milestone,
+                            previous,
+                            verdict.verdict,
+                            evaluator,
+                        ))
                     },
                 ),
                 evaluator,
@@ -902,6 +906,46 @@ impl CoreRuntime {
             "stateRevision": self.store.revision(),
         }))
     }
+}
+
+/// The longest a repeated unchanged Routine answer pushes its next check out,
+/// unless the step's own delay is already longer.
+const REPEATED_ANSWER_DELAY_MAX_MS: u64 = 30 * 60 * 1_000;
+
+/// How long to wait before asking a Routine the same question again.
+///
+/// Each Routine answer runs a whole evaluator Agent, so a step that keeps
+/// answering the same unpassed verdict doubles its wait from the step's own
+/// delay up to `REPEATED_ANSWER_DELAY_MAX_MS`. The previous wait is read back
+/// from the stored answer, so nothing new is persisted. A different verdict, a
+/// deterministic answer, or a Playbook edit restarts from the step's delay,
+/// and a nudge still brings the next check forward.
+fn repeated_answer_delay_ms(
+    milestone: &PlaybookMilestone,
+    previous: Option<&PlaybookStepProgress>,
+    verdict: PlaybookStepVerdict,
+    evaluator: PlaybookStepEvaluator,
+) -> u64 {
+    let base = milestone.retry_delay_seconds.saturating_mul(1_000);
+    if evaluator != PlaybookStepEvaluator::Routine {
+        return base;
+    }
+    previous
+        .filter(|answer| {
+            answer.routine_id == milestone.routine_id
+                && answer.verdict == verdict
+                && answer.evaluator == PlaybookStepEvaluator::Routine
+        })
+        .and_then(|answer| {
+            answer
+                .next_attempt_at_epoch_ms
+                .map(|next| next.saturating_sub(answer.decided_at_epoch_ms))
+        })
+        .map_or(base, |previous_delay| {
+            previous_delay
+                .saturating_mul(2)
+                .clamp(base, base.max(REPEATED_ANSWER_DELAY_MAX_MS))
+        })
 }
 
 fn step_waiting_source_key(milestone_id: &str, task_id: &str, evidence: &str) -> String {
@@ -1882,6 +1926,61 @@ pub(crate) mod tests {
             Err(CoreError::PlaybookStepIdle)
         ));
 
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn a_repeated_unchanged_answer_backs_off_until_the_answer_changes() {
+        let (mut runtime, root, project_id) = pipeline_runtime();
+        // task-2 is done, so every claim is task-1's own.
+        let revision = runtime.state_revision();
+        runtime
+            .set_task_playbook_position(&project_id, "task-2", 2, 1, revision, NOW)
+            .unwrap();
+        let answer = |runtime: &mut CoreRuntime, check: &str, verdict, at: u64| {
+            let claim = runtime
+                .claim_next_playbook_step_or_idle(&project_id, check.into(), at)
+                .unwrap();
+            assert_eq!(claim.result["step"]["tasks"][0]["taskId"], "task-1");
+            runtime
+                .report_steward_step_verdicts(
+                    &claim.capability.unwrap(),
+                    vec![StewardStepVerdict {
+                        task_id: "task-1".into(),
+                        verdict,
+                        evidence: format!("{check}: no pull request yet"),
+                    }],
+                    format!("report-{check}"),
+                    at,
+                )
+                .unwrap();
+            let (_, due) = runtime.playbook_automatic_step_for_task("task-1").unwrap();
+            due - at
+        };
+        // The step's own 10-minute delay doubles per unchanged answer, then
+        // holds at 30 minutes.
+        let mut at = NOW;
+        let mut delays = Vec::new();
+        for check in ["c1", "c2", "c3", "c4"] {
+            let delay = answer(&mut runtime, check, PlaybookStepVerdict::Waiting, at);
+            delays.push(delay);
+            at += delay;
+        }
+        assert_eq!(delays, [600_000, 1_200_000, 1_800_000, 1_800_000]);
+        // A different verdict is a new situation and starts from the step's
+        // own delay again.
+        assert_eq!(
+            answer(&mut runtime, "c5", PlaybookStepVerdict::Blocked, at),
+            600_000
+        );
+        // A nudge still asks early despite the back-off.
+        at += 1;
+        assert!(runtime.nudge_playbook_steps(&["task-1".into()], at));
+        let nudged = runtime
+            .claim_next_playbook_step_or_idle(&project_id, "nudged".into(), at + 15_000)
+            .unwrap();
+        assert_eq!(nudged.result["step"]["tasks"][0]["taskId"], "task-1");
+        drop(runtime);
         std::fs::remove_dir_all(root).ok();
     }
 
