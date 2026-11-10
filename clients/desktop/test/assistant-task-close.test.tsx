@@ -95,3 +95,18 @@ it("marks the Task highlighted from the Task rail", async () => {
   const highlighted = [...host.querySelectorAll(".assistant-task-row.highlighted")];
   expect(highlighted.map((row) => row.getAttribute("aria-label"))).toEqual(["Isolated fix"]);
 });
+
+it("reports the pointed Playbook Task so the Task rail can mark it", async () => {
+  const taskHovered = vi.fn();
+  await act(async () => root.render(<AssistantTaskTail
+    placement={{ byRoutineId: new Map(), completed: [plain, isolated], unplaced: [], closed: [] }}
+    processingTaskIds={[]}
+    openTask={() => undefined}
+    taskHovered={taskHovered}
+  />));
+  const row = host.querySelector<HTMLElement>('.assistant-task-row[aria-label="Isolated fix"]')!;
+  await act(async () => row.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, relatedTarget: document.body })));
+  expect(taskHovered).toHaveBeenLastCalledWith("isolated");
+  await act(async () => row.dispatchEvent(new MouseEvent("mouseout", { bubbles: true, relatedTarget: document.body })));
+  expect(taskHovered).toHaveBeenLastCalledWith(undefined);
+});

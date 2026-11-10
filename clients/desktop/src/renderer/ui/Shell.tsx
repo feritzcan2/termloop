@@ -713,8 +713,13 @@ export function Shell(props: ShellProps) {
   /// sidebar is open its Playbook highlights it, the pointed one first.
   const [hoveredRailTaskId, setHoveredRailTaskId] = useState<string>();
   const [clickedRailTaskId, setClickedRailTaskId] = useState<string>();
+  /// The Task pointed at on the Steward's Playbook; its Task rail card looks
+  /// pointed at too.
+  const [hoveredPlaybookTaskId, setHoveredPlaybookTaskId] = useState<string>();
   useEffect(() => {
-    if (!stewardSidebarOpen) setHoveredRailTaskId(undefined);
+    if (stewardSidebarOpen) return;
+    setHoveredRailTaskId(undefined);
+    setHoveredPlaybookTaskId(undefined);
   }, [stewardSidebarOpen]);
   const [taskRailOverlayOpen, setTaskRailOverlayOpen] = useOverlayLeaseCount();
   const [projectWorkflowOverlayOpen, setProjectWorkflowOverlayOpen] = useOverlayLeaseCount();
@@ -1786,6 +1791,7 @@ export function Shell(props: ShellProps) {
             detailTaskId={detailTask?.id}
             taskHovered={stewardSidebarOpen ? setHoveredRailTaskId : undefined}
             taskClicked={setClickedRailTaskId}
+            hoveredElsewhereTaskId={hoveredPlaybookTaskId}
             agentCapabilities={props.agentCapabilities}
             launchTaskTerminal={props.launchTaskTerminal}
             launchTaskAgent={props.launchTaskAgent}
@@ -2303,6 +2309,7 @@ export function Shell(props: ShellProps) {
             dismissImproverSession={dismissSession}
             openTask={openTaskDetail}
             highlightedTaskId={hoveredRailTaskId ?? clickedRailTaskId}
+            taskHovered={setHoveredPlaybookTaskId}
             saveTaskNotes={props.updateTaskDeveloperNotes}
             taskDecisionActions={props.assistantActions}
             closeTask={{

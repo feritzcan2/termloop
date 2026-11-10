@@ -296,6 +296,9 @@ export type TaskRailProps = {
   /// stable callbacks: Task cards are memoized.
   taskHovered?: ((taskId: string | undefined) => void) | undefined;
   taskClicked?: ((taskId: string) => void) | undefined;
+  /// The Task pointed at elsewhere, such as on the Steward's Playbook; its
+  /// card looks pointed at here too.
+  hoveredElsewhereTaskId?: string | undefined;
   agentCapabilities: readonly AgentCapabilityDto[];
   launchTaskTerminal(taskId: string): Promise<string | undefined>;
   launchTaskAgent(taskId: string, agentId: string, model?: string, permission?: AgentCapabilityDto["permissions"][number], reasoning?: AgentCapabilityDto["reasoning"][number], kickoffMessage?: string): Promise<string | undefined>;
@@ -475,6 +478,7 @@ export function TaskRail(props: TaskRailProps) {
       refresh={task.status === "open" ? props.refreshTask : undefined}
       taskHovered={props.taskHovered}
       taskClicked={props.taskClicked}
+      hoveredElsewhere={props.hoveredElsewhereTaskId === task.id}
       detailOpen={props.detailTaskId === task.id}
       deleting={props.deletingTaskIds.has(task.id)}
       provisioning={props.provisioningTaskIds?.has(task.id) ?? false}
@@ -769,6 +773,7 @@ type TaskGroupProps = {
   refresh: ((taskId: string) => Promise<void>) | undefined;
   taskHovered: ((taskId: string | undefined) => void) | undefined;
   taskClicked: ((taskId: string) => void) | undefined;
+  hoveredElsewhere: boolean;
   detailOpen: boolean;
   deleting: boolean;
   provisioning: boolean;
@@ -1019,7 +1024,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
     <div
       ref={relocationDrop.setNodeRef}
       role="listitem"
-      className={`task-group${props.focused ? " focused" : ""}${parked ? " parked" : ""}${relocationDrop.isOver ? " session-drop-target" : ""}`}
+      className={`task-group${props.focused ? " focused" : ""}${parked ? " parked" : ""}${props.hoveredElsewhere ? " hovered-elsewhere" : ""}${relocationDrop.isOver ? " session-drop-target" : ""}`}
       data-task-stage={stage.id}
       data-status-tone={cardStatus?.tone}
       data-disclosed={!collapsed && !props.deleting ? "true" : undefined}

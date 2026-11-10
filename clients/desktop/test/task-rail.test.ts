@@ -607,6 +607,19 @@ describe("Task rail row anatomy", () => {
     } finally { await act(async () => root.unmount()); container.remove(); }
   });
 
+  it("marks the Task pointed at on the Playbook as pointed at", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const task = launchableTask();
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(createElement(TaskRail, { ...railProps({ task }), hoveredElsewhereTaskId: task.id })));
+      expect(container.querySelector(".task-group")?.classList.contains("hovered-elsewhere")).toBe(true);
+      await act(async () => root.render(createElement(TaskRail, { ...railProps({ task }), hoveredElsewhereTaskId: undefined })));
+      expect(container.querySelector(".task-group")?.classList.contains("hovered-elsewhere")).toBe(false);
+    } finally { await act(async () => root.unmount()); container.remove(); }
+  });
+
   it("keeps activity visible on a folded Task, opens the exact agent, and clears it when work stops", async () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     const session = agentSession("workflow-lead");

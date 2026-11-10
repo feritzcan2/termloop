@@ -397,6 +397,8 @@ type Props = {
   openTask(taskId: string): void;
   /** The Task pointed at or clicked in the Task rail, marked on the Playbook. */
   highlightedTaskId?: string | undefined;
+  /** Pointing at a Playbook Task row; the Shell marks it in the Task rail. */
+  taskHovered?: ((taskId: string | undefined) => void) | undefined;
   saveTaskNotes?: SavePlaybookTaskNotes | undefined;
   /** The Steward's open proposal or suggestion is answerable from its Task row. */
   taskDecisionActions?: PlaybookTaskDecisionActions | undefined;
@@ -1002,6 +1004,7 @@ export function AssistantRail(props: Props) {
           notesDisabled={props.disabled}
           dragging={draggedTaskId === task.id}
           highlighted={props.highlightedTaskId === task.id}
+          taskHovered={props.taskHovered}
           beginDrag={taskDragEnabled ? beginTaskDrag : undefined}
           endDrag={endTaskDrag}
           decision={taskDecision}
@@ -1151,6 +1154,7 @@ export function AssistantRail(props: Props) {
           notesDisabled={props.disabled}
           draggingTaskId={draggedTaskId}
           highlightedTaskId={props.highlightedTaskId}
+          taskHovered={props.taskHovered}
           beginDrag={!props.disabled && mutatingKey === undefined ? beginTaskDrag : undefined}
           endDrag={endTaskDrag}
           decision={taskDecision}

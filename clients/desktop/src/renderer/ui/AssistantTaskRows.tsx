@@ -102,6 +102,8 @@ export function AssistantTaskRow(props: {
   dragging?: boolean;
   /** The Task pointed at or clicked in the Task rail. */
   highlighted?: boolean | undefined;
+  /** Pointing at the row lets the Shell mark the same Task in the Task rail. */
+  taskHovered?: ((taskId: string | undefined) => void) | undefined;
   beginDrag?: ((task: Task, event: DragEvent<HTMLButtonElement>) => void) | undefined;
   endDrag?: (() => void) | undefined;
   decision?: PlaybookTaskDecisionHandle | null | undefined;
@@ -126,6 +128,8 @@ export function AssistantTaskRow(props: {
     onDragStart={draggable ? (event) => props.beginDrag?.(props.task, event) : undefined}
     onDragEnd={draggable ? props.endDrag : undefined}
     onClick={() => props.openTask(props.task.id)}
+    onMouseEnter={props.taskHovered ? () => props.taskHovered?.(props.task.id) : undefined}
+    onMouseLeave={props.taskHovered ? () => props.taskHovered?.(undefined) : undefined}
   >
     <span className="assistant-task-icon" aria-hidden="true"><Icon name="task" /></span>
     <span className="assistant-task-copy">
@@ -161,6 +165,7 @@ export function AssistantTaskTail(props: {
   notesDisabled?: boolean | undefined;
   draggingTaskId?: string | undefined;
   highlightedTaskId?: string | undefined;
+  taskHovered?: ((taskId: string | undefined) => void) | undefined;
   beginDrag?: ((task: Task, event: DragEvent<HTMLButtonElement>) => void) | undefined;
   endDrag?: (() => void) | undefined;
   decision?: PlaybookTaskDecisionHandle | null | undefined;
@@ -188,6 +193,7 @@ export function AssistantTaskTail(props: {
       notesDisabled={props.notesDisabled}
       dragging={props.draggingTaskId === task.id}
       highlighted={props.highlightedTaskId === task.id}
+      taskHovered={props.taskHovered}
       beginDrag={props.beginDrag}
       endDrag={props.endDrag}
       decision={props.decision}

@@ -466,13 +466,13 @@ kbd { padding: 2px 5px; border: 1px solid light-dark(rgba(15,23,42,.07), rgba(25
 .task-group[data-disclosed] + .task-group, .task-group + .task-group[data-disclosed] { margin-top: 5px; }
 .task-board { padding: 6px 0 4px; }
 .task-group.focused { position: relative; margin: 0 8px 6px; padding: 7px 7px 8px; border: 1px solid light-dark(rgba(15,23,42,.06), rgba(255,255,255,.06)); border-radius: 9px; background: light-dark(rgba(15,23,42,.018), rgba(255,255,255,.018)); cursor: pointer; }
-.task-group.focused:hover { border-color: light-dark(rgba(15,23,42,.15), rgba(255,255,255,.15)); background: light-dark(rgba(15,23,42,.04), rgba(255,255,255,.04)); }
+.task-group.focused:hover, .task-group.focused.hovered-elsewhere { border-color: light-dark(rgba(15,23,42,.15), rgba(255,255,255,.15)); background: light-dark(rgba(15,23,42,.04), rgba(255,255,255,.04)); }
 /* One target, one highlight: inside a board card the title button draws no
    hover surface of its own — the card lighting up is the whole feedback. */
 .task-group.focused .task-item:hover { background: transparent; }
 /* What one click does, said before it happens. */
 .task-open-hint { position: absolute; right: 8px; bottom: 7px; z-index: 1; padding: 2px 7px; border: 1px solid light-dark(rgba(15,23,42,.08), rgba(255,255,255,.08)); border-radius: 5px; background: color-mix(in srgb, var(--bg-sidebar) 88%, transparent); color: var(--sidebar-dim); font: 600 9px/1.4 var(--font-ui); opacity: 0; pointer-events: none; transition: opacity 100ms ease; }
-.task-group.focused:hover .task-open-hint { opacity: 1; }
+.task-group.focused:hover .task-open-hint, .task-group.focused.hovered-elsewhere .task-open-hint { opacity: 1; }
 /* The hint speaks for the card's own click, so it stays up over the title row
    too and yields only above controls that do something else. */
 .task-group.focused:hover:has(:is(.task-toggle, .row-actions, .task-launch, .task-children, .task-agents, .task-workflow-activity, .task-next-step, .task-meta button, .task-developer-notes, input):hover) .task-open-hint { opacity: 0; }
@@ -487,7 +487,7 @@ kbd { padding: 2px 5px; border: 1px solid light-dark(rgba(15,23,42,.07), rgba(25
 /* A parked Task is a single quiet line at the foot of the board: title only,
    one line, dimmed until pointed at. */
 .task-group.focused.parked { padding: 3px 7px 3px; opacity: .62; }
-.task-group.focused.parked:hover, .task-group.focused.parked:focus-within { opacity: 1; }
+.task-group.focused.parked:hover, .task-group.focused.parked:focus-within, .task-group.focused.parked.hovered-elsewhere { opacity: 1; }
 .task-group.focused.parked .task-focus-copy .task-title { font-size: 12px; -webkit-line-clamp: 1; }
 .task-group.focused.parked .task-open-hint { display: none; }
 .task-developer-notes { display: grid; gap: 3px; margin: 7px 5px 1px 28px; padding-top: 6px; border-top: 1px solid light-dark(rgba(15,23,42,.055), rgba(255,255,255,.055)); cursor: default; }
@@ -3700,7 +3700,7 @@ button.history-row-main { cursor: pointer; }
    selected card brightens its border and lifts a translucent foreground wash,
    matching Orca's active worktree card. */
 .sidebar .task-group.focused { --card-surface: light-dark(#f0f1f3, #34373a); margin: 0 8px 8px; padding: 9px 9px 9px 6px; border: 1px solid light-dark(#dcdfe3, rgb(255 255 255 / .09)); border-radius: 12px; background: light-dark(rgba(15,23,42,.02), rgb(255 255 255 / .025)); }
-.sidebar .task-group.focused:hover { border-color: light-dark(#cdd1d6, rgb(255 255 255 / .14)); background: light-dark(rgba(15,23,42,.035), rgb(255 255 255 / .04)); }
+.sidebar .task-group.focused:hover, .sidebar .task-group.focused.hovered-elsewhere { border-color: light-dark(#cdd1d6, rgb(255 255 255 / .14)); background: light-dark(rgba(15,23,42,.035), rgb(255 255 255 / .04)); }
 .sidebar .task-group.focused:has(.task-item.showing-detail) { --card-surface: light-dark(#e9ebee, #3a3d40); border-color: light-dark(#bfc4ca, color-mix(in srgb, #fafafa 18%, rgb(255 255 255 / .07))); background: light-dark(rgba(15,23,42,.06), rgb(250 250 250 / .08)); box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
 .sidebar .task-group.focused[data-disclosed] { margin: 0 8px 8px; padding: 9px 9px 9px 6px; }
 .task-group.focused .task-dot { width: 8px; height: 8px; }
