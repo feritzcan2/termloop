@@ -179,7 +179,9 @@ pub(in crate::app) async fn task_branch_commit_summary_list(
     };
     if !initial_plan.requires_observation() {
         let mut core = state.core.lock().await;
-        return core.complete_task_branch_commit_summary_list(initial_plan.observe());
+        return core
+            .complete_task_branch_commit_summary_list(initial_plan.observe())
+            .map(|(result, _)| result);
     }
     let project_id = initial_plan.project_id().to_owned();
     let gate_deadline = tokio::time::Instant::now() + BRANCH_COMMIT_GATE_WAIT;
@@ -191,9 +193,11 @@ pub(in crate::app) async fn task_branch_commit_summary_list(
         Ok(permit) => permit,
         Err(_) => {
             let mut core = state.core.lock().await;
-            return core.complete_task_branch_commit_summary_list(
-                initial_plan.observation_unavailable(CoreError::GitObservationTimedOut),
-            );
+            return core
+                .complete_task_branch_commit_summary_list(
+                    initial_plan.observation_unavailable(CoreError::GitObservationTimedOut),
+                )
+                .map(|(result, _)| result);
         }
     };
     // A request can spend time behind another observation for the same Project.
@@ -215,6 +219,12 @@ pub(in crate::app) async fn task_branch_commit_summary_list(
     let result = {
         let mut core = state.core.lock().await;
         core.complete_task_branch_commit_summary_list(observed)
+            .map(|(result, nudged)| {
+                if nudged {
+                    state.tracker_runtime_wake.notify_one();
+                }
+                result
+            })
     };
     if result.is_ok() && refreshed_watch_targets {
         let state = state.clone();

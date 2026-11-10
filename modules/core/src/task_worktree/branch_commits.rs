@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 
 use serde_json::{Value, json};
@@ -52,6 +52,10 @@ struct CachedBranchCommitSummary {
 #[derive(Default)]
 pub(crate) struct BranchCommitSummaryCache {
     entries: VecDeque<CachedBranchCommitSummary>,
+    /// The last fresh own-commit count per Task, with when it was observed.
+    /// It outlives cache invalidation so a new commit can be told apart from
+    /// a re-read of the same branch.
+    counts: HashMap<String, (u64, u64)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -103,6 +107,27 @@ impl BranchCommitSummaryCache {
 
     fn invalidate_common_dir(&mut self, common_dir: &std::path::Path) {
         self.entries.retain(|entry| entry.common_dir != common_dir);
+    }
+
+    /// Records a fresh count and reports whether it grew since the previous
+    /// fresh count for this Task. A first count has nothing to compare with.
+    pub(crate) fn record_count(&mut self, task_id: &str, count: u64, now: u64) -> bool {
+        let previous = self
+            .counts
+            .insert(task_id.to_owned(), (count, now))
+            .map(|(previous, _)| previous);
+        while self.counts.len() > BRANCH_COMMIT_CACHE_CAP {
+            let Some(oldest) = self
+                .counts
+                .iter()
+                .min_by_key(|(task_id, (_, at))| (*at, (*task_id).clone()))
+                .map(|(task_id, _)| task_id.clone())
+            else {
+                break;
+            };
+            self.counts.remove(&oldest);
+        }
+        previous.is_some_and(|previous| count > previous)
     }
 }
 
@@ -434,12 +459,16 @@ impl CoreRuntime {
         })
     }
 
+    /// Applies observed summaries. The flag is whether a Task's own commit
+    /// count grew and that brought its automatic Playbook step forward, so the
+    /// caller wakes the step scheduler.
     pub fn complete_task_branch_commit_summary_list(
         &mut self,
         observed: ObservedTaskBranchCommitSummaries,
-    ) -> Result<Value, CoreError> {
+    ) -> Result<(Value, bool), CoreError> {
         let now = termloop_platform::current_epoch_ms();
         let mut projected = observed.plan.cached;
+        let mut committed_task_ids = Vec::new();
         for row in observed.rows {
             let binding_is_current = self.store.tasks().iter().any(|task| {
                 task.id == row.target.task_id
@@ -454,6 +483,15 @@ impl CoreRuntime {
             match row.observation {
                 Ok(observation) => {
                     let (summary, base_ref) = project_observation(&observation);
+                    if let Some(count) = summary.count
+                        && self.branch_commit_summaries.record_count(
+                            &row.target.task_id,
+                            count,
+                            now,
+                        )
+                    {
+                        committed_task_ids.push(row.target.task_id.clone());
+                    }
                     self.branch_commit_summaries.insert(
                         CachedBranchCommitSummary {
                             binding: row.target.binding.clone(),
@@ -475,11 +513,17 @@ impl CoreRuntime {
                 Err(error) => projected.push((row.target.task_id, project_error(error))),
             }
         }
-        Ok(Value::Array(
-            projected
-                .into_iter()
-                .map(|(task_id, summary)| project_summary(task_id, summary))
-                .collect(),
+        // A new commit can satisfy a step that is waiting on one, such as a
+        // commit gate that fell back to an evaluator before the first commit.
+        let nudged = self.nudge_playbook_steps(&committed_task_ids, now);
+        Ok((
+            Value::Array(
+                projected
+                    .into_iter()
+                    .map(|(task_id, summary)| project_summary(task_id, summary))
+                    .collect(),
+            ),
+            nudged,
         ))
     }
 

@@ -73,7 +73,8 @@ fn main() {
         .complete_task_branch_commit_summary_list(
             unavailable_plan.observation_unavailable(CoreError::GitObservationTimedOut),
         )
-        .unwrap();
+        .unwrap()
+        .0;
     assert_eq!(unavailable[0]["freshness"], "unavailable");
     assert_eq!(unavailable[0]["reason"], "timeout");
     let plan = fixture
@@ -87,7 +88,8 @@ fn main() {
     let result = fixture
         .runtime
         .complete_task_branch_commit_summary_list(plan.observe_with_runner(&runner))
-        .unwrap();
+        .unwrap()
+        .0;
     let rows = result.as_array().unwrap();
     let counted = rows.iter().find(|row| row["task_id"] == task_id).unwrap();
     assert_eq!(counted["count"], 2);
@@ -122,7 +124,8 @@ fn main() {
     let cached = fixture
         .runtime
         .complete_task_branch_commit_summary_list(cached_plan.observe())
-        .unwrap();
+        .unwrap()
+        .0;
     assert_eq!(cached[0]["count"], 2);
     let durable = std::fs::read_to_string(&fixture.state_path).unwrap();
     assert!(!durable.contains("branch_commit"));
@@ -177,7 +180,8 @@ fn managed_created_branch_tracks_its_exact_remote_base() {
     let summary = fixture
         .runtime
         .complete_task_branch_commit_summary_list(plan.observe_with_runner(&runner))
-        .unwrap();
+        .unwrap()
+        .0;
     assert_eq!(summary[0]["count"], 2);
     assert_eq!(summary[0]["base_ref"], "refs/remotes/origin/main");
     assert_eq!(summary[0]["freshness"], "fresh");
@@ -305,7 +309,8 @@ fn managed_created_branch_tracks_its_exact_remote_base() {
     let merged_summary = fixture
         .runtime
         .complete_task_branch_commit_summary_list(plan.observe_with_runner(&runner))
-        .unwrap();
+        .unwrap()
+        .0;
     // Advancing only the local branch must not pretend that the selected
     // remote-tracking base advanced with it.
     assert_eq!(merged_summary[0]["count"], 2);
@@ -323,4 +328,19 @@ fn managed_created_branch_tracks_its_exact_remote_base() {
     runner
         .remove_worktree_non_force(&fixture.project_directory, &destination)
         .unwrap();
+}
+
+#[test]
+fn branch_commit_count_reports_only_growth_after_a_first_count() {
+    let mut fixture = Fixture::new();
+    let counts = &mut fixture.runtime.branch_commit_summaries;
+    // The first count after start has nothing to compare with.
+    assert!(!counts.record_count("task", 0, 1));
+    assert!(!counts.record_count("task", 0, 2));
+    // A new commit grows the count.
+    assert!(counts.record_count("task", 1, 3));
+    // A re-read, a rewrite, or a reset does not.
+    assert!(!counts.record_count("task", 1, 4));
+    assert!(!counts.record_count("task", 0, 5));
+    assert!(!counts.record_count("other", 3, 6));
 }
