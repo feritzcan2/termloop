@@ -240,7 +240,10 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:5e7d2bb3bee72160a969a10e2834c431662c3101e3650347dac78de24c715dc9";
+    "sha256:7eb20305e42354ec6af6cb6883f3c015de028823f2eb84e3d754895fb4d9c5d9";
+pub const CONTRACT_MAJOR: u32 = 1;
+pub const CONTRACT_REVISION: &str =
+    "sha256:c6bbc3d48d39d6d3e17874bdc0c953ec86aef242902c84b1d4c345e246304bb3";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[

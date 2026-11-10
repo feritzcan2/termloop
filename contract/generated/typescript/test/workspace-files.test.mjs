@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { READ_ONLY_METHODS, COMPANION_METHODS, validateMethodResult } from "../dist/current.js";
+import { READ_ONLY_METHODS, COMPANION_METHODS, validateMethodResult as validateMethodResultTolerant } from "../dist/current.js";
+// Contract tests check the exact schema; clients read tolerantly by default.
+const validateMethodResult = (name, value) => validateMethodResultTolerant(name, value, true);
 
 test("workspace files are bounded full-control observations", () => {
   for (const method of ["workspace.directoryList", "workspace.fileRead", "workspace.fileSearch", "workspace.fileWrite"]) {

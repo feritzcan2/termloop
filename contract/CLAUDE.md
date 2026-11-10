@@ -24,6 +24,25 @@
   constraints, and fixes remain schema-first and must update generated peers and
   behavior tests in the same bounded change.
 
+## Compatibility
+
+- Peers compare `CONTRACT_IDENTITY`, derived only from `$id` and
+  `x-contract-major`; `CONTRACT_REVISION` is the exact schema digest for
+  diagnostics. Within one major, every desktop, mobile, CLI, and server build
+  must interoperate in both directions.
+- Prefer additive changes: new methods, events, enum values, and optional
+  fields. New fields are optional, never required, so older peers that omit
+  them still validate. Removing or renaming fields, methods, or enum values,
+  changing types, nullability, patterns, or requiredness is breaking and
+  requires bumping `x-contract-major`.
+- `pnpm contract:compat` enforces this against the newest release tag
+  (`--base=<ref>` overrides). Do not bump the major to silence it unless the
+  break is intended.
+- Generated TypeScript validators are tolerant readers of server output: they
+  ignore unknown fields and unknown enum values, so client code must handle an
+  unrecognized enum value. The Rust server stays strict on requests and answers
+  unknown methods with `methodNotFound`.
+
 ## Invariants
 
 - All schema-authored MCP descriptions and other model-facing copy are written
@@ -59,6 +78,6 @@
 ## Verification
 
 - Run `pnpm codegen` after an authorized schema/generator change.
-- Run `pnpm contract:drift`.
+- Run `pnpm contract:drift` and `pnpm contract:compat`.
 - Run `cargo test -p termloop-contract`.
 - Run `pnpm --filter @termloop/contract test`.

@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { contractIdentity } from "./contract-identity.mjs";
+import { contractIdentity, contractRevision } from "./contract-identity.mjs";
 
 // Loads one contract target's schema and its companion schemas into the model
 // every emitter reads: merged definitions, methods, events, MCP-only tools,
@@ -55,6 +55,8 @@ export async function loadContractModel(root, target) {
     capabilityScopes: schema["x-capability-scopes"] ?? {},
     contractPatterns: [...new Set([schema, ...extras.map((extra) => extra.schema)].flatMap((source) => [...collectPatterns(source)]))].sort(),
     identity: contractIdentity(schema),
+    revision: contractRevision(schema),
+    major: schema["x-contract-major"],
     accessIdentity: accessExtra ? contractIdentity(accessExtra.schema) : undefined,
     generatedDefinitions: Object.entries(definitions).filter(([, value]) => value["x-codegen"]),
     emptyParamMethods: methods.filter((method) => referenceKey(methodShapes[method].params.$ref) === "emptyParams"),

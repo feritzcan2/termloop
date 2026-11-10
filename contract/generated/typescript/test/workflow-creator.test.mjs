@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { METHODS, READ_ONLY_METHODS, COMPANION_METHODS, validateMethodResult, MCP_IMPROVER_TOOLS } from "../dist/current.js";
+import { METHODS, READ_ONLY_METHODS, COMPANION_METHODS, validateMethodResult as validateMethodResultTolerant, MCP_IMPROVER_TOOLS } from "../dist/current.js";
+// Contract tests check the exact schema; clients read tolerantly by default.
+const validateMethodResult = (name, value) => validateMethodResultTolerant(name, value, true);
 
 test("creator has strict additive full-control-only methods and no execution tools", () => {
   for (const method of ["workflow.creatorPreview", "workflow.creatorLaunch", "workflow.creatorDraftGet"]) {

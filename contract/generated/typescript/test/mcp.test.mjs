@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+// Contract tests check the exact schema; clients read tolerantly by default.
+const validateMcpToolResult = (name, value) => validateMcpToolResultTolerant(name, value, true);
 import {
   MCP_INTERACTIVE_TOOLS,
   MCP_IMPROVER_TOOLS,
@@ -9,7 +11,7 @@ import {
   MCP_TOOL_DEFINITIONS,
   MCP_TOOLS,
   METHODS,
-  validateMcpToolResult,
+  validateMcpToolResult as validateMcpToolResultTolerant,
 } from "../dist/current.js";
 
 test("MCP role definitions are generated and excluded from control methods", () => {

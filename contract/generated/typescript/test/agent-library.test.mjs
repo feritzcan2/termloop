@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { METHODS, READ_ONLY_METHODS, COMPANION_METHODS, validateMethodResult } from "../dist/current.js";
+import { METHODS, READ_ONLY_METHODS, COMPANION_METHODS, validateMethodResult as validateMethodResultTolerant } from "../dist/current.js";
+// Contract tests check the exact schema; clients read tolerantly by default.
+const validateMethodResult = (name, value) => validateMethodResultTolerant(name, value, true);
 
 test("agent library uses strict full-control commands and bounded personal profiles", () => {
   for (const method of ["agent.creatorPreview", "agent.creatorLaunch", "agent.libraryGet", "agent.profileCreate", "agent.profileUpdate", "agent.profileDelete", "agent.profileFavorite"]) {

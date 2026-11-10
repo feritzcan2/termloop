@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { METHODS, READ_ONLY_METHODS, COMPANION_METHODS, validateMethodResult } from "../dist/current.js";
+import { METHODS, READ_ONLY_METHODS, COMPANION_METHODS, validateMethodResult as validateMethodResultTolerant } from "../dist/current.js";
+// Contract tests check the exact schema; clients read tolerantly by default.
+const validateMethodResult = (name, value) => validateMethodResultTolerant(name, value, true);
 
 test("Playbook fork history is bounded, strict and full-control only", () => {
   const method = "playbook.evaluationHistory";

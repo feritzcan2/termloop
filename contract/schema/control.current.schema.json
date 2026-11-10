@@ -3,6 +3,7 @@
   "$id": "https://termloop.dev/schema/control.current.schema.json",
   "title": "TermLoop current control protocol",
   "type": "object",
+  "x-contract-major": 1,
   "x-capability-scopes": {
     "control.readOnly": [
       "system.version",

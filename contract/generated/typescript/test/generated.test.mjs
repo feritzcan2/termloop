@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ACCESS_PROTOCOL_IDENTITY, EVENTS, METHODS, CONTRACT_IDENTITY, READ_ONLY_METHODS, COMPANION_METHODS, MCP_TOOL_DEFINITIONS, MCP_INTERACTIVE_TOOLS, MCP_AGENT_CREATOR_TOOLS, MCP_IMPROVER_TOOLS, MCP_STEWARD_TOOLS, MCP_HELPER_TOOLS, MCP_PLAYBOOK_EVALUATOR_TOOLS, TermLoopControlClient, TermLoopControlError, controlRequestTimeoutMs, validateMethodResult } from "../dist/current.js";
+import { ACCESS_PROTOCOL_IDENTITY, EVENTS, METHODS, CONTRACT_IDENTITY, READ_ONLY_METHODS, COMPANION_METHODS, MCP_TOOL_DEFINITIONS, MCP_INTERACTIVE_TOOLS, MCP_AGENT_CREATOR_TOOLS, MCP_IMPROVER_TOOLS, MCP_STEWARD_TOOLS, MCP_HELPER_TOOLS, MCP_PLAYBOOK_EVALUATOR_TOOLS, TermLoopControlClient, TermLoopControlError, controlRequestTimeoutMs, validateMethodResult as validateMethodResultTolerant } from "../dist/current.js";
+// Contract tests check the exact schema; clients read tolerantly by default.
+const validateMethodResult = (name, value) => validateMethodResultTolerant(name, value, true);
 
 test("generated validator rejects cross-provider Git-host identities", () => {
   const result = [{
@@ -611,4 +613,30 @@ test("skill packages retain binary resources and are full-control only", () => {
     assert.ok(!READ_ONLY_METHODS.includes(method));
     assert.ok(!COMPANION_METHODS.includes(method));
   }
+});
+
+test("clients read newer servers tolerantly while strict mode keeps the exact schema", () => {
+  const keepAwakeStatus = {
+    mode: "whileAgentsRun",
+    keepDisplayAwake: false,
+    state: "active",
+    eligibleAgentCount: 1,
+    reason: null,
+    expiresAtEpochMs: null,
+    limitations: ["lidClose"],
+  };
+  const newer = { ...keepAwakeStatus, mode: "onSchedule", addedLater: { nested: true } };
+  assert.equal(validateMethodResultTolerant("system.keepAwake.get", newer), true);
+  assert.equal(validateMethodResult("system.keepAwake.get", newer), false);
+  // Tolerance never relaxes types or required fields.
+  const { state: _state, ...missingRequired } = keepAwakeStatus;
+  assert.equal(validateMethodResultTolerant("system.keepAwake.get", missingRequired), false);
+  assert.equal(validateMethodResultTolerant("system.keepAwake.get", { ...keepAwakeStatus, mode: 7 }), false);
+});
+
+test("the control identity is major-derived and the exact revision is separate", async () => {
+  const { CONTRACT_MAJOR, CONTRACT_REVISION } = await import("../dist/current.js");
+  assert.equal(Number.isInteger(CONTRACT_MAJOR) && CONTRACT_MAJOR >= 1, true);
+  assert.match(CONTRACT_REVISION, /^sha256:[a-f0-9]{64}$/);
+  assert.notEqual(CONTRACT_REVISION, CONTRACT_IDENTITY);
 });

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { METHODS, validateMethodResult, READ_ONLY_METHODS, COMPANION_METHODS } from "../dist/current.js";
+import { METHODS, validateMethodResult as validateMethodResultTolerant, READ_ONLY_METHODS, COMPANION_METHODS } from "../dist/current.js";
+// Contract tests check the exact schema; clients read tolerantly by default.
+const validateMethodResult = (name, value) => validateMethodResultTolerant(name, value, true);
 
 test("workflow completion and pending reviewers are bounded generated projections", () => {
   const execution = {

@@ -2,6 +2,10 @@ import { definitionName, nullableUnionInner, referenceKey, typeName } from "./mo
 
 // TypeScript emission for one contract model: DTO types, method maps,
 // runtime result validators, and the generated WebSocket control client.
+// TypeScript only reads server output (results and events), so its validators
+// are tolerant readers by default: unknown object fields and unknown enum values
+// pass. `strict = true` checks the exact schema (contract tests). The Rust
+// server stays strict on every request it accepts and every result it sends.
 export function typeScriptEmitter(model) {
   const name = (key) => definitionName(model, key);
 
@@ -99,7 +103,9 @@ export function typeScriptEmitter(model) {
       if (node.minLength !== undefined) checks.push(`[...${value}].length >= ${node.minLength}`);
       if (node.maxLength !== undefined) checks.push(`[...${value}].length <= ${node.maxLength}`);
       if (node["x-utf8-max-bytes"] !== undefined) checks.push(`new TextEncoder().encode(${value}).byteLength <= ${node["x-utf8-max-bytes"]}`);
-      if (node.enum) checks.push(`${JSON.stringify(node.enum)}.includes(${value})`);
+      // Tolerant by default: a newer server may send enum values this client
+      // does not know yet. Strict mode checks the exact schema.
+      if (node.enum) checks.push(`(!strict || ${JSON.stringify(node.enum)}.includes(${value}))`);
       if (node.pattern) checks.push(`CONTRACT_PATTERNS.get(${JSON.stringify(node.pattern)})?.test(${value}) === true`);
       return `(${checks.join(" && ")})`;
     }
@@ -122,9 +128,11 @@ export function typeScriptEmitter(model) {
           ? `(Object.hasOwn(${value}, ${JSON.stringify(field)}) && ${fieldConstraint})`
           : `(!Object.hasOwn(${value}, ${JSON.stringify(field)}) || ${fieldConstraint})`);
       }
+      // Tolerant by default: fields added by a newer server within the same
+      // contract major are ignored rather than rejecting the whole response.
       if (node.additionalProperties === false) {
         const names = JSON.stringify(properties.map(([field]) => field));
-        checks.push(`Object.keys(${value}).every((key) => ${names}.includes(key))`);
+        checks.push(`(!strict || Object.keys(${value}).every((key) => ${names}.includes(key)))`);
       }
       return `(${checks.join(" && ")})`;
     }
@@ -172,14 +180,14 @@ const CONTRACT_PATTERNS = new Map<string, RegExp>([
 ${model.contractPatterns.map((pattern) => `  [${JSON.stringify(pattern)}, new RegExp(${JSON.stringify(pattern)}, "u")],`).join("\n")}
 ]);
 
-export function validateMethodResult(method: string, result: unknown): boolean {
+export function validateMethodResult(method: string, result: unknown, strict = false): boolean {
   switch (method) {
 ${methods.map((method) => `    case ${JSON.stringify(method)}: return ${constraint(methodShapes[method].result, "result")};`).join("\n")}
     default: return false;
   }
 }
 
-export function validateEventPayload(event: string, payload: unknown): boolean {
+export function validateEventPayload(event: string, payload: unknown, strict = false): boolean {
   switch (event) {
 ${events.map((event) => `    case ${JSON.stringify(event)}: return ${constraint(eventShapes[event].payload, "payload")};`).join("\n")}
     default: return false;
