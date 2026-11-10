@@ -103,6 +103,12 @@ impl CoreRuntime {
         {
             return Err(CoreError::CapabilityDenied);
         }
+        // A completed response may have moved what the step waits on.
+        let acted_task_ids = if resolution == "completed" {
+            self.step_waiting_finding_task_ids(project_id, &[finding_id.to_owned()])
+        } else {
+            Vec::new()
+        };
         configuration
             .pending_routine_findings
             .retain(|finding| finding.id != finding_id);
@@ -110,10 +116,13 @@ impl CoreRuntime {
         self.store
             .set_tracker_configuration(&self.write_authority, configuration, self.store.revision())
             .map_err(store_error)?;
+        let step_check_requested =
+            self.nudge_steps_after_steward_disposal(&acted_task_ids, updated_at_epoch_ms);
         Ok(json!({
             "status": "resolved",
             "findingId": finding_id,
             "resolution": resolution,
+            "stepCheckRequested": step_check_requested,
             "stateRevision": self.store.revision(),
         }))
     }

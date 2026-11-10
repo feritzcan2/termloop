@@ -2629,4 +2629,171 @@ pub(crate) mod tests {
 
         std::fs::remove_dir_all(root).ok();
     }
+
+    /// Reports `evidence` as task-1's waiting answer at the PR step under an
+    /// automatic Routine and returns that finding's ID.
+    fn waiting_finding(
+        runtime: &mut CoreRuntime,
+        project_id: &str,
+        check_id: &str,
+        evidence: &str,
+        at: u64,
+    ) -> String {
+        let claim = runtime
+            .claim_next_playbook_step_or_idle(project_id, check_id.into(), at)
+            .unwrap();
+        runtime
+            .report_steward_step_verdicts(
+                &claim.capability.unwrap(),
+                vec![StewardStepVerdict {
+                    task_id: "task-1".into(),
+                    verdict: PlaybookStepVerdict::Waiting,
+                    evidence: evidence.into(),
+                }],
+                format!("report-{check_id}"),
+                at + 1_000,
+            )
+            .unwrap();
+        runtime.read_routine_findings(project_id).unwrap()["routines"][0]["findings"][0]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    }
+
+    fn auto_handled_pipeline() -> (CoreRuntime, std::path::PathBuf, String) {
+        let (mut runtime, root, project_id) = pipeline_runtime();
+        let mut routine = runtime
+            .store
+            .tracker_configurations()
+            .iter()
+            .find(|routine| routine.id == "routine-pr")
+            .cloned()
+            .unwrap();
+        routine.action_handling = termloop_domain::RoutineActionHandling::Auto;
+        routine.steward_instructions = "Move the Jira ticket to In Progress.".into();
+        let revision = runtime.state_revision();
+        runtime
+            .store
+            .set_tracker_configuration(&runtime.write_authority, routine, revision)
+            .unwrap();
+        // task-2 is done, so every claim is task-1's own.
+        let revision = runtime.state_revision();
+        runtime
+            .set_task_playbook_position(&project_id, "task-2", 2, 1, revision, NOW)
+            .unwrap();
+        (runtime, root, project_id)
+    }
+
+    fn steward_message(
+        runtime: &mut CoreRuntime,
+        project_id: &str,
+        kind: &str,
+        finding_id: &str,
+        at: u64,
+    ) -> Value {
+        runtime
+            .append_steward_suggestion(
+                "steward-session",
+                project_id,
+                kind,
+                crate::companion_integrations::transcript::CompanionMessageRefsInput {
+                    task_id: None,
+                    session_id: None,
+                    routine_finding_id: Some(finding_id.into()),
+                    routine_finding_ids: vec![],
+                },
+                "The Jira ticket is now In Progress.".into(),
+                at,
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn a_steward_update_disposing_a_waiting_finding_rechecks_its_step_once() {
+        let (mut runtime, root, project_id) = auto_handled_pipeline();
+        let finding_id = waiting_finding(&mut runtime, &project_id, "check-1", "Open.", NOW);
+
+        let update = steward_message(
+            &mut runtime,
+            &project_id,
+            "update",
+            &finding_id,
+            NOW + 2_000,
+        );
+        assert_eq!(update["stepCheckRequested"], true);
+        let nudged_at = NOW + 2_000 + 15_000;
+        assert_eq!(
+            runtime.step_nudge_epoch_ms("routine-pr", "task-1"),
+            nudged_at
+        );
+
+        // The re-check still waits; a second disposal at the same step keeps
+        // the step's own delay so dismissal cannot loop the evaluator.
+        let finding_id = waiting_finding(
+            &mut runtime,
+            &project_id,
+            "check-2",
+            "Still open.",
+            nudged_at,
+        );
+        let update = steward_message(
+            &mut runtime,
+            &project_id,
+            "update",
+            &finding_id,
+            nudged_at + 2_000,
+        );
+        assert_eq!(update["stepCheckRequested"], false);
+        assert_eq!(
+            runtime.step_nudge_epoch_ms("routine-pr", "task-1"),
+            u64::MAX
+        );
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn a_completed_resolution_rechecks_its_step_but_a_dismissal_does_not() {
+        let (mut runtime, root, project_id) = auto_handled_pipeline();
+        let finding_id = waiting_finding(&mut runtime, &project_id, "check-1", "Open.", NOW);
+        let dismissed = runtime
+            .resolve_routine_finding(&project_id, &finding_id, "dismissed", NOW + 2_000)
+            .unwrap();
+        assert_eq!(dismissed["stepCheckRequested"], false);
+        assert_eq!(
+            runtime.step_nudge_epoch_ms("routine-pr", "task-1"),
+            u64::MAX
+        );
+
+        let (mut runtime, root_completed, project_id) = auto_handled_pipeline();
+        let finding_id = waiting_finding(&mut runtime, &project_id, "check-1", "Open.", NOW);
+        let completed = runtime
+            .resolve_routine_finding(&project_id, &finding_id, "completed", NOW + 2_000)
+            .unwrap();
+        assert_eq!(completed["stepCheckRequested"], true);
+        assert!(runtime.step_nudge_epoch_ms("routine-pr", "task-1") < u64::MAX);
+
+        std::fs::remove_dir_all(root).ok();
+        std::fs::remove_dir_all(root_completed).ok();
+    }
+
+    #[test]
+    fn an_attention_disposal_keeps_the_steps_own_delay() {
+        let (mut runtime, root, project_id) = auto_handled_pipeline();
+        let finding_id = waiting_finding(&mut runtime, &project_id, "check-1", "Open.", NOW);
+        let attention = steward_message(
+            &mut runtime,
+            &project_id,
+            "attention",
+            &finding_id,
+            NOW + 2_000,
+        );
+        assert_eq!(attention["stepCheckRequested"], false);
+        assert_eq!(
+            runtime.step_nudge_epoch_ms("routine-pr", "task-1"),
+            u64::MAX
+        );
+
+        std::fs::remove_dir_all(root).ok();
+    }
 }

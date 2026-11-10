@@ -12,6 +12,7 @@ mod report;
 mod run_now;
 mod step_claims;
 mod steward_claims;
+mod steward_disposal_nudge;
 
 pub use agent_step_report::{AgentStepReportReceipt, AgentStepReportStatus};
 
@@ -112,6 +113,9 @@ pub(crate) struct TrackerRuntimeState {
     /// Each Task Agent's latest unverified report about its Task's step.
     /// Runtime-only; it never decides a position.
     agent_step_reports: HashMap<String, agent_step_report::AgentStepReport>,
+    /// Task steps already brought forward once by a Steward finding
+    /// disposal, with when. Runtime-only and bounded.
+    steward_disposal_nudged: HashMap<(String, String), u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -142,6 +146,8 @@ impl TrackerRuntimeState {
         self.step_task_not_before
             .retain(|(routine, _), _| routine != routine_id);
         self.step_task_nudge
+            .retain(|(routine, _), _| routine != routine_id);
+        self.steward_disposal_nudged
             .retain(|(routine, _), _| routine != routine_id);
     }
 
@@ -701,6 +707,9 @@ impl CoreRuntime {
             .retain(|(routine_id, _), _| routine_ids.contains(routine_id.as_str()));
         self.tracker_runtime
             .step_task_nudge
+            .retain(|(routine_id, _), _| routine_ids.contains(routine_id.as_str()));
+        self.tracker_runtime
+            .steward_disposal_nudged
             .retain(|(routine_id, _), _| routine_ids.contains(routine_id.as_str()));
         self.tracker_runtime
             .pending_steward_wakes

@@ -942,7 +942,7 @@ async fn steward_suggest(
     let dismisses_findings = matches!(kind, "update" | "attention" | "problem")
         && (routine_finding_id.is_some() || !routine_finding_ids.is_empty());
     let mut core = state.core.lock().await;
-    core.append_steward_suggestion(
+    let appended = core.append_steward_suggestion(
         session_id,
         project_id,
         kind,
@@ -957,6 +957,7 @@ async fn steward_suggest(
     )?;
     let state_revision = core.state_revision();
     drop(core);
+    wake_step_scheduler_if_requested(&appended, state);
     let _ = state.invalidation_requests.try_send(InvalidationRequest {
         topics: if dismisses_findings {
             vec![ProjectionTopic::Companion, ProjectionTopic::Routine]
@@ -975,6 +976,14 @@ async fn steward_suggest(
     }))
 }
 
+/// A Steward disposal that brought a Task's step forward needs the step
+/// scheduler to recompute its next deadline now.
+fn wake_step_scheduler_if_requested(result: &Value, state: &AppState) {
+    if result["stepCheckRequested"] == true {
+        state.tracker_runtime_wake.notify_one();
+    }
+}
+
 async fn resolve_routine_finding(
     project_id: &str,
     session_id: &str,
@@ -986,12 +995,13 @@ async fn resolve_routine_finding(
         if !core.is_current_steward_session(project_id, session_id) {
             return Err(termloop_core::CoreError::CapabilityDenied);
         }
-        core.resolve_routine_finding(
+        let resolved = core.resolve_routine_finding(
             project_id,
             &params.finding_id,
             &params.resolution,
             super::current_epoch_ms(),
         )?;
+        wake_step_scheduler_if_requested(&resolved, state);
         core.state_revision()
     };
     let _ = state.invalidation_requests.try_send(InvalidationRequest {

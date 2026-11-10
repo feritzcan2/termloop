@@ -245,7 +245,15 @@ impl CoreRuntime {
             return Err(CoreError::RevisionConflict);
         }
         if matches!(kind, "update" | "attention" | "problem") && !routine_finding_ids.is_empty() {
-            self.append_companion_message_input_and_dismiss_routine_findings(
+            // An update reports what the Steward did, which may have moved
+            // what the step waits on. Attention and problem wait on someone
+            // else, so their steps keep their own delay.
+            let acted_task_ids = if kind == "update" {
+                self.step_waiting_finding_task_ids(project_id, &routine_finding_ids)
+            } else {
+                Vec::new()
+            };
+            let mut result = self.append_companion_message_input_and_dismiss_routine_findings(
                 project_id,
                 crate::companion_integrations::transcript::CompanionMessageAppendInput {
                     author: "steward".into(),
@@ -256,7 +264,11 @@ impl CoreRuntime {
                 },
                 created_at_epoch_ms,
                 &routine_finding_ids,
-            )
+            )?;
+            result["stepCheckRequested"] = json!(
+                self.nudge_steps_after_steward_disposal(&acted_task_ids, created_at_epoch_ms)
+            );
+            Ok(result)
         } else {
             self.append_companion_message(
                 project_id,
