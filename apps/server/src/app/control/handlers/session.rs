@@ -23,7 +23,8 @@ use super::super::super::gates::{
     AGENT_RELOCATION_ATTEMPT_TIMEOUT, AGENT_RESUME_ATTEMPT_TIMEOUT,
     AGENT_RESUME_FINALIZATION_TIMEOUT, AGENT_RESUME_SHUTDOWN_TIMEOUT,
     AGENT_RESUME_STABILITY_WINDOW, FairResumePermit, MAX_ACTIVE_AGENT_RESUMES,
-    MAX_ACTIVE_STEWARD_RESUMES, ObservationPriority, ResumeGateError,
+    MAX_ACTIVE_STEWARD_RESUMES, ObservationPriority, PLAYBOOK_EVALUATION_FORK_TIMEOUT,
+    ResumeGateError,
 };
 use super::super::super::invalidation::{
     CommittedSessionMutation, InvalidationRequest, finish_session_mutation,
@@ -200,7 +201,13 @@ pub(in crate::app) async fn launch_playbook_evaluation_fork(
     plan: termloop_core::AgentLaunchPlan,
     state: &AppState,
 ) -> Result<serde_json::Value, CoreError> {
-    match execute_fork_plan(plan, Instant::now() + Duration::from_secs(10), state).await {
+    match execute_fork_plan(
+        plan,
+        Instant::now() + PLAYBOOK_EVALUATION_FORK_TIMEOUT,
+        state,
+    )
+    .await
+    {
         Ok(value) => Ok(value),
         Err(failure) => {
             if let Some((session_id, runtime_epoch)) = failure.child.as_ref() {
@@ -2511,6 +2518,7 @@ mod tests {
     fn relocation_has_a_ten_second_startup_budget() {
         assert_eq!(AGENT_RELOCATION_ATTEMPT_TIMEOUT, Duration::from_secs(10));
         assert_eq!(AGENT_RESUME_ATTEMPT_TIMEOUT, Duration::from_secs(30));
+        assert_eq!(PLAYBOOK_EVALUATION_FORK_TIMEOUT, Duration::from_secs(30));
     }
 
     #[test]
