@@ -323,9 +323,10 @@ impl CoreRuntime {
         let truncated =
             observed.scan.candidate_limit_reached || matching.len() > MAX_CACHED_HISTORY;
         matching.truncate(MAX_CACHED_HISTORY);
-        // Conversations outside this Project get their own bound so they never
-        // crowd this Project's own history out of the cache.
-        outside.truncate(MAX_CACHED_HISTORY);
+        // Conversations outside this Project only fill the room this Project's
+        // own history leaves, so they never crowd it out and the combined list
+        // stays within the protocol's entry bound.
+        outside.truncate(MAX_CACHED_HISTORY - matching.len());
         let existing_handles = self
             .session_history
             .projects
@@ -1864,6 +1865,54 @@ mod tests {
         assert_eq!(entries.last().unwrap()["updated_at_epoch_ms"], 1);
         assert_eq!(result["cache_filled"], true);
         assert_eq!(result["truncated"], true);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn outside_conversations_only_fill_the_room_project_history_leaves() {
+        let (mut runtime, project_id, _native_id, root, conversation) = fixture();
+        let loose_folder = root.join("loose-folder");
+        std::fs::create_dir_all(&loose_folder).unwrap();
+        let plan = match runtime
+            .plan_session_history_list(json!({"projectId": project_id, "fillCache": true}))
+            .unwrap()
+        {
+            SessionHistoryListPlanOutcome::Observe(plan) => plan,
+            SessionHistoryListPlanOutcome::Current(_) => panic!("first list must scan"),
+        };
+        let project_count = 30;
+        let conversations = (0..MAX_CACHED_HISTORY + project_count)
+            .map(|index| {
+                let mut candidate = conversation.clone();
+                candidate.resume_ref =
+                    ResumeRef::for_provider(ResumeProvider::Claude, Uuid::new_v4().to_string())
+                        .unwrap();
+                candidate.title = format!("Conversation {index}");
+                candidate.updated_at_epoch_ms = index as u64;
+                if index >= project_count {
+                    candidate.cwd = loose_folder.display().to_string();
+                }
+                candidate
+            })
+            .collect();
+        let result = runtime
+            .complete_session_history_list(ObservedSessionHistoryScan {
+                plan,
+                scan: AgentHistoryScan {
+                    conversations,
+                    issues: Vec::new(),
+                    candidate_limit_reached: false,
+                },
+            })
+            .unwrap();
+        let entries = result["entries"].as_array().unwrap();
+        assert_eq!(entries.len(), MAX_CACHED_HISTORY);
+        let project_entries = entries
+            .iter()
+            .filter(|entry| entry["project_match"] != "outside")
+            .count();
+        assert_eq!(project_entries, project_count);
+        assert_eq!(result["truncated"], false);
         let _ = std::fs::remove_dir_all(root);
     }
 }
