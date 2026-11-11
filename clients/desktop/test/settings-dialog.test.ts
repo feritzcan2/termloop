@@ -125,6 +125,35 @@ describe("SettingsDialog", () => {
     expect(mobileReview?.getAttribute("aria-checked")).toBe("false");
   });
 
+  it("turns launch at login on and off from the Startup page", async () => {
+    const set = vi.fn(async (enabled: boolean) => ({ state: "available" as const, enabled, requiresApproval: false }));
+    const launchAtLogin = {
+      load: vi.fn(async () => ({ state: "available" as const, enabled: false, requiresApproval: false })),
+      set,
+    };
+    await act(async () => root.render(createElement(SettingsDialog, props({ initialPage: "startup", launchAtLogin }))));
+
+    const toggle = container.querySelector<HTMLButtonElement>('[aria-label="Open TermLoop at login"]');
+    expect(toggle?.getAttribute("aria-checked")).toBe("false");
+    await act(async () => toggle?.click());
+    expect(set).toHaveBeenCalledWith(true);
+    expect(toggle?.getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("explains why a development run cannot open at login and hides the page without a host", async () => {
+    const launchAtLogin = {
+      load: vi.fn(async () => ({ state: "unsupported" as const, reason: "development" as const })),
+      set: vi.fn(),
+    };
+    await act(async () => root.render(createElement(SettingsDialog, props({ initialPage: "startup", launchAtLogin }))));
+    const toggle = container.querySelector<HTMLButtonElement>('[aria-label="Open TermLoop at login"]');
+    expect(toggle?.disabled).toBe(true);
+    expect(container.textContent).toContain("Available only in an installed build");
+
+    await act(async () => root.render(createElement(SettingsDialog, props({ initialPage: "startup" }))));
+    expect(container.querySelector(".settings-nav")?.textContent).not.toContain("Startup");
+  });
+
   it("opens the existing server controls inside the Settings dialog", async () => {
     await act(async () => root.render(createElement(SettingsDialog, props({ initialPage: "servers" }))));
 

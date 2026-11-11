@@ -129,6 +129,7 @@ import {
   type NotificationPreferences,
 } from "./notification-preferences.js";
 import { NotificationPreferencesFileStore } from "./platform/notification-preferences-store.js";
+import { launchAtLoginStatus, setLaunchAtLogin } from "./platform/launch-at-login.js";
 
 declare const TERMLOOP_COMPILED_DEV_PROFILE: string | null;
 
@@ -365,6 +366,17 @@ handleIpc("termloop:notification-preferences-get", (event) => {
 handleIpc("termloop:notification-preferences-set", (event, value: unknown) => {
   requireMainRenderer(event);
   return updateNotificationPreferences(value);
+});
+
+handleIpc("termloop:launch-at-login-get", (event) => {
+  requireMainRenderer(event);
+  return launchAtLoginStatus(app);
+});
+
+handleIpc("termloop:launch-at-login-set", (event, enabled: unknown) => {
+  requireMainRenderer(event);
+  if (typeof enabled !== "boolean") throw new Error("invalidLaunchAtLogin");
+  return setLaunchAtLogin(app, enabled);
 });
 
 /// The OS folder panel, offered next to the daemon's own folder listing. It can

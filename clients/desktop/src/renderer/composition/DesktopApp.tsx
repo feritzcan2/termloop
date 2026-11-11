@@ -149,6 +149,10 @@ declare global {
 }
 
 const diagnosticsEnabled = new URLSearchParams(window.location.search).get("diagnostics") === "1";
+const launchAtLoginActions = {
+  load: () => desktopApi.launchAtLoginGet(),
+  set: (enabled: boolean) => desktopApi.launchAtLoginSet(enabled),
+};
 const terminalPool = new TerminalPool(
   (onInput, onResize, onImagePaste, onFileDrop) => terminalRendererKind() !== "xterm"
     ? new GhosttySurface(onInput, onResize, ghosttyBridge, onFileDrop)
@@ -2669,6 +2673,7 @@ export function DesktopApp() {
       saveVoiceCredentials={localSourceApi.voiceCredentialsSet}
       loadNotificationPreferences={desktopApi.notificationPreferencesGet}
       saveNotificationPreferences={desktopApi.notificationPreferencesSet}
+      launchAtLogin={launchAtLoginActions}
       agentConnections={agentConnections}
       computerSessions={computerSessions}
       switchAgentSessionAccount={switchAgentSessionAccount}

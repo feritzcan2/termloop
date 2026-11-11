@@ -75,6 +75,8 @@ contextBridge.exposeInMainWorld("termloop", {
   notificationPreferencesGet: () => ipcRenderer.invoke("termloop:notification-preferences-get"),
   notificationPreferencesSet: (preferences: NotificationPreferences) =>
     ipcRenderer.invoke("termloop:notification-preferences-set", preferences),
+  launchAtLoginGet: () => ipcRenderer.invoke("termloop:launch-at-login-get"),
+  launchAtLoginSet: (enabled: boolean) => ipcRenderer.invoke("termloop:launch-at-login-set", enabled),
   pickLocalFolder: (defaultPath?: string) => ipcRenderer.invoke("termloop:pick-local-folder", defaultPath),
   mobileAccessPairing: () => ipcRenderer.invoke("termloop:mobile-access-pairing"),
   remoteMobileAccessPairing: (profileId: string) => ipcRenderer.invoke("termloop:remote-mobile-access-pairing", profileId),

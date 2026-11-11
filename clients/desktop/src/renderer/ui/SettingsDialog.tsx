@@ -18,10 +18,11 @@ import { IntegrationsSettings, type IntegrationActions } from "./IntegrationsSet
 import { AgentConnectionsPanel, type AgentConnectionActions } from "./AgentConnectionsPanel.js";
 import { AgentForkSettings, type AgentForkSettingsActions } from "./AgentForkSettings.js";
 import { SettingsSwitch } from "./SettingsSwitch.js";
+import { StartupSettings, type LaunchAtLoginActions } from "./StartupSettings.js";
 import type { ConnectionProfileSummary } from "../../connection-profile-types.js";
 import { connectionStatusSuffix } from "../connection-source-status.js";
 
-export type SettingsPage = "appearance" | "notifications" | "updates" | "servers" | "accounts" | "agentSettings" | "integrations" | "mobile";
+export type SettingsPage = "appearance" | "notifications" | "startup" | "updates" | "servers" | "accounts" | "agentSettings" | "integrations" | "mobile";
 
 type SettingsNavItem = {
   page: SettingsPage;
@@ -33,6 +34,7 @@ type SettingsNavItem = {
 const appNavItems: SettingsNavItem[] = [
   { page: "appearance", title: "Appearance", icon: "palette", keywords: "theme color dark light system mode look" },
   { page: "notifications", title: "Notifications", icon: "bell", keywords: "alerts sound push desktop iphone mobile apple watch steward review input" },
+  { page: "startup", title: "Startup", icon: "power", keywords: "login launch open start automatically boot sign in autostart" },
   { page: "updates", title: "Updates", icon: "download", keywords: "version about upgrade release check restart install download" },
 ];
 
@@ -52,6 +54,8 @@ type SettingsDialogProps = Omit<ConnectionProfilesDialogProps, "close" | "embedd
   changeAppearancePreference(preference: AppearancePreference): void;
   loadNotificationPreferences(): Promise<NotificationPreferences>;
   saveNotificationPreferences(preferences: NotificationPreferences): Promise<NotificationPreferences>;
+  /** This app's own login item. Absent hosts simply omit the page. */
+  launchAtLogin?: LaunchAtLoginActions | undefined;
   showScope?: boolean;
   localComputerName?: string | undefined;
   mobile?: Omit<MobileConnectDialogProps, "close" | "embedded" | "computerName">;
@@ -70,6 +74,7 @@ export function SettingsDialog({
   changeAppearancePreference,
   loadNotificationPreferences,
   saveNotificationPreferences,
+  launchAtLogin,
   showScope = false,
   localComputerName,
   mobile,
@@ -90,7 +95,10 @@ export function SettingsDialog({
   const viewRef = useRef<HTMLDivElement>(null);
 
   const navGroups = [
-    { title: showScope ? "This app" : "General", items: appNavItems.filter((item) => matchesSettingsQuery(item, query)) },
+    {
+      title: showScope ? "This app" : "General",
+      items: appNavItems.filter((item) => (item.page !== "startup" || launchAtLogin) && matchesSettingsQuery(item, query)),
+    },
     {
       title: "Computers",
       items: computerNavItems.filter((item) => (item.page !== "mobile" || mobile)
@@ -227,7 +235,7 @@ export function SettingsDialog({
       </aside>
       <main className="settings-content">
         <div className="settings-content-inner">
-          {showScope && (page === "appearance" || page === "notifications" || page === "updates") ? <p className="settings-scope-label">This app · {localComputerName ?? "This computer"}</p> : null}
+          {showScope && (page === "appearance" || page === "notifications" || page === "startup" || page === "updates") ? <p className="settings-scope-label">This app · {localComputerName ?? "This computer"}</p> : null}
           {page === undefined ? (
             <p className="settings-empty">No settings found for “{query.trim()}”</p>
           ) : page === "appearance" ? (
@@ -241,6 +249,8 @@ export function SettingsDialog({
               updateDesktop={updateDesktopPreference}
               updateRemote={updateRemotePreference}
             />
+          ) : page === "startup" && launchAtLogin ? (
+            <StartupSettings actions={launchAtLogin} />
           ) : page === "updates" ? (
             <UpdateSettings update={update} />
           ) : page === "integrations" && integrations ? (
