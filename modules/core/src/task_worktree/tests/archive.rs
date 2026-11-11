@@ -839,3 +839,60 @@ fn an_archive_still_in_progress_keeps_refusing_a_second_preview() {
     ));
     assert_eq!(fixture.runtime.store.task_archive_operations().len(), 1);
 }
+
+#[test]
+fn a_failed_worktree_cleanup_does_not_block_archive() {
+    let mut fixture = Fixture::new();
+    let (task_id, _, proof_id, generation) = provision_cleanup_fixture(&mut fixture);
+    let operation_id = Uuid::new_v4().to_string();
+    let _removal = prepare_cleanup_removal(
+        &mut fixture,
+        cleanup_params(&task_id, &operation_id, &proof_id, generation),
+    );
+
+    let running = fixture
+        .runtime
+        .inspect_task_archive(json!({ "taskId": task_id }))
+        .unwrap();
+    assert_eq!(running["can_archive"], false);
+    assert!(
+        running["blockers"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("cleanupInProgress"))
+    );
+
+    fixture
+        .runtime
+        .store
+        .fail_task_worktree_cleanup(
+            &fixture.runtime.write_authority,
+            &task_id,
+            &operation_id,
+            termloop_domain::WorktreeCleanupFailure {
+                kind: WorktreeCleanupFailureKind::Timeout,
+                blockers: vec![],
+            },
+            termloop_platform::current_epoch_ms(),
+        )
+        .unwrap();
+
+    let preview = fixture
+        .runtime
+        .inspect_task_archive(json!({ "taskId": task_id }))
+        .unwrap();
+    assert_eq!(preview["can_archive"], true);
+    let archived = fixture
+        .runtime
+        .archive_task(json!({
+            "taskId": task_id,
+            "operationId": Uuid::new_v4().to_string(),
+            "archiveTicket": preview["archive_ticket"],
+        }))
+        .unwrap();
+    assert!(archived["task"]["archived_at_epoch_ms"].is_number());
+    assert_eq!(
+        fixture.runtime.store.cleanup_operations()[0].operation_id,
+        operation_id
+    );
+}

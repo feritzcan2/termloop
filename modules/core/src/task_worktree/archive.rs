@@ -376,11 +376,13 @@ impl CoreRuntime {
             blockers.push("provisioningInProgress".into());
             let _ = operation;
         }
+        // A failed cleanup journal no longer reserves the path (launch and
+        // restore ignore it too); only a running cleanup blocks archive.
         if self
             .store
             .cleanup_operations()
             .iter()
-            .any(|operation| operation.task_id == task.id)
+            .any(|operation| operation.task_id == task.id && operation.failure.is_none())
         {
             blockers.push("cleanupInProgress".into());
         }
@@ -549,7 +551,7 @@ impl CoreRuntime {
                 .store
                 .cleanup_operations()
                 .iter()
-                .any(|value| value.task_id == task_id)
+                .any(|value| value.task_id == task_id && value.failure.is_none())
             || self
                 .store
                 .repair_operations()
