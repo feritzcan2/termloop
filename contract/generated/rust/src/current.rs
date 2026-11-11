@@ -243,7 +243,7 @@ pub const CONTRACT_IDENTITY: &str =
     "sha256:7eb20305e42354ec6af6cb6883f3c015de028823f2eb84e3d754895fb4d9c5d9";
 pub const CONTRACT_MAJOR: u32 = 1;
 pub const CONTRACT_REVISION: &str =
-    "sha256:c6bbc3d48d39d6d3e17874bdc0c953ec86aef242902c84b1d4c345e246304bb3";
+    "sha256:e1fed30455f91bafe8ff41d094c363808bd65d582aae9d1d2fd78153cf3dd30a";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -5906,9 +5906,20 @@ pub struct PlaybookEvaluatorSettingsDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
+pub struct AutoCompactionSettingsDto {
+    #[serde(rename = "claudeWindowTokens")]
+    pub claude_window_tokens: u64,
+    #[serde(rename = "codexThresholdPercent")]
+    pub codex_threshold_percent: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct StewardConfigurationDto {
     #[serde(rename = "playbookEvaluator")]
     pub playbook_evaluator: PlaybookEvaluatorSettingsDto,
+    #[serde(rename = "autoCompaction", skip_serializing_if = "Option::is_none")]
+    pub auto_compaction: Option<AutoCompactionSettingsDto>,
     #[serde(rename = "projectId")]
     pub project_id: String,
     #[serde(rename = "agentId")]
@@ -5965,6 +5976,8 @@ pub struct StewardConfigurationGetResult {
 pub struct StewardConfigurationSetParams {
     #[serde(rename = "playbookEvaluator", skip_serializing_if = "Option::is_none")]
     pub playbook_evaluator: Option<PlaybookEvaluatorSettingsDto>,
+    #[serde(rename = "autoCompaction", skip_serializing_if = "Option::is_none")]
+    pub auto_compaction: Option<AutoCompactionSettingsDto>,
     #[serde(rename = "projectId")]
     pub project_id: String,
     #[serde(rename = "agentId")]
@@ -23864,11 +23877,43 @@ fn validate_playbook_evaluator_settings_dto(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_auto_compaction_settings_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("claudeWindowTokens").is_some_and(|field| {
+            field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 100000_u64))
+                    && (number.as_u64().is_some_and(|number| number <= 1000000_u64))
+            })
+        }) && object.get("codexThresholdPercent").is_some_and(|field| {
+            field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 1_u64))
+                    && (number.as_u64().is_some_and(|number| number <= 100_u64))
+            })
+        }) && object
+            .keys()
+            .all(|key| ["claudeWindowTokens", "codexThresholdPercent"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_steward_configuration_dto(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object
             .get("playbookEvaluator")
             .is_some_and(|field| validate_playbook_evaluator_settings_dto(field))
+            && object
+                .get("autoCompaction")
+                .is_none_or(|field| validate_auto_compaction_settings_dto(field))
             && object
                 .get("projectId")
                 .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
@@ -23917,6 +23962,7 @@ fn validate_steward_configuration_dto(value: &Value) -> bool {
             && object.keys().all(|key| {
                 [
                     "playbookEvaluator",
+                    "autoCompaction",
                     "projectId",
                     "agentId",
                     "model",
@@ -24040,6 +24086,9 @@ fn validate_steward_configuration_set_params(value: &Value) -> bool {
             .get("playbookEvaluator")
             .is_none_or(|field| validate_playbook_evaluator_settings_dto(field))
             && object
+                .get("autoCompaction")
+                .is_none_or(|field| validate_auto_compaction_settings_dto(field))
+            && object
                 .get("projectId")
                 .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
             && object
@@ -24078,6 +24127,7 @@ fn validate_steward_configuration_set_params(value: &Value) -> bool {
             && object.keys().all(|key| {
                 [
                     "playbookEvaluator",
+                    "autoCompaction",
                     "projectId",
                     "agentId",
                     "model",

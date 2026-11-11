@@ -1040,6 +1040,9 @@ pub struct PersistentAssistantLaunch<'a> {
     pub reasoning: &'a str,
     pub role: ExecutorRole,
     pub system_prompt: Option<&'a str>,
+    /// The Project's saved compaction choice, applied to every Steward launch
+    /// and resume in the selected provider's unit.
+    pub auto_compaction: termloop_domain::AutoCompactionSettings,
     pub cwd: &'a str,
     pub conversation: AgentConversationLaunch<'a>,
     pub observation: Option<AgentObservationLaunch<'a>>,
@@ -1500,6 +1503,7 @@ pub fn persistent_assistant_agent(
         configuration.conversation,
         configuration.observation,
         configuration.mcp,
+        configuration.auto_compaction,
     )?;
     manifest.set_bindings(bindings);
     Ok(manifest.into_payload())

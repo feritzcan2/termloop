@@ -111,6 +111,7 @@ impl Fixture {
                     &authority,
                     StewardConfiguration {
                         playbook_evaluator: Default::default(),
+                        auto_compaction: Default::default(),
                         project_id: "project".into(),
                         agent_id: StewardAgentId::Codex,
                         model: "default".into(),

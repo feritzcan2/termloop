@@ -143,6 +143,14 @@ fn inspect_environment(
                     source: "invocation",
                     purpose: "provider instructions added at Claude SessionStart",
                 },
+                CLAUDE_AUTO_COMPACT_WINDOW_VARIABLE => InspectableEnvironmentEntry {
+                    key,
+                    display_value: "<auto-compaction window in tokens>".into(),
+                    visibility: "redacted",
+                    classification: "public",
+                    source: "invocation",
+                    purpose: "launch-scoped Claude auto-compaction window",
+                },
                 "TERMLOOP_MCP_TOKEN" => InspectableEnvironmentEntry {
                     key,
                     display_value: "<redacted secret>".into(),

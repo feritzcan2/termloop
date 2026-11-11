@@ -113,6 +113,7 @@ impl Fixture {
         self.core
             .set_steward_configuration(StewardConfigurationUpdate {
                 playbook_evaluator: None,
+                auto_compaction: None,
                 project_id: &self.project,
                 agent_id: "codex",
                 model: "default".into(),
@@ -144,6 +145,7 @@ fn evaluator_settings_save_without_retiring_steward_and_omitted_updates_preserve
         enabled: true,
         system_prompt: "original".into(),
         playbook_evaluator: settings,
+        auto_compaction: None,
         expected_revision,
         capability: AssistantAvailability::Proven,
         updated_at_epoch_ms: 3,
@@ -370,4 +372,84 @@ fn unchanged_configuration_keeps_a_live_executor_and_requeues_only_if_absent() {
     assert!(!commit.change.changed());
     assert!(commit.change.needs_wake());
     assert!(commit.change.retired_session_id().is_none());
+}
+
+#[test]
+fn auto_compaction_change_relaunches_steward_and_omitted_updates_preserve_it() {
+    let mut fixture = Fixture::new();
+    assert_eq!(
+        fixture.core.store.steward_configurations()[0].auto_compaction,
+        termloop_domain::AutoCompactionSettings::default()
+    );
+    let settings = termloop_domain::AutoCompactionSettings {
+        claude_window_tokens: 400_000,
+        codex_threshold_percent: 75,
+    };
+    let update = |settings, expected_revision| StewardConfigurationUpdate {
+        project_id: &fixture.project,
+        agent_id: "codex",
+        model: "default".into(),
+        permission: "bypassPermissions".into(),
+        reasoning: "default".into(),
+        enabled: true,
+        system_prompt: "original".into(),
+        playbook_evaluator: None,
+        auto_compaction: settings,
+        expected_revision,
+        capability: AssistantAvailability::Proven,
+        updated_at_epoch_ms: 3,
+    };
+    let changed = fixture
+        .core
+        .set_steward_configuration(update(Some(settings), fixture.core.state_revision()))
+        .unwrap();
+    // The provider reads compaction only at start, so the running executor is
+    // retired and the next generation launches with the new value.
+    assert!(changed.change.changed());
+    assert_eq!(changed.change.generation(), 2);
+    assert_eq!(changed.change.retired_session_id(), Some("executor"));
+    assert_eq!(
+        changed.result["configuration"]["autoCompaction"],
+        json!({"claudeWindowTokens": 400_000, "codexThresholdPercent": 75})
+    );
+    let same = fixture
+        .core
+        .set_steward_configuration(update(Some(settings), fixture.core.state_revision()))
+        .unwrap();
+    assert!(!same.change.changed());
+    for invalid in [
+        termloop_domain::AutoCompactionSettings {
+            claude_window_tokens: 99_999,
+            ..settings
+        },
+        termloop_domain::AutoCompactionSettings {
+            codex_threshold_percent: 0,
+            ..settings
+        },
+    ] {
+        assert!(matches!(
+            fixture
+                .core
+                .set_steward_configuration(update(Some(invalid), fixture.core.state_revision())),
+            Err(CoreError::InvalidParams(field)) if field == "autoCompaction"
+        ));
+    }
+    fixture
+        .change(
+            "new prompt",
+            true,
+            fixture.core.state_revision(),
+            AssistantAvailability::Proven,
+        )
+        .unwrap();
+    assert_eq!(
+        fixture.core.store.steward_configurations()[0].auto_compaction,
+        settings
+    );
+    let target = fixture
+        .core
+        .request_persistent_steward_launch(&fixture.project)
+        .expect("enabled Steward without executor");
+    assert_eq!(target.auto_compaction, settings);
+    std::fs::remove_dir_all(&fixture.root).unwrap();
 }

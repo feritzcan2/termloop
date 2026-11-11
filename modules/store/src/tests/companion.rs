@@ -23,6 +23,13 @@ fn legacy_assistant_configuration_launch_options_default_during_deserialization(
     assert_eq!(steward.model, "default");
     assert_eq!(steward.reasoning, "default");
     assert_eq!(steward.playbook_evaluator, Default::default());
+    assert_eq!(
+        steward.auto_compaction,
+        termloop_domain::AutoCompactionSettings {
+            claude_window_tokens: 250_000,
+            codex_threshold_percent: 90,
+        }
+    );
 }
 
 fn project(id: &str) -> ProjectRecord {
@@ -261,6 +268,7 @@ fn steward_configuration_is_one_current_revision_checked_row() {
     let revision = store.revision();
     let first = StewardConfiguration {
         playbook_evaluator: Default::default(),
+        auto_compaction: Default::default(),
         project_id: "project-a".into(),
         agent_id: StewardAgentId::Codex,
         model: "default".into(),
@@ -280,6 +288,7 @@ fn steward_configuration_is_one_current_revision_checked_row() {
             &authority,
             StewardConfiguration {
                 playbook_evaluator: Default::default(),
+                auto_compaction: Default::default(),
                 project_id: "project-a".into(),
                 agent_id: StewardAgentId::Claude,
                 model: "default".into(),
@@ -333,6 +342,7 @@ fn steward_session_attach_is_one_atomic_generation_checked_write() {
         .unwrap();
     let configuration = StewardConfiguration {
         playbook_evaluator: Default::default(),
+        auto_compaction: Default::default(),
         project_id: "project-a".into(),
         agent_id: StewardAgentId::Claude,
         model: "default".into(),
@@ -534,6 +544,7 @@ fn ordinary_agent_session(id: &str, project_id: &str) -> SessionRecord {
 fn steward_configuration(project_id: &str, generation: u64, enabled: bool) -> StewardConfiguration {
     StewardConfiguration {
         playbook_evaluator: Default::default(),
+        auto_compaction: Default::default(),
         project_id: project_id.into(),
         agent_id: StewardAgentId::Claude,
         model: "default".into(),

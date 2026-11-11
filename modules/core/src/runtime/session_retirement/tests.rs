@@ -41,6 +41,7 @@ impl Fixture {
             .to_owned();
         core.set_steward_configuration(StewardConfigurationUpdate {
             playbook_evaluator: None,
+            auto_compaction: None,
             project_id: &project_id,
             agent_id: "codex",
             model: "default".into(),
@@ -211,6 +212,7 @@ impl Fixture {
         self.core
             .set_steward_configuration(StewardConfigurationUpdate {
                 playbook_evaluator: None,
+                auto_compaction: None,
                 project_id: &self.project_id,
                 agent_id: "codex",
                 model: "default".into(),

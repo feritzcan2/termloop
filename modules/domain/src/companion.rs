@@ -155,6 +155,9 @@ pub struct StewardConfiguration {
     pub reasoning: String,
     #[serde(default)]
     pub playbook_evaluator: PlaybookEvaluatorSettings,
+    /// Configurations saved before this setting existed load the defaults.
+    #[serde(default)]
+    pub auto_compaction: AutoCompactionSettings,
     pub enabled: bool,
     /// One current Project-scoped role prompt. An empty migrated value means
     /// invocation's visible built-in default until the user saves it.
@@ -193,6 +196,40 @@ impl PlaybookEvaluatorSettings {
                     .is_none_or(|model| valid_assistant_launch_option(model) && model.len() <= 80)
             })
             && valid_assistant_permission(&self.permission)
+    }
+}
+
+pub const CLAUDE_AUTO_COMPACT_WINDOW_MIN_TOKENS: u32 = 100_000;
+pub const CLAUDE_AUTO_COMPACT_WINDOW_MAX_TOKENS: u32 = 1_000_000;
+pub const CODEX_AUTO_COMPACT_THRESHOLD_MIN_PERCENT: u8 = 1;
+pub const CODEX_AUTO_COMPACT_THRESHOLD_MAX_PERCENT: u8 = 100;
+
+/// When a provider compacts its conversation, in that provider's own unit:
+/// Claude compacts once the conversation fills this many tokens, Codex once a
+/// turn ends above this percentage of the model's context window. Both values
+/// are kept so switching the agent does not lose the other provider's choice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AutoCompactionSettings {
+    pub claude_window_tokens: u32,
+    pub codex_threshold_percent: u8,
+}
+
+impl Default for AutoCompactionSettings {
+    fn default() -> Self {
+        Self {
+            claude_window_tokens: 250_000,
+            codex_threshold_percent: 90,
+        }
+    }
+}
+
+impl AutoCompactionSettings {
+    pub fn is_valid(&self) -> bool {
+        (CLAUDE_AUTO_COMPACT_WINDOW_MIN_TOKENS..=CLAUDE_AUTO_COMPACT_WINDOW_MAX_TOKENS)
+            .contains(&self.claude_window_tokens)
+            && (CODEX_AUTO_COMPACT_THRESHOLD_MIN_PERCENT..=CODEX_AUTO_COMPACT_THRESHOLD_MAX_PERCENT)
+                .contains(&self.codex_threshold_percent)
     }
 }
 
@@ -445,6 +482,7 @@ impl StewardConfiguration {
             && valid_assistant_permission(&self.permission)
             && valid_assistant_launch_option(&self.reasoning)
             && self.playbook_evaluator.is_valid()
+            && self.auto_compaction.is_valid()
             && self.system_prompt.len() <= STEWARD_SYSTEM_PROMPT_MAX_BYTES
             && (self.system_prompt.is_empty() || !self.system_prompt.trim().is_empty())
     }
@@ -507,6 +545,28 @@ pub fn companion_transcript_bytes<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn auto_compaction_defaults_and_bounds_follow_each_provider_unit() {
+        let defaults = AutoCompactionSettings::default();
+        assert_eq!(defaults.claude_window_tokens, 250_000);
+        assert_eq!(defaults.codex_threshold_percent, 90);
+        assert!(defaults.is_valid());
+        for (claude_window_tokens, codex_threshold_percent, valid) in [
+            (100_000, 1, true),
+            (1_000_000, 100, true),
+            (99_999, 90, false),
+            (1_000_001, 90, false),
+            (250_000, 0, false),
+            (250_000, 101, false),
+        ] {
+            let settings = AutoCompactionSettings {
+                claude_window_tokens,
+                codex_threshold_percent,
+            };
+            assert_eq!(settings.is_valid(), valid, "{settings:?}");
+        }
+    }
 
     #[test]
     fn transcript_quota_counts_exact_utf8_content_bytes() {

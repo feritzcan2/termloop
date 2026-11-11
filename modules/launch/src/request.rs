@@ -31,6 +31,9 @@ pub struct LaunchRequest<'a> {
     /// change: Claude loses its file-editing tools and Codex runs in the
     /// read-only sandbox, whatever the permission selection.
     pub read_only_workspace: bool,
+    /// When the provider compacts its conversation; None keeps the provider's
+    /// own configuration. Only Claude and Codex accept it.
+    pub auto_compaction: Option<termloop_domain::AutoCompactionSettings>,
 }
 
 impl<'a> LaunchRequest<'a> {
@@ -58,6 +61,7 @@ impl<'a> LaunchRequest<'a> {
             approved_tools: &[],
             approved_external_tools: &[],
             read_only_workspace: false,
+            auto_compaction: None,
         }
     }
 }
@@ -126,4 +130,6 @@ pub struct CodexRuntimePolicy {
     pub approved_tools: Vec<String>,
     pub approved_external_tools: Vec<String>,
     pub workspace_network: Option<bool>,
+    /// Codex runs compaction in its App Server, so the threshold must reach it.
+    pub post_turn_compact_threshold_percent: Option<u8>,
 }

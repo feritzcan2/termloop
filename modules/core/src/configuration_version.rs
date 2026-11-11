@@ -544,6 +544,7 @@ impl CoreRuntime {
                 let snapshot: StewardSnapshot = parse_snapshot(&plan.content)?;
                 let commit = self.set_steward_configuration(StewardConfigurationUpdate {
                     playbook_evaluator: None,
+                    auto_compaction: None,
                     project_id: &plan.project_id,
                     agent_id: agent_wire(snapshot.agent_id),
                     model: snapshot.model,
@@ -800,6 +801,7 @@ impl CoreRuntime {
                     permission: snapshot.permission.clone(),
                     reasoning: snapshot.reasoning.clone(),
                     playbook_evaluator: current.playbook_evaluator.clone(),
+                    auto_compaction: current.auto_compaction,
                     enabled: snapshot.enabled,
                     system_prompt: snapshot.system_prompt.trim().to_owned(),
                     executor_session_id: current.executor_session_id.clone(),

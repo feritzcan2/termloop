@@ -165,6 +165,10 @@ fn running_persistent_assistant_restart_preserves_closed_mcp_role() {
             &runtime.write_authority,
             termloop_domain::StewardConfiguration {
                 playbook_evaluator: Default::default(),
+                auto_compaction: termloop_domain::AutoCompactionSettings {
+                    claude_window_tokens: 400_000,
+                    codex_threshold_percent: 75,
+                },
                 project_id: project_id.clone(),
                 agent_id: termloop_domain::StewardAgentId::Claude,
                 model: "default".into(),
@@ -241,6 +245,15 @@ fn running_persistent_assistant_restart_preserves_closed_mcp_role() {
     assert_eq!(
         steward_launch.provenance().template_ref,
         "builtin.assistant.activation"
+    );
+    // A resumed Steward keeps the Project's saved compaction choice.
+    assert_eq!(
+        steward_launch
+            .environment()
+            .entries()
+            .find(|(key, _)| *key == "CLAUDE_CODE_AUTO_COMPACT_WINDOW")
+            .map(|(_, value)| value.to_string_lossy().into_owned()),
+        Some("400000".into())
     );
     assert!(
         steward_launch
@@ -1866,6 +1879,7 @@ async fn steward_activation_waits_for_post_hook_and_confirms_once() {
             &runtime.write_authority,
             termloop_domain::StewardConfiguration {
                 playbook_evaluator: Default::default(),
+                auto_compaction: Default::default(),
                 project_id: project_id.clone(),
                 agent_id: termloop_domain::StewardAgentId::Claude,
                 model: "default".into(),
@@ -5678,6 +5692,7 @@ fn prepared_resume_target_is_revalidated_before_final_commit() {
         agent_profile_ref: None,
         personal_agent: None,
         steward_system_prompt: None,
+        steward_auto_compaction: Default::default(),
         mcp_authorizer: runtime.mcp_authorizer.clone(),
         observation_transport: {
             let mut transport = crate::test_agent_observation_transport(root.join("provider"));

@@ -643,6 +643,7 @@ impl CoreRuntime {
             agent_profile_ref: None,
             personal_agent: self.store.session_agent_profile(&session.id).cloned(),
             steward_system_prompt: None,
+            steward_auto_compaction: Default::default(),
             mcp_authorizer: self.mcp_authorizer.clone(),
             observation_transport: transport,
             runtime_signal_sender: Some(self.agent_runtime_sender.clone()),

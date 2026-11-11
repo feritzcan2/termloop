@@ -100,11 +100,12 @@ fn resolve_launch_manifest_with_provider_instructions(
     conversation: AgentConversationLaunch<'_>,
     observation: Option<AgentObservationLaunch<'_>>,
     mcp: AgentMcpLaunch<'_>,
+    auto_compaction: termloop_domain::AutoCompactionSettings,
 ) -> Result<ResolvedLaunchManifest, InvocationError> {
     if provider_instructions.trim().is_empty() || provider_instructions.len() > 64 * 1024 {
         return Err(InvocationError::InvalidDeveloperInstructions);
     }
-    resolve_launch_manifest_with_attachments(
+    resolve_launch_manifest_with_environment(
         agent_id,
         cwd,
         template,
@@ -118,6 +119,9 @@ fn resolve_launch_manifest_with_provider_instructions(
         Some(provider_instructions_source),
         Some(provider_instructions),
         &[],
+        CodexProjectTrust::Inherit,
+        None,
+        Some(auto_compaction),
     )
 }
 
@@ -188,6 +192,7 @@ fn resolve_launch_manifest_with_attachments_and_codex_project_trust(
         attachments,
         codex_project_trust,
         None,
+        None,
     )
 }
 
@@ -208,6 +213,7 @@ fn resolve_launch_manifest_with_environment(
     attachments: &[QuickActionImageAttachment],
     codex_project_trust: CodexProjectTrust,
     executable_directory: Option<&Path>,
+    auto_compaction: Option<termloop_domain::AutoCompactionSettings>,
 ) -> Result<ResolvedLaunchManifest, InvocationError> {
     let delivered = compose_quick_action_delivery(agent_id, prompt.unwrap_or_default(), attachments);
     termloop_launch::resolve(termloop_launch::LaunchRequest {
@@ -220,6 +226,6 @@ fn resolve_launch_manifest_with_environment(
         attachments, codex_project_trust, executable_directory,
         explicit_configuration: template.id == QUICK_ACTION_FREE_PROMPT_TEMPLATE_REF,
         execution: None, workspace_network: None, approved_tools: &[], approved_external_tools: &[],
-        read_only_workspace: false,
+        read_only_workspace: false, auto_compaction,
     })
 }

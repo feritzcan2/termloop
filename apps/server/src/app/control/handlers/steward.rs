@@ -135,6 +135,15 @@ pub(in crate::app::control) async fn set_steward_configuration(
                     permission: permission_name(settings.permission).into(),
                 }
             }),
+            // Out-of-range values become 0, which core rejects as invalid.
+            auto_compaction: params.auto_compaction.map(|settings| {
+                termloop_core::AutoCompactionSettings {
+                    claude_window_tokens: u32::try_from(settings.claude_window_tokens)
+                        .unwrap_or(0),
+                    codex_threshold_percent: u8::try_from(settings.codex_threshold_percent)
+                        .unwrap_or(0),
+                }
+            }),
             enabled: params.enabled,
             system_prompt: params.system_prompt,
             expected_revision: params.expected_revision,

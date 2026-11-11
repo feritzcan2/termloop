@@ -11,12 +11,13 @@ import type {
   RoutineRunNowResult,
   PlaybookAgentReportPolicy, PlaybookDto, PlaybookGetResult, PlaybookMilestoneDto, PlaybookRuntimeResult, PlaybookUpdateParams,
   AssistantPromptImproverTarget,
-  PlaybookEvaluatorSettingsDto, PlaybookEvaluationHistoryResult,
+  PlaybookEvaluatorSettingsDto, PlaybookEvaluationHistoryResult, AutoCompactionSettingsDto,
 } from "@termloop/contract/current";
 import { assistantInitialView, defaultAssistantLaunchSelection, requestPlaybookBuilderSetup, routineIntervalLabel, type AssistantSelection, type AssistantView } from "./AssistantRail.js";
 import { Icon } from "./Icon.js";
 import { PlaybookEvaluationHistory } from "./PlaybookEvaluationHistory.js";
 import { PlaybookEvaluatorSettings } from "./PlaybookEvaluatorSettings.js";
+import { AutoCompactionSettings } from "./AutoCompactionSettings.js";
 import { StewardHowItWorksButton, type StewardHowItWorksOverlay } from "./StewardHowItWorks.js";
 import { QUICK_ACTION_AGENT_MODELS, QUICK_ACTION_AGENT_PERMISSIONS, QUICK_ACTION_AGENT_REASONING, type QuickActionReasoning } from "../quick-action-memory.js";
 import { ConfigurationVersions, PromptImproveButton, promptImprovementActionLabel, usePromptImprovement, type PromptImprovement } from "./PromptImprovement.js";
@@ -43,7 +44,7 @@ export type StewardPanelProps = {
   openTermLoopInstructions(): void;
   renderTerminal(sessionId: string): ReactNode;
   getConfiguration(): Promise<StewardConfigurationGetResult>;
-  setConfiguration(agentId: StewardAgentId, model: string, permission: AssistantPermission, reasoning: AssistantReasoning, enabled: boolean, systemPrompt: string, expectedRevision: number, playbookEvaluator?: PlaybookEvaluatorSettingsDto): Promise<StewardConfigurationSetResult>;
+  setConfiguration(agentId: StewardAgentId, model: string, permission: AssistantPermission, reasoning: AssistantReasoning, enabled: boolean, systemPrompt: string, expectedRevision: number, playbookEvaluator?: PlaybookEvaluatorSettingsDto, autoCompaction?: AutoCompactionSettingsDto): Promise<StewardConfigurationSetResult>;
   listTranscript(beforeSequence?: number): Promise<CompanionTranscriptListResult>;
   appendMessage(content: string): Promise<CompanionTranscriptAppendResult>;
   respondToProposal(proposalMessageId: string, decision: CompanionProposalDecision): Promise<CompanionProposalRespondResult>;
@@ -554,6 +555,17 @@ export function StewardPanel(props: StewardPanelProps) {
         const result = await props.setConfiguration(
           steward.agentId, steward.model, steward.permission, steward.reasoning,
           steward.enabled, steward.systemPrompt, stewardRevision, settings,
+        );
+        setSteward(result.configuration);
+        setStewardRevision(result.stateRevision);
+      })} /> : null}
+    {/* An older daemon omits the field and would reject it on save. */}
+    {steward?.autoCompaction ? <AutoCompactionSettings agentId={steward.agentId}
+      settings={steward.autoCompaction} busy={busy}
+      save={(settings) => run(async () => {
+        const result = await props.setConfiguration(
+          steward.agentId, steward.model, steward.permission, steward.reasoning,
+          steward.enabled, steward.systemPrompt, stewardRevision, undefined, settings,
         );
         setSteward(result.configuration);
         setStewardRevision(result.stateRevision);

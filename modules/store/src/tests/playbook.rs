@@ -29,6 +29,7 @@ fn project(id: &str) -> ProjectRecord {
 fn disabled_steward(project_id: &str) -> StewardConfiguration {
     StewardConfiguration {
         playbook_evaluator: Default::default(),
+        auto_compaction: Default::default(),
         project_id: project_id.into(),
         agent_id: StewardAgentId::Codex,
         model: "gpt-5.6-luna".into(),

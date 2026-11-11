@@ -127,4 +127,6 @@ pub enum InvocationError {
     InvalidPromptBinding,
     #[error("assistant launch or wake configuration is invalid")]
     InvalidAssistantConfiguration,
+    #[error("auto-compaction setting is out of range or unsupported for the agent")]
+    InvalidAutoCompaction,
 }

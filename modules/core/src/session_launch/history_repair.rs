@@ -131,6 +131,7 @@ impl ProviderHistoryRepairPlan {
             &self.provider_process_directory,
             None,
             None,
+            None,
             self.runtime_signal_sender.clone(),
         )
         .map_err(|error| {

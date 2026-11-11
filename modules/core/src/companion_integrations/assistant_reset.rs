@@ -116,6 +116,7 @@ mod tests {
         runtime
             .set_steward_configuration(StewardConfigurationUpdate {
                 playbook_evaluator: None,
+                auto_compaction: None,
                 project_id: &project_id,
                 agent_id: "codex",
                 model: "default".into(),

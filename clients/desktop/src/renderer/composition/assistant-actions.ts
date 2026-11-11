@@ -1,5 +1,5 @@
 import type { SourceDesktopApi } from "../transport/desktop-api.js";
-import type { PlaybookEvaluatorSettingsDto } from "@termloop/contract/current";
+import type { AutoCompactionSettingsDto, PlaybookEvaluatorSettingsDto } from "@termloop/contract/current";
 import type { Session } from "../model.js";
 import type { StewardPanelProps } from "../ui/StewardPanel.js";
 import {
@@ -44,6 +44,7 @@ export function createAssistantActions({
       systemPrompt: string,
       expectedRevision: number,
       playbookEvaluator?: PlaybookEvaluatorSettingsDto,
+      autoCompaction?: AutoCompactionSettingsDto,
     ) => api.stewardConfigurationSet({
       projectId,
       agentId,
@@ -54,6 +55,7 @@ export function createAssistantActions({
       systemPrompt,
       expectedRevision,
       ...(playbookEvaluator === undefined ? {} : { playbookEvaluator }),
+      ...(autoCompaction === undefined ? {} : { autoCompaction }),
     })),
     deleteConfiguration: coordinator.wrapMutation(identity, (expectedRevision: number) =>
       api.stewardConfigurationDelete({ projectId, expectedRevision })),

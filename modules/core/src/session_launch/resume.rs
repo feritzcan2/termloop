@@ -30,6 +30,7 @@ pub struct AgentResumePlan {
     pub(super) agent_profile_ref: Option<String>,
     pub(super) personal_agent: Option<termloop_domain::PersonalAgent>,
     pub(super) steward_system_prompt: Option<String>,
+    pub(super) steward_auto_compaction: termloop_domain::AutoCompactionSettings,
     pub(super) mcp_authorizer: super::McpAuthorizer,
     pub(super) observation_transport: AgentObservationTransport,
     pub(super) runtime_signal_sender: Option<Sender<AgentRuntimeSignal>>,
@@ -224,6 +225,7 @@ impl AgentResumePlan {
                     reasoning: &self.launch_selection.reasoning,
                     role: role.0,
                     system_prompt: role.2,
+                    auto_compaction: self.steward_auto_compaction,
                     cwd: &self.cwd,
                     conversation,
                     observation,
@@ -1013,15 +1015,19 @@ impl CoreRuntime {
             .launch_scoped_observation_supported(&agent_id)
             .then(|| format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple()));
         let mcp_role = self.resumed_mcp_role(&session, &transport);
-        let steward_system_prompt = match &mcp_role {
+        let steward_configuration = match &mcp_role {
             Some(super::AgentMcpRole::Steward { project_id }) => self
                 .store
                 .steward_configurations()
                 .iter()
-                .find(|configuration| configuration.project_id == *project_id)
-                .map(|configuration| configuration.system_prompt.clone()),
+                .find(|configuration| configuration.project_id == *project_id),
             _ => None,
         };
+        let steward_system_prompt =
+            steward_configuration.map(|configuration| configuration.system_prompt.clone());
+        let steward_auto_compaction = steward_configuration
+            .map(|configuration| configuration.auto_compaction)
+            .unwrap_or_default();
         let mcp_token = mcp_role
             .is_some()
             .then(termloop_platform::generate_capability_token);
@@ -1079,6 +1085,7 @@ impl CoreRuntime {
                 agent_profile_ref,
                 personal_agent: self.store.session_agent_profile(&session.id).cloned(),
                 steward_system_prompt,
+                steward_auto_compaction,
                 mcp_authorizer: self.mcp_authorizer.clone(),
                 observation_transport: transport,
                 runtime_signal_sender: Some(self.agent_runtime_sender.clone()),

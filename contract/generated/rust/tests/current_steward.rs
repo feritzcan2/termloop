@@ -164,3 +164,67 @@ fn absent_and_current_configuration_results_are_strict() {
         })
     ));
 }
+
+#[test]
+fn steward_auto_compaction_is_optional_and_bounded_per_provider_unit() {
+    let params = |auto_compaction: serde_json::Value| {
+        let mut params = json!({
+            "projectId":"project-1",
+            "agentId":"claude",
+            "model":"default",
+            "permission":"bypassPermissions",
+            "reasoning":"default",
+            "enabled":true,
+            "systemPrompt":"",
+            "expectedRevision":1
+        });
+        if !auto_compaction.is_null() {
+            params["autoCompaction"] = auto_compaction;
+        }
+        params
+    };
+    // Older clients omit the field and keep the saved value.
+    assert!(validate_method_params("steward.configurationSet", &params(json!(null))));
+    for (claude, codex, valid) in [
+        (250_000, 90, true),
+        (100_000, 1, true),
+        (1_000_000, 100, true),
+        (99_999, 90, false),
+        (1_000_001, 90, false),
+        (250_000, 0, false),
+        (250_000, 101, false),
+    ] {
+        assert_eq!(
+            validate_method_params(
+                "steward.configurationSet",
+                &params(json!({"claudeWindowTokens":claude,"codexThresholdPercent":codex})),
+            ),
+            valid,
+            "{claude} {codex}"
+        );
+    }
+    assert!(!validate_method_params(
+        "steward.configurationSet",
+        &params(json!({"claudeWindowTokens":250_000})),
+    ));
+    assert!(validate_method_result(
+        "steward.configurationSet",
+        &json!({
+            "configuration":{
+                "projectId":"project-1",
+                "agentId":"codex",
+                "model":"default",
+                "permission":"bypassPermissions",
+                "reasoning":"default",
+                "enabled":true,
+                "systemPrompt":"",
+                "executorSessionId":null,
+                "playbookEvaluator":{"codexModel":null,"claudeModel":null,"permission":"plan"},
+                "autoCompaction":{"claudeWindowTokens":250_000,"codexThresholdPercent":90},
+                "generation":1,
+                "updatedAtEpochMs":10
+            },
+            "stateRevision":4
+        })
+    ));
+}

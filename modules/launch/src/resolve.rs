@@ -22,7 +22,16 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
         approved_tools,
         approved_external_tools,
         read_only_workspace,
+        auto_compaction,
     } = request;
+    if let Some(settings) = auto_compaction
+        && (!settings.is_valid() || !matches!(agent_id, "claude" | "codex"))
+    {
+        return Err(InvocationError::InvalidAutoCompaction);
+    }
+    let codex_compact_threshold = auto_compaction
+        .filter(|_| agent_id == "codex")
+        .map(|settings| settings.codex_threshold_percent);
     if let Some(instructions) = explicit_provider_instructions
         && (instructions.trim().is_empty() || instructions.len() > 64 * 1024)
     {
@@ -264,6 +273,13 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
             ]);
         }
     }
+    if let Some(percent) = codex_compact_threshold {
+        arguments.extend(
+            codex_auto_compaction_args(percent)
+                .into_iter()
+                .map(|argument| ResolvedArgument::exact(argument, "auto-compaction threshold")),
+        );
+    }
     if let Some(policy) = execution {
         apply_execution_policy(agent_id, &mut arguments, policy)?;
     }
@@ -321,6 +337,12 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
     }
     if let Some(mcp) = mcp {
         environment = environment.with_explicit("TERMLOOP_MCP_TOKEN", mcp.token);
+    }
+    if let Some(settings) = auto_compaction.filter(|_| agent_id == "claude") {
+        environment = environment.with_explicit(
+            CLAUDE_AUTO_COMPACT_WINDOW_VARIABLE,
+            settings.claude_window_tokens.to_string(),
+        );
     }
     if let Some(context) = session_start_context {
         environment = environment.with_explicit(termloop_agents::CLAUDE_SESSION_START_CONTEXT_VARIABLE, context);
@@ -525,6 +547,7 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
                 .map(|s| (*s).to_owned())
                 .collect(),
             workspace_network,
+            post_turn_compact_threshold_percent: codex_compact_threshold,
         },
         codex_resume_permissions: if inherits_codex_permissions {
             let (resume_ref, fork) = match conversation {

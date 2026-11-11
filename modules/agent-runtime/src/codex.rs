@@ -77,6 +77,7 @@ pub fn start_codex_runtime(
     provider_process_directory: &Path,
     mcp: Option<termloop_launch::McpConnection<'_>>,
     developer_instructions: Option<&str>,
+    post_turn_compact_threshold_percent: Option<u8>,
     signals: Sender<termloop_agents::AgentRuntimeSignal>,
 ) -> Result<CodexRuntime, PreparationError> {
     start_codex_runtime_with_executable_directory(
@@ -90,7 +91,10 @@ pub fn start_codex_runtime(
         developer_instructions,
         signals,
         None,
-        &termloop_launch::CodexRuntimePolicy::default(),
+        &termloop_launch::CodexRuntimePolicy {
+            post_turn_compact_threshold_percent,
+            ..termloop_launch::CodexRuntimePolicy::default()
+        },
     )
 }
 

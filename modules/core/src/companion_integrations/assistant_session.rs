@@ -33,6 +33,7 @@ pub struct PersistentAssistantTarget {
     pub reasoning: String,
     pub cwd: String,
     pub system_prompt: Option<String>,
+    pub auto_compaction: termloop_domain::AutoCompactionSettings,
 }
 
 pub struct PersistentAssistantLaunchPlan {
@@ -382,6 +383,7 @@ impl CoreRuntime {
                 reasoning: &target.reasoning,
                 role,
                 system_prompt: target.system_prompt.as_deref(),
+                auto_compaction: target.auto_compaction,
                 cwd: &target.cwd,
                 conversation,
                 observation,
@@ -439,6 +441,7 @@ impl CoreRuntime {
             reasoning: configuration.reasoning.clone(),
             cwd: project.folder_path.clone(),
             system_prompt: Some(configuration.system_prompt.clone()),
+            auto_compaction: configuration.auto_compaction,
         })
     }
 
@@ -829,6 +832,7 @@ mod tests {
         runtime
             .set_steward_configuration(StewardConfigurationUpdate {
                 playbook_evaluator: None,
+                auto_compaction: None,
                 project_id: &project_id,
                 agent_id: "codex",
                 model: "default".into(),
@@ -939,6 +943,7 @@ mod tests {
             .set_steward_configuration(
                 crate::companion_integrations::steward::StewardConfigurationUpdate {
                     playbook_evaluator: None,
+                    auto_compaction: None,
                     project_id: &project_id,
                     agent_id: "codex",
                     model: "default".into(),

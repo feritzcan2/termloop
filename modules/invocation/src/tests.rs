@@ -1247,6 +1247,7 @@ fn persistent_assistants_apply_their_selected_permission() {
             role: ExecutorRole::Steward,
             system_prompt: Some(""),
 
+            auto_compaction: termloop_domain::AutoCompactionSettings::default(),
             cwd: "/tmp/project",
             conversation: AgentConversationLaunch::Fresh { resume_ref: None },
             observation: None,
@@ -1288,6 +1289,21 @@ fn persistent_assistants_apply_their_selected_permission() {
             })),
             _ => unreachable!(),
         }
+        // The default Steward compaction reaches each provider in its own unit.
+        match agent_id {
+            "codex" => assert!(steward.args().windows(2).any(|arguments| {
+                arguments == ["-c", "model_post_turn_compact_threshold_percent=90"]
+            })),
+            "claude" => assert_eq!(
+                steward
+                    .environment()
+                    .entries()
+                    .find(|(key, _)| *key == "CLAUDE_CODE_AUTO_COMPACT_WINDOW")
+                    .map(|(_, value)| value.to_string_lossy().into_owned()),
+                Some("250000".into())
+            ),
+            _ => unreachable!(),
+        }
         assert!(steward.initial_input().is_some_and(|input| {
             input.contains("TermLoop has launched this persistent Project Steward Session.")
                 && input.contains("**Initial activation**")
@@ -1307,6 +1323,7 @@ fn persistent_assistants_apply_their_selected_permission() {
             role: ExecutorRole::Steward,
             system_prompt: Some("Answer briefly in Turkish."),
 
+            auto_compaction: termloop_domain::AutoCompactionSettings::default(),
             cwd: "/tmp/project",
             conversation: AgentConversationLaunch::Fresh { resume_ref: None },
             observation: None,
@@ -1382,6 +1399,7 @@ fn persistent_steward_custom_instructions_cannot_erase_the_runtime_protocol() {
         role: ExecutorRole::Steward,
         system_prompt: Some(custom),
 
+        auto_compaction: termloop_domain::AutoCompactionSettings::default(),
         cwd: "/tmp/project",
         conversation: AgentConversationLaunch::Fresh { resume_ref: None },
         observation: None,

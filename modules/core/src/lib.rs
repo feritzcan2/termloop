@@ -84,7 +84,7 @@ pub use task_worktree::{
     TaskWorktreeProvisioningProgress, TaskWorktreeProvisioningStep, managed_task_checkout_names,
 };
 pub use termloop_domain::McpToolName;
-pub use termloop_domain::PlaybookEvaluatorSettings;
+pub use termloop_domain::{AutoCompactionSettings, PlaybookEvaluatorSettings};
 pub use termloop_domain::ProjectTaskAutomationConfiguration;
 pub use termloop_domain::RoutineActionHandling;
 pub use termloop_domain::RoutineTriggerMode;
@@ -3928,6 +3928,7 @@ mod tests {
                 &runtime.write_authority,
                 termloop_domain::StewardConfiguration {
                     playbook_evaluator: Default::default(),
+                    auto_compaction: Default::default(),
                     project_id: project_id.clone(),
                     agent_id: termloop_domain::StewardAgentId::Claude,
                     model: "default".into(),

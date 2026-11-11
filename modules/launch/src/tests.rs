@@ -416,6 +416,115 @@ fn a_read_only_workspace_denies_edits_whatever_the_permission() {
 }
 
 #[test]
+fn auto_compaction_reaches_each_provider_in_its_own_unit() {
+    let template = PromptTemplate {
+        id: "auto-compaction-test",
+        version: 1,
+        authored_body: "Steward",
+    };
+    let settings = termloop_domain::AutoCompactionSettings {
+        claude_window_tokens: 250_000,
+        codex_threshold_percent: 90,
+    };
+
+    let mut request = LaunchRequest::interactive("claude", "/tmp/example", &template);
+    request.auto_compaction = Some(settings);
+    let manifest = resolve(request).unwrap();
+    let entry = manifest
+        .inspectable_manifest()
+        .environment
+        .iter()
+        .find(|entry| entry.key == CLAUDE_AUTO_COMPACT_WINDOW_VARIABLE)
+        .expect("visible auto-compaction key");
+    assert_eq!(entry.source, "invocation");
+    let payload = manifest.into_payload();
+    assert_eq!(
+        payload
+            .environment()
+            .entries()
+            .find(|(key, _)| *key == CLAUDE_AUTO_COMPACT_WINDOW_VARIABLE)
+            .map(|(_, value)| value.to_string_lossy().into_owned()),
+        Some("250000".into())
+    );
+    assert!(!payload.args().iter().any(|arg| arg.contains("compact")));
+
+    let mut request = LaunchRequest::interactive("codex", "/tmp/example", &template);
+    request.auto_compaction = Some(settings);
+    let payload = resolve(request).unwrap().into_payload();
+    assert!(
+        payload
+            .args()
+            .windows(2)
+            .any(|args| args == ["-c", "model_post_turn_compact_threshold_percent=90"])
+    );
+    assert_eq!(
+        payload.codex_runtime_policy().post_turn_compact_threshold_percent,
+        Some(90)
+    );
+    assert!(
+        !payload
+            .environment_keys()
+            .any(|key| key == CLAUDE_AUTO_COMPACT_WINDOW_VARIABLE)
+    );
+
+    let request = LaunchRequest::interactive("claude", "/tmp/example", &template);
+    let payload = resolve(request).unwrap().into_payload();
+    assert!(
+        !payload
+            .environment_keys()
+            .any(|key| key == CLAUDE_AUTO_COMPACT_WINDOW_VARIABLE)
+    );
+    let request = LaunchRequest::interactive("codex", "/tmp/example", &template);
+    let payload = resolve(request).unwrap().into_payload();
+    assert!(!payload.args().iter().any(|arg| arg.contains("compact")));
+    assert_eq!(payload.codex_runtime_policy().post_turn_compact_threshold_percent, None);
+}
+
+#[test]
+fn auto_compaction_rejects_out_of_range_values_and_other_agents() {
+    let template = PromptTemplate {
+        id: "auto-compaction-test",
+        version: 1,
+        authored_body: "Steward",
+    };
+    let mut request = LaunchRequest::interactive("claude", "/tmp/example", &template);
+    request.auto_compaction = Some(termloop_domain::AutoCompactionSettings {
+        claude_window_tokens: 50_000,
+        codex_threshold_percent: 90,
+    });
+    assert!(matches!(resolve(request), Err(InvocationError::InvalidAutoCompaction)));
+    let mut request = LaunchRequest::interactive("gemini", "/tmp/example", &template);
+    request.auto_compaction = Some(termloop_domain::AutoCompactionSettings::default());
+    assert!(matches!(resolve(request), Err(InvocationError::InvalidAutoCompaction)));
+}
+
+#[test]
+fn codex_app_server_receives_the_auto_compaction_threshold() {
+    let policy = CodexRuntimePolicy {
+        post_turn_compact_threshold_percent: Some(75),
+        ..CodexRuntimePolicy::default()
+    };
+    let launch = codex_app_server_with_project_trust(
+        "ws://127.0.0.1:4568",
+        "/tmp",
+        "compaction-proof",
+        None,
+        None,
+        None,
+        CodexProjectTrust::Inherit,
+        None,
+        &policy,
+    )
+    .unwrap();
+    assert!(
+        launch
+            .args()
+            .windows(2)
+            .any(|args| args == ["-c", "model_post_turn_compact_threshold_percent=75"])
+    );
+}
+
+#[test]
 fn agent_cargo_target_sharding_is_stable_and_bounded() {
     assert_eq!(agent_cargo_target_shard(None), 0);
     assert_eq!(agent_cargo_target_shard(Some("session-1")), 1);
@@ -601,6 +710,7 @@ fn execution_server_keeps_named_tool_policy_for_remote_resume() {
         approved_tools: vec!["report".into()],
         approved_external_tools: vec!["mcp__slack__read_channel".into()],
         workspace_network: Some(true),
+        post_turn_compact_threshold_percent: None,
     };
     let launch = codex_app_server_with_project_trust(
         "ws://127.0.0.1:4568",

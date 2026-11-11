@@ -139,6 +139,9 @@ pub fn codex_app_server_with_project_trust(
             format!("sandbox_workspace_write.network_access={enabled}"),
         ]);
     }
+    if let Some(percent) = policy.post_turn_compact_threshold_percent {
+        args.extend(codex_auto_compaction_args(percent));
+    }
     if let Some(instructions) = developer_instructions {
         args.extend(codex_developer_instructions_args(instructions)?);
     }

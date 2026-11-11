@@ -1022,6 +1022,7 @@ pub(crate) mod tests {
                 &runtime.write_authority,
                 StewardConfiguration {
                     playbook_evaluator: Default::default(),
+                    auto_compaction: Default::default(),
                     project_id: project_id.clone(),
 
                     agent_id: StewardAgentId::Codex,

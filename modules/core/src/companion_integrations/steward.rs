@@ -32,6 +32,8 @@ pub struct StewardConfigurationUpdate<'a> {
     pub reasoning: String,
     /// Omission preserves the current evaluator settings.
     pub playbook_evaluator: Option<termloop_domain::PlaybookEvaluatorSettings>,
+    /// Omission preserves the current compaction settings.
+    pub auto_compaction: Option<termloop_domain::AutoCompactionSettings>,
     pub enabled: bool,
     pub system_prompt: String,
     pub expected_revision: u64,
@@ -399,6 +401,7 @@ impl CoreRuntime {
                     permission: current.permission,
                     reasoning: current.reasoning,
                     playbook_evaluator: current.playbook_evaluator,
+                    auto_compaction: current.auto_compaction,
                     enabled: current.enabled,
                     system_prompt: system_prompt.to_owned(),
                     executor_session_id: None,
@@ -889,6 +892,7 @@ impl CoreRuntime {
             permission,
             reasoning,
             playbook_evaluator,
+            auto_compaction,
             enabled,
             system_prompt,
             expected_revision,
@@ -941,11 +945,20 @@ impl CoreRuntime {
             )
             .map_err(|_| CoreError::InvalidParams("playbookEvaluator".into()))?;
         }
+        let auto_compaction = auto_compaction
+            .or_else(|| current.map(|current| current.auto_compaction))
+            .unwrap_or_default();
+        if !auto_compaction.is_valid() {
+            return Err(CoreError::InvalidParams("autoCompaction".into()));
+        }
+        // Compaction is fixed when the provider starts, so a change relaunches
+        // the Steward exactly like a model or reasoning change.
         let steward_unchanged = current.is_some_and(|current| {
             current.agent_id == agent_id
                 && current.model == model
                 && current.permission == permission
                 && current.reasoning == reasoning
+                && current.auto_compaction == auto_compaction
                 && current.enabled == enabled
                 && current.system_prompt == system_prompt
         });
@@ -973,6 +986,7 @@ impl CoreRuntime {
             permission,
             reasoning,
             playbook_evaluator,
+            auto_compaction,
             enabled,
             system_prompt,
             executor_session_id: current
@@ -1223,6 +1237,7 @@ mod tests {
         assert!(matches!(
             runtime.set_steward_configuration(StewardConfigurationUpdate {
                 playbook_evaluator: None,
+                auto_compaction: None,
                 project_id,
                 agent_id: "codex",
                 model: "default".into(),
@@ -1239,6 +1254,7 @@ mod tests {
         runtime
             .set_steward_configuration(StewardConfigurationUpdate {
                 playbook_evaluator: None,
+                auto_compaction: None,
                 project_id,
                 agent_id: "codex",
                 model: "default".into(),
@@ -1254,6 +1270,7 @@ mod tests {
         assert!(matches!(
             runtime.set_steward_configuration(StewardConfigurationUpdate {
                 playbook_evaluator: None,
+                auto_compaction: None,
                 project_id,
                 agent_id: "codex",
                 model: "default".into(),
@@ -1272,6 +1289,7 @@ mod tests {
         let changed = runtime
             .set_steward_configuration(StewardConfigurationUpdate {
                 playbook_evaluator: None,
+                auto_compaction: None,
                 project_id,
                 agent_id: "claude",
                 model: "default".into(),
@@ -1333,6 +1351,7 @@ mod tests {
         runtime
             .set_steward_configuration(StewardConfigurationUpdate {
                 playbook_evaluator: None,
+                auto_compaction: None,
                 project_id: &first,
                 agent_id: "codex",
                 model: "default".into(),

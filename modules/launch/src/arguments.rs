@@ -112,6 +112,17 @@ fn observation_environment_conflicts(
     ) && termloop_platform::gemini_cli_system_defaults_source_present(environment)
 }
 
+/// Claude reads its auto-compaction window from this variable ahead of the
+/// user's `autoCompactWindow` setting, so it scopes the choice to one launch.
+const CLAUDE_AUTO_COMPACT_WINDOW_VARIABLE: &str = "CLAUDE_CODE_AUTO_COMPACT_WINDOW";
+
+fn codex_auto_compaction_args(percent: u8) -> [String; 2] {
+    [
+        "-c".into(),
+        format!("model_post_turn_compact_threshold_percent={percent}"),
+    ]
+}
+
 fn codex_developer_instructions_args(instructions: &str) -> Result<[String; 2], InvocationError> {
     if instructions.trim().is_empty() || instructions.len() > 64 * 1024 {
         return Err(InvocationError::InvalidDeveloperInstructions);
