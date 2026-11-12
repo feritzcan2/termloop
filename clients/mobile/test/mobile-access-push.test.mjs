@@ -35,10 +35,11 @@ describe("mobile APNs attention projection", () => {
     const review = attentionTransitions(previous, [status("idle", "hook")], [session]);
     expect(review).toEqual([expect.objectContaining({
       kind: "needsReview", sessionId: session.id, runtimeEpoch: 17,
-      title: "Claude is ready for review",
+      title: "Mobile notifications",
+      body: "Turn completed.",
     })]);
     const waiting = attentionTransitions(previous, [status("awaitingInput", "hook")], [session]);
-    expect(waiting[0]).toMatchObject({ kind: "needsInput", title: "Claude needs your input" });
+    expect(waiting[0]).toMatchObject({ kind: "needsInput", title: "Mobile notifications needs your input" });
     expect(attentionTransitions(new Map([[session.id, "awaitingInput"]]), [status("awaitingInput", "hook")], [session]))
       .toEqual([]);
     expect(attentionTransitions(previous, [status("idle", "polling")], [session])).toEqual([]);
@@ -51,6 +52,8 @@ describe("mobile APNs attention projection", () => {
       [status("idle", "hook")],
       [{ ...session, name: null }],
     );
+    expect(notification.title).toBe("Claude");
+    expect(notification.title).not.toMatch(/ready for review/iu);
     expect(notification.body).toBe("Turn completed.");
     expect(notification.body).not.toMatch(/tap to/iu);
     expect(withNotificationPreview(notification, "I finished the reconnect fix.").body)

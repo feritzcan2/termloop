@@ -19,6 +19,17 @@ describe("mobile terminal notification preview", () => {
     expect(preview).toBe("Should I add the retry test?");
   });
 
+  it("drops agent footer and status-line chrome below the answer", () => {
+    const preview = notificationPreview([Buffer.from([
+      "I finished the reconnect fix.",
+      "ctx █▒▒▒▒▒▒▒▒▒▒ 10% (100k/1.0M) · 5h",
+      "10% (2h15m) · wk 62% (10h35m)",
+      "· $7.14 · v2.1.322 · 🕚 11:24",
+      "▶▶ auto mode on (shift+tab to cycle) · PR #182",
+    ].join("\r\n"))], "needsReview");
+    expect(preview).toBe("I finished the reconnect fix.");
+  });
+
   it("bounds content and redacts obvious credential shapes", () => {
     const secret = `sk-${"a".repeat(48)}`;
     const preview = notificationPreview([

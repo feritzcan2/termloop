@@ -171,7 +171,17 @@ function usefulLine(line) {
   if (line.length < 4 || !/[\p{L}\p{N}]/u.test(line)) return false;
   if (/^(?:Claude Code|OpenAI Codex|Tip:|Working\(|esc to interrupt|context left|tokens? used)/iu.test(line)) return false;
   if (/^[─━═│┃┌┐└┘╭╮╰╯┬┴├┤┼<>›❯._\-\s]+$/u.test(line)) return false;
-  return true;
+  return !agentFooterLine(line);
+}
+
+/// Agent TUIs repaint a mode hint and an optional user status line below the
+/// prompt; those rows are chrome, not the agent's answer.
+function agentFooterLine(line) {
+  if (/shift\+tab to cycle|\? for shortcuts|\b(?:auto|plan) mode on\b|accept edits on|bypass permissions on/iu.test(line)) return true;
+  if ((line.match(/[█▉▊▋▌▍▎▏▓▒░■□▪▫⛁⛀⛶⣿]/gu) ?? []).length >= 3) return true;
+  if (!line.includes("·")) return false;
+  const segments = line.split("·").map((segment) => segment.trim());
+  return segments.every((segment) => segment === "" || (segment.length <= 24 && /[\d$]/u.test(segment)));
 }
 
 function redactPreview(value) {
