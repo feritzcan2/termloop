@@ -311,9 +311,9 @@ function notificationOf(session, kind) {
     runtimeEpoch: session.runtime_epoch,
     projectId: session.project_id,
     cwd: typeof session.process?.cwd === "string" ? session.process.cwd : null,
-    // The title names the Session so stacked notifications stay distinguishable;
-    // a finished turn needs no extra "ready for review" wording.
-    title: kind === "needsInput" ? `${label} needs your input` : label,
+    // The title only names the Session so stacked notifications stay
+    // distinguishable; the body already carries what the agent is waiting on.
+    title: label,
     body: kind === "needsInput" ? "Waiting for your input." : "Turn completed.",
   };
 }

@@ -39,7 +39,7 @@ describe("mobile APNs attention projection", () => {
       body: "Turn completed.",
     })]);
     const waiting = attentionTransitions(previous, [status("awaitingInput", "hook")], [session]);
-    expect(waiting[0]).toMatchObject({ kind: "needsInput", title: "Mobile notifications needs your input" });
+    expect(waiting[0]).toMatchObject({ kind: "needsInput", title: "Mobile notifications", body: "Waiting for your input." });
     expect(attentionTransitions(new Map([[session.id, "awaitingInput"]]), [status("awaitingInput", "hook")], [session]))
       .toEqual([]);
     expect(attentionTransitions(previous, [status("idle", "polling")], [session])).toEqual([]);
