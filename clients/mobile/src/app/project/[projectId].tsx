@@ -4,8 +4,7 @@ import { useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { ConnectionBlocked } from "@/components/connection-blocked";
-import { AgentAvatar } from "@/components/agent-avatar";
-import { TaskAgentRow } from "@/features/tasks/task-agent-row";
+import { AgentSessionRow } from "@/features/agents/agent-session-row";
 import { Banner, Card, CardDivider, EmptyState } from "@/components/primitives";
 import { ProjectSelector } from "@/components/project-selector";
 import { Row } from "@/components/row";
@@ -374,19 +373,16 @@ function AgentRowView({ row, membership, nowMs, openActions }: { row: AgentRow; 
     });
   };
   const onLongPress = () => openActions(row.sessionId);
-  const content = task && !membership
-    ? <TaskAgentRow row={row} task={task} age={age} onPress={onPress} onLongPress={onLongPress} />
-    : <Row
-      tone={row.tone}
-      title={title}
-      state={row.stateLabel}
-      detail={row.runner ?? row.folder}
-      meta={age}
-      accessibleName={membership ? `${membership.displayName}, Workflow ${membership.group.name}, ${row.accessibleName}` : row.accessibleName}
-      trailing={<AgentAvatar agentId={row.agentId} active={row.attachable} />}
-      onPress={onPress}
-      onLongPress={onLongPress}
-    />;
+  /// A workflow frame already names its Task, so only an ordinary Agent repeats it.
+  const content = <AgentSessionRow
+    row={row}
+    task={task && !membership ? task : undefined}
+    title={title}
+    accessibleName={membership ? `${membership.displayName}, Workflow ${membership.group.name}, ${row.accessibleName}` : row.accessibleName}
+    age={age}
+    onPress={onPress}
+    onLongPress={onLongPress}
+  />;
   return session === undefined
     ? content
     : <SwipeableSessionRow session={session}>{content}</SwipeableSessionRow>;

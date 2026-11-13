@@ -63,6 +63,20 @@ describe("Start agent", () => {
     expect(launch).toHaveBeenCalledOnce();
   });
 
+  it("launches a shared screenshot's agent without a first message and hands the prompt to the Session", async () => {
+    const h = await harness(true, true);
+    await h.ready();
+    find(h.render(), "First message for the new agent")!.onChangeText("Why is this red?");
+    find(h.render(), "Start and send")!.onPress();
+    await vi.waitFor(() => expect(h.router.replace).toHaveBeenCalledOnce());
+    expect(h.runtime.agentLaunch.previewProject).toHaveBeenCalledWith("connection-local-mac", fixtureProjects[0], saved, "");
+    expect(vi.mocked(h.runtime.agentLaunch.launchProject).mock.calls[0]?.at(-1)).toBe("");
+    expect(h.router.replace.mock.calls[0]?.[0]).toMatchObject({
+      pathname: "/session/[sessionId]",
+      params: { connectionId: "connection-local-mac", shareBatch, shareDraft: "Why is this red?" },
+    });
+  });
+
   it("invalidates an inspected ticket when the first message changes", async () => {
     const h = await harness(true);
     await h.ready();
@@ -113,7 +127,10 @@ describe("Start agent", () => {
 
 // Exercise the route's actual callbacks and memoized dependencies with native
 // presentation mocked. This does not emulate device layout or provider startup.
-async function harness(project = false) {
+const shareBatch = "0f8fad5b-d9cb-469f-a165-70867728950e";
+const sharedImage = { uri: "file:///group/ShareInbox/image.png", mediaType: "image/png", width: 1179, height: 2556 };
+
+async function harness(project = false, shared = false) {
   const runtime = createMockRuntime();
   vi.spyOn(runtime.agentLaunch, "preview");
   vi.spyOn(runtime.agentLaunch, "previewProject");
@@ -154,7 +171,7 @@ async function harness(project = false) {
   const native = {
     ActivityIndicator: "ActivityIndicator", KeyboardAvoidingView: "KeyboardAvoidingView", Pressable: "Pressable",
     ScrollView: "ScrollView", Text: "Text", TextInput: "TextInput", View: "View",
-    StyleSheet: { create: (value: unknown) => value }, Keyboard: { dismiss() {} }, Platform: { OS: "ios" },
+    StyleSheet: { create: (value: unknown) => value }, Keyboard: { dismiss() {} }, Platform: { OS: "ios" }, Image: "Image",
   };
   const bundle = await build({
     entryPoints: [fileURLToPath(new URL("../src/app/launch/[taskId].tsx", import.meta.url))],
@@ -167,7 +184,10 @@ async function harness(project = false) {
     if (name === "react-native") return native;
     if (name === "expo-router") return {
       useRouter: () => router,
-      useLocalSearchParams: () => ({ taskId: project ? "project:" + fixtureProjects[0]!.id : fixtureTasks[0]!.id }),
+      useLocalSearchParams: () => ({
+        taskId: project ? "project:" + fixtureProjects[0]!.id : fixtureTasks[0]!.id,
+        ...(shared ? { shareBatch } : {}),
+      }),
     };
     if (name === "@/components/primitives") return { Banner: "Banner", Card: "Card", CardDivider: "CardDivider", PrimaryButton: "PrimaryButton", SectionHeader: "SectionHeader" };
     if (name === "@/components/screen") return { Screen: "Screen", ScreenHeader: "ScreenHeader" };
@@ -178,6 +198,10 @@ async function harness(project = false) {
     if (name === "@/presentation/agent-launch-presentation") return presentation;
     if (name === "@/platform/agent-launch-preferences") return { agentLaunchPreferences: preferences };
     if (name === "@/platform/presentation") return { keyboardAvoidingBehavior: "padding" };
+    if (name === "@/platform/share-inbox") return {
+      validShareBatchId: (value: unknown) => value === shareBatch,
+      shareInbox: { read: (batch: string) => (batch === shareBatch ? sharedImage : undefined), remove: vi.fn() },
+    };
     if (name === "@/theme/tokens") return tokens;
     if (name === "@/theme/context") return { useTheme: () => lightTheme, createThemedStyles: (create: (theme: typeof lightTheme) => unknown) => () => create(lightTheme) };
     if (name === "@/theme/typography") return { fontFamily: { mono: "Menlo" }, createTextStyles: () => ({ body: {}, muted: {} }), useTextStyles: () => ({ body: {}, muted: {} }) };
@@ -194,7 +218,7 @@ async function harness(project = false) {
   cleanups.push(() => slots.forEach((slot) => slot?.cleanup?.()));
   return {
     runtime, preferences, router, render,
-    ready: async () => { render(); await vi.waitFor(() => expect(find(render(), "Start agent")?.disabled).toBe(false)); },
+    ready: async () => { render(); await vi.waitFor(() => expect(find(render(), shared ? "Start and send" : "Start agent")?.disabled).toBe(false)); },
   };
 }
 

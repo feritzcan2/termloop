@@ -4,9 +4,9 @@ import { useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { EmptyState, SecondaryButton } from "@/components/primitives";
-import { JiraIssueLink } from "@/components/external-link";
+import { openExternalLink } from "@/components/external-link";
 import type { AgentRow, TaskRow } from "@/presentation/attention-overview";
-import { buildTaskBrowserItems, filterTaskItems, taskFilters, type TaskBrowserItem, type TaskFilter } from "@/presentation/task-browser";
+import { buildTaskBrowserItems, compactBranchName, filterTaskItems, taskFilters, type TaskBrowserItem, type TaskFilter } from "@/presentation/task-browser";
 import { taskChangeLabel } from "@/presentation/task-presentation";
 import { geometry, radius, space } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
@@ -121,6 +121,9 @@ export function TaskBrowser(props: TaskBrowserProps) {
   );
 }
 
+/// Mirrors the desktop sidebar's Task card: a tone spine, one identity line
+/// (status dot, ticket key, status pill, scope), a compact title and brief, a
+/// mono meta line, and the Task's live agents as their own rows underneath.
 function TaskCard({ item, openTask, openChanges, openAgent }: {
   item: TaskBrowserItem;
   openTask: TaskBrowserProps["openTask"];
@@ -129,60 +132,103 @@ function TaskCard({ item, openTask, openChanges, openAgent }: {
 }) {
   const { color, toneColor, toneWash } = useTheme();
   const styles = useStyles();
-  const { row, task, agent } = item;
-  const tint = row.tone === "quiet" || row.tone === "done" ? color.textSecondary : toneColor[row.tone];
-  const prominent = item.filter === "attention" || item.filter === "active";
-  const wash = row.tone === "quiet" || row.tone === "done" ? color.bgRaised : toneWash[row.tone];
-  const waiting = row.attention?.tone === "attention" || row.attention?.tone === "review";
-  const actionTint = row.attention ? toneColor[row.attention.tone] : tint;
+  const { row, task, card, agents } = item;
+  const lit = row.tone !== "quiet" && row.tone !== "done";
+  const tint = lit ? toneColor[row.tone] : color.textSecondary;
+  const waiting = row.attention?.tone === "attention" || row.attention?.tone === "review" ? row.attention : undefined;
+  const waitingAgent = waiting ? agents.find((agent) => agent.sessionId === waiting.sessionId) ?? item.agent : undefined;
+  const shownAgents = agents.slice(0, 3);
+  const detail = row.stage.id !== "ready" ? row.stage.summary : item.statusDetail ?? item.brief;
   return (
-    <View style={[styles.card, prominent ? { borderColor: tint, borderLeftWidth: 4 } : null]}>
-      <View style={[styles.cardMeta, prominent ? { backgroundColor: wash } : null]}>
-        <View style={styles.status}>
-          {prominent ? (
-            <View style={[styles.statusIcon, { backgroundColor: tint }]}>
-              <Text style={styles.statusGlyph} accessibilityElementsHidden>{item.filter === "active" ? "↗" : row.tone === "review" ? "✓" : "!"}</Text>
-            </View>
-          ) : <View style={[styles.statusDot, { backgroundColor: tint }]} />}
-          <View style={styles.statusCopy}>
-            <Text style={[styles.statusLabel, prominent ? styles.statusLabelProminent : null, { color: tint }]}>{item.status}</Text>
-            {item.statusDetail ? <Text style={[styles.statusDetail, { color: tint }]}>{item.statusDetail}</Text> : null}
-          </View>
+    <View style={[styles.card, lit ? { borderLeftColor: tint } : null]}>
+      {/* Header and meta rows sit beside the details button, never inside it,
+          so the Jira key and the changes signal stay independently reachable. */}
+      <View style={styles.ids}>
+        <View style={[styles.dot, { backgroundColor: lit ? tint : color.borderStrong }, lit ? { shadowColor: tint } : null]} />
+        {card.key ? (
+          task.jira_url ? (
+            <Pressable
+              accessibilityRole="link"
+              accessibilityLabel={`Open ${card.key} in Jira`}
+              hitSlop={10}
+              onPress={() => { void openExternalLink(task.jira_url!); }}
+            >
+              <Text style={styles.key}>{card.key}</Text>
+            </Pressable>
+          ) : <Text style={styles.key}>{card.key}</Text>
+        ) : null}
+        <View style={[styles.pill, { backgroundColor: lit ? toneWash[row.tone] : color.bgHover }]}>
+          <Text style={[styles.pillLabel, { color: tint }]} numberOfLines={1}>{item.status}</Text>
         </View>
-        <JiraIssueLink url={task.jira_url} />
+        {card.scope ? <Text style={styles.scope} numberOfLines={1}>{card.scope}</Text> : null}
       </View>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${item.status}. ${task.title}. ${item.statusDetail ?? row.stage.summary}`}
         accessibilityHint="Open task details"
         onPress={() => openTask(task.id)}
-        style={({ pressed }) => [pressed ? styles.pressed : null]}
+        style={({ pressed }) => [styles.cardMain, pressed ? styles.pressed : null]}
       >
-        <View style={styles.cardBody}>
-          <View style={styles.cardTitleRow}>
-            <Text style={styles.cardTitle} numberOfLines={3}>{task.title}</Text>
-            <Text style={styles.chevron} accessibilityElementsHidden>›</Text>
-          </View>
-          <Text style={styles.cardDetail} numberOfLines={2}>
-            {row.stage.id !== "ready" ? row.stage.summary : task.brief?.trim() || "Open this task to see its agents and progress."}
-          </Text>
-          {task.branch === null ? null : <Text style={styles.branch} numberOfLines={1}>{task.branch.name}</Text>}
+        <View style={styles.titleRow}>
+          <Text style={styles.cardTitle} numberOfLines={2}>{card.title}</Text>
+          <Text style={styles.chevron} accessibilityElementsHidden>›</Text>
         </View>
+        {detail ? <Text style={styles.brief} numberOfLines={2}>{detail}</Text> : null}
       </Pressable>
-      {agent === undefined && item.changeCount === undefined ? null : (
-        <View style={styles.cardActions}>
-          {agent === undefined ? null : (
-            <Pressable accessibilityRole="button" accessibilityLabel={`${item.agentActionLabel}: ${agent.title} for ${task.title}`} onPress={() => openAgent(agent.sessionId)} style={({ pressed }) => [styles.cardAction, waiting ? { backgroundColor: actionTint } : null, pressed ? styles.actionPressed : null]}>
-              <Text style={[styles.agentAction, waiting ? styles.waitingActionLabel : null]} numberOfLines={1}>{item.agentActionLabel}</Text>
-              <Text style={[styles.actionArrow, waiting ? styles.waitingActionLabel : null]} accessibilityElementsHidden>↗</Text>
+      <View style={styles.meta}>
+        <Text style={[styles.metaBranch, task.branch ? null : styles.metaDim]} numberOfLines={1}>
+          {task.branch ? compactBranchName(task.branch.name) : "No branch"}
+        </Text>
+        {item.changeCount === undefined ? null : (
+          <>
+            <Text style={styles.metaSep}>·</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Review ${taskChangeLabel(item.changeCount)} for ${task.title}`}
+              hitSlop={12}
+              onPress={() => openChanges(task.id)}
+            >
+              <Text style={styles.metaSignal}>{taskChangeLabel(item.changeCount)}</Text>
             </Pressable>
-          )}
-          {item.changeCount === undefined ? null : (
-            <Pressable accessibilityRole="button" accessibilityLabel={`Review ${taskChangeLabel(item.changeCount)} for ${task.title}`} onPress={() => openChanges(task.id)} style={({ pressed }) => [styles.cardAction, pressed ? styles.pressed : null]}>
-              <Text style={styles.changesAction}>{taskChangeLabel(item.changeCount)}</Text>
-              <Text style={styles.actionArrow} accessibilityElementsHidden>›</Text>
-            </Pressable>
-          )}
+          </>
+        )}
+      </View>
+      {waiting && waitingAgent ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${item.agentActionLabel}: ${waitingAgent.title} for ${task.title}`}
+          onPress={() => openAgent(waitingAgent.sessionId)}
+          style={({ pressed }) => [styles.nextStep, { backgroundColor: toneWash[waiting.tone], borderColor: toneColor[waiting.tone] }, pressed ? styles.actionPressed : null]}
+        >
+          <Text style={[styles.nextStepGlyph, { color: toneColor[waiting.tone] }]} accessibilityElementsHidden>▶</Text>
+          <Text style={[styles.nextStepLabel, { color: toneColor[waiting.tone] }]} numberOfLines={1}>
+            {waiting.label} · open {waiting.agent}
+          </Text>
+        </Pressable>
+      ) : null}
+      {shownAgents.length === 0 ? null : (
+        <View style={styles.children}>
+          {shownAgents.map((agent) => {
+            const agentLit = agent.tone !== "quiet" && agent.tone !== "done";
+            const agentTint = agentLit ? toneColor[agent.tone] : color.textSecondary;
+            const brand = agent.agentId === "claude" ? color.agentClaude : agent.agentId === "codex" ? color.agentCodex : color.accent;
+            return (
+              <Pressable
+                key={agent.sessionId}
+                accessibilityRole="button"
+                accessibilityLabel={`Open ${agent.accessibleName}`}
+                onPress={() => openAgent(agent.sessionId)}
+                style={({ pressed }) => [styles.agentRow, pressed ? styles.pressed : null]}
+              >
+                <View style={[styles.agentDot, { backgroundColor: brand }, agentLit ? { borderColor: agentTint } : null]} />
+                <Text style={styles.agentName} numberOfLines={1}>{agent.title}</Text>
+                <Text style={[styles.agentState, { color: agentTint }]} numberOfLines={1}>{agent.stateLabel}</Text>
+              </Pressable>
+            );
+          })}
+          {agents.length > shownAgents.length ? (
+            <Text style={styles.moreAgents}>+{agents.length - shownAgents.length} more — open the task</Text>
+          ) : null}
         </View>
       )}
     </View>
@@ -212,29 +258,33 @@ const useStyles = createThemedStyles(({ color }) => ({
   filterCount: { fontSize: 12, fontVariant: ["tabular-nums"], color: color.textMuted },
   filterLabelSelected: { color: color.onAccent },
   resultCount: { color: color.textSecondary, fontSize: 12 },
-  listContent: { padding: space.screen, paddingTop: space.md, paddingBottom: space.xl + 64, gap: space.md, flexGrow: 1 },
-  card: { backgroundColor: color.bgRaised, borderRadius: 16, overflow: "hidden", borderWidth: StyleSheet.hairlineWidth, borderColor: color.border },
-  cardBody: { padding: space.lg, paddingTop: space.md, gap: 9 },
-  cardMeta: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: space.sm, paddingHorizontal: space.lg, paddingVertical: space.md },
-  status: { flexDirection: "row", alignItems: "center", gap: space.sm, flexGrow: 1, flexShrink: 1, flexBasis: 160 },
-  statusCopy: { flex: 1 },
-  statusDot: { width: 6, height: 6, borderRadius: 3 },
-  statusIcon: { width: 28, height: 28, borderRadius: 8, alignItems: "center", justifyContent: "center" },
-  statusGlyph: { color: color.onAccent, fontSize: 17, fontWeight: "800" },
-  statusLabel: { fontSize: 12, fontWeight: "600", flexShrink: 1 },
-  statusLabelProminent: { fontSize: 14, fontWeight: "800" },
-  statusDetail: { fontSize: 12, lineHeight: 17, marginTop: 3 },
-  cardTitleRow: { flexDirection: "row", alignItems: "center", gap: space.sm },
-  cardTitle: { flex: 1, color: color.text, fontSize: 17, fontWeight: "600", lineHeight: 23, letterSpacing: -0.2 },
-  chevron: { color: color.textMuted, fontSize: 23 },
-  cardDetail: { color: color.textSecondary, fontSize: 13, lineHeight: 19 },
-  branch: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 11, marginTop: 2 },
-  cardActions: { flexDirection: "row", flexWrap: "wrap", borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: color.rule },
-  cardAction: { flexGrow: 1, minHeight: 48, paddingHorizontal: space.lg, paddingVertical: 10, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space.sm },
-  agentAction: { color: color.accentStrong, fontSize: 13, fontWeight: "600", flexShrink: 1 },
-  changesAction: { color: color.textSecondary, fontSize: 13, fontWeight: "500" },
-  actionArrow: { color: color.accentStrong, fontSize: 16 },
-  waitingActionLabel: { color: color.onAccent, fontWeight: "700" },
+  listContent: { padding: space.screen, paddingTop: space.md, paddingBottom: space.xl + 64, gap: space.sm, flexGrow: 1 },
+  card: { backgroundColor: color.bgRaised, borderRadius: radius.card, overflow: "hidden", borderWidth: StyleSheet.hairlineWidth, borderColor: color.border, borderLeftWidth: radius.spine, borderLeftColor: color.border },
+  cardMain: { paddingHorizontal: space.md, paddingVertical: 4, gap: 4 },
+  ids: { flexDirection: "row", alignItems: "center", gap: 7, minHeight: 20, paddingHorizontal: space.md, paddingTop: 10 },
+  titleRow: { flexDirection: "row", alignItems: "flex-start", gap: space.sm },
+  dot: { width: 7, height: 7, borderRadius: 4, shadowOpacity: 0.5, shadowRadius: 3, shadowOffset: { width: 0, height: 0 } },
+  key: { color: color.warning, fontFamily: fontFamily.mono, fontSize: 11.5, fontWeight: "700" },
+  pill: { flexShrink: 1, paddingHorizontal: 7, paddingVertical: 2, borderRadius: radius.pill },
+  pillLabel: { fontSize: 10.5, fontWeight: "700", letterSpacing: 0.2 },
+  scope: { flexShrink: 1, maxWidth: 110, paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, borderWidth: StyleSheet.hairlineWidth, borderColor: color.borderStrong, color: color.textSecondary, fontSize: 10, fontWeight: "600" },
+  chevron: { color: color.textMuted, fontSize: 20, lineHeight: 20 },
+  cardTitle: { flex: 1, color: color.text, fontSize: 15, fontWeight: "600", lineHeight: 20, letterSpacing: -0.2 },
+  brief: { color: color.textSecondary, fontSize: 12.5, lineHeight: 17 },
+  meta: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: space.md, paddingTop: 2, paddingBottom: 10 },
+  metaBranch: { flexShrink: 1, color: color.textSecondary, fontFamily: fontFamily.mono, fontSize: 11 },
+  metaDim: { color: color.textMuted },
+  metaSep: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 11 },
+  metaSignal: { color: color.accent, fontFamily: fontFamily.mono, fontSize: 11, fontWeight: "600" },
+  nextStep: { flexDirection: "row", alignItems: "center", gap: space.sm, minHeight: 40, marginHorizontal: space.md, marginBottom: 10, paddingHorizontal: space.md, borderRadius: radius.control, borderWidth: StyleSheet.hairlineWidth },
+  nextStepGlyph: { fontSize: 10 },
+  nextStepLabel: { flex: 1, fontSize: 13, fontWeight: "700" },
+  children: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: color.rule, paddingVertical: 2 },
+  agentRow: { flexDirection: "row", alignItems: "center", gap: 10, minHeight: geometry.touchTarget, paddingHorizontal: space.md },
+  agentDot: { width: 9, height: 9, borderRadius: 5, borderWidth: 2, borderColor: "transparent" },
+  agentName: { flex: 1, minWidth: 0, color: color.text, fontSize: 13, fontWeight: "500" },
+  agentState: { maxWidth: "45%", fontSize: 11.5, fontWeight: "600" },
+  moreAgents: { color: color.textMuted, fontSize: 11.5, paddingHorizontal: space.md, paddingBottom: 8, paddingLeft: space.md + 19 },
   actionPressed: { opacity: 0.75 },
   pressed: { backgroundColor: color.accentWash },
 }));

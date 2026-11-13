@@ -26,6 +26,11 @@
         "NSSupportsLiveActivities": true,
         "NSLocalNetworkUsageDescription": "TermLoop connects to your Mac over your local network or Tailscale.",
         "NSMicrophoneUsageDescription": "TermLoop uses the microphone only while recording a voice message."
+      },
+      "entitlements": {
+        "com.apple.security.application-groups": [
+          "group.ai.termloop.mobile"
+        ]
       }
     },
     "android": {

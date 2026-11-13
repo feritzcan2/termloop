@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { MobileOverview } from "../../src/application/ports";
 import { fixtureAgentStatuses, fixtureProjects, fixtureSessions, fixtureTasks } from "../../src/fixtures/mobile-overview";
 import { buildProjectOverview } from "../../src/presentation/attention-overview";
-import { buildTaskBrowserItems, filterTaskItems, taskAttachedAgents, taskFilters } from "../../src/presentation/task-browser";
+import { buildTaskBrowserItems, compactBranchName, filterTaskItems, plainTaskBrief, taskAttachedAgents, taskCardTitle, taskFilters } from "../../src/presentation/task-browser";
 import { taskAtAGlance, taskStage } from "../../src/presentation/task-presentation";
 
 const base = fixtureTasks[0]!;
@@ -75,5 +75,16 @@ describe("task browsing", () => {
     expect(items[0]).toMatchObject({ status: "Ready for review", filter: "attention", agentActionLabel: "Review now", statusDetail: "Claude's work is ready to review." });
     expect(itemsFor([base]).items[0]).toMatchObject({ status: "Waiting for you", filter: "attention", agentActionLabel: "Reply now", statusDetail: "Claude needs your reply to continue." });
     expect(itemsFor([base], fixtureSessions, [{ ...fixtureAgentStatuses[0]!, status: "working" }]).items[0]).toMatchObject({ status: "Agent working", filter: "active", agentActionLabel: "View progress" });
+  });
+
+  it("leads a card the way the desktop sidebar does: key, scope and a plain brief", () => {
+    expect(taskCardTitle("[KAN-12] [Payments] Retry failed refunds", "KAN-12")).toEqual({ key: "KAN-12", scope: "Payments", title: "Retry failed refunds" });
+    expect(taskCardTitle("KAN-12", "KAN-12")).toEqual({ key: "KAN-12", scope: undefined, title: "KAN-12" });
+    expect(taskCardTitle("Plain title", undefined)).toEqual({ key: undefined, scope: undefined, title: "Plain title" });
+    expect(plainTaskBrief("h2. Goal\n*Ship* the {{retry}} [docs|https://x.test]")).toBe("Goal Ship the retry docs");
+    expect(plainTaskBrief("   ")).toBeUndefined();
+    expect(compactBranchName("feature/mobile-tasks")).toBe("mobile-tasks");
+    const { items } = itemsFor([{ ...base, jira_url: "https://example.atlassian.net/browse/KAN-321" }]);
+    expect(items[0]).toMatchObject({ card: { key: "KAN-321" }, agents: [{ sessionId: fixtureSessions[0]!.id }] });
   });
 });

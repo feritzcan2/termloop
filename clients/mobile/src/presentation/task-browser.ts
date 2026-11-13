@@ -23,7 +23,63 @@ export interface TaskBrowserItem {
   readonly issueKey: string | undefined;
   readonly changeCount: number | undefined;
   readonly agent: AgentRow | undefined;
+  /// Every live attached agent, loudest first, so the card can list them the
+  /// way the desktop sidebar discloses a Task's Sessions.
+  readonly agents: readonly AgentRow[];
+  readonly card: TaskCardTitle;
+  readonly brief: string | undefined;
 }
+
+/// What a card leads with, matching the desktop sidebar: the ticket key comes
+/// out of the title as its own token and a leading `[Service]` tag becomes a
+/// scope label instead of eating the title's width.
+export interface TaskCardTitle {
+  readonly key: string | undefined;
+  readonly scope: string | undefined;
+  readonly title: string;
+}
+
+const LEADING_SCOPE = /^\s*\[([^\]]{1,40})\]\s*/;
+
+export function taskCardTitle(title: string, issueKey: string | undefined): TaskCardTitle {
+  let rest = title.trim();
+  if (issueKey) {
+    const escaped = issueKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    rest = rest.replace(new RegExp(`^\\s*\\[?${escaped}\\]?\\s*[:\\-–—]?\\s*`, "i"), "");
+  }
+  const scopeMatch = LEADING_SCOPE.exec(rest);
+  const scope = scopeMatch?.[1]?.trim() || undefined;
+  if (scopeMatch) rest = rest.slice(scopeMatch[0].length);
+  return { key: issueKey, scope, title: rest.trim() || title.trim() };
+}
+
+/// A Jira brief arrives as wiki markup; on a card it is a one-glance reminder,
+/// so the markup is dropped and the text flattened onto one line.
+export function plainTaskBrief(brief: string | null | undefined): string | undefined {
+  if (!brief) return undefined;
+  const text = brief
+    .replace(/\{(?:code|noformat|quote|panel|color)(?::[^}]*)?\}/gi, " ")
+    .replace(/\{\{([^}]*)\}\}/g, "$1")
+    .replace(/\[([^\]|]+)\|[^\]]+\]/g, "$1")
+    .replace(/\[(https?:[^\]]+)\]/g, "$1")
+    .replace(/^\s*h[1-6]\.\s*/gim, "")
+    .replace(/^\s*(?:[*#-]+|\|\|?)\s+/gm, "")
+    .replace(/\|\|?/g, " ")
+    .replace(/(^|[\s(])[*_]{1,2}(\S(?:[^*_\n]*\S)?)[*_]{1,2}(?=[\s).,:;!?]|$)/gm, "$1$2")
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text || undefined;
+}
+
+/// Branch prefixes like `feature/` carry no identity on a narrow card.
+export function compactBranchName(name: string): string {
+  return name.slice(name.lastIndexOf("/") + 1) || name;
+}
+
+const agentToneRank: Record<AgentRow["tone"], number> = {
+  attention: 0, review: 1, blocked: 2, interrupted: 3, working: 4, busy: 5, quiet: 6, done: 7,
+};
 
 const stageLabels: Record<TaskStageId, string> = {
   closed: "Closed",
@@ -53,10 +109,13 @@ export function buildTaskBrowserItems(
   return rows.flatMap<TaskBrowserItem>((row) => {
     const task = tasksById.get(row.taskId);
     if (task === undefined) return [];
-    const agent = (task.worktree_presence?.attached_sessions ?? [])
+    const live = (task.worktree_presence?.attached_sessions ?? [])
       .map((entry) => agentsById.get(entry.session_id))
       .filter((entry): entry is AgentRow => entry?.attachable === true)
-      .sort((left, right) => Number(right.sessionId === row.attention?.sessionId) - Number(left.sessionId === row.attention?.sessionId))[0];
+      .sort((left, right) => Number(right.sessionId === row.attention?.sessionId) - Number(left.sessionId === row.attention?.sessionId)
+        || agentToneRank[left.tone] - agentToneRank[right.tone]);
+    const agent = live[0];
+    const issueKey = task.jira_url ? taskJiraIssueKey(task.jira_url) : undefined;
     const filter = row.tone === "attention" || row.tone === "blocked" || row.tone === "review" || row.tone === "interrupted"
       ? "attention"
       : row.tone === "working" || row.tone === "busy"
@@ -75,7 +134,12 @@ export function buildTaskBrowserItems(
     const agentActionLabel = row.attention?.tone === "attention" ? "Reply now"
       : row.attention?.tone === "review" ? "Review now"
         : row.attention?.tone === "working" ? "View progress" : "Open agent";
-    return [{ row, task, status, statusDetail, agentActionLabel, filter, agent, issueKey: task.jira_url ? taskJiraIssueKey(task.jira_url) : undefined, changeCount: taskChangeCount(task) }];
+    return [{
+      row, task, status, statusDetail, agentActionLabel, filter, agent, agents: live, issueKey,
+      changeCount: taskChangeCount(task),
+      card: taskCardTitle(task.title, issueKey),
+      brief: plainTaskBrief(task.brief),
+    }];
   }).sort((left, right) => filterPriority(left.filter) - filterPriority(right.filter));
 }
 

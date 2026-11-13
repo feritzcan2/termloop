@@ -7,5 +7,8 @@ module.exports = {
   deploymentTarget: "10.0",
   entitlements: {
     "keychain-access-groups": ["$(AppIdentifierPrefix)ai.termloop.watch.shared"],
+    // The phone's share inbox App Group is not the complication's business;
+    // an explicit empty list stops apple-targets from copying it here.
+    "com.apple.security.application-groups": [],
   },
 };

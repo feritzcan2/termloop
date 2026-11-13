@@ -68,6 +68,9 @@ import {
 } from "@/presentation/terminal-keys";
 import type { RowTone } from "@/presentation/tone";
 import { geometry, radius, space, terminalGeometry } from "@/theme/tokens";
+import { useSharedImageDelivery } from "@/features/share/use-shared-image-delivery";
+import { shareInbox, type SharedImage } from "@/platform/share-inbox";
+
 
 /// The attached Session.
 ///
@@ -88,12 +91,14 @@ const streamPresentation: Record<TerminalStreamState, { label: string; tone: Row
 };
 
 type PickerImageSource = "library" | "camera";
-type ImageAttachmentSource = PickerImageSource | "clipboard";
+type ImageAttachmentSource = PickerImageSource | "clipboard" | "shared";
 
 interface ComposerImage {
   uri: string;
   mediaType: string | null;
   source: ImageAttachmentSource;
+  /// The share-extension inbox batch this image came from, released once sent.
+  shareBatch?: string | undefined;
   width: number;
   height: number;
 }
@@ -101,11 +106,13 @@ interface ComposerImage {
 export default function SessionRoute() {
   const { color } = useTheme();
   const styles = useStyles();
-  const { sessionId, connectionId, projectId: routeProjectId, workflowTaskId } = useLocalSearchParams<{
+  const { sessionId, connectionId, projectId: routeProjectId, workflowTaskId, shareBatch, shareDraft } = useLocalSearchParams<{
     sessionId: string;
     connectionId?: string;
     projectId?: string;
     workflowTaskId?: string;
+    shareBatch?: string;
+    shareDraft?: string;
   }>();
   const router = useRouter();
   const focused = useIsFocused();
@@ -404,7 +411,7 @@ export default function SessionRoute() {
   };
 
   const submit = async () => {
-    if (voiceBusy || imageSending || terminal.submitting) return;
+    if (voiceBusy || imageSending || terminal.submitting) return false;
     const submitted = draft;
     if (selectedImage !== undefined) {
       setImageSending(true);
@@ -416,14 +423,32 @@ export default function SessionRoute() {
         if (delivered) {
           setDraft((current) => current === submitted ? "" : current);
           setSelectedImage((current) => current === selectedImage ? undefined : current);
+          if (selectedImage.shareBatch !== undefined) shareInbox.remove(selectedImage.shareBatch);
         }
+        return delivered;
       } finally {
         setImageSending(false);
       }
-      return;
     }
-    if (await terminal.submit(submitted)) setDraft((current) => current === submitted ? "" : current);
+    const delivered = await terminal.submit(submitted);
+    if (delivered) setDraft((current) => current === submitted ? "" : current);
+    return delivered;
   };
+
+  const stageSharedImage = useCallback((image: (SharedImage & { shareBatch: string }) | undefined, text: string) => {
+    if (image !== undefined) setSelectedImage({ ...image, source: "shared" });
+    if (text.length > 0) setDraft(text);
+  }, []);
+  useSharedImageDelivery({
+    shareBatch,
+    shareDraft,
+    sessionReady: memoryKey !== undefined && agentSession,
+    staged: shareBatch !== undefined && selectedImage?.shareBatch === shareBatch,
+    canSend: terminal.canSend && !terminal.submitting && !imageSending && !voiceBusy,
+    agentStatus: status?.status,
+    stage: stageSharedImage,
+    send: submit,
+  });
 
   const chooseInputMode = (mode: TerminalInputMode) => {
     setInputMode(mode);
@@ -585,7 +610,9 @@ export default function SessionRoute() {
                 </View>
                 <View style={styles.imageAttachmentCopy}>
                   <Text style={styles.imageAttachmentLabel} numberOfLines={1}>
-                    {selectedImage.source === "clipboard"
+                    {selectedImage.source === "shared"
+                      ? "Shared screenshot"
+                      : selectedImage.source === "clipboard"
                       ? "Copied image"
                       : selectedImage.source === "camera" ? "Camera photo" : "Selected from Photos"}
                   </Text>

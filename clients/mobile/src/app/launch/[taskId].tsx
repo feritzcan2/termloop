@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -39,6 +40,7 @@ import {
   restoreLaunchSelection,
 } from "@/presentation/agent-launch-presentation";
 import { agentLaunchPreferences } from "@/platform/agent-launch-preferences";
+import { shareInbox, validShareBatchId } from "@/platform/share-inbox";
 import { keyboardAvoidingBehavior } from "@/platform/presentation";
 import { radius, space } from "@/theme/tokens";
 
@@ -49,10 +51,13 @@ const PROJECT_TARGET_PREFIX = "project:";
 export default function LaunchRoute() {
   const { color } = useTheme();
   const styles = useStyles();
-  const { taskId, connectionId: routeConnectionId } = useLocalSearchParams<{
+  const { taskId, connectionId: routeConnectionId, shareBatch: routeShareBatch } = useLocalSearchParams<{
     taskId: string;
     connectionId?: string;
+    shareBatch?: string;
   }>();
+  const shareBatch = validShareBatchId(routeShareBatch) ? routeShareBatch : undefined;
+  const sharedImage = useMemo(() => (shareBatch === undefined ? undefined : shareInbox.read(shareBatch)), [shareBatch]);
   const router = useRouter();
   const runtime = useMobileRuntime();
   const connections = useConnections();
@@ -139,16 +144,19 @@ export default function LaunchRoute() {
     });
   }, [capabilities, stage]);
 
+  /// With a shared image the prompt is sent later together with that image, so
+  /// the Mac launches the Agent without a first message of its own.
+  const launchPrompt = sharedImage === undefined ? prompt : "";
   const inspect = useCallback(async () => {
     if (connectionId === undefined || selection === undefined) return undefined;
     if (project !== undefined) {
-      return await runtime.agentLaunch.previewProject(connectionId, project, selection, prompt);
+      return await runtime.agentLaunch.previewProject(connectionId, project, selection, launchPrompt);
     }
     if (task !== undefined) {
-      return await runtime.agentLaunch.preview(connectionId, task.id, selection, prompt);
+      return await runtime.agentLaunch.preview(connectionId, task.id, selection, launchPrompt);
     }
     return undefined;
-  }, [connectionId, project, prompt, runtime, selection, task]);
+  }, [connectionId, project, launchPrompt, runtime, selection, task]);
 
   const preview = useCallback(async () => {
     if (stage !== "choosing" || starting.current) return;
@@ -184,7 +192,7 @@ export default function LaunchRoute() {
           project,
           selection,
           reserved.launchTicket,
-          prompt,
+          launchPrompt,
         )
         : task !== undefined
           ? await runtime.agentLaunch.launch(
@@ -192,7 +200,7 @@ export default function LaunchRoute() {
             task.id,
             { agentId: selection.agentId },
             reserved.launchTicket,
-            prompt,
+            launchPrompt,
           )
           : undefined;
       if (result === undefined) {
@@ -204,7 +212,9 @@ export default function LaunchRoute() {
       store.refresh();
       router.replace({
         pathname: "/session/[sessionId]",
-        params: { sessionId: result.sessionId, connectionId },
+        params: sharedImage === undefined || shareBatch === undefined
+          ? { sessionId: result.sessionId, connectionId }
+          : { sessionId: result.sessionId, connectionId, shareBatch, shareDraft: prompt },
       });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -214,7 +224,7 @@ export default function LaunchRoute() {
       setStage("choosing");
       starting.current = false;
     }
-  }, [blocked, chosenAvailable, connectionId, inspect, inspection, project, prompt, router, runtime, selection, stage, store, task]);
+  }, [blocked, chosenAvailable, connectionId, inspect, inspection, launchPrompt, project, prompt, router, runtime, selection, shareBatch, sharedImage, stage, store, task]);
 
   const backLabel = project === undefined ? "Task" : "Project";
   const targetMissing = task === undefined && project === undefined;
@@ -250,8 +260,18 @@ export default function LaunchRoute() {
 
         {blocked === undefined ? null : <Banner kind="danger" message={blocked} />}
 
+        {sharedImage === undefined ? null : (
+          <View style={styles.sharedImage}>
+            <Image source={{ uri: sharedImage.uri }} style={styles.sharedImagePreview} accessibilityLabel="Shared screenshot" />
+            <View style={styles.sharedImageCopy}>
+              <Text style={styles.settingsTitle}>Shared screenshot</Text>
+              <Text style={styles.settingsDetail}>Sent with your message once the agent is ready.</Text>
+            </View>
+          </View>
+        )}
+
         <View style={styles.section}>
-          <SectionHeader label="First message · optional" />
+          <SectionHeader label={sharedImage === undefined ? "First message · optional" : "Message with the screenshot · optional"} />
           <TextInput
             accessibilityLabel="First message for the new agent"
             editable={stage === "choosing"}
@@ -259,14 +279,14 @@ export default function LaunchRoute() {
             maxLength={4096}
             value={prompt}
             onChangeText={(value) => { setPrompt(value); setInspection(undefined); setError(undefined); }}
-            placeholder="What should this agent do?"
+            placeholder={sharedImage === undefined ? "What should this agent do?" : "What should the agent do with this screenshot?"}
             placeholderTextColor={color.textMuted}
             style={styles.promptInput}
             textAlignVertical="top"
           />
-          <Text style={styles.promptHint}>
+          {sharedImage === undefined ? <Text style={styles.promptHint}>
             Your Mac sends this when the agent is ready.
-          </Text>
+          </Text> : null}
         </View>
 
         <Pressable
@@ -381,7 +401,7 @@ export default function LaunchRoute() {
 
         <View style={styles.actions}>
           <PrimaryButton
-            label={stage === "launching" ? "Starting…" : prompt.trim() ? "Start and send" : "Start agent"}
+            label={stage === "launching" ? "Starting…" : prompt.trim() || sharedImage !== undefined ? "Start and send" : "Start agent"}
             disabled={blocked !== undefined || !chosenAvailable || stage !== "choosing"}
             busy={stage === "launching"}
             onPress={() => void launch()}
@@ -494,6 +514,9 @@ const useStyles = createThemedStyles((theme) => {
       lineHeight: 21,
     },
     promptHint: { ...text.muted, paddingHorizontal: 2 },
+    sharedImage: { flexDirection: "row", alignItems: "center", gap: space.md, padding: space.sm, borderRadius: radius.card, backgroundColor: color.bgRaised },
+    sharedImagePreview: { width: 56, height: 72, borderRadius: radius.control, backgroundColor: color.bgApp },
+    sharedImageCopy: { flex: 1, gap: 3 },
     launchStatus: {
       flexDirection: "row",
       alignItems: "center",
