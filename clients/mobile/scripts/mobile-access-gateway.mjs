@@ -33,8 +33,11 @@ import {
   retainCurrentAttention,
   sendApns,
   stewardTranscriptNotifications,
+  apnsCollapseIdOf,
+  lastAssistantMessageOf,
+  legacyRelayPayload,
   upsertPushDevice,
-  withNotificationPreview,
+  withAgentNotificationDetails,
 } from "./mobile-access-push.mjs";
 import {
   invalidPushDeviceReason,
@@ -53,7 +56,9 @@ import {
   watchTaskWorktreeOf,
 } from "./mobile-access-watch.mjs";
 import {
+  sendAgentDecision,
   sendTerminalInput,
+  validAgentDecision,
   validWatchReply,
   WATCH_REPLY_MAX_CHARS,
 } from "./mobile-access-terminal-input.mjs";
@@ -270,6 +275,10 @@ const server = http.createServer(async (request, response) => {
   }
   if (request.method === "POST" && request.url === "/watch/reply") {
     await watchReply(request, response);
+    return;
+  }
+  if (request.method === "POST" && request.url === "/watch/agent-decision") {
+    await watchAgentDecision(request, response);
     return;
   }
   if (request.method === "POST" && safePathname(request.url) === "/watch/reply-voice") {
@@ -991,6 +1000,33 @@ async function watchReply(request, response) {
   }
 }
 
+/// Approve or decline a provider permission prompt from the notification. The
+/// key is sent only while the exact Session epoch still awaits input; otherwise
+/// an Enter could submit whatever text sits in the agent's editor.
+async function watchAgentDecision(request, response) {
+  if (!watchAuthorized(request)) return json(response, 401, {});
+  try {
+    const body = JSON.parse(await readBody(request, 4096));
+    if (!validAgentDecision(body)) return json(response, 400, { error: "invalid decision" });
+    const runtime = await currentRuntime();
+    const [sessions, statuses] = await Promise.all([
+      callCurrentControl(runtime, "session.list", {}),
+      callCurrentControl(runtime, "agent.statusList", {}),
+    ]);
+    const session = sessions.find(({ id }) => id === body.sessionId);
+    const status = statuses.find(({ sessionId }) => sessionId === body.sessionId)?.status;
+    if (session?.runtime_epoch !== body.runtimeEpoch || status !== "awaitingInput") {
+      return json(response, 409, { delivered: false, error: "no longer waiting" });
+    }
+    const delivered = await sendAgentDecision(WebSocket, runtime.terminalUrl, runtime.terminalToken, body, {
+      inputAckSupported: runtime.terminalInputAckVersion === 1,
+    });
+    return json(response, delivered ? 200 : 503, { delivered });
+  } catch {
+    return json(response, 503, { delivered: false });
+  }
+}
+
 async function watchVoiceReply(request, response) {
   if (!watchAuthorized(request)) return json(response, 401, {});
   const url = new URL(request.url, "http://127.0.0.1");
@@ -1237,11 +1273,16 @@ function startAttentionMonitor() {
       );
       if (pending.size > 0) {
         const macActive = await desktopRecentlyActive();
-        for (const notification of pending.values()) {
-          const deliveredDevices = deliveredAttention.get(notification.sessionId) ?? new Set();
-          const preview = await readTerminalNotificationPreview(runtime, notification);
+        for (const [sessionId, candidate] of pending) {
+          const deliveredDevices = deliveredAttention.get(sessionId) ?? new Set();
+          // Details are read once per attention; a Mac-active deferral re-polls
+          // delivery without re-reading the terminal or the transcript.
+          const notification = candidate.detailed === true
+            ? candidate
+            : { ...await agentNotificationWithDetails(runtime, candidate), detailed: true };
+          pending.set(sessionId, notification);
           const acceptedDevices = await deliverPush(
-            withNotificationPreview(notification, preview),
+            notification,
             deliveredDevices,
             { macActive },
           );
@@ -1282,6 +1323,51 @@ function startAttentionMonitor() {
   timer.unref();
 }
 
+/// Each enrichment source is optional: a slow transcript, a missing Task, or an
+/// unreadable terminal leaves the alert on its plain status copy.
+async function agentNotificationWithDetails(runtime, notification) {
+  const full = runtime.fullToken === undefined ? undefined : controlCaller(runtime, runtime.fullToken);
+  const [terminal, conversation, place] = await Promise.all([
+    readTerminalNotificationPreview(runtime, notification).catch(() => undefined),
+    full === undefined
+      ? undefined
+      : withTimeout(full("session.conversationRead", {
+        projectId: notification.projectId,
+        sessionId: notification.sessionId,
+      }), 1_500).catch(() => undefined),
+    agentNotificationPlace(runtime, notification).catch(() => ({})),
+  ]);
+  return withAgentNotificationDetails(notification, {
+    ...place,
+    terminalPreview: terminal?.preview,
+    permissionPrompt: terminal?.permissionPrompt === true,
+    assistantMessage: lastAssistantMessageOf(conversation),
+  });
+}
+
+async function agentNotificationPlace(runtime, notification) {
+  const readOnly = controlCaller(runtime, runtime.readOnlyToken);
+  const [projects, tasks] = await Promise.all([
+    readOnly("project.list", {}),
+    readOnly("task.list", { projectId: notification.projectId, archiveScope: "active" }),
+  ]);
+  const project = Array.isArray(projects) ? projects.find(({ id }) => id === notification.projectId) : undefined;
+  const task = (tasks?.items ?? []).find((candidate) => candidate.worktree_presence?.attached_sessions
+    ?.some((entry) => entry.session_id === notification.sessionId));
+  return {
+    projectName: typeof project?.name === "string" ? project.name : undefined,
+    taskTitle: typeof task?.title === "string" ? task.title : undefined,
+  };
+}
+
+function withTimeout(promise, timeoutMs) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("timeout")), timeoutMs); }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 function desktopRecentlyActive() {
   if (config.hostPlatform !== "darwin") return Promise.resolve(false);
   return new Promise((resolve) => {
@@ -1318,13 +1404,20 @@ async function deliverPush(notification, skipDeviceTokens = new Set(), context =
       payload: apnsPayload(notification, config.push.connectionId, { playSound: delivery.playSound }),
     });
   }
+  const collapseId = apnsCollapseIdOf(notification);
   if (deliveries.length > 0 && config.push.relay !== undefined) {
-    const result = await sendPushRelay(config.push.relay, deliveries.map(({ device, payload }) => ({
+    const relayDevices = (legacy) => deliveries.map(({ device, payload }) => ({
       deviceToken: device.deviceToken,
       environment: device.environment,
       bundleId: device.bundleId,
-      payload,
-    })));
+      ...(collapseId === undefined ? {} : { collapseId }),
+      payload: legacy ? legacyRelayPayload(payload) : payload,
+    }));
+    let result = await sendPushRelay(config.push.relay, relayDevices(false));
+    if (!result.ok && result.reason === "invalidRequest") {
+      // An older hosted relay rejects the newer category; deliver the classic shape.
+      result = await sendPushRelay(config.push.relay, relayDevices(true));
+    }
     if (!result.ok) {
       retained.push(...deliveries.map(({ device }) => device));
       diagnostics.report("push", "relay_failed", {
@@ -1358,7 +1451,7 @@ async function deliverPush(notification, skipDeviceTokens = new Set(), context =
     }
     if (provider !== undefined) {
       for (const { device, payload } of deliveries) {
-        const result = await sendApns(provider, device, payload);
+        const result = await sendApns(provider, device, payload, { collapseId });
         if (result.ok) accepted.add(device.deviceToken);
         if (!invalidPushDeviceReason(result.reason)) retained.push(device);
       }

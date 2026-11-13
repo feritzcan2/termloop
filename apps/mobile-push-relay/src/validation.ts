@@ -13,6 +13,7 @@ const ALLOWED_ATTENTION_KINDS = new Set([
 ]);
 const ALLOWED_CATEGORIES = new Set([
   "TERMLOOP_AGENT_ATTENTION",
+  "TERMLOOP_AGENT_PERMISSION",
   "TERMLOOP_STEW_PROPOSAL",
   "TERMLOOP_STEW_REPLY",
   "TERMLOOP_STEW_SUGGESTION",
@@ -30,6 +31,7 @@ const ALLOWED_STEWARD_KINDS = new Set([
   "decline",
 ]);
 const MAX_DEVICES = 8;
+const COLLAPSE_ID = /^[A-Za-z0-9_.:-]{1,64}$/u;
 
 export type PushEnvironment = "development" | "production";
 
@@ -37,6 +39,8 @@ export type PushDevice = {
   deviceToken: string;
   environment: PushEnvironment;
   bundleId: "ai.termloop.mobile" | "ai.termloop.mobile.watch";
+  /// APNs replaces a delivered alert carrying the same collapse id.
+  collapseId?: string;
   payload: ApnsPayload;
 };
 
@@ -54,7 +58,7 @@ export type ApnsNavigationData = {
 
 export type ApnsPayload = ApnsNavigationData & {
   aps: {
-    alert: { title: string; body: string };
+    alert: { title: string; subtitle?: string; body: string };
     sound?: "default";
     badge: 1;
     category: string;
@@ -87,13 +91,16 @@ function pushDeviceOf(value: unknown): PushDevice | undefined {
   if (!plainObject(value) || typeof value.deviceToken !== "string"
     || !DEVICE_TOKEN.test(value.deviceToken)
     || (value.environment !== "development" && value.environment !== "production")
-    || typeof value.bundleId !== "string" || !ALLOWED_BUNDLE_IDS.has(value.bundleId)) return undefined;
+    || typeof value.bundleId !== "string" || !ALLOWED_BUNDLE_IDS.has(value.bundleId)
+    || (value.collapseId !== undefined
+      && (typeof value.collapseId !== "string" || !COLLAPSE_ID.test(value.collapseId)))) return undefined;
   const payload = apnsPayloadOf(value.payload);
   if (payload === undefined) return undefined;
   return {
     deviceToken: value.deviceToken,
     environment: value.environment,
     bundleId: value.bundleId as PushDevice["bundleId"],
+    ...(value.collapseId === undefined ? {} : { collapseId: value.collapseId as string }),
     payload,
   };
 }
@@ -105,6 +112,7 @@ function apnsPayloadOf(value: unknown): ApnsPayload | undefined {
   if (!plainObject(alert)) return undefined;
   const runtimeEpoch = value.runtimeEpoch;
   if (!boundedString(alert.title, 180) || !boundedString(alert.body, 512)
+    || (alert.subtitle !== undefined && !boundedString(alert.subtitle, 180))
     || (aps.sound !== undefined && aps.sound !== "default")
     || aps.badge !== 1
     || typeof aps.category !== "string" || !ALLOWED_CATEGORIES.has(aps.category)
@@ -136,7 +144,11 @@ function apnsPayloadOf(value: unknown): ApnsPayload | undefined {
   };
   return {
     aps: {
-      alert: { title: alert.title, body: alert.body },
+      alert: {
+        title: alert.title,
+        ...(alert.subtitle === undefined ? {} : { subtitle: alert.subtitle as string }),
+        body: alert.body,
+      },
       ...(aps.sound === undefined ? {} : { sound: aps.sound }),
       badge: 1,
       category: aps.category,

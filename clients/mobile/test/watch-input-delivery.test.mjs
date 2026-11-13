@@ -1,6 +1,12 @@
 import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { encodeTerminalFrame, sendTerminalInput, validWatchReply } from "../scripts/mobile-access-terminal-input.mjs";
+import {
+  encodeTerminalFrame,
+  sendAgentDecision,
+  sendTerminalInput,
+  validAgentDecision,
+  validWatchReply,
+} from "../scripts/mobile-access-terminal-input.mjs";
 
 const reply = { sessionId: "11111111-2222-4333-8444-555555555555", runtimeEpoch: 17, text: "review this" };
 const sockets = [];
@@ -112,5 +118,47 @@ describe("Watch PTY input delivery", () => {
     f.receive(11, 1n);
     await expect(f.result).resolves.toBe(false);
     expect(f.inputs()).toHaveLength(0);
+  });
+});
+
+describe("Agent approval key delivery", () => {
+  const decision = { sessionId: reply.sessionId, runtimeEpoch: 17, decision: "approve" };
+
+  function decisionFixture(value) {
+    class Socket extends EventEmitter {
+      writes = [];
+      constructor() { super(); sockets.push(this); }
+      send(bytes, callback) { this.writes.push(Buffer.from(bytes)); callback?.(); }
+      close() { this.emit("close"); }
+      terminate() { this.close(); }
+    }
+    const result = sendAgentDecision(Socket, "ws://fixture/terminal", "fixture-token", value,
+      { timeoutMs: 100, inputAckSupported: true });
+    const socket = sockets.at(-1);
+    socket.emit("open");
+    socket.emit("message", Buffer.from("TLOK"));
+    const receive = (kind, sequence) => socket.emit("message", Buffer.from(encodeTerminalFrame(
+      value.sessionId, value.runtimeEpoch, sequence, kind,
+    )));
+    const inputs = () => socket.writes.filter((bytes) => bytes.length >= 41 && bytes[36] === 1);
+    return { result, receive, inputs };
+  }
+
+  it.each([["approve", "\r"], ["deny", "\u001b"]])("writes one acknowledged %s key", async (name, key) => {
+    const f = decisionFixture({ ...decision, decision: name });
+    f.receive(11, 1n);
+    expect(f.inputs().map((bytes) => bytes.subarray(41).toString())).toEqual([key]);
+    f.receive(16, 2n);
+    await expect(f.result).resolves.toBe(true);
+    expect(f.inputs()).toHaveLength(1);
+  });
+
+  it("refuses unknown decisions before connecting", async () => {
+    let connections = 0;
+    class Socket { constructor() { connections++; } }
+    expect(validAgentDecision({ ...decision, decision: "1" })).toBe(false);
+    await expect(sendAgentDecision(Socket, "ws://fixture", "token", { ...decision, decision: "rm" },
+      { inputAckSupported: true })).resolves.toBe(false);
+    expect(connections).toBe(0);
   });
 });

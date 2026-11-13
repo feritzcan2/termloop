@@ -8,6 +8,16 @@ import { Platform } from "react-native";
 import { useMobileRuntime } from "@/composition/runtime-context";
 import { useConnections } from "@/features/connection/connection-store";
 import {
+  AGENT_APPROVE_ACTION,
+  AGENT_ATTENTION_CATEGORY,
+  AGENT_DENY_ACTION,
+  AGENT_PERMISSION_CATEGORY,
+  AGENT_REPLY_ACTION,
+  agentNotificationActionOf,
+  performAgentNotificationAction,
+  type AgentNotificationAction,
+} from "@/features/notifications/notification-actions";
+import {
   notificationDestinationFromRemote,
   notificationRouteStack,
   resolveNotificationConnectionId,
@@ -15,17 +25,49 @@ import {
 } from "@/features/notifications/notification-navigation";
 import type { AttentionScope } from "@/features/notifications/notification-reconciliation";
 import { reconcileAttentionTray } from "@/features/notifications/notification-tray";
+import { isAgentSessionVisible } from "@/features/notifications/visible-agent-session";
 import { useOverview } from "@/features/overview/overview-store";
 import { mobileDiagnostics } from "@/platform/mobile-diagnostics";
 
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
+  handleNotification: async (notification) => {
+    const destination = notificationDestinationFromRemote(
+      notification.request.content.data,
+      notification.request.trigger,
+    );
+    // The user is already looking at this Agent's terminal.
+    const watching = destination?.kind === "session" && isAgentSessionVisible(destination.sessionId);
+    return {
+      shouldShowBanner: !watching,
+      shouldShowList: !watching,
+      shouldPlaySound: !watching,
+      shouldSetBadge: !watching,
+    };
+  },
 });
+
+/// Actions open the app: the reply or key is then sent over the same verified
+/// terminal path as the Agent screen, and the user lands on the result.
+async function registerAgentNotificationCategories(): Promise<void> {
+  const reply: Notifications.NotificationAction = {
+    identifier: AGENT_REPLY_ACTION,
+    buttonTitle: "Yanıtla",
+    textInput: { submitButtonTitle: "Gönder", placeholder: "Agent'a yaz…" },
+    options: { opensAppToForeground: true },
+  };
+  await Promise.all([
+    Notifications.setNotificationCategoryAsync(AGENT_ATTENTION_CATEGORY, [reply]),
+    Notifications.setNotificationCategoryAsync(AGENT_PERMISSION_CATEGORY, [
+      { identifier: AGENT_APPROVE_ACTION, buttonTitle: "Onayla", options: { opensAppToForeground: true } },
+      {
+        identifier: AGENT_DENY_ACTION,
+        buttonTitle: "Reddet",
+        options: { opensAppToForeground: true, isDestructive: true },
+      },
+      reply,
+    ]),
+  ]);
+}
 
 export function NotificationCoordinator() {
   const runtime = useMobileRuntime();
@@ -34,6 +76,16 @@ export function NotificationCoordinator() {
   const router = useRouter();
   const handledResponse = useRef<string | undefined>(undefined);
   const [pendingDestination, setPendingDestination] = useState<NotificationDestination | undefined>();
+  const pendingAction = useRef<AgentNotificationAction | undefined>(undefined);
+
+  useEffect(() => {
+    if (Platform.OS !== "ios" || runtime.kind !== "production") return;
+    registerAgentNotificationCategories().catch((cause: unknown) => {
+      mobileDiagnostics.report("notification", "categories_failed", {
+        causeType: cause instanceof Error ? cause.name : typeof cause,
+      });
+    });
+  }, [runtime]);
 
   useEffect(() => {
     if (Platform.OS !== "ios" || runtime.kind !== "production") return;
@@ -113,6 +165,12 @@ export function NotificationCoordinator() {
         void clearNotificationResponse();
         return;
       }
+      pendingAction.current = agentNotificationActionOf(
+        response.actionIdentifier,
+        response.userText,
+        response.notification.request.content.data,
+        response.notification.request.trigger,
+      );
       // Keep the native response until routing succeeds. If iOS kills the app while
       // its paired-Mac catalog is still loading, the next cold start can try again.
       setPendingDestination(destination);
@@ -146,6 +204,18 @@ export function NotificationCoordinator() {
       return;
     }
 
+    const action = pendingAction.current;
+    pendingAction.current = undefined;
+    if (action !== undefined) {
+      void performAgentNotificationAction(runtime, connectionId, action).then(
+        (delivered) => mobileDiagnostics.report("notification", delivered ? "action_delivered" : "action_refused", {
+          connectionId,
+          sessionId: action.sessionId,
+          reason: action.kind,
+        }),
+        () => mobileDiagnostics.report("notification", "action_failed", { connectionId, reason: action.kind }),
+      );
+    }
     const routes = notificationRouteStack(pendingDestination, connectionId);
     if (routes.length === 2) {
       router.replace(routes[0]);
@@ -163,7 +233,7 @@ export function NotificationCoordinator() {
     setPendingDestination(undefined);
     void clearNotificationResponse();
     void Notifications.setBadgeCountAsync(0);
-  }, [connections.connections, connections.select, connections.selectedId, overview.byConnection, pendingDestination, router]);
+  }, [connections.connections, connections.select, connections.selectedId, overview.byConnection, pendingDestination, router, runtime]);
 
   return null;
 }

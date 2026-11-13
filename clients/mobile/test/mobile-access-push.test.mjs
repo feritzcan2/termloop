@@ -16,7 +16,10 @@ import {
   stewardMessageNotificationOf,
   stewardTranscriptNotifications,
   upsertPushDevice,
-  withNotificationPreview,
+  apnsCollapseIdOf,
+  lastAssistantMessageOf,
+  legacyRelayPayload,
+  withAgentNotificationDetails,
 } from "../scripts/mobile-access-push.mjs";
 
 const session = {
@@ -56,9 +59,74 @@ describe("mobile APNs attention projection", () => {
     expect(notification.title).not.toMatch(/ready for review/iu);
     expect(notification.body).toBe("Turn completed.");
     expect(notification.body).not.toMatch(/tap to/iu);
-    expect(withNotificationPreview(notification, "I finished the reconnect fix.").body)
+    expect(withAgentNotificationDetails(notification, { terminalPreview: "I finished the reconnect fix." }).body)
       .toBe("I finished the reconnect fix.");
-    expect(withNotificationPreview(notification, undefined)).toBe(notification);
+    expect(withAgentNotificationDetails(notification, {}).body).toBe("Turn completed.");
+  });
+
+  it("marks the attention, names the place, and prefers the right content source", () => {
+    const [review] = attentionTransitions(new Map([[session.id, "working"]]), [status("idle", "hook")], [session]);
+    const detailed = withAgentNotificationDetails(review, {
+      projectName: "TermLoop",
+      taskTitle: "Push polish",
+      terminalPreview: "ctx noise",
+      assistantMessage: "I finished the reconnect fix.",
+    });
+    expect(detailed).toMatchObject({
+      title: "✓ Mobile notifications",
+      subtitle: "TermLoop · Push polish",
+      body: "I finished the reconnect fix.",
+      permissionPrompt: false,
+    });
+    const payload = apnsPayload(detailed, "mac_1");
+    expect(payload.aps.alert).toEqual({
+      title: "✓ Mobile notifications",
+      subtitle: "TermLoop · Push polish",
+      body: "I finished the reconnect fix.",
+    });
+    expect(payload.aps.category).toBe("TERMLOOP_AGENT_ATTENTION");
+
+    const [waiting] = attentionTransitions(new Map([[session.id, "working"]]), [status("awaitingInput", "hook")], [session]);
+    const permission = withAgentNotificationDetails(waiting, {
+      projectName: "TermLoop",
+      terminalPreview: "Bash command\ngit push\nDo you want to proceed?",
+      permissionPrompt: true,
+      assistantMessage: "Pushing now.",
+    });
+    expect(permission).toMatchObject({
+      title: "✋ Mobile notifications",
+      subtitle: "TermLoop",
+      body: "Bash command\ngit push\nDo you want to proceed?",
+    });
+    expect(apnsPayload(permission, "mac_1").aps.category).toBe("TERMLOOP_AGENT_PERMISSION");
+    expect(withAgentNotificationDetails(review, {}).body).toBe("Turn completed.");
+    expect(withAgentNotificationDetails(review, { assistantMessage: "x".repeat(900) }).body).toHaveLength(400);
+  });
+
+  it("reads the newest assistant prose from a conversation page", () => {
+    expect(lastAssistantMessageOf({
+      status: "available",
+      messages: [
+        { role: "assistant", text: "older", truncated: false },
+        { role: "user", text: "do it", truncated: false },
+        { role: "assistant", text: "## Done\n\n**Fixed** the `reconnect` path.\n```js\ncode()\n```\n- tests pass", truncated: false },
+      ],
+    })).toBe("Done\nFixed the reconnect path.\n• tests pass");
+    expect(lastAssistantMessageOf({ status: "unavailable", messages: [] })).toBeUndefined();
+    expect(lastAssistantMessageOf(undefined)).toBeUndefined();
+  });
+
+  it("collapses per Agent and keeps a shape older relays accept", () => {
+    const [waiting] = attentionTransitions(new Map([[session.id, "working"]]), [status("awaitingInput", "hook")], [session]);
+    expect(apnsCollapseIdOf(waiting)).toBe(session.id);
+    expect(apnsCollapseIdOf({ kind: "stewardReply", sessionId: "steward-chat-prj_1" })).toBeUndefined();
+    const payload = apnsPayload(withAgentNotificationDetails(waiting, {
+      projectName: "TermLoop", permissionPrompt: true, terminalPreview: "Do you want to proceed?",
+    }), "mac_1");
+    const legacy = legacyRelayPayload(payload);
+    expect(legacy.aps.alert).not.toHaveProperty("subtitle");
+    expect(legacy.aps.category).toBe("TERMLOOP_AGENT_ATTENTION");
+    expect(payload.aps.category).toBe("TERMLOOP_AGENT_PERMISSION");
   });
 
   it("never notifies for Steward, Worker, or Playbook evaluator Sessions across Projects", () => {

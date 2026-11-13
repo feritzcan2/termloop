@@ -49,7 +49,7 @@ export async function createApnsJwt(
 
 export async function sendApns(
   provider: ApnsProvider,
-  device: Pick<PushDevice, "deviceToken" | "environment" | "bundleId">,
+  device: Pick<PushDevice, "deviceToken" | "environment" | "bundleId" | "collapseId">,
   payload: ApnsPayload,
 ): Promise<ApnsResult> {
   const hosts = device.environment === "production"
@@ -70,7 +70,7 @@ export function invalidDeviceReason(reason: string | undefined): boolean {
 
 async function sendOne(
   jwt: string,
-  device: Pick<PushDevice, "deviceToken" | "bundleId">,
+  device: Pick<PushDevice, "deviceToken" | "bundleId" | "collapseId">,
   payload: ApnsPayload,
   host: string,
 ): Promise<ApnsResult> {
@@ -82,6 +82,7 @@ async function sendOne(
         "apns-topic": device.bundleId,
         "apns-push-type": "alert",
         "apns-priority": "10",
+        ...(device.collapseId === undefined ? {} : { "apns-collapse-id": device.collapseId }),
         "content-type": "application/json",
       },
       body: JSON.stringify(payload),

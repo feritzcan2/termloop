@@ -74,10 +74,42 @@ export function sendTerminalInput(
   { timeoutMs = 8_000, inputAckSupported = false } = {},
 ) {
   if (!inputAckSupported || !validWatchReply(reply)) return Promise.resolve(false);
-  const [paste, submit] = replyInputSequence(reply.text);
+  return sendTerminalWrites(WebSocketCtor, terminalUrl, terminalToken, reply, replyInputSequence(reply.text), timeoutMs);
+}
+
+/// Provider approval dialogs (Claude Code, Codex) accept their highlighted "Yes"
+/// on Enter and decline on Escape, so one key answers either without guessing
+/// option numbers that differ between providers and versions.
+export const AGENT_DECISION_KEYS = Object.freeze({
+  approve: Object.freeze([13]),
+  deny: Object.freeze([27]),
+});
+
+export function validAgentDecision(value) {
+  return typeof value === "object" && value !== null
+    && typeof value.sessionId === "string"
+    && /^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$/.test(value.sessionId)
+    && Number.isSafeInteger(value.runtimeEpoch) && value.runtimeEpoch >= 0
+    && Object.hasOwn(AGENT_DECISION_KEYS, value.decision);
+}
+
+/// Sends one acknowledged approval key. Callers must first prove the Agent is
+/// still awaiting input, or an Enter could submit whatever sits in its editor.
+export function sendAgentDecision(
+  WebSocketCtor, terminalUrl, terminalToken, decision,
+  { timeoutMs = 8_000, inputAckSupported = false } = {},
+) {
+  if (!inputAckSupported || !validAgentDecision(decision)) return Promise.resolve(false);
+  return sendTerminalWrites(WebSocketCtor, terminalUrl, terminalToken, decision, [
+    new Uint8Array(AGENT_DECISION_KEYS[decision.decision]),
+  ], timeoutMs);
+}
+
+function sendTerminalWrites(WebSocketCtor, terminalUrl, terminalToken, reply, writes, timeoutMs) {
   return new Promise((resolve) => {
     let settled = false;
     let phase = "auth";
+    let written = 0;
     let socket;
     const finish = (delivered) => {
       if (settled) return;
@@ -115,14 +147,17 @@ export function sendTerminalInput(
       if (frame.sessionId !== reply.sessionId.toLowerCase() || frame.runtimeEpoch !== reply.runtimeEpoch) return;
       if (frame.frameKind === KIND_ERROR || frame.frameKind === KIND_EOF) return finish(false);
       if (frame.payloadBytes !== 0) return;
+      // Each write waits for the daemon's PTY receipt of the previous one.
       if (phase === "attach" && frame.frameKind === KIND_ACK && frame.frameSequence === "1") {
-        phase = "paste";
-        send(encodeTerminalFrame(reply.sessionId, reply.runtimeEpoch, 2n, KIND_INPUT, paste));
-      } else if (phase === "paste" && frame.frameKind === KIND_INPUT_ACK && frame.frameSequence === "2") {
-        phase = "submit";
-        send(encodeTerminalFrame(reply.sessionId, reply.runtimeEpoch, 3n, KIND_INPUT, submit));
-      } else if (phase === "submit" && frame.frameKind === KIND_INPUT_ACK && frame.frameSequence === "3") {
-        finish(true);
+        phase = "write";
+        send(encodeTerminalFrame(reply.sessionId, reply.runtimeEpoch, 2n, KIND_INPUT, writes[0]));
+      } else if (phase === "write" && frame.frameKind === KIND_INPUT_ACK
+        && frame.frameSequence === String(written + 2)) {
+        written += 1;
+        if (written === writes.length) return finish(true);
+        send(encodeTerminalFrame(
+          reply.sessionId, reply.runtimeEpoch, BigInt(written + 2), KIND_INPUT, writes[written],
+        ));
       }
     });
     socket.once("error", () => finish(false));

@@ -16,7 +16,7 @@ const BEL = String.fromCharCode(0x07);
 /**
  * Reads only the daemon's bounded in-memory replay for one Session, then detaches.
  * No terminal bytes are written to disk and a missing/slow replay simply leaves the
- * notification on its status fallback.
+ * notification on its status fallback. Resolves `{ preview, permissionPrompt }`.
  */
 export function readTerminalNotificationPreview(runtime, notification) {
   return new Promise((resolve) => {
@@ -35,7 +35,7 @@ export function readTerminalNotificationPreview(runtime, notification) {
       if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) {
         socket.terminate();
       }
-      resolve(notificationPreview(chunks, notification.kind));
+      resolve(terminalNotificationDetails(chunks, notification.kind));
     };
     const timeout = setTimeout(finish, PREVIEW_TIMEOUT_MS);
 
@@ -85,19 +85,41 @@ export function readTerminalNotificationPreview(runtime, notification) {
 
 /** Produces a bounded human-readable excerpt from raw PTY replay bytes. */
 export function notificationPreview(chunks, kind) {
-  if (!Array.isArray(chunks) || chunks.length === 0) return undefined;
+  return terminalNotificationDetails(chunks, kind).preview;
+}
+
+/// Provider approval dialogs (Claude Code, Codex) phrase their question this way.
+/// Only the bottom of the screen counts, so an older answered prompt still in the
+/// replay cannot turn a plain question into an approval card.
+const PERMISSION_QUESTION = /\b(?:Do you want to (?:proceed|make this edit|create|allow|run|fetch|delete|overwrite|write|apply)|Would you like to (?:run|make|proceed|apply|allow)|Allow (?:command|this|execution))\b[^?]*\?/iu;
+const PERMISSION_WINDOW_LINES = 12;
+
+/** Bounded excerpt plus whether the screen currently shows a provider approval. */
+export function terminalNotificationDetails(chunks, kind) {
+  if (!Array.isArray(chunks) || chunks.length === 0) return { preview: undefined, permissionPrompt: false };
   const text = new TextDecoder().decode(Buffer.concat(chunks));
   const candidates = readableCandidates(text);
-  if (candidates.length === 0) return undefined;
+  if (candidates.length === 0) return { preview: undefined, permissionPrompt: false };
 
   let chosen = candidates.slice(-3);
+  let permissionPrompt = false;
   if (kind === "needsInput") {
-    const question = candidates.findLast((line) => line.includes("?"));
-    if (question !== undefined) chosen = [question];
+    const recent = candidates.slice(-PERMISSION_WINDOW_LINES);
+    const permissionIndex = recent.findLastIndex((line) => PERMISSION_QUESTION.test(line));
+    if (permissionIndex >= 0) {
+      // Keep what is being approved (the command or file) above the question.
+      permissionPrompt = true;
+      chosen = recent.slice(Math.max(0, permissionIndex - 2), permissionIndex + 1);
+    } else {
+      const question = candidates.findLast((line) => line.includes("?"));
+      if (question !== undefined) chosen = [question];
+    }
   }
   const result = redactPreview(chosen.join("\n"));
-  if (result.length <= MAX_PREVIEW_CHARACTERS) return result;
-  return `${result.slice(0, MAX_PREVIEW_CHARACTERS - 1).trimEnd()}…`;
+  const preview = result.length <= MAX_PREVIEW_CHARACTERS
+    ? result
+    : `${result.slice(0, MAX_PREVIEW_CHARACTERS - 1).trimEnd()}…`;
+  return { preview, permissionPrompt };
 }
 
 export function encodeTerminalFrame(sessionId, epoch, sequence, kind, payload = Buffer.alloc(0)) {

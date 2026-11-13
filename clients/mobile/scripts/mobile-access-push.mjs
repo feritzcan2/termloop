@@ -130,10 +130,16 @@ export function apnsPayload(notification, connectionId, options = {}) {
   };
   return {
     aps: {
-      alert: { title: notification.title, body: notification.body },
+      alert: {
+        title: notification.title,
+        ...(typeof notification.subtitle === "string" && notification.subtitle.length > 0
+          ? { subtitle: notification.subtitle }
+          : {}),
+        body: notification.body,
+      },
       ...((options.playSound ?? true) ? { sound: "default" } : {}),
       badge: 1,
-      category: notificationCategory(notification.kind),
+      category: notificationCategory(notification.kind, notification.permissionPrompt === true),
       // Decisions stay visually separate from ordinary Stew chat so a later
       // progress update cannot bury the approval card on the Watch.
       "thread-id": isStewardDecision
@@ -255,7 +261,8 @@ export function stewardTranscriptNotifications(previousSequences, projects, mess
   return { notifications, nextSequences };
 }
 
-function notificationCategory(kind) {
+function notificationCategory(kind, permissionPrompt = false) {
+  if (kind === "needsInput" && permissionPrompt) return "TERMLOOP_AGENT_PERMISSION";
   if (kind === "stewardProposal") return "TERMLOOP_STEW_PROPOSAL";
   if (kind === "stewardSuggestion") return "TERMLOOP_STEW_SUGGESTION";
   if (kind === "stewardReply") return "TERMLOOP_STEW_REPLY";
@@ -285,13 +292,13 @@ export function createApnsRequestId() {
   return randomUUID();
 }
 
-export async function sendApns(provider, device, payload) {
+export async function sendApns(provider, device, payload, options = {}) {
   const hosts = device.environment === "production"
     ? ["api.push.apple.com", "api.sandbox.push.apple.com"]
     : ["api.sandbox.push.apple.com", "api.push.apple.com"];
   let result;
   for (const host of hosts) {
-    result = await sendOne(provider, device, payload, host);
+    result = await sendOne(provider, device, payload, host, options.collapseId);
     if (
       result.ok ||
       !["BadDeviceToken", "DeviceTokenNotForTopic", "Unregistered"].includes(result.reason)
@@ -318,10 +325,86 @@ function notificationOf(session, kind) {
   };
 }
 
-export function withNotificationPreview(notification, preview) {
-  return typeof preview === "string" && preview.trim().length > 0
-    ? { ...notification, body: preview.trim() }
-    : notification;
+const MAX_SUBTITLE_CHARACTERS = 120;
+const MAX_BODY_CHARACTERS = 400;
+
+/// Adds where an Agent lives and what it said. The title stays the Session name
+/// so stacked alerts remain distinguishable; a leading mark tells waiting (✋)
+/// from finished (✓) without spending words on it. A finished turn prefers the
+/// agent's own last message; a waiting turn prefers the live terminal question,
+/// which also reveals whether the provider is showing a permission prompt.
+export function withAgentNotificationDetails(notification, details = {}) {
+  if (notification.kind !== "needsInput" && notification.kind !== "needsReview") return notification;
+  const mark = notification.kind === "needsInput" ? "✋" : "✓";
+  const subtitle = [details.projectName, details.taskTitle]
+    .filter((part) => typeof part === "string" && part.trim().length > 0)
+    .map((part) => part.trim())
+    .filter((part, index, parts) => parts.indexOf(part) === index)
+    .join(" · ");
+  const terminal = nonEmptyText(details.terminalPreview);
+  const assistant = nonEmptyText(details.assistantMessage);
+  const body = notification.kind === "needsInput" ? terminal ?? assistant : assistant ?? terminal;
+  return {
+    ...notification,
+    title: `${mark} ${notification.title}`,
+    ...(subtitle.length > 0 ? { subtitle: boundedText(subtitle, MAX_SUBTITLE_CHARACTERS) } : {}),
+    ...(body === undefined ? {} : { body: boundedText(body, MAX_BODY_CHARACTERS) }),
+    permissionPrompt: notification.kind === "needsInput" && details.permissionPrompt === true,
+  };
+}
+
+/// Newest assistant text from a bounded `session.conversationRead` page, reduced
+/// to plain prose that fits a lock-screen alert.
+export function lastAssistantMessageOf(conversation) {
+  if (conversation?.status !== "available" || !Array.isArray(conversation.messages)) return undefined;
+  const message = conversation.messages.findLast((entry) => entry?.role === "assistant"
+    && typeof entry.text === "string" && entry.text.trim().length > 0);
+  if (message === undefined) return undefined;
+  const plain = message.text
+    .replace(/```[\s\S]*?```/gu, " ")
+    .replace(/`([^`]*)`/gu, "$1")
+    .replace(/\*\*([^*]+)\*\*/gu, "$1")
+    .replace(/^\s{0,3}#{1,6}\s+/gmu, "")
+    .replace(/^\s*[-*]\s+/gmu, "• ")
+    .replace(/\[([^\]]+)\]\([^)]+\)/gu, "$1")
+    .replace(/[ \t]+/gu, " ")
+    .replace(/\n{2,}/gu, "\n")
+    .trim();
+  return plain.length > 0 ? boundedText(plain, MAX_BODY_CHARACTERS) : undefined;
+}
+
+/// One alert per Agent: APNs replaces an older alert with the same collapse id,
+/// so the tray shows each Session's latest state instead of a growing stack.
+export function apnsCollapseIdOf(notification) {
+  return (notification.kind === "needsInput" || notification.kind === "needsReview")
+    && typeof notification.sessionId === "string"
+    && Buffer.byteLength(notification.sessionId) <= 64
+    ? notification.sessionId
+    : undefined;
+}
+
+/// The hosted relay validates payloads strictly. Until it is redeployed with the
+/// permission category, retry with the shape every relay version accepts.
+export function legacyRelayPayload(payload) {
+  const { subtitle: _subtitle, ...alert } = payload.aps.alert;
+  return {
+    ...payload,
+    aps: {
+      ...payload.aps,
+      alert,
+      category: payload.aps.category === "TERMLOOP_AGENT_PERMISSION"
+        ? "TERMLOOP_AGENT_ATTENTION"
+        : payload.aps.category,
+    },
+  };
+}
+
+function nonEmptyText(value) {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function boundedText(value, limit) {
+  return value.length <= limit ? value : `${value.slice(0, limit - 1).trimEnd()}…`;
 }
 
 function validateDevice(value) {
@@ -354,7 +437,7 @@ function base64url(value) {
   return Buffer.from(value).toString("base64url");
 }
 
-function sendOne(provider, device, payload, host) {
+function sendOne(provider, device, payload, host, collapseId) {
   return new Promise((resolve) => {
     const client = http2.connect(`https://${host}`);
     const timer = setTimeout(() => {
@@ -374,6 +457,7 @@ function sendOne(provider, device, payload, host) {
       "apns-push-type": "alert",
       "apns-priority": "10",
       "apns-id": createApnsRequestId(),
+      ...(collapseId === undefined ? {} : { "apns-collapse-id": collapseId }),
       "content-type": "application/json",
     });
     let status = 0;

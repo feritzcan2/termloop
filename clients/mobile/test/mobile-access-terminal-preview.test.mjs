@@ -6,6 +6,7 @@ import {
   encodeTerminalFrame,
   notificationPreview,
   readTerminalNotificationPreview,
+  terminalNotificationDetails,
 } from "../scripts/mobile-access-terminal-preview.mjs";
 
 const esc = String.fromCharCode(0x1b);
@@ -28,6 +29,32 @@ describe("mobile terminal notification preview", () => {
       "▶▶ auto mode on (shift+tab to cycle) · PR #182",
     ].join("\r\n"))], "needsReview");
     expect(preview).toBe("I finished the reconnect fix.");
+  });
+
+  it("recognizes a provider approval dialog and keeps what is being approved", () => {
+    const details = terminalNotificationDetails([Buffer.from([
+      "I will push the branch now.",
+      "Bash command",
+      "git push origin develop",
+      "Do you want to proceed?",
+      "❯ 1. Yes",
+      "2. No, and tell Claude what to do differently (esc)",
+    ].join("\r\n"))], "needsInput");
+    expect(details).toEqual({
+      preview: "Bash command\ngit push origin develop\nDo you want to proceed?",
+      permissionPrompt: true,
+    });
+    const codex = terminalNotificationDetails([Buffer.from(
+      "Would you like to run the following command?\r\n$ pnpm test\r\n› 1. Yes, proceed",
+    )], "needsInput");
+    expect(codex.permissionPrompt).toBe(true);
+  });
+
+  it("ignores an approval question that scrolled far above the current screen", () => {
+    const lines = ["Do you want to proceed?", ...Array.from({ length: 20 }, (_, index) => `step ${index} done`), "Which branch should I use?"];
+    const details = terminalNotificationDetails([Buffer.from(lines.join("\r\n"))], "needsInput");
+    expect(details).toEqual({ preview: "Which branch should I use?", permissionPrompt: false });
+    expect(terminalNotificationDetails([Buffer.from("Do you want to proceed?")], "needsReview").permissionPrompt).toBe(false);
   });
 
   it("bounds content and redacts obvious credential shapes", () => {
@@ -71,7 +98,7 @@ describe("mobile terminal notification preview", () => {
         sessionId,
         runtimeEpoch: 17,
       });
-      expect(preview).toBe("Can you confirm the release?");
+      expect(preview).toEqual({ preview: "Can you confirm the release?", permissionPrompt: false });
     } finally {
       sockets.close();
       await new Promise((resolve) => server.close(resolve));

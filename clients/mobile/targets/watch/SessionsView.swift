@@ -6,6 +6,12 @@ struct WatchReplyBody: Codable {
     let text: String
 }
 
+struct AgentDecisionBody: Codable {
+    let sessionId: String
+    let runtimeEpoch: Int
+    let decision: String
+}
+
 struct ReplyResponse: Codable {
     let delivered: Bool
     let transcript: String?

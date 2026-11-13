@@ -31,6 +31,7 @@ import {
   sessionParentRoute,
 } from "@/features/connection/connection-route";
 import { dismissSessionNotifications } from "@/features/notifications/notification-tray";
+import { markAgentSessionVisible } from "@/features/notifications/visible-agent-session";
 import { useOverview } from "@/features/overview/overview-store";
 import { useSessionInterruptionAcknowledgement } from "@/features/overview/use-session-interruption-acknowledgement";
 import { SessionActionsSheet } from "@/features/session-actions/session-actions-sheet";
@@ -193,6 +194,7 @@ export default function SessionRoute() {
     store.dismissReview(sessionId);
     void dismissSessionNotifications(sessionId);
   }, [sessionId, store.dismissReview]);
+  useEffect(() => (focused && sessionId ? markAgentSessionVisible(sessionId) : undefined), [focused, sessionId]);
   const memoryKey = connections.selectedId === undefined || session === undefined
     ? undefined
     : composerMemoryKey(connections.selectedId, session.id, session.runtime_epoch);

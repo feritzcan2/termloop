@@ -40,6 +40,38 @@ describe("push relay validation", () => {
       }],
     })).toBeDefined();
   });
+
+  it("forwards a subtitle, the permission category, and a bounded collapse id", () => {
+    const device = fixture().devices[0];
+    const accepted = pushRequestOf({
+      ...fixture(),
+      devices: [{
+        ...device,
+        collapseId: "11111111-2222-4333-8444-555555555555",
+        payload: {
+          ...device.payload,
+          aps: {
+            ...device.payload.aps,
+            alert: { ...device.payload.aps.alert, subtitle: "TermLoop · Mobile notifications" },
+            category: "TERMLOOP_AGENT_PERMISSION",
+          },
+        },
+      }],
+    });
+    expect(accepted?.devices[0]).toMatchObject({
+      collapseId: "11111111-2222-4333-8444-555555555555",
+      payload: { aps: { alert: { subtitle: "TermLoop · Mobile notifications" }, category: "TERMLOOP_AGENT_PERMISSION" } },
+    });
+    expect(pushRequestOf({ ...fixture(), devices: [{ ...device, collapseId: "x".repeat(65) }] })).toBeUndefined();
+    expect(pushRequestOf({ ...fixture(), devices: [{ ...device, collapseId: "bad id" }] })).toBeUndefined();
+    expect(pushRequestOf({
+      ...fixture(),
+      devices: [{
+        ...device,
+        payload: { ...device.payload, aps: { ...device.payload.aps, alert: { ...device.payload.aps.alert, subtitle: "" } } },
+      }],
+    })).toBeUndefined();
+  });
 });
 
 export function fixture() {

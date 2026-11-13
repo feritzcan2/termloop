@@ -15,11 +15,18 @@ describe("mobile push relay worker", () => {
   });
 
   it("pins each installation credential and relays a validated APNs request", async () => {
-    const request = { ...fixture(), installationId: "c".repeat(32) };
+    const base = fixture();
+    const request = {
+      ...base,
+      installationId: "c".repeat(32),
+      devices: [{ ...base.devices[0], collapseId: "session-1" }],
+    };
     let apnsBody: unknown;
+    let collapseHeader: string | null = null;
     network.use(http.post(
       `https://api.sandbox.push.apple.com/3/device/${"b".repeat(64)}`,
       async ({ request: apnsRequest }) => {
+        collapseHeader = apnsRequest.headers.get("apns-collapse-id");
         apnsBody = await apnsRequest.json();
         return new HttpResponse(null, { status: 200 });
       },
@@ -30,6 +37,7 @@ describe("mobile push relay worker", () => {
       version: 1,
       results: [{ index: 0, ok: true, status: 200 }],
     });
+    expect(collapseHeader).toBe("session-1");
     expect(apnsBody).toMatchObject({
       connectionId: "mac-0123456789abcdef",
       sessionId: "session-1",

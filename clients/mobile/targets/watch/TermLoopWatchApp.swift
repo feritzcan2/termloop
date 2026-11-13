@@ -76,6 +76,7 @@ enum DictationPresenter {
 
 final class AppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCenterDelegate {
     static let agentCategory = "TERMLOOP_AGENT_ATTENTION"
+    static let agentPermissionCategory = "TERMLOOP_AGENT_PERMISSION"
     static let stewardCategory = "TERMLOOP_STEW_REPLY"
     static let stewardProposalCategory = "TERMLOOP_STEW_PROPOSAL"
     static let stewardSuggestionCategory = "TERMLOOP_STEW_SUGGESTION"
@@ -117,8 +118,20 @@ final class AppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCent
         let approve = UNNotificationAction(identifier: "TERMLOOP_APPROVE", title: "Onayla", options: [])
         let decline = UNNotificationAction(identifier: "TERMLOOP_DECLINE", title: "Şimdi değil", options: [])
         let accept = UNNotificationAction(identifier: "TERMLOOP_ACCEPT", title: "Uygula", options: [])
+        // A provider permission prompt answers with one key on the Mac.
+        let agentApprove = UNNotificationAction(identifier: "TERMLOOP_AGENT_APPROVE", title: "Onayla", options: [])
+        let agentDeny = UNNotificationAction(
+            identifier: "TERMLOOP_AGENT_DENY",
+            title: "Reddet",
+            options: [.destructive]
+        )
         center.setNotificationCategories([
             UNNotificationCategory(identifier: Self.agentCategory, actions: [reply], intentIdentifiers: []),
+            UNNotificationCategory(
+                identifier: Self.agentPermissionCategory,
+                actions: [agentApprove, agentDeny, reply],
+                intentIdentifiers: []
+            ),
             UNNotificationCategory(identifier: Self.stewardCategory, actions: [reply], intentIdentifiers: []),
             UNNotificationCategory(
                 identifier: Self.stewardProposalCategory,
@@ -145,6 +158,14 @@ final class AppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCent
         ]
         if let action = stewardActions[response.actionIdentifier] {
             await deliverStewardAction(action: action, userInfo: userInfo)
+            return
+        }
+        let agentDecisions = [
+            "TERMLOOP_AGENT_APPROVE": "approve",
+            "TERMLOOP_AGENT_DENY": "deny",
+        ]
+        if let decision = agentDecisions[response.actionIdentifier] {
+            await deliverAgentDecision(decision: decision, userInfo: userInfo)
             return
         }
         if let textResponse = response as? UNTextInputNotificationResponse,
@@ -200,6 +221,23 @@ final class AppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCent
             body: StewardActionRequest(projectId: projectId, messageId: messageId, action: action)
         )
         result == nil ? Haptics.failed() : Haptics.delivered()
+    }
+
+    /// The gateway refuses unless the same Session epoch still awaits input.
+    private func deliverAgentDecision(decision: String, userInfo: [AnyHashable: Any]) async {
+        guard let credential = credential(for: userInfo),
+              let sessionId = userInfo["sessionId"] as? String,
+              let runtimeEpoch = Self.integer(userInfo["runtimeEpoch"])
+        else {
+            Haptics.failed()
+            return
+        }
+        let result: ReplyResponse? = try? await GatewayAPI.post(
+            credential: credential,
+            path: "/watch/agent-decision",
+            body: AgentDecisionBody(sessionId: sessionId, runtimeEpoch: runtimeEpoch, decision: decision)
+        )
+        result?.delivered == true ? Haptics.delivered() : Haptics.failed()
     }
 
     private func deliverInlineReply(text: String, userInfo: [AnyHashable: Any]) async {
