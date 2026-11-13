@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   confirm-candidate:
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, netcup]
     env:
       TERMLOOP_RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
     steps:
@@ -317,7 +317,7 @@ jobs:
 
   publish:
     needs: [build, build-server-linux]
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, netcup]
     environment: production
     env:
       TERMLOOP_RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
