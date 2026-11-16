@@ -829,11 +829,23 @@ impl GeneratedInputDeliveryRuntime {
         // Provider progress after an unacknowledged submit means the provider
         // is no longer at a bare composer; stop any pending Enter retry so it
         // cannot answer a permission prompt or interrupt the running turn.
+        // The cancelled retry worker emits no further outcome, so the record
+        // must leave the active state here or it stays "submitting" forever.
+        // Progress alone does not attribute the turn to this submission, so it
+        // resolves as unattributed; later newer progress confirms it below.
+        // Provider-queue deliveries are confirmed by their own progress path.
         if delivery.state == GeneratedInputDeliveryState::AwaitingProviderAck
             && provider_sequence > delivery.provider_sequence_baseline
         {
             delivery.cancel_submit.store(true, Ordering::Release);
-            return false;
+            if delivery.settlement == GeneratedInputSettlement::ProviderQueue {
+                return false;
+            }
+            delivery.provider_confirmation = Some((provider_sequence, None));
+            delivery.state = GeneratedInputDeliveryState::ConfirmedUnattributed;
+            delivery.failure = None;
+            signal_provider_ack(delivery);
+            return true;
         }
         if delivery.state != GeneratedInputDeliveryState::ConfirmedUnattributed {
             return false;

@@ -1038,10 +1038,46 @@ fn provider_progress_stops_an_unacknowledged_submit_retry() {
         !cancel_submit.load(Ordering::Acquire),
         "older progress is not evidence"
     );
-    assert!(!runtime.confirm_provider_progress("session", 1, 11));
+    assert!(runtime.confirm_provider_progress("session", 1, 11));
     assert!(cancel_submit.load(Ordering::Acquire));
     assert_eq!(
         runtime.state("session", 1),
+        Some(GeneratedInputDeliveryState::ConfirmedUnattributed),
+        "a cancelled retry emits no outcome, so progress must resolve the record"
+    );
+    assert!(runtime.confirm_provider_progress("session", 1, 12));
+    assert_eq!(
+        runtime.state("session", 1),
+        Some(GeneratedInputDeliveryState::Confirmed)
+    );
+}
+
+#[test]
+fn provider_progress_leaves_an_awaiting_provider_queue_delivery_to_queue_confirmation() {
+    let mut runtime = GeneratedInputDeliveryRuntime::default();
+    let terminal = TerminalService::default();
+    assert!(runtime.begin(
+        &terminal,
+        "session",
+        1,
+        10,
+        wake_submission(),
+        GeneratedInputSettlement::ProviderQueue,
+    ));
+    let delivery = runtime.deliveries.get_mut("session").unwrap();
+    delivery.state = GeneratedInputDeliveryState::AwaitingProviderAck;
+    delivery
+        .submit_receipted_signal
+        .store(true, Ordering::Release);
+
+    assert!(!runtime.confirm_provider_progress("session", 1, 11));
+    assert_eq!(
+        runtime.state("session", 1),
         Some(GeneratedInputDeliveryState::AwaitingProviderAck)
+    );
+    assert!(runtime.confirm_provider_queue_progress("session", 1, 11));
+    assert_eq!(
+        runtime.state("session", 1),
+        Some(GeneratedInputDeliveryState::Confirmed)
     );
 }
