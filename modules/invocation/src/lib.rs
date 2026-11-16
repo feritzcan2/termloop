@@ -146,7 +146,7 @@ const PLAYBOOK_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const STEWARD_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.steward.executor",
-    version: 44,
+    version: 45,
     authored_body: include_str!("../../../resources/prompts/builtin.steward.executor.md"),
 };
 
