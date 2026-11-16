@@ -146,7 +146,7 @@ const PLAYBOOK_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const STEWARD_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.steward.executor",
-    version: 43,
+    version: 44,
     authored_body: include_str!("../../../resources/prompts/builtin.steward.executor.md"),
 };
 
@@ -217,7 +217,7 @@ const AGENT_PROJECT_RELOCATION_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const STEWARD_AGENT_MESSAGE_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.steward.agent-message",
-    version: 1,
+    version: 2,
     authored_body: include_str!("../../../resources/prompts/builtin.steward.agent-message.md"),
 };
 

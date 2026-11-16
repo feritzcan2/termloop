@@ -2635,11 +2635,16 @@ fn ask_to_reply_is_one_visible_terminal_safe_delivery() {
 #[test]
 fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
     let prompt = executor_prompt(ExecutorRole::Steward).unwrap();
-    assert_eq!(prompt.provenance().template_version, 43);
+    assert_eq!(prompt.provenance().template_version, 44);
     assert!(prompt.authored_preview().contains("routine_finding_read"));
     assert!(prompt.authored_preview().contains("playbook_read"));
     assert!(prompt.authored_preview().contains("task_set_steward_brief"));
     assert!(prompt.authored_preview().contains("task_agent_start"));
+    assert!(
+        prompt
+            .authored_preview()
+            .contains("Write it\nin the user's own voice")
+    );
     assert!(
         prompt
             .authored_preview()
@@ -2888,7 +2893,7 @@ fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
         default_steward_system_prompt()
     );
     let latest_retired =
-        include_str!("../../../resources/prompts/retired/builtin.steward.executor.v42.md")
+        include_str!("../../../resources/prompts/retired/builtin.steward.executor.v43.md")
             .splitn(3, "\n\n")
             .nth(2)
             .unwrap()
@@ -2930,7 +2935,7 @@ fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
 #[test]
 fn pipeline_prompts_use_live_provider_neutral_evidence_and_one_outcome_contract() {
     let steward = executor_prompt(ExecutorRole::Steward).unwrap();
-    assert_eq!(steward.provenance().template_version, 43);
+    assert_eq!(steward.provenance().template_version, 44);
     let steward = steward.authored_preview();
     assert!(steward.contains("stage title is only a label"));
     assert!(steward.contains("steward_complete_assignment"));
@@ -3144,17 +3149,16 @@ fn steward_agent_message_is_visible_versioned_and_terminal_safe() {
         prompt.provenance().template_ref,
         "builtin.steward.agent-message"
     );
-    assert_eq!(prompt.provenance().template_version, 1);
+    assert_eq!(prompt.provenance().template_version, 2);
     assert_eq!(
         prompt.bindings().collect::<Vec<_>>(),
         [("message", "Please investigate Task oauth-callback.")]
     );
-    assert!(
-        prompt
-            .delivered_prompt()
-            .contains("Project Steward coordination")
+    assert_eq!(
+        prompt.delivered_prompt().trim(),
+        "Please investigate Task oauth-callback."
     );
-    assert!(prompt.delivered_prompt().contains("oauth-callback"));
+    assert!(!prompt.delivered_prompt().contains("Steward"));
     assert!(!prompt.delivered_prompt().contains("{{message}}"));
     assert_terminal_submission(prompt.terminal_input_sequence(), prompt.delivered_prompt());
     assert!(matches!(
