@@ -84,6 +84,27 @@ pub enum TerminalEvent {
     Eof,
 }
 
+/// One ordered item of a Session's byte stream. Geometry travels in the same
+/// channel as output so a renderer that cannot size its own surface learns each
+/// grid change exactly between the bytes laid out before and after it.
+#[derive(Debug, Clone)]
+enum StreamEvent {
+    Event(TerminalEvent),
+    Grid(TerminalGrid),
+}
+
+/// Delivery for an attachment that opted into geometry. A renderer that never
+/// resizes the PTY (mobile) has no other way to learn the grid the program lays
+/// its frames out for; guessing it leaves in-place redraws erasing the wrong rows.
+#[derive(Debug, Clone)]
+pub enum TerminalStreamDelivery {
+    Event(TerminalDelivery),
+    Grid {
+        grid: TerminalGrid,
+        recent_replay: bool,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TerminalLifecycleEvent {
     pub session_id: String,
@@ -132,6 +153,12 @@ pub enum TerminalLifecycleEventKind {
 pub struct TerminalGrid {
     pub rows: u16,
     pub cols: u16,
+}
+
+impl Default for TerminalGrid {
+    fn default() -> Self {
+        Self::FALLBACK
+    }
 }
 
 impl TerminalGrid {
@@ -294,7 +321,7 @@ struct Runtime {
     writer: mpsc::SyncSender<InputRequest>,
     master: Box<dyn MasterPty + Send>,
     child: Box<dyn Child + Send + Sync>,
-    events: broadcast::Sender<TerminalEvent>,
+    events: broadcast::Sender<StreamEvent>,
     input_readiness: InputReadinessTracker,
     output_activity: OutputActivityTracker,
     recent_replay: Arc<Mutex<RecentReplay>>,
@@ -313,8 +340,12 @@ struct RecentReplay {
     enabled: bool,
     bytes: usize,
     dropped_frames: u64,
-    events: VecDeque<TerminalEvent>,
+    events: VecDeque<StreamEvent>,
     mouse_modes: mouse_modes::MouseModeTracker,
+    /// Grid in effect before the oldest retained event.
+    origin_grid: TerminalGrid,
+    /// Grid in effect after the newest event.
+    grid: TerminalGrid,
 }
 
 impl RecentReplay {
@@ -325,59 +356,99 @@ impl RecentReplay {
         }
         while self.bytes.saturating_add(bytes.len()) > MAX_RECENT_REPLAY_BYTES {
             match self.events.pop_front() {
-                Some(TerminalEvent::Output(discarded)) => {
+                Some(StreamEvent::Event(TerminalEvent::Output(discarded))) => {
                     self.bytes = self.bytes.saturating_sub(discarded.len());
                     self.dropped_frames = self.dropped_frames.saturating_add(1);
                 }
-                Some(TerminalEvent::Gap(_)) => {}
-                Some(TerminalEvent::Eof) => {}
+                Some(StreamEvent::Grid(grid)) => self.origin_grid = grid,
+                Some(StreamEvent::Event(TerminalEvent::Gap(_) | TerminalEvent::Eof)) => {}
                 None => break,
             }
         }
         self.bytes += bytes.len();
-        self.events.push_back(TerminalEvent::Output(bytes.to_vec()));
+        self.events
+            .push_back(StreamEvent::Event(TerminalEvent::Output(bytes.to_vec())));
     }
 
     fn record_eof(&mut self) {
         if self.enabled {
-            self.events.push_back(TerminalEvent::Eof);
+            self.events
+                .push_back(StreamEvent::Event(TerminalEvent::Eof));
         }
     }
 
+    /// Returns whether the grid changed. Geometry is a fact of the PTY, not of
+    /// the ring, so it is tracked even while output retention is disabled.
+    fn record_grid(&mut self, grid: TerminalGrid) -> bool {
+        if self.grid == grid {
+            return false;
+        }
+        self.grid = grid;
+        if self.enabled {
+            self.events.push_back(StreamEvent::Grid(grid));
+        } else {
+            self.origin_grid = grid;
+        }
+        true
+    }
+
+    #[cfg(test)]
     fn snapshot(&self) -> VecDeque<TerminalEvent> {
         self.snapshot_with_options(MAX_RECENT_REPLAY_BYTES, MAX_IO_CHUNK_BYTES)
     }
 
-    /// Returns a contiguous newest suffix without changing the process-wide ring.
-    /// Attachments with a smaller display budget get an explicit Gap for output reads
-    /// omitted in addition to any reads the 1 MiB ring already evicted.
+    #[cfg(test)]
     fn snapshot_with_options(
         &self,
         max_output_bytes: usize,
         max_chunk_bytes: usize,
     ) -> VecDeque<TerminalEvent> {
+        self.stream_snapshot(max_output_bytes, max_chunk_bytes)
+            .into_iter()
+            .filter_map(|event| match event {
+                StreamEvent::Event(event) => Some(event),
+                StreamEvent::Grid(_) => None,
+            })
+            .collect()
+    }
+
+    /// Returns a contiguous newest suffix without changing the process-wide ring.
+    /// Attachments with a smaller display budget get an explicit Gap for output reads
+    /// omitted in addition to any reads the 1 MiB ring already evicted. The suffix
+    /// always opens with the grid its first byte was laid out for.
+    fn stream_snapshot(
+        &self,
+        max_output_bytes: usize,
+        max_chunk_bytes: usize,
+    ) -> VecDeque<StreamEvent> {
         if !self.enabled {
-            return VecDeque::new();
+            return VecDeque::from([StreamEvent::Grid(self.grid)]);
         }
         let chunk_limit = max_chunk_bytes.clamp(MAX_IO_CHUNK_BYTES, MAX_RECENT_REPLAY_BYTES);
         let mut retained = VecDeque::new();
         let mut remaining = max_output_bytes.min(MAX_RECENT_REPLAY_BYTES);
         let mut budget_exhausted = false;
         let mut omitted_frames = self.dropped_frames;
+        // The newest grid change older than the window is the geometry the window
+        // opens with; changes inside the window replay in place.
+        let mut opening_grid = None;
         for event in self.events.iter().rev() {
             match event {
-                TerminalEvent::Output(bytes) if !budget_exhausted && bytes.len() <= remaining => {
+                StreamEvent::Event(TerminalEvent::Output(bytes))
+                    if !budget_exhausted && bytes.len() <= remaining =>
+                {
                     remaining -= bytes.len();
-                    retained.push_front(TerminalEvent::Output(bytes.clone()));
+                    retained.push_front(event.clone());
                 }
-                TerminalEvent::Output(_) => {
+                StreamEvent::Event(TerminalEvent::Output(_)) => {
                     budget_exhausted = true;
                     omitted_frames = omitted_frames.saturating_add(1);
                 }
-                TerminalEvent::Gap(count) => {
-                    retained.push_front(TerminalEvent::Gap(*count));
+                StreamEvent::Grid(grid) if budget_exhausted => {
+                    opening_grid.get_or_insert(*grid);
                 }
-                TerminalEvent::Eof => retained.push_front(TerminalEvent::Eof),
+                StreamEvent::Event(TerminalEvent::Gap(_) | TerminalEvent::Eof)
+                | StreamEvent::Grid(_) => retained.push_front(event.clone()),
             }
         }
         // PTYs commonly produce many tiny reads while a TUI redraws. Replaying each
@@ -388,9 +459,9 @@ impl RecentReplay {
         let mut snapshot = VecDeque::new();
         for event in retained {
             match event {
-                TerminalEvent::Output(bytes) => {
+                StreamEvent::Event(TerminalEvent::Output(bytes)) => {
                     let append_to_last = snapshot.back_mut().and_then(|last| match last {
-                        TerminalEvent::Output(existing)
+                        StreamEvent::Event(TerminalEvent::Output(existing))
                             if existing.len().saturating_add(bytes.len()) <= chunk_limit =>
                         {
                             Some(existing)
@@ -400,46 +471,69 @@ impl RecentReplay {
                     if let Some(existing) = append_to_last {
                         existing.extend_from_slice(&bytes);
                     } else {
-                        snapshot.push_back(TerminalEvent::Output(bytes));
+                        snapshot.push_back(StreamEvent::Event(TerminalEvent::Output(bytes)));
                     }
                 }
-                TerminalEvent::Gap(count) => snapshot.push_back(TerminalEvent::Gap(count)),
-                TerminalEvent::Eof => snapshot.push_back(TerminalEvent::Eof),
+                other => snapshot.push_back(other),
             }
         }
+        // A change before the first retained byte is itself the opening grid.
+        let opening = match snapshot.front() {
+            Some(StreamEvent::Grid(grid)) => {
+                let grid = *grid;
+                snapshot.pop_front();
+                grid
+            }
+            _ => opening_grid.unwrap_or(self.origin_grid),
+        };
         if omitted_frames > 0 {
-            snapshot.push_front(TerminalEvent::Gap(omitted_frames));
+            snapshot.push_front(StreamEvent::Event(TerminalEvent::Gap(omitted_frames)));
         }
+        snapshot.push_front(StreamEvent::Grid(opening));
         snapshot
     }
 }
 
 pub struct TerminalSubscription {
-    replay: VecDeque<TerminalEvent>,
-    live: broadcast::Receiver<TerminalEvent>,
+    replay: VecDeque<StreamEvent>,
+    live: broadcast::Receiver<StreamEvent>,
     replay_mouse_modes: u32,
+    grid_events: bool,
 }
 
+#[derive(Debug, Clone)]
 pub struct TerminalDelivery {
     pub event: TerminalEvent,
     pub recent_replay: bool,
 }
 
 impl TerminalSubscription {
+    /// Also delivers the PTY grid: once at the head of the replay, then every
+    /// change in order with the output around it.
+    pub fn with_grid_events(mut self) -> Self {
+        self.grid_events = true;
+        self
+    }
+
     pub fn replay_mouse_modes(&self) -> u32 {
         self.replay_mouse_modes
     }
 
+    /// Frames the replay will deliver to this subscriber, grid changes included
+    /// only when it opted into them.
     pub fn replay_event_count(&self) -> usize {
-        self.replay.len()
+        self.replay
+            .iter()
+            .filter(|event| self.grid_events || matches!(event, StreamEvent::Event(_)))
+            .count()
     }
 
     pub fn replay_output_bytes(&self) -> usize {
         self.replay
             .iter()
             .filter_map(|event| match event {
-                TerminalEvent::Output(bytes) => Some(bytes.len()),
-                TerminalEvent::Gap(_) | TerminalEvent::Eof => None,
+                StreamEvent::Event(TerminalEvent::Output(bytes)) => Some(bytes.len()),
+                _ => None,
             })
             .sum()
     }
@@ -448,16 +542,43 @@ impl TerminalSubscription {
         Ok(self.recv_delivery().await?.event)
     }
 
+    /// Output, gap, and EOF only; grid changes are skipped even when requested.
     pub async fn recv_delivery(&mut self) -> Result<TerminalDelivery, broadcast::error::RecvError> {
-        if let Some(event) = self.replay.pop_front() {
-            return Ok(TerminalDelivery {
-                event,
-                recent_replay: true,
-            });
+        loop {
+            if let TerminalStreamDelivery::Event(delivery) = self.next_stream_item().await? {
+                return Ok(delivery);
+            }
         }
-        Ok(TerminalDelivery {
-            event: self.live.recv().await?,
-            recent_replay: false,
+    }
+
+    /// Every ordered item, including grid changes when `with_grid_events` was set.
+    pub async fn recv_stream(
+        &mut self,
+    ) -> Result<TerminalStreamDelivery, broadcast::error::RecvError> {
+        loop {
+            let item = self.next_stream_item().await?;
+            if self.grid_events || matches!(item, TerminalStreamDelivery::Event(_)) {
+                return Ok(item);
+            }
+        }
+    }
+
+    async fn next_stream_item(
+        &mut self,
+    ) -> Result<TerminalStreamDelivery, broadcast::error::RecvError> {
+        let (event, recent_replay) = match self.replay.pop_front() {
+            Some(event) => (event, true),
+            None => (self.live.recv().await?, false),
+        };
+        Ok(match event {
+            StreamEvent::Event(event) => TerminalStreamDelivery::Event(TerminalDelivery {
+                event,
+                recent_replay,
+            }),
+            StreamEvent::Grid(grid) => TerminalStreamDelivery::Grid {
+                grid,
+                recent_replay,
+            },
         })
     }
 }
@@ -618,6 +739,8 @@ impl TerminalService {
         let reader_client_input_activity = Arc::clone(&client_input_activity);
         let recent_replay = Arc::new(Mutex::new(RecentReplay {
             enabled: spec.recent_output_replay,
+            origin_grid: grid,
+            grid,
             ..RecentReplay::default()
         }));
         if let Some(history) = &shell_history {
@@ -646,7 +769,7 @@ impl TerminalService {
                             .lock()
                             .expect("recent replay buffer poisoned");
                         replay.record_eof();
-                        let _ = reader_events.send(TerminalEvent::Eof);
+                        let _ = reader_events.send(StreamEvent::Event(TerminalEvent::Eof));
                         drop(replay);
                         let _ = lifecycle_events.send(TerminalLifecycleEvent {
                             session_id: lifecycle_session_id.clone(),
@@ -671,7 +794,8 @@ impl TerminalService {
                             .lock()
                             .expect("recent replay buffer poisoned");
                         replay.record_output(&bytes);
-                        let _ = reader_events.send(TerminalEvent::Output(bytes));
+                        let _ =
+                            reader_events.send(StreamEvent::Event(TerminalEvent::Output(bytes)));
                         drop(replay);
                     }
                     Err(_) => {
@@ -684,7 +808,7 @@ impl TerminalService {
                             .lock()
                             .expect("recent replay buffer poisoned");
                         replay.record_eof();
-                        let _ = reader_events.send(TerminalEvent::Eof);
+                        let _ = reader_events.send(StreamEvent::Event(TerminalEvent::Eof));
                         drop(replay);
                         let _ = lifecycle_events.send(TerminalLifecycleEvent {
                             session_id: lifecycle_session_id.clone(),
@@ -912,19 +1036,12 @@ impl TerminalService {
         // reader around buffer+publish. This makes the handoff gap-free and
         // prevents one chunk from appearing in both replay and live.
         let live = runtime.events.subscribe();
-        let replay = if max_replay_bytes >= MAX_RECENT_REPLAY_BYTES {
-            if max_replay_chunk_bytes <= MAX_IO_CHUNK_BYTES {
-                recent.snapshot()
-            } else {
-                recent.snapshot_with_options(max_replay_bytes, max_replay_chunk_bytes)
-            }
-        } else {
-            recent.snapshot_with_options(max_replay_bytes, max_replay_chunk_bytes)
-        };
+        let replay = recent.stream_snapshot(max_replay_bytes, max_replay_chunk_bytes);
         Ok(TerminalSubscription {
             replay,
             live,
             replay_mouse_modes: recent.mouse_modes.snapshot(),
+            grid_events: false,
         })
     }
 
@@ -1253,17 +1370,32 @@ impl TerminalService {
 
     pub fn resize(&self, session_id: &str, rows: u16, cols: u16) -> Result<(), TerminalError> {
         let runtime = self.runtime(session_id)?;
-        runtime
-            .lock()
-            .map_err(|_| TerminalError::RegistryPoisoned)?
-            .master
-            .resize(PtySize {
-                rows,
-                cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .map_err(|error| TerminalError::Pty(error.to_string()))?;
+        {
+            let runtime = runtime
+                .lock()
+                .map_err(|_| TerminalError::RegistryPoisoned)?;
+            runtime
+                .master
+                .resize(PtySize {
+                    rows,
+                    cols,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                })
+                .map_err(|error| TerminalError::Pty(error.to_string()))?;
+            // Publish under the same ring lock the reader holds around buffer+send, so
+            // the change lands between the bytes laid out before and after it.
+            // Degenerate geometry from a surface still laying out is not published.
+            if let Some(grid) = TerminalGrid::new(rows, cols) {
+                let mut recent = runtime
+                    .recent_replay
+                    .lock()
+                    .map_err(|_| TerminalError::RegistryPoisoned)?;
+                if recent.record_grid(grid) {
+                    let _ = runtime.events.send(StreamEvent::Grid(grid));
+                }
+            }
+        }
         // A client only reports geometry it is really rendering, so an applied
         // resize is the one fact available about the surface this Session and
         // the next one will open into.
@@ -1781,6 +1913,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn grid_subscribers_learn_the_opening_grid_and_each_live_change() {
+        if termloop_platform::host_requires_long_path_opt_in() {
+            eprintln!("UNMEASURED: PTY grid fan-out is exercised on unix hosts");
+            return;
+        }
+        let service = TerminalService::default();
+        let mut spawn = spec("geometry");
+        spawn.recent_output_replay = true;
+        service.spawn(spawn).unwrap();
+        service.resize("geometry", 40, 100).unwrap();
+
+        let mut watcher = service
+            .subscribe("geometry", 77)
+            .unwrap()
+            .with_grid_events();
+        let plain = service.subscribe("geometry", 77).unwrap();
+        assert_eq!(plain.replay_event_count() + 1, watcher.replay_event_count());
+
+        let next_grid = |delivery: TerminalStreamDelivery| match delivery {
+            TerminalStreamDelivery::Grid { grid, .. } => Some(grid),
+            TerminalStreamDelivery::Event(_) => None,
+        };
+        assert_eq!(
+            next_grid(watcher.recv_stream().await.unwrap()),
+            Some(TerminalGrid {
+                rows: 40,
+                cols: 100
+            })
+        );
+        service.resize("geometry", 0, 0).unwrap();
+        service.resize("geometry", 45, 110).unwrap();
+        let live = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if let Some(grid) = next_grid(watcher.recv_stream().await.unwrap()) {
+                    return grid;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            live,
+            TerminalGrid {
+                rows: 45,
+                cols: 110
+            }
+        );
+
+        // The plain subscriber never observes geometry, only bytes and lifecycle.
+        drop(plain);
+        service.terminate("geometry").unwrap();
+    }
+
+    #[tokio::test]
     async fn an_applied_resize_becomes_the_grid_the_next_pty_opens_at() {
         if termloop_platform::host_requires_long_path_opt_in() {
             eprintln!(
@@ -2189,19 +2375,96 @@ mod tests {
         );
     }
 
+    fn grids(snapshot: &VecDeque<StreamEvent>) -> Vec<String> {
+        snapshot
+            .iter()
+            .map(|event| match event {
+                StreamEvent::Grid(grid) => format!("grid {}x{}", grid.rows, grid.cols),
+                StreamEvent::Event(TerminalEvent::Output(bytes)) => {
+                    String::from_utf8_lossy(bytes).into_owned()
+                }
+                StreamEvent::Event(TerminalEvent::Gap(count)) => format!("gap {count}"),
+                StreamEvent::Event(TerminalEvent::Eof) => "eof".to_owned(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn replay_opens_with_its_grid_and_keeps_changes_between_their_bytes() {
+        let start = TerminalGrid { rows: 24, cols: 80 };
+        let mut replay = RecentReplay {
+            enabled: true,
+            origin_grid: start,
+            grid: start,
+            ..RecentReplay::default()
+        };
+        replay.record_output(b"narrow-");
+        assert!(replay.record_grid(TerminalGrid {
+            rows: 50,
+            cols: 120
+        }));
+        assert!(!replay.record_grid(TerminalGrid {
+            rows: 50,
+            cols: 120
+        }));
+        replay.record_output(b"wide");
+
+        assert_eq!(
+            grids(&replay.stream_snapshot(MAX_RECENT_REPLAY_BYTES, MAX_IO_CHUNK_BYTES)),
+            ["grid 24x80", "narrow-", "grid 50x120", "wide"]
+        );
+        // A budget that omits the older bytes opens at the grid the kept bytes used.
+        assert_eq!(
+            grids(&replay.stream_snapshot(4, MAX_IO_CHUNK_BYTES)),
+            ["grid 50x120", "gap 1", "wide"]
+        );
+    }
+
+    #[test]
+    fn evicted_grid_changes_still_open_the_replay() {
+        let mut replay = RecentReplay {
+            enabled: true,
+            ..RecentReplay::default()
+        };
+        replay.record_grid(TerminalGrid {
+            rows: 40,
+            cols: 100,
+        });
+        replay.record_output(&vec![b'x'; MAX_RECENT_REPLAY_BYTES / 2 + 1]);
+        replay.record_output(&vec![b'y'; MAX_RECENT_REPLAY_BYTES / 2 + 1]);
+        let snapshot = replay.stream_snapshot(MAX_RECENT_REPLAY_BYTES, MAX_IO_CHUNK_BYTES);
+        assert!(matches!(
+            snapshot.front(),
+            Some(StreamEvent::Grid(TerminalGrid {
+                rows: 40,
+                cols: 100
+            }))
+        ));
+    }
+
+    #[test]
+    fn disabled_ring_still_reports_the_current_grid() {
+        let mut replay = RecentReplay::default();
+        replay.record_grid(TerminalGrid { rows: 30, cols: 90 });
+        assert_eq!(
+            grids(&replay.stream_snapshot(MAX_RECENT_REPLAY_BYTES, MAX_IO_CHUNK_BYTES)),
+            ["grid 30x90"]
+        );
+    }
+
     #[test]
     fn recent_output_snapshot_preserves_order_around_non_output_events() {
         let replay = RecentReplay {
             enabled: true,
             events: VecDeque::from([
-                TerminalEvent::Output(b"before".to_vec()),
-                TerminalEvent::Gap(7),
-                TerminalEvent::Output(b"after".to_vec()),
-                TerminalEvent::Eof,
+                StreamEvent::Event(TerminalEvent::Output(b"before".to_vec())),
+                StreamEvent::Event(TerminalEvent::Gap(7)),
+                StreamEvent::Event(TerminalEvent::Output(b"after".to_vec())),
+                StreamEvent::Event(TerminalEvent::Eof),
             ]),
             bytes: 11,
             dropped_frames: 3,
-            mouse_modes: mouse_modes::MouseModeTracker::default(),
+            ..RecentReplay::default()
         };
 
         let snapshot = replay.snapshot();

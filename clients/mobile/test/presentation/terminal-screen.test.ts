@@ -432,3 +432,43 @@ describe("grid editing", () => {
     expect(projection.alternateScreen).toBe(false);
   });
 });
+
+describe("daemon-reported grid", () => {
+  const lines = (prefix: string, count: number) =>
+    Array.from({ length: count }, (_, index) => `${prefix} ${index}`);
+  /// Claude's inline renderer: print the frame, then move up over it, erase, and print
+  /// the next one. It never addresses rows absolutely, so the grid height is invisible.
+  const inlineRedraw = (previous: number, next: readonly string[]) =>
+    `\r${esc}[${previous - 1}A${esc}[J${next.join("\r\n")}`;
+
+  it("keeps a frame taller than 24 rows live so redraws replace it", () => {
+    const projection = new TerminalScreenProjection();
+    projection.write(encoder.encode(`${esc}[8;40;100t`));
+    projection.write(encoder.encode(lines("draft", 30).join("\r\n")));
+    const snapshot = projection.write(encoder.encode(inlineRedraw(30, lines("final", 30))));
+    expect(plain(snapshot)).toEqual(lines("final", 30));
+  });
+
+  it("stacks stale frame rows into scrollback when the grid is only guessed", () => {
+    const projection = new TerminalScreenProjection();
+    projection.write(encoder.encode(lines("draft", 30).join("\r\n")));
+    const snapshot = projection.write(encoder.encode(inlineRedraw(30, lines("final", 30))));
+    expect(plain(snapshot).slice(0, 6)).toEqual(lines("draft", 6));
+  });
+
+  it("wraps at the reported width instead of widening the grid", () => {
+    const projection = new TerminalScreenProjection();
+    projection.write(encoder.encode(`${esc}[8;5;10t${esc}[1;1H`));
+    const snapshot = projection.write(encoder.encode("abcdefghijKLM"));
+    expect(plain(snapshot)).toEqual(["abcdefghij", "KLM"]);
+  });
+
+  it("moves rows above the cursor into scrollback when the grid shrinks", () => {
+    const projection = new TerminalScreenProjection();
+    projection.write(encoder.encode(`${esc}[8;6;20t${esc}[1;1H`));
+    projection.write(encoder.encode(lines("row", 6).join("\r\n")));
+    projection.write(encoder.encode(`${esc}[8;3;20t`));
+    const snapshot = projection.write(encoder.encode(`${esc}[1;1Htop${esc}[K`));
+    expect(plain(snapshot)).toEqual(["row 0", "row 1", "row 2", "top", "row 4", "row 5"]);
+  });
+});

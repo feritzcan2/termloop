@@ -15,11 +15,13 @@ import {
   KIND_ENABLE_INPUT_ACK,
   KIND_OUTPUT,
   KIND_REPLAY_OUTPUT,
+  KIND_RESIZE,
   decodeReplayAck,
   decodeFrame,
   decodeGapCount,
   encodeFrame,
   replayRequestPayload,
+  terminalGridSequence,
 } from "./terminal-frame";
 
 const AUTH_TIMEOUT_MS = 5_000;
@@ -68,6 +70,8 @@ export async function attachTerminal(
   let stabilityTimer: ReturnType<typeof setTimeout> | undefined;
   let replayChunks: Uint8Array[] = [];
   let replayBytes = 0;
+  /// Grid sequences spliced into the replay; they are not PTY output bytes.
+  let replayGridBytes = 0;
   let replayExpectedFrames: number | undefined;
   let replayExpectedBytes: number | undefined;
   let replayMouseModes: number | undefined;
@@ -118,6 +122,7 @@ export async function attachTerminal(
     clearReplayTimer();
     replayChunks = [];
     replayBytes = 0;
+    replayGridBytes = 0;
     replayExpectedFrames = undefined;
     replayExpectedBytes = undefined;
     replayMouseModes = undefined;
@@ -153,13 +158,14 @@ export async function attachTerminal(
     const droppedFrames = replayDroppedFrames;
     const eof = replayEof;
     const chunkCount = replayChunks.length;
+    const outputBytes = replayBytes - replayGridBytes;
     const bytes = new Uint8Array(replayBytes);
     let offset = 0;
     for (const chunk of replayChunks) {
       bytes.set(chunk, offset);
       offset += chunk.byteLength;
     }
-    if (expectedFrames !== undefined && (receivedFrames !== expectedFrames || bytes.length !== expectedBytes)) onEvent({ type: "notice", message: "Recent output is incomplete. Waiting for live output." });
+    if (expectedFrames !== undefined && (receivedFrames !== expectedFrames || outputBytes !== expectedBytes)) onEvent({ type: "notice", message: "Recent output is incomplete. Waiting for live output." });
     discardReplay();
     if (droppedFrames > 0) onEvent({ type: "gap", droppedFrames });
     if (bytes.byteLength > 0 || mouseModes !== undefined) onEvent({
@@ -195,12 +201,19 @@ export async function attachTerminal(
     const expected = replayExpectedFrames;
     if (expected === undefined || replayReceivedFrames >= expected) return false;
     if (kind === KIND_REPLAY_OUTPUT) {
-      if (replayBytes + payload.byteLength > MAX_REPLAY_BATCH_BYTES) {
+      if (replayBytes - replayGridBytes + payload.byteLength > MAX_REPLAY_BATCH_BYTES) {
         flushReplay();
         return false;
       }
       replayChunks.push(payload);
       replayBytes += payload.byteLength;
+    } else if (kind === KIND_RESIZE) {
+      const grid = terminalGridSequence(payload);
+      if (grid !== undefined) {
+        replayChunks.push(grid);
+        replayBytes += grid.byteLength;
+        replayGridBytes += grid.byteLength;
+      }
     } else if (kind === KIND_GAP) {
       replayDroppedFrames += decodeGapCount(payload);
     } else if (kind === KIND_EOF) {
@@ -210,7 +223,7 @@ export async function attachTerminal(
       return false;
     }
     replayReceivedFrames += 1;
-    onEvent({ type: "replayProgress", receivedBytes: replayBytes, totalBytes: replayExpectedBytes ?? 0 });
+    onEvent({ type: "replayProgress", receivedBytes: replayBytes - replayGridBytes, totalBytes: replayExpectedBytes ?? 0 });
     if (replayReceivedFrames === expected) flushReplay();
     return true;
   };
@@ -464,7 +477,10 @@ export async function attachTerminal(
     /// visible before a following gap, live byte, or exit state.
     flushReplay();
     if (frame.kind === KIND_OUTPUT) onEvent({ type: "live", bytes: frame.payload });
-    else if (frame.kind === KIND_GAP) {
+    else if (frame.kind === KIND_RESIZE) {
+      const grid = terminalGridSequence(frame.payload);
+      if (grid !== undefined) onEvent({ type: "live", bytes: grid });
+    } else if (frame.kind === KIND_GAP) {
       const droppedFrames = decodeGapCount(frame.payload);
       report("output_gap", { connectionAttempt, droppedFrames });
       onEvent({ type: "gap", droppedFrames });

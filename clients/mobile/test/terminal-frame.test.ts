@@ -22,7 +22,7 @@ describe("terminal replay negotiation", () => {
     expect(new TextDecoder().decode(request.slice(0, 4))).toBe("TLRQ");
     const view = new DataView(request.buffer);
     expect(view.getUint32(4)).toBe(MOBILE_REPLAY_BUDGET_BYTES);
-    expect(view.getUint32(8)).toBe(MOBILE_REPLAY_CHUNK_BYTES + 0x80000000);
+    expect(view.getUint32(8)).toBe(MOBILE_REPLAY_CHUNK_BYTES + 0xc0000000);
   });
 
   it("distinguishes a new replay ACK from an old daemon echoing the request", () => {

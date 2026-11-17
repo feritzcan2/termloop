@@ -8,8 +8,8 @@ const BEL = String.fromCharCode(0x07);
 const DEFAULT_COLUMNS = 80;
 const DEFAULT_ROWS = 24;
 
-/// Bounds, not geometry. The phone never learns the real PTY size — it must not send
-/// a resize, and the daemon's attach ack carries no dimensions — so the grid grows to
+/// Bounds, not geometry. The phone never sizes the PTY. A daemon that reports the
+/// grid fixes it (see `#setGeometry`); against an older daemon the grid grows to
 /// whatever the stream actually addresses and stops where memory and the render tree
 /// stop being free.
 export const SCREEN_MAX_COLUMNS = 320;
@@ -280,9 +280,12 @@ function isBlankLine(line: TerminalScreenLine | undefined): boolean {
  * stream flattened into lines is unreadable — so ownership is claimed from any
  * operation that only makes sense against a grid.
  *
- * It cannot ask how large the screen is. Mobile sends no resize and the attach ack
- * carries no dimensions, so a fixed 80×24 would wrap and scroll a desktop-sized TUI at
- * the wrong place. The grid instead grows to whatever the stream addresses.
+ * It cannot ask how large the screen is: mobile sends no resize. The adapter splices the
+ * daemon's grid reports into the stream as `ESC[8;rows;cols t`, and from the first one the
+ * grid is fixed — a TUI that redraws by moving the cursor up over its own frame needs
+ * the terminal to scroll at exactly the row the PTY does, or the frame's top rows leave
+ * for scrollback while still live and every later redraw stacks below them. Without a
+ * report the grid grows to whatever the stream addresses.
  *
  * It renders on a phone. Colour is carried through, because a Claude frame with its
  * hierarchy flattened to one grey is legible in principle and unreadable in practice.
@@ -295,6 +298,8 @@ export class TerminalScreenProjection {
   readonly #decoder = new TextDecoder();
   #columns = DEFAULT_COLUMNS;
   #rows = DEFAULT_ROWS;
+  /// Set by the first grid report; from then on the stream no longer resizes the grid.
+  #fixedGeometry = false;
   #nextRowId = 0;
   #grid: Row[] = [];
   /// Rows that left the top of the normal screen, already projected to spans. Inline
@@ -575,6 +580,9 @@ export class TerminalScreenProjection {
       case "s": this.#savedRow = this.#row; this.#savedColumn = this.#column; break;
       case "u": this.#row = this.#savedRow; this.#column = this.#savedColumn; break;
       case "m": this.#sgr(values); break;
+      case "t":
+        if (values[0] === 8 && given(1) && given(2)) this.#setGeometry(value(1), value(2));
+        break;
       // Device queries and cursor-style requests change no text.
     }
   }
@@ -660,6 +668,7 @@ export class TerminalScreenProjection {
   }
 
   #growRows(target: number): void {
+    if (this.#fixedGeometry) return;
     const next = Math.min(SCREEN_MAX_ROWS, target);
     if (next <= this.#rows) return;
     while (this.#grid.length < next) this.#grid.push(this.#createRow());
@@ -669,6 +678,7 @@ export class TerminalScreenProjection {
   }
 
   #growColumns(target: number): void {
+    if (this.#fixedGeometry) return;
     const next = Math.min(SCREEN_MAX_COLUMNS, target);
     if (next <= this.#columns) return;
     for (const row of this.#grid) {
@@ -678,6 +688,52 @@ export class TerminalScreenProjection {
       }
     }
     this.#columns = next;
+  }
+
+  /// Adopts the PTY grid, as a terminal window resized to it would: rows that no longer
+  /// fit below the cursor are dropped, rows above it go to scrollback, and columns are
+  /// cut or padded without reflow. The program repaints after its SIGWINCH.
+  #setGeometry(requestedRows: number, requestedColumns: number): void {
+    const rows = clamp(requestedRows, 1, SCREEN_MAX_ROWS);
+    const columns = clamp(requestedColumns, 1, SCREEN_MAX_COLUMNS);
+    this.#fixedGeometry = true;
+    if (rows === this.#rows && columns === this.#columns) return;
+    if (columns !== this.#columns) {
+      for (const row of this.#grid) {
+        row.chars.length = Math.min(row.chars.length, columns);
+        row.cellStyles.length = Math.min(row.cellStyles.length, columns);
+        while (row.chars.length < columns) {
+          row.chars.push(" ");
+          row.cellStyles.push(DEFAULT_TERMINAL_STYLE);
+        }
+        /// A wide glyph cut in half would otherwise leave a dangling continuation cell.
+        if (row.chars[columns - 1] !== undefined && charWidth(row.chars[columns - 1]?.codePointAt(0) ?? 0) > 1) {
+          row.chars[columns - 1] = " ";
+        }
+        row.dirty = true;
+      }
+      this.#columns = columns;
+    }
+    if (rows < this.#grid.length) {
+      let excess = this.#grid.length - rows;
+      const below = Math.max(0, this.#grid.length - 1 - this.#row);
+      const trimmed = Math.min(excess, below);
+      this.#grid.splice(this.#grid.length - trimmed, trimmed);
+      excess -= trimmed;
+      const lifted = this.#grid.splice(0, excess);
+      if (!this.#alternateScreen) for (const row of lifted) this.#rememberScrollback(row);
+      this.#row -= excess;
+    }
+    while (this.#grid.length < rows) this.#grid.push(this.#createRow());
+    this.#rows = rows;
+    this.#row = clamp(this.#row, 0, rows - 1);
+    this.#column = Math.min(this.#column, columns);
+    this.#savedRow = clamp(this.#savedRow, 0, rows - 1);
+    this.#savedColumn = Math.min(this.#savedColumn, columns - 1);
+    this.#scrollTop = 0;
+    this.#scrollBottom = rows - 1;
+    this.#regionSet = false;
+    this.#trimScrollback();
   }
 
   #print(text: string, width: number): void {

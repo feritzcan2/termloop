@@ -27,11 +27,13 @@ import {
   KIND_INPUT_ACK,
   KIND_OUTPUT,
   KIND_REPLAY_OUTPUT,
+  KIND_RESIZE,
   decodeReplayAck,
   decodeFrame,
   decodeGapCount,
   encodeFrame,
   replayRequestPayload,
+  terminalGridSequence,
 } from "./terminal-frame";
 
 const MOBILE_TRANSPORT_VERSION = 2;
@@ -93,6 +95,8 @@ interface TerminalSubscription {
   detached: boolean;
   replayChunks: Uint8Array[];
   replayBytes: number;
+  /// Grid sequences spliced into the replay; they are not PTY output bytes.
+  replayGridBytes: number;
   replayTimer: ReturnType<typeof setTimeout> | undefined;
   replayExpectedFrames: number | undefined;
   replayExpectedBytes: number | undefined;
@@ -247,6 +251,7 @@ export class MobileConnectionCoordinator {
       detached: false,
       replayChunks: [],
       replayBytes: 0,
+      replayGridBytes: 0,
       replayTimer: undefined,
       replayExpectedFrames: undefined,
       replayExpectedBytes: undefined,
@@ -896,7 +901,10 @@ export class MobileConnectionCoordinator {
     }
     if (!this.flushReplay(subscription)) return;
     if (frame.kind === KIND_OUTPUT) subscription.onEvent({ type: "live", bytes: frame.payload });
-    else if (frame.kind === KIND_GAP) {
+    else if (frame.kind === KIND_RESIZE) {
+      const grid = terminalGridSequence(frame.payload);
+      if (grid !== undefined) subscription.onEvent({ type: "live", bytes: grid });
+    } else if (frame.kind === KIND_GAP) {
       const droppedFrames = decodeGapCount(frame.payload);
       subscription.onEvent({ type: "gap", droppedFrames });
       this.reportTerminal(subscription, "output_gap", { droppedFrames });
@@ -1276,11 +1284,18 @@ export class MobileConnectionCoordinator {
     const expected = subscription.replayExpectedFrames;
     if (expected === undefined || subscription.replayReceivedFrames >= expected) return false;
     if (kind === KIND_REPLAY_OUTPUT) {
-      if (subscription.replayBytes + payload.byteLength > MAX_REPLAY_BATCH_BYTES) {
+      if (subscription.replayBytes - subscription.replayGridBytes + payload.byteLength > MAX_REPLAY_BATCH_BYTES) {
         return !this.flushReplay(subscription);
       }
       subscription.replayChunks.push(payload);
       subscription.replayBytes += payload.byteLength;
+    } else if (kind === KIND_RESIZE) {
+      const grid = terminalGridSequence(payload);
+      if (grid !== undefined) {
+        subscription.replayChunks.push(grid);
+        subscription.replayBytes += grid.byteLength;
+        subscription.replayGridBytes += grid.byteLength;
+      }
     } else if (kind === KIND_GAP) {
       subscription.replayDroppedFrames += decodeGapCount(payload);
     } else if (kind === KIND_EOF) {
@@ -1289,7 +1304,7 @@ export class MobileConnectionCoordinator {
       return !this.flushReplay(subscription);
     }
     subscription.replayReceivedFrames += 1;
-    subscription.onEvent({ type: "replayProgress", receivedBytes: subscription.replayBytes, totalBytes: subscription.replayExpectedBytes ?? 0 });
+    subscription.onEvent({ type: "replayProgress", receivedBytes: subscription.replayBytes - subscription.replayGridBytes, totalBytes: subscription.replayExpectedBytes ?? 0 });
     if (subscription.replayReceivedFrames === expected) this.flushReplay(subscription);
     return true;
   }
@@ -1308,6 +1323,7 @@ export class MobileConnectionCoordinator {
     const droppedFrames = subscription.replayDroppedFrames;
     const eof = subscription.replayEof;
     const replayBytes = subscription.replayBytes;
+    const outputBytes = replayBytes - subscription.replayGridBytes;
     const bytes = new Uint8Array(replayBytes);
     let offset = 0;
     for (const chunk of subscription.replayChunks) {
@@ -1316,7 +1332,7 @@ export class MobileConnectionCoordinator {
     }
     const chunks = subscription.replayChunks.length;
     const complete = expectedFrames === undefined
-      || (receivedFrames === expectedFrames && replayBytes === expectedBytes);
+      || (receivedFrames === expectedFrames && outputBytes === expectedBytes);
     if (!subscription.replayPolicy.accept(bytes, complete)) {
       this.clearReplay(subscription);
       this.reportTerminal(subscription, "replay_expanded", { receivedBytes: replayBytes });
@@ -1325,7 +1341,7 @@ export class MobileConnectionCoordinator {
       void this.forceReconnect(subscription).catch(() => {});
       return false;
     }
-    if (expectedFrames !== undefined && (receivedFrames !== expectedFrames || replayBytes !== expectedBytes)) subscription.onEvent({ type: "notice", message: "Recent output is incomplete. Waiting for live output." });
+    if (expectedFrames !== undefined && (receivedFrames !== expectedFrames || outputBytes !== expectedBytes)) subscription.onEvent({ type: "notice", message: "Recent output is incomplete. Waiting for live output." });
     this.clearReplay(subscription);
     if (droppedFrames > 0) subscription.onEvent({ type: "gap", droppedFrames });
     if (bytes.byteLength > 0 || mouseModes !== undefined) subscription.onEvent({
@@ -1355,6 +1371,7 @@ export class MobileConnectionCoordinator {
     subscription.replayTimer = undefined;
     subscription.replayChunks = [];
     subscription.replayBytes = 0;
+    subscription.replayGridBytes = 0;
     subscription.replayExpectedFrames = undefined;
     subscription.replayExpectedBytes = undefined;
     subscription.replayMouseModes = undefined;

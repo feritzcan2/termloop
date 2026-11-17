@@ -10,6 +10,7 @@ import {
   KIND_ERROR,
   KIND_REPLAY_OUTPUT,
   KIND_OUTPUT,
+  KIND_RESIZE,
   decodeFrame,
   encodeFrame,
 } from "../src/adapters/production/terminal-frame";
@@ -109,6 +110,43 @@ describe("mobile connection coordinator", () => {
     expect(limits).toEqual(mode === "overlap" ? [65536] : [65536, 1048576]);
     expect(terminalEvents.filter((event) => event.type === "replay")).toEqual([{ type: "replay", bytes: resumed, mouseModes: 0x104 }]);
     expect(terminalEvents.filter((event) => event.type === "live")).toEqual([{ type: "live", bytes: new Uint8Array([42]) }]);
+    await attachment.detach();
+    coordinator.close();
+  });
+
+  it("splices daemon grid reports into replay and live bytes at their stream position", async () => {
+    const encoder = new TextEncoder();
+    const grid = (rows: number, cols: number) => {
+      const payload = new Uint8Array(4);
+      new DataView(payload.buffer).setUint16(0, rows);
+      new DataView(payload.buffer).setUint16(2, cols);
+      return payload;
+    };
+    const terminalEvents: TerminalEvent[] = [];
+    const lines: string[] = [];
+    const coordinator = new MobileConnectionCoordinator(connection, () => authenticatingSocket((socket, data) => {
+      if (typeof data === "string") return;
+      const frame = decodeFrame(data instanceof Uint8Array ? data : new Uint8Array(data));
+      if (frame.kind !== KIND_ATTACH) return;
+      expect(new DataView(frame.payload.buffer, frame.payload.byteOffset).getUint32(8) & 0x40000000).not.toBe(0);
+      const metadata = new Uint8Array(12);
+      metadata.set(encoder.encode("TLRA"));
+      new DataView(metadata.buffer).setUint32(4, 2);
+      new DataView(metadata.buffer).setUint32(8, 5);
+      queueMicrotask(() => {
+        socket.onmessage?.({ data: encodeFrame(sessionId, 7, frame.sequence, KIND_ACK, metadata) });
+        socket.onmessage?.({ data: encodeFrame(sessionId, 7, 1n, KIND_RESIZE, grid(40, 100)) });
+        socket.onmessage?.({ data: encodeFrame(sessionId, 7, 2n, KIND_REPLAY_OUTPUT, encoder.encode("frame")) });
+        socket.onmessage?.({ data: encodeFrame(sessionId, 7, 3n, KIND_RESIZE, grid(45, 110)) });
+        socket.onmessage?.({ data: encodeFrame(sessionId, 7, 4n, KIND_OUTPUT, encoder.encode("!")) });
+      });
+    }), createMobileDiagnosticReporter((line) => lines.push(line)));
+    const attachment = await coordinator.attachTerminal({ id: sessionId, runtime_epoch: 7 }, (event) => terminalEvents.push(event));
+    await waitFor(() => terminalEvents.filter((event) => event.type === "live").length === 2);
+    const text = (event: TerminalEvent) => "bytes" in event ? new TextDecoder().decode(event.bytes) : event.type;
+    expect(terminalEvents.filter((event) => event.type === "replay" || event.type === "live").map(text))
+      .toEqual(["\u001b[8;40;100tframe", "\u001b[8;45;110t", "!"]);
+    expect(terminalEvents.some((event) => event.type === "notice")).toBe(false);
     await attachment.detach();
     coordinator.close();
   });

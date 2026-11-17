@@ -57,3 +57,43 @@ describe("terminal continuity", () => {
     expect([...result.slice(-32)]).toEqual([...addition]);
   });
 });
+
+describe("terminal continuity with a reported grid", () => {
+  const grid = (rows: number, cols: number) => `\u001b[8;${rows};${cols}t`;
+
+  it("continues past the replay's opening grid when the output overlaps", () => {
+    const previous = encoder.encode(`${grid(40, 100)}older frame ${"x".repeat(80)}`);
+    const replay = encoder.encode(`${grid(40, 100)}frame ${"x".repeat(80)} and more`);
+    const result = continueTerminalReplay(previous, replay);
+    expect(result.continuous).toBe(true);
+    expect(decoder.decode(result.bytes)).toBe(" and more");
+  });
+
+  it("does not replay an older opening grid over a later change", () => {
+    const previous = encoder.encode(`${grid(40, 100)}a${grid(50, 120)}${"y".repeat(80)}`);
+    const replay = encoder.encode(`${grid(50, 120)}${"y".repeat(80)}z`);
+    const result = continueTerminalReplay(previous, replay);
+    expect(decoder.decode(result.bytes)).toBe("z");
+  });
+
+  it("hands the grid to a projection that has never been told one", () => {
+    const previous = encoder.encode(`legacy ${"x".repeat(80)}`);
+    const replay = encoder.encode(`${grid(40, 100)}${"x".repeat(80)}!`);
+    const result = continueTerminalReplay(previous, replay);
+    expect(result.continuous).toBe(true);
+    expect(decoder.decode(result.bytes)).toBe(`${grid(40, 100)}!`);
+  });
+
+  it("keeps the retained screen when a replay carries only the grid", () => {
+    const previous = encoder.encode(`${grid(40, 100)}screen`);
+    const result = continueTerminalReplay(previous, encoder.encode(grid(40, 100)));
+    expect(result.continuous).toBe(true);
+  });
+
+  it("rebuilds from the full replay, grid included, when nothing overlaps", () => {
+    const replay = encoder.encode(`${grid(40, 100)}fresh`);
+    const result = continueTerminalReplay(encoder.encode("unrelated"), replay);
+    expect(result.continuous).toBe(false);
+    expect(decoder.decode(result.bytes)).toBe(`${grid(40, 100)}fresh`);
+  });
+});

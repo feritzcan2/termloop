@@ -1,6 +1,7 @@
 export const FRAME_MAGIC = "TL01";
 export const KIND_INPUT = 1;
 export const KIND_OUTPUT = 2;
+export const KIND_RESIZE = 3;
 export const KIND_GAP = 4;
 export const KIND_EOF = 5;
 export const KIND_REPLAY_OUTPUT = 6;
@@ -43,9 +44,23 @@ export function replayRequestPayload(maxBytes = MOBILE_REPLAY_BUDGET_BYTES): Uin
   payload.set(encoder.encode(REPLAY_REQUEST_MAGIC));
   const view = new DataView(payload.buffer);
   view.setUint32(4, maxBytes);
-  // Older daemons clamp the high feature bit to their existing chunk limit.
-  view.setUint32(8, Math.min(maxBytes, MOBILE_REPLAY_CHUNK_BYTES) | 0x80000000);
+  // Older daemons clamp the high feature bits to their existing chunk limit. Bit 31
+  // asks for mouse modes; bit 30 asks for the PTY grid as Resize frames.
+  view.setUint32(8, (Math.min(maxBytes, MOBILE_REPLAY_CHUNK_BYTES) | 0xc0000000) >>> 0);
   return payload;
+}
+
+/// The phone never sizes the PTY, so it renders at the grid the daemon reports. The
+/// grid is handed to the screen projection in-band, as xterm's "resize text area"
+/// sequence at its exact position in the byte stream, so replay batching, continuity
+/// matching, and ordering need no second channel.
+export function terminalGridSequence(payload: Uint8Array): Uint8Array | undefined {
+  if (payload.byteLength !== 4) return undefined;
+  const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+  const rows = view.getUint16(0);
+  const cols = view.getUint16(2);
+  if (rows === 0 || cols === 0) return undefined;
+  return encoder.encode(`\x1b[8;${rows};${cols}t`);
 }
 
 export function decodeReplayAck(payload: Uint8Array): TerminalReplayAck | undefined {

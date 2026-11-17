@@ -9,7 +9,7 @@ use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::response::IntoResponse;
 use futures_util::{SinkExt, StreamExt};
-use termloop_terminal::{FrameKind, TerminalEvent};
+use termloop_terminal::{FrameKind, TerminalEvent, TerminalStreamDelivery};
 use tokio::sync::{Notify, broadcast};
 use uuid::Uuid;
 
@@ -28,12 +28,18 @@ const REPLAY_REQUEST_BYTES: usize = 12;
 const MAX_REPLAY_WIRE_CHUNK_BYTES: usize = 256 * 1024;
 // Older daemons clamp this high bit to their maximum chunk size, preserving replay.
 const REPLAY_MOUSE_MODES_FLAG: u32 = 1 << 31;
+// A client that renders without resizing the PTY asks for its grid as Resize frames:
+// once ahead of the replay, then each change in order with the output. Older daemons
+// clamp this bit with the chunk size like the mouse-modes bit.
+const REPLAY_GRID_EVENTS_FLAG: u32 = 1 << 30;
+const REPLAY_FEATURE_FLAGS: u32 = REPLAY_MOUSE_MODES_FLAG | REPLAY_GRID_EVENTS_FLAG;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ReplayRequest {
     max_bytes: usize,
     max_chunk_bytes: usize,
     mouse_modes: bool,
+    grid_events: bool,
 }
 
 #[derive(Clone)]
@@ -172,6 +178,10 @@ struct AttachmentQueue {
     dropped: u64,
     attach_ack: Option<TerminalFrame>,
     input_ack: Option<TerminalFrame>,
+    /// Newest grid change lost to overflow. Bytes may be skipped behind a Gap,
+    /// but a renderer that cannot size itself must still learn the grid the
+    /// surviving bytes were laid out for.
+    dropped_grid: Option<TerminalFrame>,
 }
 
 #[derive(Default)]
@@ -205,7 +215,11 @@ impl OutboundBuffer {
             return;
         }
         if queue.frames.len() == MAX_ATTACHMENT_FRAMES {
-            queue.frames.pop_front();
+            if let Some(evicted) = queue.frames.pop_front()
+                && evicted.kind == FrameKind::Resize as u8
+            {
+                queue.dropped_grid = Some(evicted);
+            }
             queue.dropped = queue.dropped.saturating_add(1);
         }
         queue.frames.push_back(frame);
@@ -229,6 +243,9 @@ impl OutboundBuffer {
                     kind: FrameKind::Gap as u8,
                     payload: dropped.to_be_bytes().to_vec(),
                 });
+            }
+            if let Some(frame) = queue.dropped_grid.take() {
+                return Some(frame);
             }
             if let Some(frame) = queue.input_ack.take() {
                 return Some(frame);
@@ -391,6 +408,13 @@ async fn terminal_socket(
                     ),
                     None => state.terminal.subscribe(&session, frame.epoch),
                 };
+                let subscription = subscription.map(|receiver| {
+                    if replay_request.is_some_and(|request| request.grid_events) {
+                        receiver.with_grid_events()
+                    } else {
+                        receiver
+                    }
+                });
                 match subscription {
                     Ok(mut receiver) => {
                         let replay_event_count = receiver.replay_event_count();
@@ -452,21 +476,28 @@ async fn terminal_socket(
                         let sequence = Arc::new(AtomicU64::new(1));
                         let task = tokio::spawn(async move {
                             loop {
-                                let (kind, payload) = match receiver.recv_delivery().await {
-                                    Ok(delivery) => match delivery.event {
-                                        TerminalEvent::Output(bytes) => (
-                                            if delivery.recent_replay {
-                                                FrameKind::ReplayOutput as u8
-                                            } else {
-                                                FrameKind::Output as u8
-                                            },
-                                            bytes,
-                                        ),
-                                        TerminalEvent::Gap(count) => {
-                                            (FrameKind::Gap as u8, count.to_be_bytes().to_vec())
+                                let (kind, payload) = match receiver.recv_stream().await {
+                                    Ok(TerminalStreamDelivery::Grid { grid, .. }) => {
+                                        let mut payload = grid.rows.to_be_bytes().to_vec();
+                                        payload.extend_from_slice(&grid.cols.to_be_bytes());
+                                        (FrameKind::Resize as u8, payload)
+                                    }
+                                    Ok(TerminalStreamDelivery::Event(delivery)) => {
+                                        match delivery.event {
+                                            TerminalEvent::Output(bytes) => (
+                                                if delivery.recent_replay {
+                                                    FrameKind::ReplayOutput as u8
+                                                } else {
+                                                    FrameKind::Output as u8
+                                                },
+                                                bytes,
+                                            ),
+                                            TerminalEvent::Gap(count) => {
+                                                (FrameKind::Gap as u8, count.to_be_bytes().to_vec())
+                                            }
+                                            TerminalEvent::Eof => (FrameKind::Eof as u8, vec![]),
                                         }
-                                        TerminalEvent::Eof => (FrameKind::Eof as u8, vec![]),
-                                    },
+                                    }
                                     Err(tokio::sync::broadcast::error::RecvError::Lagged(
                                         count,
                                     )) => (FrameKind::Gap as u8, count.to_be_bytes().to_vec()),
@@ -658,7 +689,7 @@ fn requested_replay_options(payload: &[u8]) -> Option<ReplayRequest> {
     }
     let requested_bytes = u32::from_be_bytes(payload[4..8].try_into().ok()?) as usize;
     let chunk_options = u32::from_be_bytes(payload[8..12].try_into().ok()?);
-    let requested_chunk_bytes = (chunk_options & !REPLAY_MOUSE_MODES_FLAG) as usize;
+    let requested_chunk_bytes = (chunk_options & !REPLAY_FEATURE_FLAGS) as usize;
     Some(ReplayRequest {
         max_bytes: requested_bytes.clamp(
             termloop_terminal::MAX_IO_CHUNK_BYTES,
@@ -669,6 +700,7 @@ fn requested_replay_options(payload: &[u8]) -> Option<ReplayRequest> {
             MAX_REPLAY_WIRE_CHUNK_BYTES,
         ),
         mouse_modes: chunk_options & REPLAY_MOUSE_MODES_FLAG != 0,
+        grid_events: chunk_options & REPLAY_GRID_EVENTS_FLAG != 0,
     })
 }
 
@@ -727,6 +759,7 @@ mod tests {
                 max_bytes: 1024 * 1024,
                 max_chunk_bytes: 256 * 1024,
                 mouse_modes: false,
+                grid_events: false,
             })
         );
 
@@ -739,6 +772,7 @@ mod tests {
                 max_bytes: termloop_terminal::MAX_IO_CHUNK_BYTES,
                 max_chunk_bytes: termloop_terminal::MAX_IO_CHUNK_BYTES,
                 mouse_modes: false,
+                grid_events: false,
             })
         );
         assert_eq!(requested_replay_options(b"TLRA\0\0\0\x01"), None);
@@ -749,6 +783,19 @@ mod tests {
                 max_bytes: 1024 * 1024,
                 max_chunk_bytes: 64 * 1024,
                 mouse_modes: true,
+                grid_events: false,
+            })
+        );
+        request[8..12].copy_from_slice(
+            &(REPLAY_MOUSE_MODES_FLAG | REPLAY_GRID_EVENTS_FLAG | (64 * 1024)).to_be_bytes(),
+        );
+        assert_eq!(
+            requested_replay_options(&request),
+            Some(ReplayRequest {
+                max_bytes: 1024 * 1024,
+                max_chunk_bytes: 64 * 1024,
+                mouse_modes: true,
+                grid_events: true,
             })
         );
 
@@ -767,6 +814,29 @@ mod tests {
             u32::from_be_bytes(extended[12..].try_into().unwrap()),
             0x104
         );
+    }
+
+    #[test]
+    fn overflow_keeps_the_newest_grid_after_its_gap() {
+        let session = Uuid::new_v4();
+        let mut buffer = OutboundBuffer::default();
+        let frame = |sequence: u64, kind: FrameKind, payload: Vec<u8>| TerminalFrame {
+            session_id: session,
+            epoch: 1,
+            sequence,
+            kind: kind as u8,
+            payload,
+        };
+        buffer.enqueue(frame(1, FrameKind::Resize, vec![0, 40, 0, 100]));
+        for sequence in 2..(MAX_ATTACHMENT_FRAMES as u64 + 3) {
+            buffer.enqueue(frame(sequence, FrameKind::Output, b"x".to_vec()));
+        }
+        let gap = buffer.pop_fair().unwrap();
+        assert_eq!(gap.kind, FrameKind::Gap as u8);
+        let grid = buffer.pop_fair().unwrap();
+        assert_eq!(grid.kind, FrameKind::Resize as u8);
+        assert_eq!(grid.payload, vec![0, 40, 0, 100]);
+        assert_eq!(buffer.pop_fair().unwrap().kind, FrameKind::Output as u8);
     }
 
     #[test]
