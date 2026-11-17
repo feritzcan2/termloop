@@ -463,6 +463,14 @@ describe("daemon-reported grid", () => {
     expect(plain(snapshot)).toEqual(["abcdefghij", "KLM"]);
   });
 
+  it("honors a reported desktop width beyond the guessing bound", () => {
+    const projection = new TerminalScreenProjection();
+    projection.write(encoder.encode(`${esc}[8;5;380t${esc}[1;1H`));
+    const line = "x".repeat(379);
+    const snapshot = projection.write(encoder.encode(`${line}y`));
+    expect(plain(snapshot)).toEqual([`${line}y`]);
+  });
+
   it("moves rows above the cursor into scrollback when the grid shrinks", () => {
     const projection = new TerminalScreenProjection();
     projection.write(encoder.encode(`${esc}[8;6;20t${esc}[1;1H`));

@@ -13,6 +13,12 @@ const DEFAULT_ROWS = 24;
 /// whatever the stream actually addresses and stops where memory and the render tree
 /// stop being free.
 export const SCREEN_MAX_COLUMNS = 320;
+/// A grid the daemon reports is the truth the program draws against, so it is honored
+/// rather than clamped to the guessing bound above: a 380-column desktop pane cut to
+/// 320 wraps every long line one column early and Ink's relative repaint then stacks
+/// stale frames. Only the visible rows hold per-cell arrays (scrollback keeps projected
+/// spans), so this bounds rows × columns of the live screen, not of history.
+export const SCREEN_MAX_REPORTED_COLUMNS = 1024;
 /// How much of a streaming agent transcript the phone keeps.
 ///
 /// This is scrollback, not screen size. A program that streams rather than repainting a
@@ -695,7 +701,7 @@ export class TerminalScreenProjection {
   /// cut or padded without reflow. The program repaints after its SIGWINCH.
   #setGeometry(requestedRows: number, requestedColumns: number): void {
     const rows = clamp(requestedRows, 1, SCREEN_MAX_ROWS);
-    const columns = clamp(requestedColumns, 1, SCREEN_MAX_COLUMNS);
+    const columns = clamp(requestedColumns, 1, SCREEN_MAX_REPORTED_COLUMNS);
     this.#fixedGeometry = true;
     if (rows === this.#rows && columns === this.#columns) return;
     if (columns !== this.#columns) {
