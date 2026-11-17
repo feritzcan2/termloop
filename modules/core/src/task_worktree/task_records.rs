@@ -33,39 +33,52 @@ enum CoordinationAgentSelection<'a> {
         session_id: &'a str,
         reason: &'static str,
     },
-    Ambiguous {
-        reason: &'static str,
-    },
 }
 
-fn select_coordination_agent(candidates: &[(String, bool)]) -> CoordinationAgentSelection<'_> {
+/// One current Task Agent with its observed activity: working milliseconds,
+/// last contribution, and last structured observation time.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CoordinationCandidate {
+    session_id: String,
+    steward_started: bool,
+    activity: (u64, u64, u64),
+}
+
+/// A non-Steward Agent stays canonical over a legacy Steward-started
+/// duplicate. Among peers the most active Agent wins so coordination never
+/// stalls on a choice; the Session ID only breaks an exact activity tie.
+fn select_coordination_agent(
+    candidates: &[CoordinationCandidate],
+) -> CoordinationAgentSelection<'_> {
     let preferred = candidates
         .iter()
-        .filter(|(_, steward_started)| !steward_started)
+        .filter(|candidate| !candidate.steward_started)
         .collect::<Vec<_>>();
-    match preferred.as_slice() {
-        [(session_id, _)] => CoordinationAgentSelection::Selected {
-            session_id,
-            reason: if candidates.len() == 1 {
-                "soleCurrentTaskAgent"
-            } else {
-                "preferredNonStewardTaskAgent"
-            },
-        },
-        [_, _, ..] => CoordinationAgentSelection::Ambiguous {
-            reason: "multipleNonStewardTaskAgents",
-        },
-        [] => match candidates {
-            [] => CoordinationAgentSelection::None,
-            [(session_id, _)] => CoordinationAgentSelection::Selected {
-                session_id,
-                reason: "soleStewardStartedTaskAgent",
-            },
-            [_, _, ..] => CoordinationAgentSelection::Ambiguous {
-                reason: "multipleStewardStartedTaskAgents",
-            },
-        },
-    }
+    let non_steward = !preferred.is_empty();
+    let pool = if non_steward {
+        preferred
+    } else {
+        candidates.iter().collect()
+    };
+    let reason = match (non_steward, pool.len()) {
+        (true, 1) if candidates.len() == 1 => "soleCurrentTaskAgent",
+        (true, 1) => "preferredNonStewardTaskAgent",
+        (true, _) => "mostActiveTaskAgent",
+        (false, 1) => "soleStewardStartedTaskAgent",
+        (false, _) => "mostActiveStewardStartedTaskAgent",
+    };
+    pool.into_iter()
+        .max_by(|left, right| {
+            left.activity
+                .cmp(&right.activity)
+                .then_with(|| right.session_id.cmp(&left.session_id))
+        })
+        .map_or(CoordinationAgentSelection::None, |candidate| {
+            CoordinationAgentSelection::Selected {
+                session_id: &candidate.session_id,
+                reason,
+            }
+        })
 }
 
 fn decode_task_list_cursor(value: &str) -> Result<TaskListCursor, CoreError> {
@@ -329,8 +342,7 @@ impl CoreRuntime {
     /// Selects the one current ordinary Agent that Worker and Steward
     /// coordination should address for this exact Task. A non-Steward Agent
     /// remains canonical when a legacy Steward-started duplicate also exists;
-    /// genuinely competing peers remain explicit ambiguity rather than an
-    /// order-dependent guess.
+    /// among competing peers the most active Agent is selected.
     pub fn task_coordination_agent_projection_for_executor(
         &self,
         project_id: &str,
@@ -339,7 +351,7 @@ impl CoreRuntime {
         let candidates = self.current_task_coordination_agent_candidates(project_id, task_id)?;
         let candidate_session_ids = candidates
             .iter()
-            .map(|(session_id, _)| session_id)
+            .map(|candidate| candidate.session_id.as_str())
             .collect::<Vec<_>>();
         Ok(match select_coordination_agent(&candidates) {
             CoordinationAgentSelection::None => json!({
@@ -351,12 +363,6 @@ impl CoreRuntime {
             CoordinationAgentSelection::Selected { session_id, reason } => json!({
                 "state": "selected",
                 "sessionId": session_id,
-                "reason": reason,
-                "candidateSessionIds": candidate_session_ids,
-            }),
-            CoordinationAgentSelection::Ambiguous { reason } => json!({
-                "state": "ambiguous",
-                "sessionId": null,
                 "reason": reason,
                 "candidateSessionIds": candidate_session_ids,
             }),
@@ -387,8 +393,14 @@ impl CoreRuntime {
         &self,
         project_id: &str,
         task_id: &str,
-    ) -> Result<Vec<(String, bool)>, CoreError> {
+    ) -> Result<Vec<CoordinationCandidate>, CoreError> {
         let task_session_ids = self.task_agent_session_ids_for_executor(project_id, task_id)?;
+        let task = self
+            .store
+            .tasks()
+            .iter()
+            .find(|task| task.id == task_id && task.project_id == project_id);
+        let now = termloop_platform::current_epoch_ms();
         let mut candidates = self
             .store
             .sessions()
@@ -398,14 +410,23 @@ impl CoreRuntime {
                     && matches!(session.lifecycle_state.as_str(), "running" | "resuming")
             })
             .map(|session| {
-                (
-                    session.id.clone(),
-                    session.process.template_ref.as_deref()
+                let (working_ms, last_contribution_at) = task.map_or((0, 0), |task| {
+                    self.task_agent_activity_score(task, session, now)
+                });
+                let last_observed_at = self
+                    .agent_observations
+                    .get(&session.id)
+                    .and_then(|capability| capability.observation)
+                    .map_or(0, |observation| observation.observed_at_epoch_ms);
+                CoordinationCandidate {
+                    session_id: session.id.clone(),
+                    steward_started: session.process.template_ref.as_deref()
                         == Some("builtin.steward.task-assignment"),
-                )
+                    activity: (working_ms, last_contribution_at, last_observed_at),
+                }
             })
             .collect::<Vec<_>>();
-        candidates.sort_by(|left, right| left.0.cmp(&right.0));
+        candidates.sort_by(|left, right| left.session_id.cmp(&right.session_id));
         Ok(candidates)
     }
 
@@ -866,13 +887,25 @@ fn normalized_nullable_text(
 
 #[cfg(test)]
 mod coordination_tests {
-    use super::{CoordinationAgentSelection, select_coordination_agent};
+    use super::{CoordinationAgentSelection, CoordinationCandidate, select_coordination_agent};
+
+    fn candidate(
+        id: &str,
+        steward_started: bool,
+        activity: (u64, u64, u64),
+    ) -> CoordinationCandidate {
+        CoordinationCandidate {
+            session_id: id.to_owned(),
+            steward_started,
+            activity,
+        }
+    }
 
     #[test]
     fn coordination_prefers_the_existing_non_steward_agent_over_a_legacy_duplicate() {
         let candidates = vec![
-            ("agent-from-task".to_owned(), false),
-            ("agent-from-steward".to_owned(), true),
+            candidate("agent-from-task", false, (0, 0, 0)),
+            candidate("agent-from-steward", true, (9_000, 9_000, 9_000)),
         ];
         assert_eq!(
             select_coordination_agent(&candidates),
@@ -884,13 +917,51 @@ mod coordination_tests {
     }
 
     #[test]
-    fn coordination_never_guesses_between_peer_agents() {
-        let candidates = vec![("agent-a".to_owned(), false), ("agent-b".to_owned(), false)];
+    fn coordination_selects_the_most_active_peer_agent() {
+        let candidates = vec![
+            candidate("agent-a", false, (1_000, 5_000, 6_000)),
+            candidate("agent-b", false, (60_000, 4_000, 4_000)),
+        ];
         assert_eq!(
             select_coordination_agent(&candidates),
-            CoordinationAgentSelection::Ambiguous {
-                reason: "multipleNonStewardTaskAgents",
+            CoordinationAgentSelection::Selected {
+                session_id: "agent-b",
+                reason: "mostActiveTaskAgent",
             }
+        );
+    }
+
+    #[test]
+    fn coordination_falls_back_to_recency_then_session_id_for_unobserved_peers() {
+        let recent = vec![
+            candidate("agent-a", false, (0, 0, 100)),
+            candidate("agent-b", false, (0, 0, 200)),
+        ];
+        assert!(matches!(
+            select_coordination_agent(&recent),
+            CoordinationAgentSelection::Selected {
+                session_id: "agent-b",
+                ..
+            }
+        ));
+        let unobserved = vec![
+            candidate("agent-a", false, (0, 0, 0)),
+            candidate("agent-b", false, (0, 0, 0)),
+        ];
+        assert!(matches!(
+            select_coordination_agent(&unobserved),
+            CoordinationAgentSelection::Selected {
+                session_id: "agent-a",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn coordination_selects_nothing_without_a_current_agent() {
+        assert_eq!(
+            select_coordination_agent(&[]),
+            CoordinationAgentSelection::None
         );
     }
 }

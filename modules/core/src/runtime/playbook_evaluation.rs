@@ -256,6 +256,43 @@ impl CoreRuntime {
         activity.observe(next);
     }
 
+    /// Observed working time and last contribution of one current Task Agent,
+    /// counted only for its exact Task worktree generation, runtime epoch, and
+    /// native conversation. An unobserved Agent scores zero.
+    pub(crate) fn task_agent_activity_score(
+        &self,
+        task: &termloop_domain::TaskRecord,
+        session: &termloop_domain::SessionRecord,
+        now: u64,
+    ) -> (u64, u64) {
+        let id = session.id.as_str();
+        self.playbook_evaluation
+            .activity
+            .get(id)
+            .filter(|a| {
+                a.task_id == task.id
+                    && a.worktree_generation == task.worktree_generation
+                    && a.runtime_epoch == session.runtime_epoch
+                    && a.native_id.as_deref()
+                        == session
+                            .resume_ref
+                            .as_ref()
+                            .map(|r| r.native_session_id.as_str())
+            })
+            .map_or((0, 0), |a| {
+                if self
+                    .agent_observations
+                    .get(id)
+                    .and_then(|c| c.observation)
+                    .is_some_and(|o| o.sequence == a.sequence && o.state == AgentState::Working)
+                {
+                    a.score(now)
+                } else {
+                    (a.working_ms, a.last_contribution_at)
+                }
+            })
+    }
+
     pub(crate) fn select_playbook_source(
         &self,
         project_id: &str,
@@ -282,32 +319,7 @@ impl CoreRuntime {
             else {
                 continue;
             };
-            let score = self
-                .playbook_evaluation
-                .activity
-                .get(id)
-                .filter(|a| {
-                    a.task_id == task_id
-                        && a.worktree_generation == task.worktree_generation
-                        && a.runtime_epoch == session.runtime_epoch
-                        && a.native_id.as_deref()
-                            == session
-                                .resume_ref
-                                .as_ref()
-                                .map(|r| r.native_session_id.as_str())
-                })
-                .map_or((0, 0), |a| {
-                    if self
-                        .agent_observations
-                        .get(id)
-                        .and_then(|c| c.observation)
-                        .is_some_and(|o| o.sequence == a.sequence && o.state == AgentState::Working)
-                    {
-                        a.score(now)
-                    } else {
-                        (a.working_ms, a.last_contribution_at)
-                    }
-                });
+            let score = self.task_agent_activity_score(task, session, now);
             scores.push((id.to_owned(), score));
         }
         scores.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));

@@ -355,10 +355,10 @@ The fresh `task_read.coordinationAgent` projection is authoritative for Agent
 reuse. When its state is `selected`, use only its exact Session ID with
 `agent_message_send`, regardless of provider or whether the selected Agent is
 currently idle or working. This remains true when raw `agentStatuses` also
-contains a legacy Steward-started duplicate. Never call `task_agent_start` for
-that Task. When the state is `ambiguous`, surface the exact candidate conflict
-instead of choosing or starting another Agent. Call `task_agent_start` only
-when the state is `none`. If Core refuses a start with
+contains a legacy Steward-started duplicate or several Agents are attached:
+Core already selected the most active one, so never ask the user to choose
+among candidates. Never call `task_agent_start` for that Task.
+Call `task_agent_start` only when the state is `none`. If Core refuses a start with
 `suggestedAction: messageExistingAgent`, immediately use the returned exact `sessionId` with
 `agent_message_send` when the delegation is already authorized, or include that
 exact existing-Agent handoff in the required proposal. Never retry the start or

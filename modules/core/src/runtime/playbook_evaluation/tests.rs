@@ -200,11 +200,13 @@ fn activity_counts_work_and_ignores_duplicate_signals_and_idle_time() {
 fn most_observed_task_work_wins_and_evaluators_never_become_candidates() {
     let (mut runtime, root, project) = pipeline_runtime();
     attach_agents(&mut runtime, &root, &["source", "second"]);
+    // Unobserved peers still resolve to one deterministic Agent.
     assert_eq!(
         runtime
             .select_playbook_source(&project, "task-1", 1_000)
-            .unwrap(),
-        None
+            .unwrap()
+            .as_deref(),
+        Some("second")
     );
     let working = observation(AgentState::Working, 1, 100);
     runtime.observe_task_agent_work("source", None, working);
@@ -311,12 +313,9 @@ fn an_unmeasured_single_agent_is_usable_and_duplicate_claim_reuses_one_fork() {
 }
 
 #[test]
-fn missing_or_ambiguous_task_agent_skips_without_verdict_wake_or_hot_retry() {
-    for ambiguous in [false, true] {
+fn missing_task_agent_skips_without_verdict_wake_or_hot_retry() {
+    {
         let (mut runtime, root, project) = pipeline_runtime();
-        if ambiguous {
-            attach_agents(&mut runtime, &root, &["one", "two"]);
-        }
         let claim = claim(&mut runtime, &project);
         let revision = runtime.state_revision();
         let PlaybookEvaluationLaunch::Skipped(result) =
@@ -369,17 +368,15 @@ fn missing_or_ambiguous_task_agent_skips_without_verdict_wake_or_hot_retry() {
                 .admit_due_steward_wakes(termloop_platform::current_epoch_ms())
                 .is_empty()
         );
-        if !ambiguous {
-            attach_agents(&mut runtime, &root, &["new-source"]);
-            let due = runtime.next_tracker_schedule_epoch_ms().unwrap();
-            let retry = runtime
-                .claim_next_playbook_step_or_idle(&project, "retry-with-agent".into(), due + 1)
-                .unwrap();
-            assert!(matches!(
-                runtime.plan_playbook_evaluation(&retry).unwrap(),
-                PlaybookEvaluationLaunch::Fork { .. }
-            ));
-        }
+        attach_agents(&mut runtime, &root, &["new-source"]);
+        let due = runtime.next_tracker_schedule_epoch_ms().unwrap();
+        let retry = runtime
+            .claim_next_playbook_step_or_idle(&project, "retry-with-agent".into(), due + 1)
+            .unwrap();
+        assert!(matches!(
+            runtime.plan_playbook_evaluation(&retry).unwrap(),
+            PlaybookEvaluationLaunch::Fork { .. }
+        ));
 
         std::fs::remove_dir_all(root).unwrap();
     }
