@@ -268,6 +268,48 @@ export default function SessionRoute() {
     sessionId,
   ]);
 
+  /// Hooks stay above the missing-Session early return: the Session usually
+  /// arrives a render later, and a hook count change crashes the screen.
+  const submit = async () => {
+    if (voiceBusy || imageSending || terminal.submitting) return false;
+    const submitted = draft;
+    if (selectedImage !== undefined) {
+      setImageSending(true);
+      try {
+        const delivered = await terminal.submitWithImage(draft, {
+          uri: selectedImage.uri,
+          mediaType: selectedImage.mediaType,
+        });
+        if (delivered) {
+          setDraft((current) => current === submitted ? "" : current);
+          setSelectedImage((current) => current === selectedImage ? undefined : current);
+          if (selectedImage.shareBatch !== undefined) shareInbox.remove(selectedImage.shareBatch);
+        }
+        return delivered;
+      } finally {
+        setImageSending(false);
+      }
+    }
+    const delivered = await terminal.submit(submitted);
+    if (delivered) setDraft((current) => current === submitted ? "" : current);
+    return delivered;
+  };
+
+  const stageSharedImage = useCallback((image: (SharedImage & { shareBatch: string }) | undefined, text: string) => {
+    if (image !== undefined) setSelectedImage({ ...image, source: "shared" });
+    if (text.length > 0) setDraft(text);
+  }, []);
+  useSharedImageDelivery({
+    shareBatch,
+    shareDraft,
+    sessionReady: memoryKey !== undefined && agentSession,
+    staged: shareBatch !== undefined && selectedImage?.shareBatch === shareBatch,
+    canSend: terminal.canSend && !terminal.submitting && !imageSending && !voiceBusy,
+    agentStatus: status?.status,
+    stage: stageSharedImage,
+    send: submit,
+  });
+
   if (!session) {
     const placeholder = routeState === "loading"
       ? <ActivityIndicator color={color.accentStrong} />
@@ -411,46 +453,6 @@ export default function SessionRoute() {
       { text: options[2], style: "cancel" },
     ]);
   };
-
-  const submit = async () => {
-    if (voiceBusy || imageSending || terminal.submitting) return false;
-    const submitted = draft;
-    if (selectedImage !== undefined) {
-      setImageSending(true);
-      try {
-        const delivered = await terminal.submitWithImage(draft, {
-          uri: selectedImage.uri,
-          mediaType: selectedImage.mediaType,
-        });
-        if (delivered) {
-          setDraft((current) => current === submitted ? "" : current);
-          setSelectedImage((current) => current === selectedImage ? undefined : current);
-          if (selectedImage.shareBatch !== undefined) shareInbox.remove(selectedImage.shareBatch);
-        }
-        return delivered;
-      } finally {
-        setImageSending(false);
-      }
-    }
-    const delivered = await terminal.submit(submitted);
-    if (delivered) setDraft((current) => current === submitted ? "" : current);
-    return delivered;
-  };
-
-  const stageSharedImage = useCallback((image: (SharedImage & { shareBatch: string }) | undefined, text: string) => {
-    if (image !== undefined) setSelectedImage({ ...image, source: "shared" });
-    if (text.length > 0) setDraft(text);
-  }, []);
-  useSharedImageDelivery({
-    shareBatch,
-    shareDraft,
-    sessionReady: memoryKey !== undefined && agentSession,
-    staged: shareBatch !== undefined && selectedImage?.shareBatch === shareBatch,
-    canSend: terminal.canSend && !terminal.submitting && !imageSending && !voiceBusy,
-    agentStatus: status?.status,
-    stage: stageSharedImage,
-    send: submit,
-  });
 
   const chooseInputMode = (mode: TerminalInputMode) => {
     setInputMode(mode);
