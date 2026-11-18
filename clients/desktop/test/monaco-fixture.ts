@@ -22,6 +22,9 @@ function fakeDiffSide() {
     onDidChangeModelContent(listener: () => void) { view.contentListeners.add(listener); },
     onMouseMove() {},
     onMouseLeave() {},
+    onDidChangeCursorPosition() { return { dispose() {} }; },
+    getPosition: () => null,
+    focus() {},
     onMouseDown(listener: (event: { target: MouseTarget; event: { leftButton: boolean; preventDefault(): void } }) => void) { mouseDown.add(listener); },
     getModel: () => view.model,
     updateOptions(options: { readOnly?: boolean }) { if (options.readOnly !== undefined) view.readOnly = options.readOnly; },
@@ -50,7 +53,7 @@ export function fakeMonaco() {
   const models: Model[] = [];
   const state = { model: undefined as Model | undefined, readOnly: false, theme: "",
     diff: undefined as { original: ReturnType<typeof fakeDiffSide>; modified: ReturnType<typeof fakeDiffSide>; options: Record<string, unknown>;
-      lineChanges: unknown[] | null; updated: Set<() => void> } | undefined };
+      lineChanges: unknown[] | null; updated: Set<() => void>; navigations: ("next" | "previous")[] } | undefined };
   const changed = () => contentListeners.forEach((listener) => listener());
   const monaco = {
     KeyMod: { CtrlCmd: 2048 },
@@ -76,7 +79,7 @@ export function fakeMonaco() {
         const original = fakeDiffSide();
         const modified = fakeDiffSide();
         state.theme = String(options.theme ?? "");
-        state.diff = { original, modified, options: { ...options }, lineChanges: null, updated: new Set() };
+        state.diff = { original, modified, options: { ...options }, lineChanges: null, updated: new Set(), navigations: [] };
         const diff = state.diff;
         return {
           getLineChanges: () => diff.lineChanges,
@@ -84,6 +87,7 @@ export function fakeMonaco() {
           setModel(models: { original: Model; modified: Model }) { original.model = models.original; modified.model = models.modified; },
           getOriginalEditor: () => original,
           getModifiedEditor: () => modified,
+          goToDiff(target: "next" | "previous") { diff.navigations.push(target); },
           updateOptions(next: Record<string, unknown>) { Object.assign(state.diff!.options, next); },
           dispose() {},
         };

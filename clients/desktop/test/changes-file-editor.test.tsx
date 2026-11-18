@@ -100,6 +100,25 @@ describe("Editing local changes in their diff", () => {
     expect(diff.modified.model?.value).toBe("after");
   });
 
+  it("hides whitespace changes and steps between changes from the review keys", async () => {
+    const editor = new FileEditor({ read, write: (path) => write(path) });
+    const list = vi.fn<ChangesOverlayProps["list"]>(async () => changeList("local-1", [entry("a-1", "src/alpha.ts", "unstaged")]));
+    await act(async () => root.render(<Harness editor={editor} list={list} />));
+    await settle();
+    const diff = fake.current!.state.diff!;
+    expect(diff.options).toMatchObject({ ignoreTrimWhitespace: false, stickyScroll: { enabled: true }, experimental: { showMoves: true } });
+    const overlay = container.querySelector(".changes-overlay")!;
+    const press = (key: string) => act(async () => { overlay.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true })); });
+    await press("w");
+    expect(diff.options).toMatchObject({ ignoreTrimWhitespace: true });
+    await press("n");
+    await press("p");
+    expect(diff.navigations).toEqual(["next", "previous"]);
+    await act(async () => fake.current!.finishDiff([{}]));
+    // The status bar names the change position instead of repeating the path.
+    expect(container.querySelector(".file-editor-status")?.textContent).toContain("1 change");
+  });
+
   it("creates the diff in its final layout and keeps it invisible until the first result", async () => {
     const editor = new FileEditor({ read, write: (path) => write(path) });
     const list = vi.fn<ChangesOverlayProps["list"]>(async () => changeList("local-1", [entry("a-1", "src/alpha.ts", "unstaged")]));

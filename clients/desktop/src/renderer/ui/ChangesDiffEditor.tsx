@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type MutableRefObject, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { fileLanguage } from "../file-language.js";
 import { appearanceTheme, subscribeAppearanceTheme } from "../appearance-theme.js";
@@ -33,13 +33,25 @@ export function monacoDiffFailure(lineChanges: readonly unknown[] | null, origin
   return expectsChanges ? "the original file and the working-tree file read the same; refresh to see the current change." : undefined;
 }
 
-export function ChangesDiffEditor({ editing, path, original, viewType, fullFile, notes, draft, openLineReview, editLineReview, updateLineReview, removeLineReview, saved, expectsChanges, diffFailed }: {
+/// Steps between change blocks of whichever diff is shown.
+export type ChangeNavigator = { step(offset: -1 | 1): void };
+
+/// The diff editor's change position: the block holding the cursor, if any.
+export type ChangePosition = { current: number | undefined; count: number };
+
+export function ChangesDiffEditor({ editing, path, original, viewType, fullFile, hideWhitespace, navigator, summary, notes, draft, openLineReview, editLineReview, updateLineReview, removeLineReview, saved, expectsChanges, diffFailed }: {
   editing: ChangesEditing;
   path: string;
   /** Pre-image text; empty for an untracked file. */
   original: string;
   viewType: "unified" | "split";
   fullFile: boolean;
+  /** Leading and trailing whitespace changes are not shown as differences. */
+  hideWhitespace: boolean;
+  /** Receives next/previous change steps while this diff is shown. */
+  navigator?: MutableRefObject<ChangeNavigator | undefined> | undefined;
+  /** The status bar's description of the change position. */
+  summary(position: ChangePosition): ReactNode;
   notes: readonly ChangeReviewNote[];
   draft: ChangeReviewDraft | undefined;
   openLineReview(line: ChangeReviewLine): void;
@@ -68,7 +80,8 @@ export function ChangesDiffEditor({ editing, path, original, viewType, fullFile,
   savedRef.current = saved;
   const firstDiffRef = useRef({ expectsChanges, diffFailed });
   firstDiffRef.current = { expectsChanges, diffFailed };
-  const layout = { renderSideBySide: viewType === "split", hideUnchangedRegions: { enabled: !fullFile } };
+  const layout = { renderSideBySide: viewType === "split", hideUnchangedRegions: { enabled: !fullFile }, ignoreTrimWhitespace: hideWhitespace };
+  const [position, setPosition] = useState<ChangePosition>({ current: undefined, count: 0 });
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
   // Monaco first paints both files unaligned and uncollapsed; the surface
@@ -96,8 +109,9 @@ export function ChangesDiffEditor({ editing, path, original, viewType, fullFile,
       if (disposed || !host.current) return;
       const diff = monaco.editor.createDiffEditor(host.current, {
         ...monacoAppearance(host.current), automaticLayout: true, minimap: { enabled: false }, scrollBeyondLastLine: false, glyphMargin: true,
-        renderWhitespace: "selection", smoothScrolling: true, originalEditable: false, ignoreTrimWhitespace: false,
-        renderMarginRevertIcon: false, ...layoutRef.current,
+        renderWhitespace: "selection", smoothScrolling: true, originalEditable: false,
+        renderMarginRevertIcon: false, stickyScroll: { enabled: true }, lineNumbersMinChars: 3,
+        experimental: { showMoves: true }, ...layoutRef.current,
       });
       created = diff;
       const language = fileLanguage(path)?.id ?? "plaintext";
@@ -140,8 +154,10 @@ export function ChangesDiffEditor({ editing, path, original, viewType, fullFile,
         firstDiffRef.current.diffFailed(reason);
       };
       firstResult = diff.onDidUpdateDiff(() => check(false));
+      const track = () => setPosition(changePosition(diff));
+      const tracking = [diff.onDidUpdateDiff(track), modifiedEditor.onDidChangeCursorPosition(track), diff.getOriginalEditor().onDidChangeCursorPosition(track)];
       timer = setTimeout(() => check(true), MONACO_DIFF_TIMEOUT_MS);
-      created = { dispose: () => { clearTimeout(timer); firstResult?.dispose(); diff.dispose(); } };
+      created = { dispose: () => { clearTimeout(timer); firstResult?.dispose(); tracking.forEach((listener) => listener.dispose()); diff.dispose(); } };
       setInstance({ monaco, diff });
     }, (error: unknown) => {
       if (!disposed) setFailure(error instanceof Error ? error.message : "The editor could not be loaded.");
@@ -160,7 +176,17 @@ export function ChangesDiffEditor({ editing, path, original, viewType, fullFile,
   useEffect(() => { instance?.monaco.editor.setTheme(monacoTheme(theme)); }, [instance, theme]);
   useEffect(() => {
     instance?.diff.updateOptions(layoutRef.current);
-  }, [fullFile, instance, viewType]);
+  }, [fullFile, hideWhitespace, instance, viewType]);
+  useEffect(() => {
+    if (!navigator || !instance) return;
+    navigator.current = {
+      step(offset) {
+        instance.diff.goToDiff(offset === 1 ? "next" : "previous");
+        instance.diff.getModifiedEditor().focus();
+      },
+    };
+    return () => { navigator.current = undefined; };
+  }, [instance, navigator]);
   useEffect(() => {
     instance?.diff.getModifiedEditor().updateOptions({ readOnly: readOnly || !ready });
   }, [instance, readOnly, ready]);
@@ -216,8 +242,22 @@ export function ChangesDiffEditor({ editing, path, original, viewType, fullFile,
         />
       </ReviewZone>
     )) : null}
-    {tab ? <FileEditorStatus tab={tab} readOnly={readOnly} /> : null}
+    {tab ? <FileEditorStatus tab={tab} readOnly={readOnly} summary={summary(position)} /> : null}
   </div>;
+}
+
+/// Which change block the modified side's cursor is in, counted 1-based.
+function changePosition(diff: Monaco.editor.IStandaloneDiffEditor): ChangePosition {
+  const changes = diff.getLineChanges() ?? [];
+  const line = diff.getModifiedEditor().getPosition()?.lineNumber;
+  if (line === undefined) return { current: undefined, count: changes.length };
+  const index = changes.findIndex((change) => {
+    const start = change.modifiedStartLineNumber;
+    // A pure deletion has an end of 0 and sits after its start line.
+    const end = change.modifiedEndLineNumber || start;
+    return line >= start && line <= Math.max(start, end);
+  });
+  return { current: index < 0 ? undefined : index + 1, count: changes.length };
 }
 
 /// A "+" in the glyph margin of the hovered line; pressing it, or the line

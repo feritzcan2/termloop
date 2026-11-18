@@ -10,6 +10,7 @@ import {
   type ChangeTreeNode,
 } from "../change-tree.js";
 import { Icon } from "./Icon.js";
+import { changeFileRole, type DiffStats } from "../diff-review.js";
 
 export type ChangeEntry =
   | TaskWorktreeChangeEntryDto
@@ -23,10 +24,12 @@ export type ChangeTreeSection = {
   entryCount: number;
 };
 
-export function ChangeSection({ section, collapsedFolders, reviewedEntryIds, reviewDisabled, selectedId, select, toggleFolder, setReviewed }: {
+export function ChangeSection({ section, collapsedFolders, reviewedEntryIds, entryStats, reviewDisabled, selectedId, select, toggleFolder, setReviewed }: {
   section: ChangeTreeSection;
   collapsedFolders: ReadonlySet<string>;
   reviewedEntryIds: ReadonlySet<string>;
+  /** Added/removed line counts for files whose patch has been read. */
+  entryStats?: ReadonlyMap<string, DiffStats> | undefined;
   reviewDisabled?: boolean | undefined;
   selectedId: string | undefined;
   select(id: string): void;
@@ -51,6 +54,7 @@ export function ChangeSection({ section, collapsedFolders, reviewedEntryIds, rev
           sectionId={section.id}
           collapsedFolders={collapsedFolders}
           reviewedEntryIds={reviewedEntryIds}
+          entryStats={entryStats}
           reviewDisabled={reviewDisabled}
           depth={0}
           selectedId={selectedId}
@@ -68,11 +72,13 @@ export function ChangeBadge({ entry }: { entry: ChangeEntry }) {
   return <span className={`change-badge ${entry.kind}`} aria-label={label} title={label}>{changeKindSymbol(entry.kind)}</span>;
 }
 
-function ChangeTreeNodes({ nodes, sectionId, collapsedFolders, reviewedEntryIds, reviewDisabled, depth, selectedId, select, toggleFolder, setReviewed }: {
+function ChangeTreeNodes({ nodes, sectionId, collapsedFolders, reviewedEntryIds, entryStats, reviewDisabled, depth, selectedId, select, toggleFolder, setReviewed }: {
   nodes: readonly ChangeTreeNode<ChangeEntry>[];
   sectionId: string;
   collapsedFolders: ReadonlySet<string>;
   reviewedEntryIds: ReadonlySet<string>;
+  /** Added/removed line counts for files whose patch has been read. */
+  entryStats?: ReadonlyMap<string, DiffStats> | undefined;
   reviewDisabled?: boolean | undefined;
   depth: number;
   selectedId: string | undefined;
@@ -84,6 +90,8 @@ function ChangeTreeNodes({ nodes, sectionId, collapsedFolders, reviewedEntryIds,
     if (node.kind === "file") {
       const entry = node.entry;
       const reviewed = reviewedEntryIds.has(entry.entry_id);
+      const stats = entryStats?.get(entry.entry_id);
+      const role = changeFileRole(entry.display_path);
       return (
         <div key={entry.entry_id} className={`changes-file-row${reviewed ? " reviewed" : ""}`} role="none">
           <button
@@ -94,11 +102,16 @@ function ChangeTreeNodes({ nodes, sectionId, collapsedFolders, reviewedEntryIds,
             aria-current={entry.entry_id === selectedId ? "true" : undefined}
             aria-level={depth + 1}
             data-change-entry-id={entry.entry_id}
+            title={`${entry.display_path} · ${changeEntryDetail(entry)}`}
             onClick={() => select(entry.entry_id)}
           >
             <ChangeBadge entry={entry} />
             <span>{node.name}</span>
-            <small>{changeEntryDetail(entry)}</small>
+            <span className="changes-file-meta">
+              {role ? <i className={`changes-file-role ${role}`}>{role === "test" ? "test" : "gen"}</i> : null}
+              {stats ? <><b className="additions">+{stats.additions}</b><b className="deletions">−{stats.deletions}</b></> : null}
+            </span>
+            {entry.original_display_path ? <small>from {entry.original_display_path}</small> : null}
           </button>
           <button
             type="button"
@@ -144,6 +157,7 @@ function ChangeTreeNodes({ nodes, sectionId, collapsedFolders, reviewedEntryIds,
               sectionId={sectionId}
               collapsedFolders={collapsedFolders}
               reviewedEntryIds={reviewedEntryIds}
+              entryStats={entryStats}
               reviewDisabled={reviewDisabled}
               depth={depth + 1}
               selectedId={selectedId}

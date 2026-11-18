@@ -51,7 +51,12 @@ type MutableFolder<T extends ChangeTreeEntry> = {
   files: ChangeTreeFile<T>[];
 };
 
-export function buildChangeTree<T extends ChangeTreeEntry>(entries: readonly T[]): readonly ChangeTreeNode<T>[] {
+/// `compact` joins a chain of folders that each hold only one folder into a
+/// single row ("src/app/ui"), keyed by the deepest folder's path.
+export function buildChangeTree<T extends ChangeTreeEntry>(
+  entries: readonly T[],
+  { compact = false }: { compact?: boolean } = {},
+): readonly ChangeTreeNode<T>[] {
   const root = mutableFolder<T>("", "");
   for (const entry of entries) {
     const segments = entry.display_path.split("/");
@@ -68,7 +73,21 @@ export function buildChangeTree<T extends ChangeTreeEntry>(entries: readonly T[]
     }
     folder.files.push({ kind: "file", name: fileName, entry });
   }
-  return freezeChildren(root);
+  const tree = freezeChildren(root);
+  return compact ? compactFolders(tree) : tree;
+}
+
+function compactFolders<T>(nodes: readonly ChangeTreeNode<T>[]): readonly ChangeTreeNode<T>[] {
+  return nodes.map((node) => {
+    if (node.kind === "file") return node;
+    let name = node.name;
+    let current: ChangeTreeFolder<T> = node;
+    while (current.children.length === 1 && current.children[0]!.kind === "folder") {
+      current = current.children[0] as ChangeTreeFolder<T>;
+      name = `${name}/${current.name}`;
+    }
+    return { kind: "folder", name, path: current.path, children: compactFolders(current.children) };
+  });
 }
 
 export function visibleChangeTreeEntries<T>(

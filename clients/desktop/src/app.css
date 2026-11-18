@@ -1604,7 +1604,7 @@ button.workflow-tree-session:hover { background: var(--hover); }
 .primary-button:hover:not(:disabled) { background: #5ca7f2; }
 
 .terminal-stage { position: relative; grid-row: 2; display: flex; flex: 1; min-width: 0; min-height: 0; overflow: hidden; background: var(--bg-terminal); }
-.changes-overlay { --diff-background-color: #202428; --diff-text-color: #c8ced2; --diff-font-family: var(--font-mono); --diff-gutter-insert-background-color: rgba(55,139,92,.28); --diff-gutter-insert-text-color: #a8d9bc; --diff-gutter-delete-background-color: rgba(174,65,73,.27); --diff-gutter-delete-text-color: #e5afb3; --diff-code-insert-background-color: rgba(45,116,77,.2); --diff-code-insert-text-color: #c6e5d2; --diff-code-delete-background-color: rgba(137,51,58,.2); --diff-code-delete-text-color: #efc8cb; --diff-code-insert-edit-background-color: rgba(72,169,107,.48); --diff-code-delete-edit-background-color: rgba(202,78,86,.43); position: absolute; z-index: 8; inset: 0; display: grid; grid-template-rows: auto auto minmax(0,1fr); min-width: 0; min-height: 0; background: light-dark(#f8fafc, #1d2124); color: var(--text); }
+.changes-overlay { --diff-background-color: #202428; --diff-text-color: #c8ced2; --diff-font-family: var(--font-mono); --diff-gutter-insert-background-color: light-dark(rgba(22,101,52,.13), rgba(55,139,92,.2)); --diff-gutter-insert-text-color: light-dark(#166534, #a8d9bc); --diff-gutter-delete-background-color: light-dark(rgba(185,28,28,.12), rgba(174,65,73,.2)); --diff-gutter-delete-text-color: light-dark(#991b1b, #e5afb3); --diff-code-insert-background-color: light-dark(rgba(22,101,52,.07), rgba(45,116,77,.11)); --diff-code-insert-text-color: inherit; --diff-code-delete-background-color: light-dark(rgba(185,28,28,.07), rgba(137,51,58,.12)); --diff-code-delete-text-color: inherit; --diff-code-insert-edit-background-color: light-dark(rgba(34,197,94,.3), rgba(72,169,107,.45)); --diff-code-delete-edit-background-color: light-dark(rgba(248,113,113,.3), rgba(202,78,86,.45)); position: absolute; z-index: 8; inset: 0; display: grid; grid-template-rows: auto auto minmax(0,1fr); min-width: 0; min-height: 0; background: light-dark(#f8fafc, #1d2124); color: var(--text); }
 .changes-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; min-width: 0; min-height: 68px; padding: 10px 14px 10px 18px; border-bottom: 1px solid var(--border); background: light-dark(#ffffff, #202528); }
 .changes-header > div:first-child { min-width: 0; }
 .changes-header h1 { margin: 3px 0; overflow: hidden; font-size: 16px; font-weight: 680; text-overflow: ellipsis; white-space: nowrap; }
@@ -1676,16 +1676,49 @@ button.changes-branch-current:hover:not(:disabled) { border-color: rgba(102,179,
 .changes-file-section-toggle svg.collapsed { transform: rotate(-90deg); }
 .changes-file-section-toggle b { overflow: hidden; font: inherit; text-overflow: ellipsis; white-space: nowrap; }
 .changes-file-row { display: grid; grid-template-columns: minmax(0,1fr) 25px; align-items: center; min-width: 0; }
-.changes-file-entry { display: grid; grid-template-columns: 20px minmax(0,1fr); gap: 1px 7px; width: 100%; min-width: 0; padding: 6px; border: 0; border-radius: 6px; background: transparent; color: light-dark(#666a6d, #b7bec1); text-align: left; box-shadow: inset 2px 0 transparent; }
+.changes-file-entry { display: grid; grid-template-columns: 20px minmax(0,1fr) auto; align-items: center; gap: 1px 7px; width: 100%; min-width: 0; padding: 3px 6px; border: 0; border-radius: 6px; background: transparent; color: light-dark(#666a6d, #b7bec1); text-align: left; box-shadow: inset 2px 0 transparent; }
 .changes-file-entry:hover { background: light-dark(rgba(15,23,42,.04), rgba(255,255,255,.04)); }
 .changes-file-entry.selected { background: rgba(102,179,255,.16); color: light-dark(#6d6a76, #e0edf9); }
 .changes-file-entry > span:nth-child(2) { overflow: hidden; font: 10px/1.3 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
-.changes-file-entry small { grid-column: 2; overflow: hidden; color: #657074; font: 8.5px/1.2 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.changes-file-entry small { grid-column: 2 / span 2; overflow: hidden; color: #657074; font: 8.5px/1.2 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
 .changes-file-reviewed-toggle { display: grid; place-items: center; width: 21px; height: 21px; padding: 0; border: 1px solid light-dark(rgba(15,23,42,.1), rgba(255,255,255,.1)); border-radius: 6px; background: transparent; color: transparent; }
 .changes-file-reviewed-toggle:hover, .changes-file-reviewed-toggle:focus-visible { outline: 0; border-color: rgba(102,179,255,.5); background: rgba(102,179,255,.1); color: light-dark(#607a95, #82a5c9); }
 .changes-file-reviewed-toggle[aria-pressed="true"] { border-color: rgba(91,192,137,.4); background: rgba(57,145,100,.16); color: light-dark(#49765e, #82d3aa); }
 .changes-file-reviewed-toggle span { font: 800 12px/1 var(--font-ui); }
 .changes-file-row.reviewed .changes-file-entry:not(.selected) { opacity: .62; }
+.changes-file-meta { display: flex; align-items: center; gap: 5px; font: 650 9px/1 var(--font-mono); white-space: nowrap; }
+.changes-file-meta b, .changes-diff-summary b { font-weight: 650; }
+.changes-file-meta .additions, .changes-diff-summary .additions { color: light-dark(#2f7a4c, #7fd3a0); }
+.changes-file-meta .deletions, .changes-diff-summary .deletions { color: light-dark(#a3434b, #ee9aa0); }
+.changes-file-role { padding: 1px 4px; border-radius: 4px; font: 650 8px/1.2 var(--font-mono); font-style: normal; letter-spacing: .03em; text-transform: uppercase; }
+.changes-file-role.test { background: rgba(222,180,80,.14); color: light-dark(#7a6526, #dfcf9e); }
+.changes-file-role.generated { background: light-dark(rgba(15,23,42,.06), rgba(255,255,255,.07)); color: #7d878b; }
+.changes-review-meter { flex: 1; height: 4px; min-width: 24px; overflow: hidden; border-radius: 2px; background: light-dark(rgba(15,23,42,.08), rgba(255,255,255,.08)); }
+.changes-review-meter > span { display: block; height: 100%; border-radius: inherit; background: rgba(102,179,255,.7); transition: width 160ms ease; }
+.changes-review-meter.complete > span { background: rgba(78,200,130,.8); }
+.changes-diff-summary { display: inline-flex; align-items: center; gap: 7px; font: 9px/1 var(--font-mono); white-space: nowrap; }
+.changes-diff-summary > span { color: #7d878b; }
+.changes-file-heading > span.changes-file-heading-stats { flex: none; margin-left: auto; }
+.changes-whitespace-toggle { min-height: 26px; padding: 0 9px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: light-dark(#666e6f, #9aa4a8); font: 650 10px/1 var(--font-mono); }
+.changes-whitespace-toggle:hover, .changes-whitespace-toggle:focus-visible { outline: 0; border-color: rgba(102,179,255,.45); color: light-dark(#4d6278, #cee7ff); }
+.changes-whitespace-toggle.active { border-color: rgba(102,179,255,.5); background: rgba(102,179,255,.14); color: light-dark(#40576e, #cee7ff); }
+.changes-shortcuts-button { font: 750 12px/1 var(--font-mono); }
+.changes-shortcuts { position: absolute; z-index: 12; top: 58px; right: 16px; display: flex; align-items: flex-start; gap: 10px; padding: 12px 10px 12px 14px; border: 1px solid var(--border-strong); border-radius: 9px; background: light-dark(#ffffff, #23282b); box-shadow: 0 12px 32px rgba(0,0,0,.28); }
+.changes-shortcuts dl { display: grid; gap: 6px; margin: 0; }
+.changes-shortcuts dl > div { display: grid; grid-template-columns: 64px minmax(0,1fr); align-items: center; gap: 10px; }
+.changes-shortcuts dt, .changes-shortcuts dd { margin: 0; }
+.changes-shortcuts dd { color: var(--text); font: 10.5px/1.3 var(--font-ui); }
+.changes-shortcuts kbd { padding: 2px 5px; border: 1px solid var(--border-strong); border-radius: 4px; background: light-dark(#f1f4f7, #1b1f21); color: light-dark(#4a5560, #c8ced2); font: 650 9.5px/1.2 var(--font-mono); }
+/* Monaco's vs and vs-dark diff colors fill whole rows; keep rows quiet and
+   let the changed characters carry the color, matching the read-only diff. */
+.changes-diff-editor .monaco-editor, .changes-diff-editor .monaco-diff-editor {
+  --vscode-diffEditor-insertedLineBackground: light-dark(rgba(22,101,52,.07), rgba(45,116,77,.11));
+  --vscode-diffEditor-removedLineBackground: light-dark(rgba(185,28,28,.07), rgba(137,51,58,.12));
+  --vscode-diffEditor-insertedTextBackground: light-dark(rgba(34,197,94,.26), rgba(72,169,107,.38));
+  --vscode-diffEditor-removedTextBackground: light-dark(rgba(248,113,113,.26), rgba(202,78,86,.38));
+  --vscode-diffEditorGutter-insertedLineBackground: light-dark(rgba(22,101,52,.13), rgba(55,139,92,.2));
+  --vscode-diffEditorGutter-removedLineBackground: light-dark(rgba(185,28,28,.12), rgba(174,65,73,.2));
+}
 .changes-folder-entry { display: grid; grid-template-columns: 12px 15px minmax(0,1fr); align-items: center; gap: 4px; width: 100%; min-height: 27px; border: 0; border-radius: 6px; background: transparent; color: light-dark(#666e6f, #8f999d); text-align: left; }
 .changes-folder-entry:hover { background: light-dark(rgba(15,23,42,.04), rgba(255,255,255,.04)); color: light-dark(#6d6f70, #c3c9cb); }
 .changes-folder-entry svg { width: 12px; height: 12px; }
@@ -1727,7 +1760,7 @@ button.changes-branch-current:hover:not(:disabled) { border-color: rgba(102,179,
 .changes-diff-scroll { --diff-background-color: light-dark(#ffffff, #1e1e1e); --diff-text-color: light-dark(#000000, #d4d4d4); min-width: 0; min-height: 0; overflow: auto; background: var(--diff-background-color); }
 .changes-diff-scroll .diff { font-size: 12px; tab-size: 4; }
 .changes-diff-scroll .diff-line, .changes-diff-scroll .diff-decoration { line-height: 19px; }
-.changes-diff-scroll .diff-gutter-col { width: 9ch; }
+.changes-diff-scroll .diff-gutter-col { width: 7.5ch; }
 .changes-diff-scroll .diff-gutter { color: light-dark(#237893, #858585); }
 .changes-diff-scroll .diff-code { padding: 0 18px 0 16px; }
 .changes-line-comment-trigger { display: flex; align-items: center; justify-content: flex-end; gap: 5px; width: 100%; min-width: 0; border: 0; padding: 0; background: transparent; color: inherit; font: inherit; }

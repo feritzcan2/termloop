@@ -48,6 +48,29 @@ describe("change tree", () => {
       .toEqual(["exact-1", "exact-2"]);
   });
 
+  it("joins single-folder chains into one row keyed by the deepest folder", () => {
+    const tree = buildChangeTree(entries, { compact: true });
+    expect(tree.map((node) => node.name)).toEqual(["clients/desktop/src", "modules/core/src", "README.md"]);
+    const clients = tree[0];
+    if (clients?.kind !== "folder") throw new Error("expected a folder");
+    expect(clients.path).toBe("clients/desktop/src");
+    expect(clients.children.map((node) => node.name)).toEqual(["app.tsx", "ui.tsx"]);
+    const collapsed = new Set([changeTreeFolderId("files", "clients/desktop/src")]);
+    expect(visibleChangeTreeEntries(tree, collapsed, "files").map((entry) => entry.entry_id)).toEqual(["core", "root"]);
+  });
+
+  it("stops joining where a folder holds files or several folders", () => {
+    const tree = buildChangeTree([
+      { entry_id: "a", display_path: "svc/src/a.cs" },
+      { entry_id: "b", display_path: "svc/test/b.cs" },
+      { entry_id: "c", display_path: "svc/readme.md" },
+    ], { compact: true });
+    const svc = tree[0];
+    if (svc?.kind !== "folder") throw new Error("expected a folder");
+    expect(svc.name).toBe("svc");
+    expect(svc.children.map((node) => node.name)).toEqual(["src", "test", "readme.md"]);
+  });
+
   it("uses explicit, color-independent file status symbols", () => {
     expect(changeKindSymbol("added")).toBe("+");
     expect(changeKindSymbol("deleted")).toBe("−");

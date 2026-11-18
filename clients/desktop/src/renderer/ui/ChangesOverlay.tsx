@@ -43,7 +43,9 @@ import {
   type ChangeTreeSection,
 } from "./ChangeFileTree.js";
 import { editableChangePath, type ChangesEditing } from "./ChangesFileEditor.js";
-import { ChangesDiffEditor } from "./ChangesDiffEditor.js";
+import { ChangesDiffEditor, type ChangeNavigator, type ChangePosition } from "./ChangesDiffEditor.js";
+import { changeBlockCount, diffStats, hideWhitespaceChanges, targetChangeBlock, type DiffStats } from "../diff-review.js";
+import { DiffSummary, REVIEW_KEYS, ReviewShortcuts, nextPendingEntry } from "./ChangesReviewAids.js";
 import { type ChangeReviewDraft } from "./ChangesLineReview.js";
 import { DiffState, RenderedDiff } from "./ChangesRenderedDiff.js";
 import { isTextEntryTarget, trapDialogFocus } from "./changes-dialog-keys.js";
@@ -168,6 +170,9 @@ export function ChangesOverlay({
   const [error, setError] = useState<string>();
   const [viewType, setViewType] = useState<"unified" | "split">("unified");
   const [fullFile, setFullFile] = useState(false);
+  const [hideWhitespace, setHideWhitespace] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const navigatorRef = useRef<ChangeNavigator | undefined>(undefined);
   const [preImages, setPreImages] = useState<ReadonlyMap<string, CachedPreImage>>(new Map());
   const [loadingPreImage, setLoadingPreImage] = useState(false);
   const [preImageError, setPreImageError] = useState<string>();
@@ -396,18 +401,18 @@ export function ChangesOverlay({
     const reviewed = currentEntries.filter((entry) => reviewedEntryIds.has(entry.entry_id));
     if (selectedSource.kind !== "local") {
       return [
-        { id: "files", title: "Files to review", nodes: buildChangeTree(pending), entryCount: pending.length },
-        { id: "reviewed", title: "Reviewed", nodes: buildChangeTree(reviewed), entryCount: reviewed.length },
+        { id: "files", title: "Files to review", nodes: compactTree(pending), entryCount: pending.length },
+        { id: "reviewed", title: "Reviewed", nodes: compactTree(reviewed), entryCount: reviewed.length },
       ];
     }
     const staged = pending.filter((entry) => "side" in entry && entry.side === "staged");
     const unstaged = pending.filter((entry) => "side" in entry && entry.side === "unstaged");
     const untracked = pending.filter((entry) => "side" in entry && entry.side === "untracked");
     return [
-      { id: "staged", title: "Staged", nodes: buildChangeTree(staged), entryCount: staged.length },
-      { id: "unstaged", title: "Working tree", nodes: buildChangeTree(unstaged), entryCount: unstaged.length },
-      { id: "untracked", title: "Untracked", nodes: buildChangeTree(untracked), entryCount: untracked.length },
-      { id: "reviewed", title: "Reviewed", nodes: buildChangeTree(reviewed), entryCount: reviewed.length },
+      { id: "staged", title: "Staged", nodes: compactTree(staged), entryCount: staged.length },
+      { id: "unstaged", title: "Working tree", nodes: compactTree(unstaged), entryCount: unstaged.length },
+      { id: "untracked", title: "Untracked", nodes: compactTree(untracked), entryCount: untracked.length },
+      { id: "reviewed", title: "Reviewed", nodes: compactTree(reviewed), entryCount: reviewed.length },
     ];
   }, [currentEntries, reviewedEntryIds, selectedSource.kind]);
   const visibleEntries = useMemo(
@@ -546,9 +551,36 @@ export function ChangesOverlay({
     return fullFileView(parsed.hunks, selectedPreImage.content);
   }, [fullFile, parsed, selectedPreImage]);
 
-  const renderedHunks = fullFileState?.state === "fullFile" || fullFileState?.state === "alreadyComplete"
+  const expandedHunks = fullFileState?.state === "fullFile" || fullFileState?.state === "alreadyComplete"
     ? fullFileState.hunks
     : parsed?.hunks;
+  const renderedHunks = useMemo(
+    () => hideWhitespace && expandedHunks ? hideWhitespaceChanges(expandedHunks) : expandedHunks,
+    [expandedHunks, hideWhitespace],
+  );
+  const selectedStats = useMemo(() => renderedHunks ? diffStats(renderedHunks) : undefined, [renderedHunks]);
+  const selectedBlockCount = useMemo(() => renderedHunks ? changeBlockCount(renderedHunks) : 0, [renderedHunks]);
+  // Line counts for files whose patch this view has already read; the list
+  // itself carries none, so a file shows its counts once it has been opened.
+  // Each cached patch is parsed for its counts once, not on every LRU touch.
+  const statsByDiff = useRef(new WeakMap<CachedDiff, DiffStats | null>());
+  const entryStats = useMemo(() => {
+    const stats = new Map<string, DiffStats>();
+    for (const entry of currentEntries) {
+      const cached = diffs.get(selectedSource.kind === "local"
+        ? localChangeKey(currentObservationId, entry.entry_id)
+        : `${selectedSourceKey}:${entry.entry_id}`);
+      if (!cached) continue;
+      let counted = statsByDiff.current.get(cached);
+      if (counted === undefined) {
+        const file = parsePatch(cached);
+        counted = file ? diffStats(file.hunks) : null;
+        statsByDiff.current.set(cached, counted);
+      }
+      if (counted) stats.set(entry.entry_id, counted);
+    }
+    return stats;
+  }, [currentEntries, currentObservationId, diffs, selectedSource.kind, selectedSourceKey]);
   // `fullFileView` already counted this; reading it back keeps the total under the
   // diff and the status line from ever disagreeing.
   const hiddenLineCount = fullFileState?.state === "fullFile"
@@ -713,10 +745,30 @@ export function ChangesOverlay({
       return next;
     });
   };
+  // Marking the open file reviewed moves on to the next file still to review.
   const setEntryReviewed = (entryId: string, reviewed: boolean) => {
+    if (reviewed && entryId === selectedId) {
+      const next = nextPendingEntry(visibleEntries, entryId, reviewedEntryIds);
+      if (next) setSelectedId(next);
+    }
     void setReviewed([entryId], reviewed);
   };
+  const stepChange = (offset: -1 | 1) => {
+    if (navigatorRef.current) {
+      navigatorRef.current.step(offset);
+      return;
+    }
+    const scroller = overlayRef.current?.querySelector<HTMLElement>(".changes-diff-scroll");
+    if (!scroller) return;
+    const rows = [...scroller.querySelectorAll<HTMLElement>("tr.diff-line")];
+    const changed = (row: HTMLElement | undefined) => Boolean(row?.querySelector(".diff-code-insert, .diff-code-delete"));
+    const tops = rows.filter((row, index) => changed(row) && !changed(rows[index - 1])).map((row) => row.offsetTop);
+    const target = targetChangeBlock(tops, scroller.scrollTop + CHANGE_SCROLL_MARGIN, offset);
+    if (target !== undefined) scroller.scrollTo({ top: tops[target]! - CHANGE_SCROLL_MARGIN, behavior: "smooth" });
+  };
   const allReviewed = currentEntries.length > 0 && reviewedEntryIds.size === currentEntries.length;
+  const reviewedShare = currentEntries.length ? reviewedEntryIds.size / currentEntries.length : 0;
+  const diffSummary = ({ current, count }: ChangePosition) => <DiffSummary stats={selectedStats} current={current} count={count} />;
   const toggleAllReviewed = () => {
     void setReviewed(currentEntries.map((entry) => entry.entry_id), !allReviewed);
   };
@@ -727,7 +779,7 @@ export function ChangesOverlay({
       className="changes-overlay"
       aria-label={`Changes for ${subject.title}`}
       aria-modal="true"
-      aria-keyshortcuts="ArrowUp ArrowDown Escape"
+      aria-keyshortcuts="ArrowUp ArrowDown J K N P R W ? Escape"
       role="dialog"
       tabIndex={-1}
       onKeyDown={(event) => {
@@ -739,6 +791,15 @@ export function ChangesOverlay({
         } else if ((event.key === "ArrowUp" || event.key === "ArrowDown") && !isTextEntryTarget(event.target)) {
           event.preventDefault();
           moveSelection(event.key === "ArrowUp" ? -1 : 1);
+        } else if (!event.metaKey && !event.ctrlKey && !event.altKey && !isTextEntryTarget(event.target) && !(event.target as Element).closest?.(".monaco-editor")) {
+          const action = REVIEW_KEYS[event.key];
+          if (!action) return;
+          event.preventDefault();
+          if (action === "nextFile" || action === "previousFile") moveSelection(action === "nextFile" ? 1 : -1);
+          else if (action === "nextChange" || action === "previousChange") stepChange(action === "nextChange" ? 1 : -1);
+          else if (action === "reviewed" && selectedId && reviewScopeKey && !reviewing) setEntryReviewed(selectedId, !reviewedEntryIds.has(selectedId));
+          else if (action === "whitespace") setHideWhitespace((current) => !current);
+          else if (action === "shortcuts") setShortcutsOpen((current) => !current);
         } else if (event.key === "Tab") {
           trapDialogFocus(event);
         }
@@ -771,10 +832,26 @@ export function ChangesOverlay({
               onClick={() => setFullFile(true)}
             >Full file</button>
           </div>
+          <button
+            type="button"
+            className={`changes-whitespace-toggle${hideWhitespace ? " active" : ""}`}
+            aria-pressed={hideWhitespace}
+            title="Hide changes that only add, remove or re-indent whitespace (W)"
+            onClick={() => setHideWhitespace((current) => !current)}
+          >Hide whitespace</button>
+          <button
+            type="button"
+            className="icon-button quiet changes-shortcuts-button"
+            aria-label="Keyboard shortcuts"
+            aria-expanded={shortcutsOpen}
+            title="Keyboard shortcuts (?)"
+            onClick={() => setShortcutsOpen((current) => !current)}
+          >?</button>
           <button className="secondary-button" disabled={loadingSources} onClick={() => void refresh()}><Icon name="reopen" />Refresh</button>
           <button className="icon-button quiet" aria-label="Close changes" title="Close changes" onClick={close}><Icon name="close" /></button>
         </div>
       </header>
+      {shortcutsOpen ? <ReviewShortcuts close={() => setShortcutsOpen(false)} /> : null}
       <div className="changes-context">
         <ChangesBranchPicker
           scopes={branchScopes}
@@ -800,6 +877,14 @@ export function ChangesOverlay({
         <aside className="changes-files" aria-label="Changed files">
           {currentEntries.length > 0 && reviewScopeKey ? <div className="changes-file-review-progress" aria-live="polite">
             <span><strong>{reviewedEntryIds.size}/{currentEntries.length}</strong> reviewed</span>
+            <span
+              className={`changes-review-meter${allReviewed ? " complete" : ""}`}
+              role="progressbar"
+              aria-label="Files reviewed"
+              aria-valuemin={0}
+              aria-valuemax={currentEntries.length}
+              aria-valuenow={reviewedEntryIds.size}
+            ><span style={{ width: `${Math.round(reviewedShare * 100)}%` }} /></span>
             <button type="button" disabled={reviewing} onClick={toggleAllReviewed}>{reviewing ? "Checking…" : allReviewed ? "Clear reviewed" : "Mark all reviewed"}</button>
           </div> : null}
           {reviewNotice ? <p className="changes-warning" role="status">{reviewNotice}</p> : null}
@@ -813,6 +898,7 @@ export function ChangesOverlay({
               section={section}
               collapsedFolders={collapsedFolders}
               reviewedEntryIds={reviewedEntryIds}
+              entryStats={entryStats}
               reviewDisabled={reviewing}
               selectedId={selectedId}
               select={setSelectedId}
@@ -825,6 +911,7 @@ export function ChangesOverlay({
         <ChangesFilesResizeHandle width={filesWidth.width} body={bodyRef} resize={filesWidth.resize} reset={filesWidth.reset} draggingChanged={setFilesResizing} />
         <main className="changes-diff" aria-label="Selected file diff">
           {selected ? <div className="changes-file-heading"><ChangeBadge entry={selected} /><strong>{selected.display_path}</strong>{selected.path_encoding === "lossy" ? <span title="The exact path is represented by an opaque identifier.">lossy display</span> : null}
+            {selectedStats && !editableDiff ? <span className="changes-file-heading-stats"><DiffSummary stats={selectedStats} current={undefined} count={selectedBlockCount} /></span> : null}
             {editableDiff ? <span className="changes-edit-hint">{editing?.readOnly ? "Read-only on this computer" : "Edit the right side · ⌘S saves"}</span> : null}</div> : null}
           <div className="changes-diff-content">
             {editableDiff && editing && editPath && selected && "side" in selected ? <ChangesDiffEditor
@@ -834,6 +921,9 @@ export function ChangesOverlay({
               original={editOriginal}
               viewType={viewType}
               fullFile={fullFile}
+              hideWhitespace={hideWhitespace}
+              navigator={navigatorRef}
+              summary={diffSummary}
               notes={currentReviewNotes}
               draft={reviewDraft?.key.startsWith(selectedReviewPrefix ?? "\u0000") ? reviewDraft : undefined}
               openLineReview={openLineReview}
@@ -976,3 +1066,9 @@ function errorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) return `${fallback} ${error.message}`;
   return fallback;
 }
+
+/// Room left above a change block scrolled to, so its first line is not
+/// flush against the top edge.
+const CHANGE_SCROLL_MARGIN = 40;
+
+const compactTree = (entries: readonly ChangeEntry[]) => buildChangeTree(entries, { compact: true });

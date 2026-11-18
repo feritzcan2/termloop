@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { FilesSubject } from "../file-browser.js";
 import type { FileEditor, FileEditorSnapshot, FileEditorTab } from "../file-editor.js";
 import { fileLanguage } from "../file-language.js";
@@ -89,9 +89,10 @@ export function FileEditorState({ editor, tab }: { editor: FileEditor; tab: File
     </div> : null;
 }
 
-export function FileEditorStatus({ tab, readOnly }: { tab: FileEditorTab; readOnly: boolean }) {
+/// `summary` replaces the path where the path is already in view, as in a diff.
+export function FileEditorStatus({ tab, readOnly, summary }: { tab: FileEditorTab; readOnly: boolean; summary?: ReactNode }) {
   return <footer className="file-editor-status">
-    <span title={tab.path}>{tab.path}</span>
+    {summary === undefined ? <span title={tab.path}>{tab.path}</span> : <span>{summary}</span>}
     <span>{fileLanguage(tab.path)?.label ?? "Plain text"}</span>
     <span role="status">{tab.status !== "ready" ? "" : readOnly ? "Read-only" : tab.saving ? "Saving…" : tab.dirty ? "Unsaved · ⌘S to save" : "Saved"}</span>
   </footer>;

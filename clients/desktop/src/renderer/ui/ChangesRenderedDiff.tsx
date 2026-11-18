@@ -1,10 +1,12 @@
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { Decoration, Diff, Hunk, type ChangeData, type FileData, type HunkData } from "react-diff-view";
 import { changeReviewLine, type ChangeReviewNote } from "../changes-review.js";
 import { gapBefore } from "../changes-full-file.js";
 import { Icon } from "./Icon.js";
 import { LineReviewWidget, changeReviewDraft, type ChangeReviewDraft } from "./ChangesLineReview.js";
 import { useDiffSyntax } from "./useDiffSyntax.js";
+import { plainDiffTokens, withEditMarks } from "../diff-review.js";
+import { diffSideLines } from "../diff-syntax.js";
 
 export function RenderedDiff({
   file,
@@ -31,7 +33,13 @@ export function RenderedDiff({
   updateLineReview(draft: ChangeReviewDraft, body: string): void;
   removeLineReview(key: string): void;
 }) {
-  const tokens = useDiffSyntax(hunks, path);
+  const syntax = useDiffSyntax(hunks, path);
+  // Plain tokens stand in for syntax colors so the changed span of each
+  // paired line is marked for plain text and while colors load.
+  const tokens = useMemo(
+    () => withEditMarks(syntax ?? plainDiffTokens(diffSideLines(hunks)), hunks),
+    [hunks, syntax],
+  );
   const notesByChange = new Map(notes.map((note) => [note.changeKey, note]));
   const reviewTargets = new Map(
     notes.map((note) => [note.changeKey, changeReviewDraft(note)] as const),
@@ -59,7 +67,7 @@ export function RenderedDiff({
         viewType={viewType}
         diffType={file.type}
         hunks={hunks}
-        tokens={tokens ?? null}
+        tokens={tokens}
         widgets={widgets}
         selectedChanges={[...reviewTargets.keys()]}
         renderGutter={({ change, side, renderDefault }) => {
