@@ -2218,6 +2218,7 @@ export function Shell(props: ShellProps) {
                 agentSessions={changesAgentSessions}
                 sendReviewNotes={changesSubject.kind === "project" ? props.sendProjectReviewNotes : props.sendTaskReviewNotes}
                 editing={reviewEditorSubject ? { ...reviewEditor, readOnly: selectedComputer?.scope === "readOnly" } : undefined}
+                windowControlsInset={showsWindowDragRegion(platform)}
               />
             ) : null}
           </main>

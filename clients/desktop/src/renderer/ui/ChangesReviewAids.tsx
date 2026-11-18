@@ -3,7 +3,7 @@ import { Icon } from "./Icon.js";
 
 /// Keyboard shortcuts, the change summary and next-file choice that speed up
 /// reviewing a set of changed files.
-export type ReviewKeyAction = "nextFile" | "previousFile" | "nextChange" | "previousChange" | "reviewed" | "whitespace" | "shortcuts";
+export type ReviewKeyAction = "nextFile" | "previousFile" | "nextChange" | "previousChange" | "reviewed" | "whitespace" | "focus" | "shortcuts";
 
 export const REVIEW_KEYS: Readonly<Record<string, ReviewKeyAction>> = {
   j: "nextFile",
@@ -12,6 +12,7 @@ export const REVIEW_KEYS: Readonly<Record<string, ReviewKeyAction>> = {
   p: "previousChange",
   r: "reviewed",
   w: "whitespace",
+  f: "focus",
   "?": "shortcuts",
 };
 
@@ -22,8 +23,9 @@ const REVIEW_SHORTCUTS: readonly [keys: string, action: string][] = [
   ["P", "Previous change"],
   ["R", "Mark file reviewed and open the next"],
   ["W", "Hide whitespace changes"],
+  ["F", "Focus mode: fill the window"],
   ["?", "Show or hide these shortcuts"],
-  ["Esc", "Close changes"],
+  ["Esc", "Leave focus mode, then close changes"],
 ];
 
 export function ReviewShortcuts({ close }: { close(): void }) {

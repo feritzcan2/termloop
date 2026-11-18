@@ -126,6 +126,18 @@ describe("Changes review flow", () => {
     expect(container!.querySelectorAll(".diff-code-insert, .diff-code-delete").length).toBe(0);
   });
 
+  it("fills the window in focus mode and leaves it with Escape before closing", async () => {
+    const overlay = () => container!.querySelector<HTMLElement>(".changes-overlay")!;
+    expect(overlay().classList.contains("focus-mode")).toBe(false);
+    await press(container!, "f");
+    expect(overlay().classList.contains("focus-mode")).toBe(true);
+    expect(container!.querySelector(".changes-focus-toggle")?.getAttribute("aria-pressed")).toBe("true");
+    await press(container!, "Escape");
+    expect(overlay().classList.contains("focus-mode")).toBe(false);
+    await act(async () => container!.querySelector<HTMLButtonElement>(".changes-focus-toggle")!.click());
+    expect(overlay().classList.contains("focus-mode")).toBe(true);
+  });
+
   it("toggles the shortcut list with ?", async () => {
     await press(container!, "?");
     expect(container!.querySelector(".changes-shortcuts")?.textContent).toContain("Next change");

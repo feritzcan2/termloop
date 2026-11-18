@@ -6,7 +6,7 @@ export type IconName =
   | "chevronDown" | "circle" | "close" | "collapseAll" | "copy" | "edit" | "external" | "focus" | "folder" | "grip"
   | "history" | "link" | "mcp" | "more" | "panelDown" | "panelRight" | "play" | "search" | "settings" | "stop" | "task" | "terminal"
   | "archive" | "branch" | "fork" | "reopen" | "restart" | "sparkles" | "star" | "trash"
-  | "alert" | "power" | "bell" | "monitor" | "palette" | "phone" | "download" | "upload" | "minus" | "undo" | "check";
+  | "alert" | "power" | "bell" | "monitor" | "palette" | "phone" | "download" | "upload" | "minus" | "undo" | "check" | "unfocus";
 
 export function Icon({ name, ...props }: SVGProps<SVGSVGElement> & { name: IconName }) {
   const brandIcon = name === "claude" || name === "codex" || name === "opencode";
@@ -55,6 +55,7 @@ const paths: Record<IconName, ReactNode> = {
   fileText: <><path d="M5 2.5h6l4 4V17H5zM11 2.5v4h4M7.5 10h5M7.5 13h5" /></>,
   play: <><path d="M7 4.6v10.8L15.4 10z" /></>,
   focus: <><path d="M7 3H3v4M13 3h4v4M17 13v4h-4M7 17H3v-4" /></>,
+  unfocus: <><path d="M3 7h4V3M17 7h-4V3M17 13h-4v4M3 13h4v4" /></>,
   fork: <><circle cx="5" cy="4" r="2" /><circle cx="15" cy="7" r="2" /><circle cx="15" cy="15" r="2" /><path d="M5 6v5c0 2 2 4 4 4h4M7 9h2c2 0 4-2 4-4" /></>,
   folder: <><path d="M2.5 6.5h6l1.5-2h7.5v11h-15z" /></>,
   grip: <><circle cx="7" cy="6" r=".8" fill="currentColor" stroke="none" /><circle cx="13" cy="6" r=".8" fill="currentColor" stroke="none" /><circle cx="7" cy="10" r=".8" fill="currentColor" stroke="none" /><circle cx="13" cy="10" r=".8" fill="currentColor" stroke="none" /><circle cx="7" cy="14" r=".8" fill="currentColor" stroke="none" /><circle cx="13" cy="14" r=".8" fill="currentColor" stroke="none" /></>,

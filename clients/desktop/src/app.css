@@ -1703,6 +1703,11 @@ button.changes-branch-current:hover:not(:disabled) { border-color: rgba(102,179,
 .changes-whitespace-toggle:hover, .changes-whitespace-toggle:focus-visible { outline: 0; border-color: rgba(102,179,255,.45); color: light-dark(#4d6278, #cee7ff); }
 .changes-whitespace-toggle.active { border-color: rgba(102,179,255,.5); background: rgba(102,179,255,.14); color: light-dark(#40576e, #cee7ff); }
 .changes-shortcuts-button { font: 750 12px/1 var(--font-mono); }
+/* Focus mode lifts the view out of the stage to cover the whole window,
+   below context menus and dialogs. */
+.changes-overlay.focus-mode { position: fixed; z-index: 45; }
+.changes-overlay.focus-mode.window-inset .changes-header { padding-left: 86px; }
+.changes-focus-toggle.active { background: rgba(102,179,255,.14); color: light-dark(#40576e, #cee7ff); }
 .changes-shortcuts { position: absolute; z-index: 12; top: 58px; right: 16px; display: flex; align-items: flex-start; gap: 10px; padding: 12px 10px 12px 14px; border: 1px solid var(--border-strong); border-radius: 9px; background: light-dark(#ffffff, #23282b); box-shadow: 0 12px 32px rgba(0,0,0,.28); }
 .changes-shortcuts dl { display: grid; gap: 6px; margin: 0; }
 .changes-shortcuts dl > div { display: grid; grid-template-columns: 64px minmax(0,1fr); align-items: center; gap: 10px; }

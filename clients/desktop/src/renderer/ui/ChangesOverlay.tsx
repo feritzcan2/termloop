@@ -119,6 +119,8 @@ export type ChangesOverlayProps = {
   agentSessions: readonly Session[];
   sendReviewNotes(taskId: string, sessionId: string, message: string): Promise<string | undefined>;
   editing?: ChangesEditing | undefined;
+  /** The window draws its controls over the content's top-left corner (macOS inset traffic lights). */
+  windowControlsInset?: boolean | undefined;
 };
 
 export function ChangesOverlay({
@@ -139,6 +141,7 @@ export function ChangesOverlay({
   agentSessions,
   sendReviewNotes,
   editing,
+  windowControlsInset = false,
 }: ChangesOverlayProps) {
   const overlayRef = useRef<HTMLElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -172,6 +175,8 @@ export function ChangesOverlay({
   const [fullFile, setFullFile] = useState(false);
   const [hideWhitespace, setHideWhitespace] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  // Focus mode fills the whole window, covering the sidebars and tab strip.
+  const [focusMode, setFocusMode] = useState(false);
   const navigatorRef = useRef<ChangeNavigator | undefined>(undefined);
   const [preImages, setPreImages] = useState<ReadonlyMap<string, CachedPreImage>>(new Map());
   const [loadingPreImage, setLoadingPreImage] = useState(false);
@@ -776,10 +781,10 @@ export function ChangesOverlay({
   return (
     <section
       ref={overlayRef}
-      className="changes-overlay"
+      className={`changes-overlay${focusMode ? " focus-mode" : ""}${focusMode && windowControlsInset ? " window-inset" : ""}`}
       aria-label={`Changes for ${subject.title}`}
       aria-modal="true"
-      aria-keyshortcuts="ArrowUp ArrowDown J K N P R W ? Escape"
+      aria-keyshortcuts="ArrowUp ArrowDown J K N P R W F ? Escape"
       role="dialog"
       tabIndex={-1}
       onKeyDown={(event) => {
@@ -787,7 +792,9 @@ export function ChangesOverlay({
         if ((event.key === "Escape" || event.key === "Tab" || event.key === "ArrowUp" || event.key === "ArrowDown") && (event.target as Element).closest?.(".monaco-editor")) return;
         if (event.key === "Escape") {
           event.preventDefault();
-          close();
+          // Escape leaves focus mode before it closes the view.
+          if (focusMode) setFocusMode(false);
+          else close();
         } else if ((event.key === "ArrowUp" || event.key === "ArrowDown") && !isTextEntryTarget(event.target)) {
           event.preventDefault();
           moveSelection(event.key === "ArrowUp" ? -1 : 1);
@@ -800,6 +807,7 @@ export function ChangesOverlay({
           else if (action === "reviewed" && selectedId && reviewScopeKey && !reviewing) setEntryReviewed(selectedId, !reviewedEntryIds.has(selectedId));
           else if (action === "whitespace") setHideWhitespace((current) => !current);
           else if (action === "shortcuts") setShortcutsOpen((current) => !current);
+          else if (action === "focus") setFocusMode((current) => !current);
         } else if (event.key === "Tab") {
           trapDialogFocus(event);
         }
@@ -847,6 +855,14 @@ export function ChangesOverlay({
             title="Keyboard shortcuts (?)"
             onClick={() => setShortcutsOpen((current) => !current)}
           >?</button>
+          <button
+            type="button"
+            className={`icon-button quiet changes-focus-toggle${focusMode ? " active" : ""}`}
+            aria-label="Focus mode"
+            aria-pressed={focusMode}
+            title={focusMode ? "Exit focus mode (F or Esc)" : "Focus mode: fill the window (F)"}
+            onClick={() => setFocusMode((current) => !current)}
+          ><Icon name={focusMode ? "unfocus" : "focus"} /></button>
           <button className="secondary-button" disabled={loadingSources} onClick={() => void refresh()}><Icon name="reopen" />Refresh</button>
           <button className="icon-button quiet" aria-label="Close changes" title="Close changes" onClick={close}><Icon name="close" /></button>
         </div>
