@@ -76,6 +76,8 @@ describe("Changes review flow", () => {
 
   beforeEach(async () => {
     vi.stubGlobal("crypto", webcrypto);
+    // jsdom has no CSS.escape; the overlay uses it to refocus the selected row.
+    vi.stubGlobal("CSS", { escape: (value: string) => value });
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -91,7 +93,7 @@ describe("Changes review flow", () => {
     vi.unstubAllGlobals();
   });
 
-  it("joins single-folder chains, tags test files and shows the opened file's line counts", async () => {
+  it("joins single-folder chains, tags test files and counts the opened file's changes", async () => {
     const folders = [...container!.querySelectorAll(".changes-folder-entry span")].map((node) => node.textContent);
     expect(folders).toEqual(["services", "Payments/src", "Payments.Tests"]);
     await press(container!, "j");
@@ -102,6 +104,15 @@ describe("Changes review flow", () => {
     expect(selectedEntry(container!)).toBe("test");
     expect(testRow.querySelector(".changes-file-meta")?.textContent).toBe("test+1−0");
     expect(container!.querySelector(".changes-file-heading-stats")?.textContent).toBe("+1−01 change");
+  });
+
+  it("shows every file's line counts without opening it", async () => {
+    expect(selectedEntry(container!)).toBe("alpha");
+    await vi.waitFor(() => {
+      const counts = [...container!.querySelectorAll<HTMLElement>(".changes-file-entry")]
+        .map((row) => [row.dataset.changeEntryId, row.querySelector(".changes-file-meta")?.textContent]);
+      expect(counts).toEqual([["alpha", "+1−1"], ["bravo", "+1−1"], ["test", "test+1−0"]]);
+    });
   });
 
   it("marks only the changed characters of a replaced line", () => {

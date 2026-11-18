@@ -44,6 +44,8 @@ function props(list: ChangesOverlayProps["list"]): ChangesOverlayProps {
     subject: { id: "task-1", title: "Review files", kind: "task", hasWorktree: true, hasBranch: false },
     initialSource: { kind: "local" },
     close: () => {},
+    // These cases count review reads; the line-count read-ahead is covered elsewhere.
+    prefetchLineCounts: false,
     list,
     diff: async (subjectId, observationId, entryId) => ({
       task_id: subjectId,

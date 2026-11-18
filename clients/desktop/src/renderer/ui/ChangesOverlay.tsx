@@ -21,6 +21,7 @@ import type {
 import { sessionLabel, type GitHostProjection, type Session } from "../model.js";
 import { changesReviewOwner, changesReviewScope } from "../changes-reviewed-memory.js";
 import { useChangesReviewed } from "./useChangesReviewed.js";
+import { usePrefetchedDiffStats } from "./usePrefetchedDiffStats.js";
 import {
   localChangeKey,
   recoverLocalChange,
@@ -121,6 +122,8 @@ export type ChangesOverlayProps = {
   editing?: ChangesEditing | undefined;
   /** The window draws its controls over the content's top-left corner (macOS inset traffic lights). */
   windowControlsInset?: boolean | undefined;
+  /** Read every listed file's patch in the background for its line counts. */
+  prefetchLineCounts?: boolean | undefined;
 };
 
 export function ChangesOverlay({
@@ -142,6 +145,7 @@ export function ChangesOverlay({
   sendReviewNotes,
   editing,
   windowControlsInset = false,
+  prefetchLineCounts = true,
 }: ChangesOverlayProps) {
   const overlayRef = useRef<HTMLElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -385,6 +389,13 @@ export function ChangesOverlay({
       ? currentCommitChanges?.observation_id
       : currentPullRequestChanges?.observation_id ?? undefined;
   const reviewScopeKey = changesReviewScope(selectedSource, localChanges, commitList, subject.branchName);
+  const readEntryDiff = (entryId: string) => selectedSource.kind === "local"
+    ? readsRef.current.diff(subject.id, currentObservationId!, entryId)
+    : selectedSource.kind === "commit"
+      ? readsRef.current.commitDiff(subject.id, currentObservationId!, selectedSource.commitId, entryId)
+      : readsRef.current.pullRequestDiff(subject.id, currentObservationId!, entryId);
+  const cachedEntryDiff = (entryId: string) => diffs.get(selectedSource.kind === "local"
+    ? localChangeKey(currentObservationId, entryId) : `${selectedSourceKey}:${entryId}`);
   const { reviewedEntryIds, busy: reviewing, notice: reviewNotice, setReviewed } = useChangesReviewed({
     owner: changesReviewOwner(subject, connectionProfileId),
     scope: reviewScopeKey,
@@ -393,13 +404,16 @@ export function ChangesOverlay({
     loading: loadingSources || loadingSourceKey === selectedSourceKey,
     truncated: (selectedSource.kind === "local" ? localChanges?.truncated
       : selectedSource.kind === "commit" ? currentCommitChanges?.truncated : currentPullRequestChanges?.truncated) ?? true,
-    readDiff: (entryId) => selectedSource.kind === "local"
-      ? readsRef.current.diff(subject.id, currentObservationId!, entryId)
-      : selectedSource.kind === "commit"
-        ? readsRef.current.commitDiff(subject.id, currentObservationId!, selectedSource.commitId, entryId)
-        : readsRef.current.pullRequestDiff(subject.id, currentObservationId!, entryId),
-    cachedDiff: (entryId) => diffs.get(selectedSource.kind === "local"
-      ? localChangeKey(currentObservationId, entryId) : `${selectedSourceKey}:${entryId}`),
+    readDiff: readEntryDiff,
+    cachedDiff: cachedEntryDiff,
+  });
+  const prefetchedStats = usePrefetchedDiffStats({
+    scope: !prefetchLineCounts || loadingSources || loadingSourceKey === selectedSourceKey || !currentObservationId
+      || (selectedSource.kind === "pullRequest" && !selectedPullRequestIsCurrent)
+      ? undefined : `${selectedSourceKey}\u0000${currentObservationId}`,
+    entries: currentEntries,
+    readDiff: readEntryDiff,
+    cachedDiff: cachedEntryDiff,
   });
   const changeTreeSections = useMemo<readonly ChangeTreeSection[]>(() => {
     const pending = currentEntries.filter((entry) => !reviewedEntryIds.has(entry.entry_id));
@@ -565,12 +579,12 @@ export function ChangesOverlay({
   );
   const selectedStats = useMemo(() => renderedHunks ? diffStats(renderedHunks) : undefined, [renderedHunks]);
   const selectedBlockCount = useMemo(() => renderedHunks ? changeBlockCount(renderedHunks) : 0, [renderedHunks]);
-  // Line counts for files whose patch this view has already read; the list
-  // itself carries none, so a file shows its counts once it has been opened.
+  // Line counts per file: the list itself carries none, so they come from
+  // patches already in the cache, else from the background read-ahead.
   // Each cached patch is parsed for its counts once, not on every LRU touch.
   const statsByDiff = useRef(new WeakMap<CachedDiff, DiffStats | null>());
   const entryStats = useMemo(() => {
-    const stats = new Map<string, DiffStats>();
+    const stats = new Map<string, DiffStats>(prefetchedStats);
     for (const entry of currentEntries) {
       const cached = diffs.get(selectedSource.kind === "local"
         ? localChangeKey(currentObservationId, entry.entry_id)
@@ -585,7 +599,7 @@ export function ChangesOverlay({
       if (counted) stats.set(entry.entry_id, counted);
     }
     return stats;
-  }, [currentEntries, currentObservationId, diffs, selectedSource.kind, selectedSourceKey]);
+  }, [currentEntries, currentObservationId, diffs, prefetchedStats, selectedSource.kind, selectedSourceKey]);
   // `fullFileView` already counted this; reading it back keeps the total under the
   // diff and the status line from ever disagreeing.
   const hiddenLineCount = fullFileState?.state === "fullFile"

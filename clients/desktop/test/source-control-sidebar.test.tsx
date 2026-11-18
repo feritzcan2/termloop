@@ -330,6 +330,7 @@ describe("Changes review opened from Source Control", () => {
       subject={{ id: "project", title: "Project", kind: "project", hasWorktree: true, hasBranch: false }}
       initialSource={{ kind: "local", entry: { path: "notes.md", side: "untracked" } }}
       close={() => {}}
+      prefetchLineCounts={false}
       list={async () => changes(sample)}
       diff={diff}
       preImage={vi.fn()}
