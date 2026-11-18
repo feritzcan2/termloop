@@ -148,7 +148,9 @@ impl PreparedProviderRuntime {
                 .as_ref()
                 .and_then(|launch| launch.codex_app_server_developer_instructions()),
             request.launch.as_ref().and_then(|launch| {
-                launch.codex_runtime_policy().post_turn_compact_threshold_percent
+                launch
+                    .codex_runtime_policy()
+                    .post_turn_compact_threshold_percent
             }),
             signals,
         )

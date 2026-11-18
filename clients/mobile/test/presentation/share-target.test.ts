@@ -2,7 +2,7 @@ import type { ProjectDto, TaskDto } from "@termloop/contract/current";
 import { describe, expect, it } from "vitest";
 
 import { fixtureProjects, fixtureTasks } from "../../src/fixtures/mobile-overview";
-import { shareLaunchTarget, sharedImageReadyToSend, shareTargets } from "../../src/presentation/share-target";
+import { shareLaunchTarget, shareMacs, sharedImageReadyToSend, shareTargets } from "../../src/presentation/share-target";
 
 const project = fixtureProjects[0]!;
 const ready = fixtureTasks.find((task) => task.worktree_health?.launch_ready === true && task.status === "open" && task.worktree !== null)!;
@@ -36,5 +36,29 @@ describe("share targets", () => {
       expect(sharedImageReadyToSend(true, status)).toBe(false);
     }
     expect(sharedImageReadyToSend(false, "idle")).toBe(false);
+  });
+});
+
+describe("share Macs", () => {
+  it("lists every reachable Mac's projects ahead of unreachable ones, not just the selected Mac", () => {
+    const overview = { projects: [project], tasks: [] };
+    const macs = shareMacs([
+      { id: "offline", name: "Old Mac", availability: "offline" },
+      { id: "loading", name: "Studio", availability: "online" },
+      { id: "reconnecting", name: "Air", availability: "reconnecting" },
+      { id: "ready", name: "MacBook", availability: "online" },
+      { id: "failed", name: "Mini", availability: "online" },
+    ], new Map([
+      ["offline", { load: "ready", overview }],
+      ["loading", { load: "loading", overview: undefined }],
+      ["reconnecting", { load: "loading", overview: undefined }],
+      ["ready", { load: "ready", overview }],
+      ["failed", { load: "failed", overview: undefined }],
+    ]));
+    expect(macs.map((mac) => [mac.connectionId, mac.state])).toEqual([
+      ["ready", "ready"], ["loading", "loading"], ["offline", "unavailable"], ["reconnecting", "unavailable"], ["failed", "unavailable"],
+    ]);
+    expect(macs[0]!.targets.map((target) => target.project.id)).toEqual([project.id]);
+    expect(macs.slice(1).every((mac) => mac.targets.length === 0)).toBe(true);
   });
 });

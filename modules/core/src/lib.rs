@@ -84,10 +84,10 @@ pub use task_worktree::{
     TaskWorktreeProvisioningProgress, TaskWorktreeProvisioningStep, managed_task_checkout_names,
 };
 pub use termloop_domain::McpToolName;
-pub use termloop_domain::{AutoCompactionSettings, PlaybookEvaluatorSettings};
 pub use termloop_domain::ProjectTaskAutomationConfiguration;
 pub use termloop_domain::RoutineActionHandling;
 pub use termloop_domain::RoutineTriggerMode;
+pub use termloop_domain::{AutoCompactionSettings, PlaybookEvaluatorSettings};
 pub use termloop_domain::{ImproverSessionTarget, ImproverSessionTargetKind};
 /// Re-exported so the daemon composition root can map the keep-awake
 /// preference onto its generated contract shape without depending on `domain`.

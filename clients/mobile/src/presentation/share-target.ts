@@ -1,6 +1,8 @@
 import type { ProjectDto, TaskDto } from "@termloop/contract/current";
 
+import type { ConnectionAvailability } from "../application/ports";
 import { launchBlockedReason } from "./agent-launch-presentation";
+import { connectionPresentation } from "./connection-presentation";
 
 /// Where a shared screenshot can start an agent: a Project itself, or one of its
 /// open Tasks whose worktree the Mac has already proven launch-ready. Tasks the
@@ -31,4 +33,43 @@ export function shareLaunchTarget(selection: { projectId: string; taskId?: strin
 /// interleave with its startup output or be swallowed.
 export function sharedImageReadyToSend(canSend: boolean, agentStatus: string | undefined): boolean {
   return canSend && (agentStatus === "idle" || agentStatus === "awaitingInput");
+}
+
+export interface ShareMac {
+  readonly connectionId: string;
+  readonly name: string;
+  /// ready: its Projects are listed; loading: a read is still on its way;
+  /// unavailable: offline, revoked, or unreadable, so nothing can start there.
+  readonly state: "ready" | "loading" | "unavailable";
+  readonly targets: readonly ShareProjectTarget[];
+}
+
+/// Every paired Mac, not only the selected one: a screenshot can go to any
+/// Project the phone can currently reach. Reachable Macs come first and keep
+/// their pairing order; a Mac that cannot take a launch stays visible but inert.
+export function shareMacs(
+  connections: readonly { id: string; name: string; availability: ConnectionAvailability }[],
+  snapshots: ReadonlyMap<string, { load: string; overview: { projects: readonly ProjectDto[]; tasks: readonly TaskDto[] } | undefined }>,
+): ShareMac[] {
+  const rank = { ready: 0, loading: 1, unavailable: 2 } as const;
+  return connections
+    .map((connection): ShareMac => {
+      const snapshot = snapshots.get(connection.id);
+      const reachable = connectionPresentation(connection.availability).block === undefined;
+      /// Only a Mac that is online right now is worth waiting for; one still
+      /// reconnecting or whose read failed is listed as unreachable instead of
+      /// holding a spinner above the Macs that can take the screenshot.
+      const state = !reachable ? "unavailable"
+        : snapshot?.overview !== undefined ? "ready"
+          : connection.availability === "online" && snapshot?.load !== "failed" ? "loading" : "unavailable";
+      return {
+        connectionId: connection.id,
+        name: connection.name,
+        state,
+        targets: state === "ready" ? shareTargets(snapshot!.overview!.projects, snapshot!.overview!.tasks) : [],
+      };
+    })
+    .map((mac, index) => ({ mac, index }))
+    .sort((left, right) => rank[left.mac.state] - rank[right.mac.state] || left.index - right.index)
+    .map(({ mac }) => mac);
 }
