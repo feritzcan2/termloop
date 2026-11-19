@@ -407,7 +407,7 @@
       }
     },
     "steward_suggest": {
-      "description": "Append one typed visible Steward message to the Project conversation. Use update for factual state or movement that asks nothing of the user; attention when the user's own action is required; problem when required evidence, access, or configuration is unavailable; suggestion only for one optional concrete course of action the Steward will follow if accepted, never for status, reminders, or a user-owned gate; proposal only to request approval for an action the Steward will perform. Bind an update, attention, or problem that disposes current Routine findings to their exact refs: TermLoop atomically delivers the message and dismisses those findings, returning deliveredAndDismissed. A proposal keeps its bound findings pending. Only one proposal may await a user decision: read companion_transcript_read before a new suggestion or proposal, and on proposalPending do not retry or send the proposed action as attention. Successful tool actions are recorded by TermLoop and cannot be claimed through this tool.",
+      "description": "Append one typed visible Steward message to the Project conversation. Use update for factual state or movement that asks nothing of the user; attention when the user's own action is required; problem when required evidence, access, or configuration is unavailable; suggestion only for one optional concrete course of action the Steward will follow if accepted, never for status, reminders, or a user-owned gate; proposal only to request approval for an action the Steward will perform. A proposal must carry action with its kind and evidence; keep its content to one short sentence the action and evidence cannot express, because the user decides from the rendered title and chips. Bind an update, attention, or problem that disposes current Routine findings to their exact refs: TermLoop atomically delivers the message and dismisses those findings, returning deliveredAndDismissed. A proposal keeps its bound findings pending. Only one proposal may await a user decision: read companion_transcript_read before a new suggestion or proposal, and on proposalPending do not retry or send the proposed action as attention. Successful tool actions are recorded by TermLoop and cannot be claimed through this tool.",
       "role": "steward",
       "params": {
         "$ref": "#/$defs/stewardSuggestParams"
@@ -1368,6 +1368,10 @@
         },
         "refs": {
           "$ref": "#/$defs/stewardMessageRefs"
+        },
+        "action": {
+          "description": "Required for a proposal and recommended for a suggestion; rejected on every other kind. TermLoop renders its kind as the decision title and its evidence as short chips, so content only adds what they cannot say.",
+          "$ref": "#/$defs/stewardProposedAction"
         }
       }
     },
@@ -1383,6 +1387,51 @@
         "suggestion",
         "proposal"
       ]
+    },
+    "stewardProposedActionKind": {
+      "description": "The Steward tool the proposed action will call: taskClose=task_close, taskReopen=task_reopen, taskDelete=task_delete, taskCreate=task_create, taskRename=task_rename, taskUpdateBrief=task_update_brief, taskSetJiraUrl=task_set_jira_url, taskAgentStart=task_agent_start, agentMessageSend=agent_message_send, stewardSystemPromptUpdate=steward_system_prompt_update. Use other only when none fits.",
+      "x-codegen": true,
+      "x-codegen-name": "StewardProposedActionKind",
+      "type": "string",
+      "enum": [
+        "taskClose",
+        "taskReopen",
+        "taskDelete",
+        "taskCreate",
+        "taskRename",
+        "taskUpdateBrief",
+        "taskSetJiraUrl",
+        "taskAgentStart",
+        "agentMessageSend",
+        "stewardSystemPromptUpdate",
+        "other"
+      ]
+    },
+    "stewardProposedAction": {
+      "x-codegen": true,
+      "x-codegen-name": "StewardProposedAction",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/stewardProposedActionKind"
+        },
+        "evidence": {
+          "description": "At most four short facts that justify the action, each a few words such as 'Jira: Done' or 'prd release 44462386390 deployed'. No sentences.",
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "pattern": "\\S",
+            "x-utf8-max-bytes": 160
+          }
+        }
+      }
     },
     "stewardMessageRefs": {
       "x-codegen": true,

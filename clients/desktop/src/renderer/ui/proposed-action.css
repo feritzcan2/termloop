@@ -1,0 +1,4 @@
+.proposed-action { display: grid; gap: 4px; min-width: 0; }
+.proposed-action-title { font-size: 12px; font-weight: 650; color: var(--text); overflow-wrap: anywhere; }
+.proposed-action-evidence { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.proposed-action-evidence li { max-width: 100%; padding: 1px 6px; border: 1px solid var(--border); border-radius: 999px; background: var(--hover); color: var(--text-secondary); font-size: 10.5px; line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

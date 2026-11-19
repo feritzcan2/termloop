@@ -939,10 +939,30 @@ async fn steward_suggest(
                 .collect()
         })
         .unwrap_or_default();
+    let action = arguments.get("action").map(|action| {
+        termloop_core::companion_integrations::transcript::CompanionProposedActionInput {
+            kind: action
+                .get("kind")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            evidence: action
+                .get("evidence")
+                .and_then(Value::as_array)
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect()
+                })
+                .unwrap_or_default(),
+        }
+    });
     let dismisses_findings = matches!(kind, "update" | "attention" | "problem")
         && (routine_finding_id.is_some() || !routine_finding_ids.is_empty());
     let mut core = state.core.lock().await;
-    let appended = core.append_steward_suggestion(
+    let appended = core.append_steward_suggestion_with_action(
         session_id,
         project_id,
         kind,
@@ -952,6 +972,7 @@ async fn steward_suggest(
             routine_finding_id,
             routine_finding_ids,
         },
+        action,
         content,
         super::current_epoch_ms(),
     )?;

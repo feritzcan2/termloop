@@ -135,6 +135,68 @@ impl CompanionMessageRefs {
     }
 }
 
+/// The closed set of Steward actions a proposal or suggestion can name, so a
+/// client renders a fixed title instead of reading model prose.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CompanionProposedActionKind {
+    TaskClose,
+    TaskReopen,
+    TaskDelete,
+    TaskCreate,
+    TaskRename,
+    TaskUpdateBrief,
+    TaskSetJiraUrl,
+    TaskAgentStart,
+    AgentMessageSend,
+    StewardSystemPromptUpdate,
+    Other,
+}
+
+impl CompanionProposedActionKind {
+    /// The Steward tool this action stands for; `Other` names none.
+    pub fn tool_name(self) -> Option<&'static str> {
+        Some(match self {
+            Self::TaskClose => "task_close",
+            Self::TaskReopen => "task_reopen",
+            Self::TaskDelete => "task_delete",
+            Self::TaskCreate => "task_create",
+            Self::TaskRename => "task_rename",
+            Self::TaskUpdateBrief => "task_update_brief",
+            Self::TaskSetJiraUrl => "task_set_jira_url",
+            Self::TaskAgentStart => "task_agent_start",
+            Self::AgentMessageSend => "agent_message_send",
+            Self::StewardSystemPromptUpdate => "steward_system_prompt_update",
+            Self::Other => return None,
+        })
+    }
+}
+
+/// The typed action a Steward proposal or suggestion asks about, with a few
+/// short evidence points. It is presentation, never authority: the Steward
+/// still performs the action through its ordinary capability-checked tool.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompanionProposedAction {
+    pub kind: CompanionProposedActionKind,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub evidence: Vec<String>,
+}
+
+impl CompanionProposedAction {
+    pub const EVIDENCE_MAX_ITEMS: usize = 4;
+    pub const EVIDENCE_MAX_BYTES: usize = 160;
+
+    pub fn is_valid(&self) -> bool {
+        self.evidence.len() <= Self::EVIDENCE_MAX_ITEMS
+            && self.evidence.iter().all(|item| {
+                !item.trim().is_empty()
+                    && item.len() <= Self::EVIDENCE_MAX_BYTES
+                    && !item.chars().any(char::is_control)
+            })
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum StewardAgentId {
@@ -512,6 +574,8 @@ pub struct CompanionMessage {
     pub input_mode: CompanionMessageInputMode,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub refs: Option<CompanionMessageRefs>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action: Option<CompanionProposedAction>,
     pub content: String,
     pub created_at_epoch_ms: u64,
 }
@@ -529,6 +593,12 @@ impl CompanionMessage {
                 .refs
                 .as_ref()
                 .is_none_or(CompanionMessageRefs::is_valid)
+            && self.action.as_ref().is_none_or(|action| {
+                matches!(
+                    self.kind,
+                    CompanionMessageKind::Proposal | CompanionMessageKind::Suggestion
+                ) && action.is_valid()
+            })
             && !self.content.trim().is_empty()
             && self.content_bytes() <= COMPANION_MESSAGE_MAX_BYTES
     }
@@ -545,6 +615,49 @@ pub fn companion_transcript_bytes<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_proposed_action_is_bounded_and_only_rides_on_a_proposal_or_suggestion() {
+        let action = CompanionProposedAction {
+            kind: CompanionProposedActionKind::TaskClose,
+            evidence: vec!["Jira: Done".into(), "prd deployed".into()],
+        };
+        let mut message = CompanionMessage {
+            id: "p:1".into(),
+            project_id: "p".into(),
+            sequence: 1,
+            author: CompanionMessageAuthor::Steward,
+            kind: CompanionMessageKind::Proposal,
+            input_mode: CompanionMessageInputMode::Text,
+            refs: None,
+            action: Some(action.clone()),
+            content: "Close it?".into(),
+            created_at_epoch_ms: 1,
+        };
+        assert!(message.is_valid());
+        message.kind = CompanionMessageKind::Suggestion;
+        assert!(message.is_valid());
+        message.kind = CompanionMessageKind::Update;
+        assert!(!message.is_valid());
+        message.kind = CompanionMessageKind::Proposal;
+        for evidence in [
+            vec!["".to_owned()],
+            vec!["x".repeat(CompanionProposedAction::EVIDENCE_MAX_BYTES + 1)],
+            vec!["line\nbreak".to_owned()],
+            vec!["a".to_owned(); CompanionProposedAction::EVIDENCE_MAX_ITEMS + 1],
+        ] {
+            message.action = Some(CompanionProposedAction {
+                evidence,
+                ..action.clone()
+            });
+            assert!(!message.is_valid());
+        }
+        assert_eq!(
+            CompanionProposedActionKind::TaskClose.tool_name(),
+            Some("task_close")
+        );
+        assert_eq!(CompanionProposedActionKind::Other.tool_name(), None);
+    }
 
     #[test]
     fn auto_compaction_defaults_and_bounds_follow_each_provider_unit() {
@@ -578,6 +691,7 @@ mod tests {
             kind: CompanionMessageKind::Reply,
             input_mode: CompanionMessageInputMode::Text,
             refs: None,
+            action: None,
             content: "ş".into(),
             created_at_epoch_ms: 1,
         };
@@ -596,6 +710,7 @@ mod tests {
             kind: CompanionMessageKind::Suggestion,
             input_mode: CompanionMessageInputMode::Text,
             refs: None,
+            action: None,
             content: " ".into(),
             created_at_epoch_ms: 1,
         };

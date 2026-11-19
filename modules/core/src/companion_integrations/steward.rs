@@ -4,7 +4,7 @@ use termloop_domain::{
     IssueLinkSyncAuthority, SessionKind, StewardAgentId, StewardConfiguration,
 };
 
-use super::transcript::CompanionMessageRefsInput;
+use super::transcript::{CompanionMessageRefsInput, CompanionProposedActionInput};
 use crate::{CoreError, CoreRuntime, required_string, store_error};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -162,12 +162,64 @@ impl CoreRuntime {
             .collect()
     }
 
-    pub fn append_steward_suggestion(
+    /// Test shorthand for a Steward message that names no typed action.
+    #[cfg(test)]
+    pub(crate) fn append_steward_suggestion(
         &mut self,
         session_id: &str,
         project_id: &str,
         kind: &str,
         refs: CompanionMessageRefsInput,
+        content: String,
+        created_at_epoch_ms: u64,
+    ) -> Result<Value, CoreError> {
+        self.append_steward_message(
+            session_id,
+            project_id,
+            kind,
+            refs,
+            None,
+            content,
+            created_at_epoch_ms,
+        )
+    }
+
+    /// Appends one Steward-authored typed message. A proposal must name its
+    /// typed action so every client renders the decision from a closed kind
+    /// rather than model prose; a suggestion may name one.
+    #[allow(clippy::too_many_arguments)]
+    pub fn append_steward_suggestion_with_action(
+        &mut self,
+        session_id: &str,
+        project_id: &str,
+        kind: &str,
+        refs: CompanionMessageRefsInput,
+        action: Option<CompanionProposedActionInput>,
+        content: String,
+        created_at_epoch_ms: u64,
+    ) -> Result<Value, CoreError> {
+        if kind == "proposal" && action.is_none() {
+            return Err(CoreError::InvalidParams("action".into()));
+        }
+        self.append_steward_message(
+            session_id,
+            project_id,
+            kind,
+            refs,
+            action,
+            content,
+            created_at_epoch_ms,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn append_steward_message(
+        &mut self,
+        session_id: &str,
+        project_id: &str,
+        kind: &str,
+        refs: CompanionMessageRefsInput,
+        action: Option<CompanionProposedActionInput>,
         content: String,
         created_at_epoch_ms: u64,
     ) -> Result<Value, CoreError> {
@@ -262,6 +314,7 @@ impl CoreRuntime {
                     kind: kind.into(),
                     input_mode: "text".into(),
                     refs,
+                    action,
                     content,
                 },
                 created_at_epoch_ms,
@@ -272,12 +325,16 @@ impl CoreRuntime {
             );
             Ok(result)
         } else {
-            self.append_companion_message(
+            self.append_companion_message_input(
                 project_id,
-                "steward",
-                kind,
-                refs,
-                content,
+                crate::companion_integrations::transcript::CompanionMessageAppendInput {
+                    author: "steward".into(),
+                    kind: kind.into(),
+                    input_mode: "text".into(),
+                    refs,
+                    action,
+                    content,
+                },
                 created_at_epoch_ms,
             )
         }

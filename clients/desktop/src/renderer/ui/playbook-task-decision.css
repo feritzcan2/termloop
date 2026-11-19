@@ -14,3 +14,5 @@
 .playbook-task-decision footer button.primary { border-color: var(--accent); background: var(--accent); color: var(--bg-app); }
 .playbook-task-decision footer button.link { border: 0; padding: 0; background: transparent; color: var(--text-secondary); text-decoration: underline; }
 .playbook-task-decision footer button:disabled { opacity: .55; }
+.playbook-task-decision-summary.typed { color: var(--sidebar-text); font-weight: 600; }
+.playbook-task-decision-content.typed { color: var(--text-secondary); font-size: 10.5px; }

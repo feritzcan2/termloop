@@ -6,6 +6,7 @@ use termloop_domain::{
     COMPANION_TRANSCRIPT_HARD_BYTES, COMPANION_TRANSCRIPT_HARD_MESSAGES,
     COMPANION_TRANSCRIPT_SOFT_BYTES, COMPANION_TRANSCRIPT_SOFT_MESSAGES, CompanionMessage,
     CompanionMessageAuthor, CompanionMessageInputMode, CompanionMessageKind, CompanionMessageRefs,
+    CompanionProposedAction, CompanionProposedActionKind,
 };
 
 const MAX_TRANSCRIPT_PAGE: usize = 100;
@@ -25,7 +26,47 @@ pub struct CompanionMessageAppendInput {
     pub kind: String,
     pub input_mode: String,
     pub refs: CompanionMessageRefsInput,
+    pub action: Option<CompanionProposedActionInput>,
     pub content: String,
+}
+
+/// The typed action a Steward proposal or suggestion names, as received from
+/// the generated MCP params. Core validates it into the domain value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompanionProposedActionInput {
+    pub kind: String,
+    pub evidence: Vec<String>,
+}
+
+impl CompanionProposedActionInput {
+    fn into_domain(self) -> Result<CompanionProposedAction, CoreError> {
+        let kind = match self.kind.as_str() {
+            "taskClose" => CompanionProposedActionKind::TaskClose,
+            "taskReopen" => CompanionProposedActionKind::TaskReopen,
+            "taskDelete" => CompanionProposedActionKind::TaskDelete,
+            "taskCreate" => CompanionProposedActionKind::TaskCreate,
+            "taskRename" => CompanionProposedActionKind::TaskRename,
+            "taskUpdateBrief" => CompanionProposedActionKind::TaskUpdateBrief,
+            "taskSetJiraUrl" => CompanionProposedActionKind::TaskSetJiraUrl,
+            "taskAgentStart" => CompanionProposedActionKind::TaskAgentStart,
+            "agentMessageSend" => CompanionProposedActionKind::AgentMessageSend,
+            "stewardSystemPromptUpdate" => CompanionProposedActionKind::StewardSystemPromptUpdate,
+            "other" => CompanionProposedActionKind::Other,
+            _ => return Err(CoreError::InvalidParams("action.kind".into())),
+        };
+        let action = CompanionProposedAction {
+            kind,
+            evidence: self
+                .evidence
+                .into_iter()
+                .map(|item| item.trim().to_owned())
+                .collect(),
+        };
+        if !action.is_valid() {
+            return Err(CoreError::InvalidParams("action.evidence".into()));
+        }
+        Ok(action)
+    }
 }
 
 impl CompanionMessageRefsInput {
@@ -99,9 +140,18 @@ impl CoreRuntime {
                     routine_finding_ids: refs.routine_finding_ids.clone(),
                 }
             });
+        let approved_tool = pending
+            .and_then(|message| message.action.as_ref())
+            .and_then(|action| action.kind.tool_name());
         let (kind, content) = match decision {
-            "approve" => ("approval", "Approved. Proceed with the proposed action."),
-            "decline" => ("decline", "Not now."),
+            "approve" => (
+                "approval",
+                approved_tool.map_or_else(
+                    || "Approved. Proceed with the proposed action.".to_owned(),
+                    |tool| format!("Approved. Proceed with the proposed {tool} action."),
+                ),
+            ),
+            "decline" => ("decline", "Not now.".to_owned()),
             _ => return Err(CoreError::InvalidParams("decision".into())),
         };
         self.append_companion_message(
@@ -109,7 +159,7 @@ impl CoreRuntime {
             "user",
             kind,
             refs,
-            content.into(),
+            content,
             created_at_epoch_ms,
         )
     }
@@ -130,6 +180,7 @@ impl CoreRuntime {
                 kind: kind.into(),
                 input_mode: "text".into(),
                 refs,
+                action: None,
                 content,
             },
             created_at_epoch_ms,
@@ -162,6 +213,7 @@ impl CoreRuntime {
             kind,
             input_mode,
             refs,
+            action,
             content,
         } = input;
         if !self.project_exists(project_id) {
@@ -190,6 +242,17 @@ impl CoreRuntime {
             "voice" => CompanionMessageInputMode::Voice,
             _ => return Err(CoreError::InvalidParams("inputMode".into())),
         };
+        let action = action
+            .map(CompanionProposedActionInput::into_domain)
+            .transpose()?;
+        if action.is_some()
+            && !matches!(
+                kind,
+                CompanionMessageKind::Proposal | CompanionMessageKind::Suggestion
+            )
+        {
+            return Err(CoreError::InvalidParams("action".into()));
+        }
         let refs = (refs.task_id.is_some()
             || refs.session_id.is_some()
             || refs.routine_finding_id.is_some()
@@ -218,6 +281,7 @@ impl CoreRuntime {
             kind,
             input_mode,
             refs,
+            action,
             content,
             created_at_epoch_ms,
         };
@@ -437,6 +501,7 @@ mod tests {
                     kind: "reply".into(),
                     input_mode: "voice".into(),
                     refs: CompanionMessageRefsInput::default(),
+                    action: None,
                     content: "first".into(),
                 },
                 1,
@@ -594,6 +659,92 @@ mod tests {
         assert!(matches!(
             runtime.respond_to_companion_proposal(&project_id, "missing", "approve", 4),
             Err(CoreError::RevisionConflict)
+        ));
+        let _ = std::fs::remove_file(path);
+    }
+
+    fn steward_input(
+        kind: &str,
+        action: Option<CompanionProposedActionInput>,
+    ) -> CompanionMessageAppendInput {
+        CompanionMessageAppendInput {
+            author: "steward".into(),
+            kind: kind.into(),
+            input_mode: "text".into(),
+            refs: CompanionMessageRefsInput::default(),
+            action,
+            content: "Close it?".into(),
+        }
+    }
+
+    #[test]
+    fn a_typed_proposed_action_projects_bounded_and_names_its_tool_on_approval() {
+        let (mut runtime, path) = runtime();
+        let project_id = runtime.store.projects()[0].id.clone();
+        let close = |evidence: Vec<&str>| CompanionProposedActionInput {
+            kind: "taskClose".into(),
+            evidence: evidence.into_iter().map(str::to_owned).collect(),
+        };
+        for (kind, action, field) in [
+            ("update", Some(close(vec![])), "action"),
+            (
+                "proposal",
+                Some(CompanionProposedActionInput {
+                    kind: "merge".into(),
+                    evidence: vec![],
+                }),
+                "action.kind",
+            ),
+            ("proposal", Some(close(vec![" "])), "action.evidence"),
+            ("proposal", Some(close(vec!["a"; 5])), "action.evidence"),
+        ] {
+            assert!(matches!(
+                runtime.append_companion_message_input(&project_id, steward_input(kind, action), 1),
+                Err(CoreError::InvalidParams(rejected)) if rejected == field
+            ));
+        }
+        let proposal = runtime
+            .append_companion_message_input(
+                &project_id,
+                steward_input(
+                    "proposal",
+                    Some(close(vec![" Jira: Done ", "prd deployed"])),
+                ),
+                1,
+            )
+            .unwrap();
+        assert_eq!(
+            proposal["message"]["action"],
+            json!({ "kind": "taskClose", "evidence": ["Jira: Done", "prd deployed"] })
+        );
+        let listed = runtime
+            .list_companion_transcript(json!({ "projectId": project_id, "limit": 10 }))
+            .unwrap();
+        assert_eq!(listed["messages"][0]["action"]["kind"], "taskClose");
+        let approved = runtime
+            .respond_to_companion_proposal(
+                &project_id,
+                proposal["message"]["id"].as_str().unwrap(),
+                "approve",
+                2,
+            )
+            .unwrap();
+        assert_eq!(
+            approved["message"]["content"],
+            "Approved. Proceed with the proposed task_close action."
+        );
+        assert!(approved["message"].get("action").is_none());
+        assert!(matches!(
+            runtime.append_steward_suggestion_with_action(
+                "steward-session",
+                &project_id,
+                "proposal",
+                CompanionMessageRefsInput::default(),
+                None,
+                "May I close it?".into(),
+                3,
+            ),
+            Err(CoreError::InvalidParams(field)) if field == "action"
         ));
         let _ = std::fs::remove_file(path);
     }

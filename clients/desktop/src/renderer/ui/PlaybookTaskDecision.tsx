@@ -5,6 +5,7 @@ import type {
 } from "@termloop/contract/current";
 import { currentStewardInteraction } from "./companion-chat.js";
 import "./playbook-task-decision.css";
+import { ProposedActionSummary, proposedActionLine, proposedActionTitle } from "./proposed-action.js";
 
 /** The one Steward question Core still accepts an answer for, with every Task
     it covers. Core keeps a single open interaction per Project, so a Steward
@@ -122,6 +123,7 @@ export function PlaybookTaskDecisionStrip(props: {
     } finally { setBusy(false); }
   };
   const label = proposal ? "Needs your approval" : "Steward suggestion";
+  const typed = proposedActionTitle(decision.message.action) !== null;
   const otherTasks = decision.taskIds.length - 1;
   const shared = otherTasks > 0
     ? `One ${proposal ? "approval" : "acceptance"} answers this for this Task and ${otherTasks} other${otherTasks === 1 ? "" : "s"}.`
@@ -133,10 +135,11 @@ export function PlaybookTaskDecisionStrip(props: {
       onClick={() => setExpanded(!expanded)}>
       <span className="playbook-task-decision-flag">{label}</span>
       {otherTasks > 0 ? <span className="playbook-task-decision-shared">{decision.taskIds.length} Tasks</span> : null}
-      {expanded ? null : <span className="playbook-task-decision-summary">{summaryLine(decision.message.content)}</span>}
+      {expanded ? null : <span className={`playbook-task-decision-summary${typed ? " typed" : ""}`}>{summaryLine(proposedActionLine(decision.message))}</span>}
     </button>
     {expanded ? <>
-      <p className="playbook-task-decision-content">{decision.message.content}</p>
+      <ProposedActionSummary action={decision.message.action} />
+      <p className={`playbook-task-decision-content${typed ? " typed" : ""}`}>{decision.message.content}</p>
       {shared ? <p className="playbook-task-decision-scope">{shared}</p> : null}
       {error ? <p role="alert" className="playbook-task-decision-error">{error}</p> : null}
       <footer>

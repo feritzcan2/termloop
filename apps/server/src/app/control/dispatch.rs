@@ -1488,6 +1488,7 @@ async fn dispatch_inner(
                         kind: "reply".into(),
                         input_mode: input_mode.into(),
                         refs: termloop_core::companion_integrations::transcript::CompanionMessageRefsInput::default(),
+                        action: None,
                         content: params.content,
                     },
                     current_epoch_ms(),

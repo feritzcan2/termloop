@@ -1,6 +1,7 @@
 import type {
   CompanionMessageDto, CompanionProposalDecision, PlaybookDto, PlaybookRuntimeResult,
 } from "@termloop/contract/current";
+import { ProposedActionSummary } from "./proposed-action.js";
 
 /* The Steward chat's presentation model. The transcript is an append-only list
    of typed messages; this module derives what each message means *now* — which
@@ -232,6 +233,7 @@ export function CompanionTopicCard(props: {
       <span className="ap-msg-author">{newest.message.author === "user" ? "You" : "Steward"}</span>
       {badge ? <span className={`ap-msg-kind tone-${badge.tone}`}>{badge.label}</span> : null}
     </header>
+    <ProposedActionSummary action={newest.message.action} />
     <p>{newest.message.content}</p>
     {note ? <small className="ap-msg-repeat">{note}</small> : null}
     {controls(newest)}
@@ -240,6 +242,7 @@ export function CompanionTopicCard(props: {
         const hoistedBadge = companionMessageBadge(props.messages, hoisted.message);
         return hoistedBadge ? <span className={`ap-msg-kind tone-${hoistedBadge.tone}`}>{hoistedBadge.label}</span> : null;
       })()}
+      <ProposedActionSummary action={hoisted.message.action} />
       <p>{hoisted.message.content}</p>
       {controls(hoisted)}
     </div> : null}

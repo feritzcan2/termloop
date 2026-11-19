@@ -25,6 +25,7 @@ import { useConnections } from "@/features/connection/connection-store";
 import { useRouteConnection } from "@/features/connection/use-route-connection";
 import { useOverview } from "@/features/overview/overview-store";
 import { relativeAge } from "@/presentation/relative-time";
+import { stewardProposedActionView } from "@/presentation/steward-proposed-action";
 import { stewardLocalSpeech } from "@/platform/steward-local-speech";
 import {
   configureStewardAudioSession,
@@ -251,10 +252,23 @@ function StewardBubble({ message, nowMs, busy, speaking, readAloud, respond }: {
 }) {
   const styles = useStyles();
   const mine = message.author === "user";
+  const action = stewardProposedActionView(message.action);
   return (
     <View style={[styles.bubbleWrap, mine ? styles.bubbleWrapMine : null]}>
       <View style={[styles.bubble, mine ? styles.bubbleMine : null]}>
-        <Text style={[styles.bubbleText, mine ? styles.bubbleTextMine : null]}>{message.content}</Text>
+        {action ? (
+          <>
+            <Text style={styles.actionTitle}>{action.title}</Text>
+            {action.evidence.length > 0 ? (
+              <View style={styles.evidence}>
+                {action.evidence.map((item, index) => (
+                  <Text key={index} style={styles.evidenceChip} numberOfLines={1}>{item}</Text>
+                ))}
+              </View>
+            ) : null}
+          </>
+        ) : null}
+        <Text style={[styles.bubbleText, mine ? styles.bubbleTextMine : null, action ? styles.bubbleTextSecondary : null]}>{message.content}</Text>
         <Text style={styles.bubbleMeta}>
           {message.inputMode === "voice" ? "sesli mesaj · " : message.kind === "reply" ? "" : `${message.kind} · `}
           {nowMs === 0 ? "" : relativeAge(message.createdAtEpochMs, nowMs)}
@@ -335,6 +349,19 @@ const useStyles = createThemedStyles((theme) => {
     bubbleMine: { backgroundColor: color.accentWash },
     bubbleText: { ...text.body, color: color.text, lineHeight: 19 },
     bubbleTextMine: { color: color.text },
+    bubbleTextSecondary: { color: color.textSecondary },
+    actionTitle: { ...text.body, color: color.text, fontWeight: "700" },
+    evidence: { flexDirection: "row", flexWrap: "wrap", gap: 4 },
+    evidenceChip: {
+      maxWidth: "100%",
+      overflow: "hidden",
+      paddingHorizontal: 6,
+      paddingVertical: 1,
+      borderRadius: radius.control,
+      backgroundColor: color.bgHover,
+      color: color.textSecondary,
+      fontSize: 11,
+    },
     bubbleMeta: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 10 },
     bubbleActions: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
     bubbleAction: {

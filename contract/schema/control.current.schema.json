@@ -13196,6 +13196,49 @@
         }
       }
     },
+    "companionProposedActionKind": {
+      "x-codegen": true,
+      "x-codegen-name": "CompanionProposedActionKind",
+      "type": "string",
+      "enum": [
+        "taskClose",
+        "taskReopen",
+        "taskDelete",
+        "taskCreate",
+        "taskRename",
+        "taskUpdateBrief",
+        "taskSetJiraUrl",
+        "taskAgentStart",
+        "agentMessageSend",
+        "stewardSystemPromptUpdate",
+        "other"
+      ]
+    },
+    "companionProposedActionDto": {
+      "x-codegen": true,
+      "x-codegen-name": "CompanionProposedActionDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/companionProposedActionKind"
+        },
+        "evidence": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "pattern": "\\S",
+            "x-utf8-max-bytes": 160
+          }
+        }
+      }
+    },
     "companionMessageDto": {
       "x-codegen": true,
       "x-codegen-name": "CompanionMessageDto",
@@ -13235,6 +13278,9 @@
         },
         "refs": {
           "$ref": "#/$defs/companionMessageRefsDto"
+        },
+        "action": {
+          "$ref": "#/$defs/companionProposedActionDto"
         },
         "content": {
           "type": "string",

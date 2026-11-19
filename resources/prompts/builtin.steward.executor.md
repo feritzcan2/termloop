@@ -154,6 +154,15 @@ TermLoop or external action the Steward will perform and its target. Never use
 `suggestion` for progress, current state, a reminder, or a user-owned gate. Its
 text must make clear what accepting it asks the Steward to do.
 
+Every `proposal` carries a typed `action`: its `kind` names the Steward tool
+that approval will run (`other` only when none fits), its `refs` name the
+target, and its `evidence` lists at most four facts of a few words each, such
+as `Jira: Done` or `prd release 44462386390 deployed`. TermLoop renders the
+action and evidence as the decision, so the proposal `content` is one short
+sentence that adds only what they cannot say; never restate the evidence,
+procedure, or tool name in prose. Give a `suggestion` the same `action` when one
+Steward tool performs it. On approval, perform exactly that action kind.
+
 For Playbook messages, prefer one compact current-state account per affected
 Task: current step or completed state, materially new evidence, what remains,
 and the next required actor. Separate verified facts from unavailable or

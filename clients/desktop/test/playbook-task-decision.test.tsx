@@ -168,3 +168,26 @@ it("shows one batched proposal on each covered Task row and one approval answers
   expect(actions.respondToProposal).toHaveBeenCalledExactlyOnceWith("m1", "approve");
   expect(host.querySelector(".playbook-task-decision")).toBeNull();
 });
+
+it("renders a typed action as a fixed title with evidence chips and falls back to text otherwise", async () => {
+  messages = [{
+    ...message(1, "steward", "proposal", "t1", "Released with the DLQ portal fix."),
+    action: { kind: "taskClose", evidence: ["Jira: Done", "prd deployed"] },
+  }];
+  await render();
+  const summary = host.querySelector(".playbook-task-decision-summary")!;
+  expect(summary.textContent).toBe("Close task · Jira: Done · prd deployed");
+  expect(host.textContent).not.toContain("Released with");
+  await act(async () => host.querySelector<HTMLButtonElement>(".playbook-task-decision-head")!.click());
+  expect(host.querySelector(".proposed-action-title")!.textContent).toBe("Close task");
+  expect([...host.querySelectorAll(".proposed-action-evidence li")].map((item) => item.textContent))
+    .toEqual(["Jira: Done", "prd deployed"]);
+  expect(host.textContent).toContain("Released with the DLQ portal fix.");
+
+  // A kind this build does not know, or `other`, keeps the Steward's own text.
+  for (const kind of ["other", "futureKind"]) {
+    messages = [{ ...message(2, "steward", "proposal", "t1", "Do the unusual thing."), action: { kind } as never }];
+    await render({ refreshToken: kind.length });
+    expect(host.querySelector(".playbook-task-decision-summary")!.textContent).toBe("Do the unusual thing.");
+  }
+});

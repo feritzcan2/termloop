@@ -49,6 +49,7 @@ fn message(project_id: &str, sequence: u64, content: &str) -> CompanionMessage {
         kind: CompanionMessageKind::Reply,
         input_mode: CompanionMessageInputMode::Text,
         refs: None,
+        action: None,
         content: content.into(),
         created_at_epoch_ms: sequence,
     }

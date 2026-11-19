@@ -148,6 +148,7 @@ async function harness() {
     if (name === "@/components/primitives") return { Banner: "Banner", UnavailableNote: "UnavailableNote" };
     if (name === "@/components/screen") return { Screen: "Screen", ScreenHeader: "ScreenHeader" };
     if (name === "@/presentation/relative-time") return { relativeAge: () => "" };
+    if (name === "@/presentation/steward-proposed-action") return { stewardProposedActionView: () => null };
     if (name === "@/platform/steward-local-speech") return { stewardLocalSpeech: local };
     if (name === "@/platform/steward-voice-audio") return audioSession;
     if (name === "@/theme/tokens") return tokens;

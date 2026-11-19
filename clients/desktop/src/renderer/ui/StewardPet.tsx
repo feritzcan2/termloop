@@ -5,6 +5,7 @@ import {
   currentStewardInteraction,
   type CompanionBadgeTone,
 } from "./companion-chat.js";
+import { proposedActionLine } from "./proposed-action.js";
 
 /**
  * Ambient Steward presence. Every face is derived from an observed signal, so a
@@ -197,7 +198,7 @@ export function stewardPetUtteranceFromMessages(
     return {
       id: currentInteraction.id,
       kind: currentInteraction.kind,
-      text: currentInteraction.content,
+      text: proposedActionLine(currentInteraction),
       badgeLabel: interactionBadge.label,
       badgeTone: interactionBadge.tone,
     } satisfies StewardPetInteraction;
