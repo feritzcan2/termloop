@@ -60,6 +60,9 @@ export function WorkflowLaunchers(props: WorkflowLaunchScope & {
   const [inspectingExecution, setInspectingExecution] = useState(false);
   const [inspectingResult, setInspectingResult] = useState<{ stepId: string; reviewCycle: number }>();
   const [progressPreference, setProgressPreference] = useState<{ executionId: string; expanded: boolean }>();
+  const [finishing, setFinishing] = useState(false);
+  /// Keyed by run so a failure never sticks to the next run on this Task.
+  const [finishError, setFinishError] = useState<{ executionId: string; message: string }>();
   const inspectedStep = execution?.steps.find((step) => step.id === inspectingResult?.stepId);
   const inspectedResult = execution?.stepResults.find((result) => result.stepId === inspectingResult?.stepId
     && result.reviewCycle === inspectingResult.reviewCycle);
@@ -121,8 +124,27 @@ export function WorkflowLaunchers(props: WorkflowLaunchScope & {
                 : execution.completionOutcome === "approved" ? "All reviewers approved" : "No final review approval recorded"}
           </span>
         </button>
+        {/* A finished run has nothing left to automate. Done removes only the
+            run record; its agents keep running and fall back to ordinary
+            Session rows on this Task. */}
+        {!executionActive ? <button
+          type="button"
+          className="workflow-finish"
+          disabled={finishing}
+          aria-label={`Close ${workflowName} workflow and keep its agents`}
+          title="Close this workflow. Its agents stay open as regular agents."
+          onClick={() => {
+            const fail = (message: string | undefined) => setFinishError(message ? { executionId: execution.id, message } : undefined);
+            setFinishing(true); fail(undefined);
+            void props.cancel(execution.id)
+              .then(fail)
+              .catch(() => fail("Could not close this workflow. Check your connection and try again."))
+              .finally(() => setFinishing(false));
+          }}
+        >{finishing ? "Closing…" : "Done"}</button> : null}
         <button type="button" className="workflow-tree-action" aria-label="Workflow details" title="Workflow details" onClick={() => setInspectingExecution(true)}><Icon name="more" /></button>
       </div>
+      {finishError?.executionId === execution.id ? <p className="form-error workflow-finish-error" role="alert">{finishError.message}</p> : null}
       {progressExpanded ? <WorkflowSidebarProgress
         execution={execution}
         agentProfiles={props.agentProfiles}
@@ -382,9 +404,13 @@ function WorkflowExecutionDialog(props: {
         {error ? <p className="form-error" role="alert">{error}</p> : null}
       </div>
       <footer className="dialog-actions">
-        <p className="workflow-stop-help">Stopping ends this workflow. Existing agent conversations stay open.</p>
+        <p className="workflow-stop-help">{props.execution.status === "completed"
+          ? "Closing removes this workflow. Its agents stay open as regular agents."
+          : "Stopping ends this workflow. Existing agent conversations stay open."}</p>
         <button type="button" className="secondary-button" disabled={busy} onClick={props.close}>Close</button>
-        {props.execution.status !== "completed" ? <button type="button" className="danger-button" disabled={busy} onClick={() => void stop()}>{busy ? "Stopping…" : "Stop automation"}</button> : null}
+        {props.execution.status !== "completed"
+          ? <button type="button" className="danger-button" disabled={busy} onClick={() => void stop()}>{busy ? "Stopping…" : "Stop automation"}</button>
+          : <button type="button" className="primary-button" disabled={busy} onClick={() => void stop()}>{busy ? "Closing…" : "Close workflow"}</button>}
       </footer>
     </section>
   </div>;

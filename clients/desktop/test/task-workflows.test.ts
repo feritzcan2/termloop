@@ -772,6 +772,32 @@ describe("Compact workflow menu", () => {
     } finally { await f.dispose(); }
   });
 
+  it("offers Done only on a finished run and closes just the run record", async () => {
+    const cancel = vi.fn(async () => undefined);
+    const f = await launcherFixture({ executions: [execution], cancel });
+    try {
+      expect(f.container.querySelector(".workflow-finish")).toBeNull();
+      f.props.executions = [{ ...execution, status: "completed", phase: "completed", completionOutcome: "reviewLimitReached" }];
+      await f.render();
+      const done = f.container.querySelector<HTMLButtonElement>(".workflow-finish")!;
+      expect(done.textContent).toBe("Done");
+      await act(async () => done.click());
+      expect(cancel).toHaveBeenCalledExactlyOnceWith(execution.id);
+      expect(f.props.openSession).not.toHaveBeenCalled();
+      expect(f.container.querySelector(".workflow-finish-error")).toBeNull();
+    } finally { await f.dispose(); }
+  });
+
+  it("keeps a finished run visible with the reason when Done fails", async () => {
+    const cancel = vi.fn(async () => "Workflow state changed. Refresh and try again.");
+    const f = await launcherFixture({ executions: [{ ...execution, status: "completed", phase: "completed", completionOutcome: "approved" }], cancel });
+    try {
+      await act(async () => f.container.querySelector<HTMLButtonElement>(".workflow-finish")!.click());
+      expect(f.container.querySelector(".workflow-finish-error")?.textContent).toBe("Workflow state changed. Refresh and try again.");
+      expect(f.container.querySelector<HTMLButtonElement>(".workflow-finish")?.disabled).toBe(false);
+    } finally { await f.dispose(); }
+  });
+
   it("hides the Task's add-workflow button while its run is active and restores it once the run finishes", async () => {
     const f = await launcherFixture({ executions: [execution] });
     try {

@@ -766,6 +766,10 @@ button.workflow-tree-session:hover { background: var(--hover); }
 .workflow-tree-session[data-tone="busy"] .workflow-tree-activity { background: var(--state-running); }
 .workflow-tree-session[data-tone="attention"] .workflow-tree-activity { background: var(--agent-status-awaiting); }
 .workflow-tree-session[data-tone="blocked"] .workflow-tree-activity { background: var(--state-error); }
+.workflow-finish { flex: none; height: 22px; margin-left: 4px; padding: 0 8px; border: 1px solid var(--rule); border-radius: 4px; background: transparent; color: var(--sidebar-text); font: 500 10px/1 var(--font-ui); }
+.workflow-finish:hover:not(:disabled) { background: var(--hover); border-color: var(--sidebar-dim); }
+.workflow-finish:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 1px; }
+.workflow-finish-error { margin: 2px 5px 4px; font-size: 10px; }
 .workflow-tree-action { display: grid; flex: none; place-items: center; width: 26px; height: 27px; padding: 4px; border: 0; border-radius: 4px; background: transparent; color: var(--sidebar-dim); }
 .workflow-tree-action:hover { background: var(--hover); color: var(--sidebar-text); }
 .workflow-tree-action svg { width: 13px; height: 13px; }
