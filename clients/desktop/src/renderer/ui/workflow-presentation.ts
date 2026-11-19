@@ -108,10 +108,29 @@ export function workflowSummary(configuration: WorkflowConfigurationDto): string
   ].filter(Boolean).join(" → ");
 }
 
+/// Template names are free text, so "Implement ->Review -> Fix" style arrows are
+/// normalized to one spaced arrow for display only.
+export function workflowDisplayName(name: string): string {
+  return name.replace(/\s*-+>\s*/gu, " → ").trim();
+}
+
+/// The step-row caption: lead-agent steps need none (the lead is implied), and a
+/// helper step names only its agent; conversation reuse stays in the tooltip.
+export function workflowStepCaption(
+  step: WorkflowStepDto,
+  steps: readonly WorkflowStepDto[],
+  agentProfiles: readonly AgentLibraryEntry[],
+): string | undefined {
+  if (!isHelperStep(step)) return undefined;
+  const source = step.reuseStepId ? steps.find((candidate) => candidate.id === step.reuseStepId) : undefined;
+  return workflowAgentProfileLabel(source ?? step, agentProfiles);
+}
+
 export function workflowExecutionSummary(execution: WorkflowExecution): string {
-  if (execution.status === "completed") return `${execution.workflowName}: ${workflowStatusLabel(execution)}`;
+  const name = workflowDisplayName(execution.workflowName);
+  if (execution.status === "completed") return `${name}: ${workflowStatusLabel(execution)}`;
   const step = execution.steps[execution.currentStepIndex];
-  return `${execution.workflowName}: ${step?.title ?? "in progress"} (${execution.currentStepIndex + 1}/${execution.steps.length})`;
+  return `${name}: ${step?.title ?? "in progress"} (${execution.currentStepIndex + 1}/${execution.steps.length})`;
 }
 
 export function workflowStatusLabel(execution: WorkflowExecution, status: WorkflowDisplayStatus = workflowDisplayStatus(execution, () => undefined)): string {

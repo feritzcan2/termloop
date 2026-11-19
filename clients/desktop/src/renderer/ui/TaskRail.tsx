@@ -967,7 +967,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
         agentProfiles={props.agentProfiles}
         launchable={launchable}
         showLaunchers={launchable || workflowManageable}
-        renderLaunchers={(workflowButton) => <div className="task-launch" role="group" aria-label={launchable
+        renderLaunchers={(workflowButton) => !launchable && !workflowButton ? null : <div className="task-launch" role="group" aria-label={launchable
           ? `Start a new Session in ${task.title}`
           : `Manage workflows for ${task.title}`}>
           {launchable ? <>
@@ -1484,6 +1484,10 @@ export function TaskMetaLine(props: TaskMetaLineProps) {
   /// put the key in the title, printing it again is pure repetition.
   const jiraKey = task.jira_url ? taskJiraIssueKey(task.jira_url) : undefined;
   const showJira = Boolean(task.jira_url && jiraKey && (props.issueInHeadline || !task.title.includes(jiraKey)));
+  /// A branch named after the issue (`feature/NUCLEUS-1`) compacts to the very
+  /// key the card headline already leads with; the detail page keeps the branch.
+  const branchRepeatsHeadline = Boolean(props.issueInHeadline && props.compactBranch && !divergence
+    && jiraKey && task.branch && compactBranchName(task.branch.name) === jiraKey);
   /// Active Tasks keep the worktree path in the branch tooltip. Closed Tasks
   /// surface the binding as a badge because that lingering checkout blocks
   /// Project deletion and needs to remain obvious even while the row is folded.
@@ -1512,7 +1516,7 @@ export function TaskMetaLine(props: TaskMetaLineProps) {
       {/* A diverged checkout replaces the branch token instead of joining it:
           "on <checked-out>" is the operative fact, and the Task branch it
           displaced stays in that signal's tooltip. */}
-      {deleting ? null : divergence && !quiet ? (
+      {deleting || branchRepeatsHeadline ? null : divergence && !quiet ? (
         <Signal tone="attention" label={divergence.text} title={divergence.title} />
       ) : (
         <small

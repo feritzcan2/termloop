@@ -372,13 +372,17 @@ describe("Task workflow editor", () => {
     expect(markup).not.toContain("Implemented the workflow state machine and verified focused tests.");
     expect(markup).toContain('data-workflow-session-id="coordinator-1"');
     expect(markup).toContain('data-workflow-session-id="claude-session-1"');
-    expect(markup).toContain('aria-label="Open Coordinator · Codex · Working"');
+    expect(markup).not.toContain("Open Coordinator");
+    expect(markup).toContain('aria-label="Open Implement · Codex · Working · Completed"');
     expect(markup).toContain('aria-label="Open Review · Claude · Idle · Waiting for 1 of 1 reviewer"');
-    expect(markup.match(/data-workflow-session-id="coordinator-1"/gu)).toHaveLength(2);
+    expect(markup).toContain('class="workflow-execution-step" aria-hidden="true">3/3');
+    expect(markup.match(/data-workflow-session-id="coordinator-1"/gu)).toHaveLength(1);
+    expect(markup.match(/class="workflow-tree-activity"/gu)).toHaveLength(1);
+    expect(markup).not.toContain("new conversation");
     expect(markup).not.toContain("workflow-participant-session");
     expect(markup).not.toContain("workflow-result-file");
     expect(markup).toContain('aria-label="Workflow details"');
-    expect(markup).toContain('aria-label="Workflow"');
+    expect(markup).not.toContain('aria-label="Workflow"');
     expect(markup).not.toContain("workflow-saved-templates");
     expect(markup).not.toContain('aria-label="Run workflow');
   });
@@ -606,20 +610,31 @@ describe("Agents Project workflow launcher", () => {
 });
 
 describe("Compact workflow menu", () => {
+  it("normalizes free-text arrows in the workflow name it displays", () => {
+    const markup = renderToStaticMarkup(createElement(TaskWorkflowLaunchers, {
+      task, configurations: [workflow], executions: [{ ...execution, workflowName: "Implement ->Review -> Fix" }],
+      agentProfiles: [], launchable: true, showLaunchers: true, overlayContainer: undefined,
+      overlayVisibilityChanged: vi.fn(), edit: vi.fn(), launch: vi.fn(), cancel: vi.fn(),
+      openSession: vi.fn(), sessionPresentation: () => undefined,
+    }));
+    expect(markup).toContain('class="workflow-execution-name">Implement → Review → Fix</span>');
+  });
+
   it("opens exact participant sessions from compact rows and keeps details available while collapsed", async () => {
     const openSession = vi.fn();
     const f = await launcherFixture({ executions: [execution], openSession });
     try {
       const rows = [...f.container.querySelectorAll<HTMLElement>(".workflow-sidebar-progress li")];
-      expect(rows).toHaveLength(4);
-      expect(rows.map((row) => row.querySelector(".workflow-tree-label")?.textContent)).toEqual(["Coordinator", "Discuss", "Implement", "Review"]);
-      expect(rows[3]?.getAttribute("aria-current")).toBe("step");
+      expect(rows).toHaveLength(3);
+      expect(rows.map((row) => row.querySelector(".workflow-tree-label")?.textContent)).toEqual(["Discuss", "Implement", "Review"]);
+      expect(rows.map((row) => row.querySelector(".workflow-tree-session > small")?.textContent ?? null)).toEqual(["Claude", null, "Claude"]);
+      expect(rows[2]?.getAttribute("aria-current")).toBe("step");
       for (const row of rows) await act(async () => row.querySelector<HTMLButtonElement>("button.workflow-tree-session")!.click());
-      expect(openSession.mock.calls.map(([id]) => id)).toEqual(["coordinator-1", "claude-session-1", "coordinator-1", "claude-session-1"]);
+      expect(openSession.mock.calls.map(([id]) => id)).toEqual(["claude-session-1", "coordinator-1", "claude-session-1"]);
       await act(async () => f.container.querySelector<HTMLButtonElement>(".workflow-execution-toggle")!.click());
       await act(async () => f.container.querySelector<HTMLButtonElement>('[aria-label="Workflow details"]')!.click());
       expect(f.container.querySelector(".workflow-progress-dialog")).not.toBeNull();
-      expect(openSession).toHaveBeenCalledTimes(4);
+      expect(openSession).toHaveBeenCalledTimes(3);
     } finally { await f.dispose(); }
   });
 
@@ -627,10 +642,10 @@ describe("Compact workflow menu", () => {
     const f = await launcherFixture({ executions: [{ ...execution, currentStepIndex: 0, participants: [], stepResults: [], activeReviewStepIds: [], pendingReviewStepIds: [] }] });
     try {
       const rows = [...f.container.querySelectorAll<HTMLElement>(".workflow-sidebar-progress li")];
-      expect(rows[1]?.querySelector("button")).toBeNull();
-      expect(rows[1]?.querySelector(".workflow-tree-session")?.getAttribute("aria-label")).toContain("Discuss");
-      expect(rows[2]?.querySelector("button")?.getAttribute("data-workflow-session-id")).toBe("coordinator-1");
-      expect(rows[3]?.classList.contains("upcoming")).toBe(true);
+      expect(rows[0]?.querySelector("button")).toBeNull();
+      expect(rows[0]?.querySelector(".workflow-tree-session")?.getAttribute("aria-label")).toContain("Discuss");
+      expect(rows[1]?.querySelector("button")?.getAttribute("data-workflow-session-id")).toBe("coordinator-1");
+      expect(rows[2]?.classList.contains("upcoming")).toBe(true);
       expect(f.props.openSession).not.toHaveBeenCalled();
     } finally { await f.dispose(); }
   });
@@ -645,7 +660,7 @@ describe("Compact workflow menu", () => {
       const start = f.container.querySelector(".task-launch")!;
       const row = f.container.querySelector(".workflow-execution-row")!;
       expect(start.nextElementSibling).toBe(row);
-      expect(start.querySelector(".workflow-add")).not.toBeNull();
+      expect(start.querySelector(".workflow-add")).toBeNull();
       expect(start.querySelector(".workflow-execution-toggle")).toBeNull();
       expect(row.querySelector(".workflow-execution-state")?.textContent).toBe("Waiting");
       expect(row.querySelector(".workflow-execution-detail")?.textContent).toBe("Step 3 of 3 · Review");
@@ -757,13 +772,24 @@ describe("Compact workflow menu", () => {
     } finally { await f.dispose(); }
   });
 
-  it.each([false, true])("blocks launching but preserves editing when worktree/execution is unavailable (%s)", async (active) => {
-    const f = await launcherFixture({ launchable: active, executions: active ? [execution] : [] });
+  it("hides the Task's add-workflow button while its run is active and restores it once the run finishes", async () => {
+    const f = await launcherFixture({ executions: [execution] });
+    try {
+      expect(f.container.querySelector('[aria-label="Workflow"]')).toBeNull();
+      expect(f.container.querySelector(".workflow-execution-row")).not.toBeNull();
+      f.props.executions = [{ ...execution, status: "completed", phase: "completed", completionOutcome: "approved" }];
+      await f.render();
+      expect(f.container.querySelector('[aria-label="Workflow"]')).not.toBeNull();
+    } finally { await f.dispose(); }
+  });
+
+  it("blocks launching but preserves editing when the worktree is unavailable", async () => {
+    const f = await launcherFixture({ launchable: false });
     try {
       await f.open();
       const run = f.container.querySelector<HTMLButtonElement>('[aria-label^="Run workflow"]')!;
       expect(run.disabled).toBe(true);
-      expect(f.container.querySelector(".workflow-menu-notice")?.textContent).toContain(active ? "Finish or stop" : "worktree must be ready");
+      expect(f.container.querySelector(".workflow-menu-notice")?.textContent).toContain("worktree must be ready");
       const edit = f.container.querySelector<HTMLButtonElement>('[aria-label="Edit template Discuss, build, review"]')!;
       expect(edit.disabled).toBe(false);
       expect(document.activeElement).toBe(edit);

@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentStatus, BranchCommitSummary, GitHostProjection, RunConfiguration, RunRuntime, Session, Task, WorkflowExecution } from "../src/renderer/model.js";
-import { TaskRail, askToHelpersForSources, taskAttachedSessionIds, taskRelocationDropEnabled, taskSessions, withoutPlaybookEvaluators, type TaskRailProps } from "../src/renderer/ui/TaskRail.js";
+import { TaskMetaLine, TaskRail, askToHelpersForSources, taskAttachedSessionIds, taskRelocationDropEnabled, taskSessions, withoutPlaybookEvaluators, type TaskRailProps } from "../src/renderer/ui/TaskRail.js";
 import { readTaskCollapsed, writeTaskCollapsed } from "../src/renderer/task-collapse-memory.js";
 import type { TaskProvisionWorktreeParams } from "@termloop/contract/current";
 import { fullAgentCapability, launchOnlyGeminiCapability, resumableOpenCodeCapability } from "./agent-capability-fixture.js";
@@ -566,9 +566,9 @@ describe("Task rail row anatomy", () => {
 
     expect(markup).toContain('data-workflow-session-id="workflow-coordinator"');
     expect(markup).toContain('data-workflow-session-id="workflow-claude"');
-    expect(markup).toContain('aria-label="Open Coordinator · Codex · Working"');
+    expect(markup).not.toContain("Open Coordinator");
     expect(markup).toContain('aria-label="Open Challenge the approach · Claude · Idle · Decision"');
-    expect(markup.match(/data-workflow-session-id="workflow-coordinator"/gu)).toHaveLength(2);
+    expect(markup.match(/data-workflow-session-id="workflow-coordinator"/gu)).toHaveLength(1);
     expect(markup).not.toContain("workflow-participant-session");
     expect(markup).not.toContain('data-session-id="workflow-coordinator"');
     expect(markup).not.toContain('data-session-id="workflow-claude"');
@@ -582,11 +582,32 @@ describe("Task rail row anatomy", () => {
     const run = { ...workflowExecution(coordinator.id, "reviewer"), status: "completed" as const, phase: "completed" as const, completionOutcome: "reviewLimitReached" as const };
     const markup = renderRail({ sessions: [coordinator], statuses: [agentStatus(coordinator.id, "working")], workflowExecutions: [run] });
     expect(markup).toContain("Codex · Working");
-    expect(markup).toContain("Workflow · Discuss, build, review · Lead agent");
+    expect(markup).toContain("<small>Lead agent</small>");
+    expect(markup).not.toContain("Workflow · Discuss, build, review");
     expect(markup).toContain("Automation finished; agent is still active.");
     expect(markup).toContain('class="workflow-execution-state">Review limit reached');
     expect(markup.indexOf('class="task-workflow-activity"')).toBeLessThan(markup.indexOf('class="task-meta"'));
     expect(markup).not.toContain('class="workflow-execution-state">Completed');
+  });
+
+  it("names the lead agent's current step instead of repeating the workflow name", () => {
+    const lead = agentSession("workflow-lead");
+    const markup = renderRail({ sessions: [lead], statuses: [agentStatus(lead.id, "working")], workflowExecutions: [workflowExecution(lead.id, "reviewer")] });
+    expect(markup).toContain("<small>Implement · step 2 of 3</small>");
+  });
+
+  it.each([
+    [true, "feature/NUC-7", false],
+    [false, "feature/NUC-7", true],
+    [true, "feature/launchers", true],
+  ])("drops the meta-line branch only when the headline already shows the same key (headline %s, %s)", (headline, branch, shown) => {
+    const task = { ...launchableTask(), jira_url: "https://example.atlassian.net/browse/NUC-7", branch: { repository_root: "/repository", name: branch } };
+    const markup = renderToStaticMarkup(createElement(TaskMetaLine, {
+      task, stage: { id: "ready", tone: "idle", flag: undefined, summary: "Ready", note: undefined } as never,
+      divergence: undefined, changeCount: undefined, branchChanges: undefined, integration: undefined,
+      openChanges: vi.fn(), openIntegration: undefined, openIssue: vi.fn(), issueInHeadline: headline, compactBranch: true,
+    }));
+    expect(markup.includes("task-meta-branch")).toBe(shown);
   });
 
   it("reports the pointed and clicked Task so the Playbook can highlight it", async () => {
