@@ -205,7 +205,6 @@ struct QuickActionLaunch {
 #[derive(Clone)]
 struct StewardTaskAssignmentLaunch {
     task_id: String,
-    steward_session_id: String,
     title: String,
     brief: Option<String>,
     jira_url: Option<String>,
@@ -1642,7 +1641,6 @@ impl CoreRuntime {
     pub fn attach_steward_task_assignment(
         &self,
         mut plan: AgentLaunchPlan,
-        steward_session_id: &str,
         task_id: &str,
         assignment: &str,
     ) -> Result<AgentLaunchPlan, CoreError> {
@@ -1667,7 +1665,6 @@ impl CoreRuntime {
             .and_then(|link| link.url.as_deref());
         termloop_invocation::steward_task_assignment_prompt(
             task_id,
-            steward_session_id,
             &task.title,
             task.brief.as_deref(),
             jira_url,
@@ -1676,7 +1673,6 @@ impl CoreRuntime {
         .map_err(|_| CoreError::InvalidParams("assignment".into()))?;
         plan.steward_task_assignment = Some(StewardTaskAssignmentLaunch {
             task_id: task_id.to_owned(),
-            steward_session_id: steward_session_id.to_owned(),
             title: task.title.clone(),
             brief: task.brief.clone(),
             jira_url: jira_url.map(str::to_owned),
@@ -2696,7 +2692,6 @@ fn resolve_interactive_agent_launch_with_transport(
                 &selection.permission,
                 &selection.reasoning,
                 &assignment.task_id,
-                &assignment.steward_session_id,
                 &assignment.title,
                 assignment.brief.as_deref(),
                 assignment.jira_url.as_deref(),
@@ -2713,7 +2708,6 @@ fn resolve_interactive_agent_launch_with_transport(
                 &selection.permission,
                 &selection.reasoning,
                 &assignment.task_id,
-                &assignment.steward_session_id,
                 &assignment.title,
                 assignment.brief.as_deref(),
                 assignment.jira_url.as_deref(),

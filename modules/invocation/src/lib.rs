@@ -140,13 +140,13 @@ const ROUTINE_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const PLAYBOOK_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.builder.playbook",
-    version: 25,
+    version: 26,
     authored_body: include_str!("../../../resources/prompts/builtin.builder.playbook.md"),
 };
 
 const STEWARD_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.steward.executor",
-    version: 45,
+    version: 46,
     authored_body: include_str!("../../../resources/prompts/builtin.steward.executor.md"),
 };
 
@@ -241,7 +241,7 @@ const AGENT_MENU_HANDOVER_TO_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const STEWARD_TASK_ASSIGNMENT_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.steward.task-assignment",
-    version: 3,
+    version: 4,
     authored_body: include_str!("../../../resources/prompts/builtin.steward.task-assignment.md"),
 };
 
@@ -2302,20 +2302,12 @@ pub fn task_workflow_step_prompt(
 /// adding durable delivery history.
 pub fn steward_task_assignment_prompt(
     task_id: &str,
-    steward_session_id: &str,
     title: &str,
     brief: Option<&str>,
     jira_url: Option<&str>,
     assignment: &str,
 ) -> Result<AskToTerminalPrompt, InvocationError> {
-    let composed = compose_steward_task_assignment(
-        task_id,
-        steward_session_id,
-        title,
-        brief,
-        jira_url,
-        assignment,
-    )?;
+    let composed = compose_steward_task_assignment(task_id, title, brief, jira_url, assignment)?;
     terminal_prompt(
         composed.template,
         composed.bindings,
@@ -2331,7 +2323,6 @@ pub fn steward_task_agent_for_conversation(
     permission: &str,
     reasoning: &str,
     task_id: &str,
-    steward_session_id: &str,
     title: &str,
     brief: Option<&str>,
     jira_url: Option<&str>,
@@ -2347,7 +2338,6 @@ pub fn steward_task_agent_for_conversation(
         permission,
         reasoning,
         task_id,
-        steward_session_id,
         title,
         brief,
         jira_url,
@@ -2367,7 +2357,6 @@ pub fn steward_task_agent_for_managed_worktree_conversation(
     permission: &str,
     reasoning: &str,
     task_id: &str,
-    steward_session_id: &str,
     title: &str,
     brief: Option<&str>,
     jira_url: Option<&str>,
@@ -2383,7 +2372,6 @@ pub fn steward_task_agent_for_managed_worktree_conversation(
         permission,
         reasoning,
         task_id,
-        steward_session_id,
         title,
         brief,
         jira_url,
@@ -2403,7 +2391,6 @@ fn steward_task_agent_for_conversation_with_codex_project_trust(
     permission: &str,
     reasoning: &str,
     task_id: &str,
-    steward_session_id: &str,
     title: &str,
     brief: Option<&str>,
     jira_url: Option<&str>,
@@ -2414,14 +2401,7 @@ fn steward_task_agent_for_conversation_with_codex_project_trust(
     codex_project_trust: CodexProjectTrust,
 ) -> Result<LaunchPayload, InvocationError> {
     validate_agent_configuration(agent_id, model, permission, reasoning)?;
-    let composed = compose_steward_task_assignment(
-        task_id,
-        steward_session_id,
-        title,
-        brief,
-        jira_url,
-        assignment,
-    )?;
+    let composed = compose_steward_task_assignment(task_id, title, brief, jira_url, assignment)?;
     resolve_launch_manifest_with_codex_project_trust(
         agent_id,
         cwd,
@@ -2446,7 +2426,6 @@ struct ComposedStewardTaskAssignment {
 
 fn compose_steward_task_assignment(
     task_id: &str,
-    steward_session_id: &str,
     title: &str,
     brief: Option<&str>,
     jira_url: Option<&str>,
@@ -2457,25 +2436,17 @@ fn compose_steward_task_assignment(
         .map(|jira_url| format!("Jira issue: {jira_url}\n"))
         .unwrap_or_default();
     if task_id.trim().is_empty()
-        || steward_session_id.trim().is_empty()
         || title.trim().is_empty()
         || assignment.trim().is_empty()
         || assignment.len() > 8_192
         || jira_url.is_some_and(|jira_url| jira_url.trim().is_empty() || jira_url.len() > 2_048)
-        || [
-            task_id,
-            steward_session_id,
-            title,
-            brief,
-            jira_context.as_str(),
-            assignment,
-        ]
-        .iter()
-        .any(|value| {
-            value
-                .chars()
-                .any(|character| character.is_control() && !matches!(character, '\n' | '\t'))
-        })
+        || [task_id, title, brief, jira_context.as_str(), assignment]
+            .iter()
+            .any(|value| {
+                value
+                    .chars()
+                    .any(|character| character.is_control() && !matches!(character, '\n' | '\t'))
+            })
     {
         return Err(InvocationError::InvalidPromptBinding);
     }
@@ -2487,7 +2458,6 @@ fn compose_steward_task_assignment(
     let bindings = [
         ("task_id", task_id),
         ("title", title),
-        ("steward_session_id", steward_session_id),
         ("jira_context", jira_context.as_str()),
         ("brief", brief),
         ("assignment", assignment),

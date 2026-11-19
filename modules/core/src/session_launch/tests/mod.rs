@@ -2842,7 +2842,6 @@ fn steward_launch_ticket_refuses_an_agent_that_appeared_in_the_task_worktree() {
     let launch_plan = runtime
         .attach_steward_task_assignment(
             launch_plan,
-            "123e4567-e89b-42d3-a456-426614174099",
             &task_id,
             "Prepare the next delivery artifact.",
         )
@@ -2925,12 +2924,7 @@ fn steward_task_assignment_derives_jira_context_from_the_sidecar() {
     });
 
     let plan = runtime
-        .attach_steward_task_assignment(
-            plan,
-            "123e4567-e89b-42d3-a456-426614174000",
-            task_id,
-            "Implement and verify.",
-        )
+        .attach_steward_task_assignment(plan, task_id, "Implement and verify.")
         .unwrap();
     let launch = resolve_interactive_agent_launch(&plan).unwrap();
     assert_eq!(
@@ -2940,9 +2934,11 @@ fn steward_task_assignment_derives_jira_context_from_the_sidecar() {
     assert!(launch.initial_input().is_some_and(|input| {
         input.contains("Jira issue: https://example.atlassian.net/browse/TERM-42")
     }));
-    assert!(launch.initial_input().is_some_and(|input| {
-        input.contains("Steward Session ID: `123e4567-e89b-42d3-a456-426614174000`")
-    }));
+    assert!(
+        launch
+            .initial_input()
+            .is_some_and(|input| !input.contains("Steward") && !input.contains("send_to_agent"))
+    );
     drop(plan);
 
     let mut kickoff_plan = runtime

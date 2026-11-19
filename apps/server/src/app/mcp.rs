@@ -616,8 +616,7 @@ async fn tool_call_inner(
         ) => {
             let params: StewardTaskAgentRequestParams = serde_json::from_value(arguments)
                 .expect("generated MCP validation precedes decoding");
-            steward_task_agent_request(project_id, principal.session_id(), token, params, state)
-                .await
+            steward_task_agent_request(project_id, principal.session_id(), params, state).await
         }
         (
             termloop_core::session_launch::AgentMcpRole::Steward { project_id },
@@ -739,7 +738,7 @@ fn role_instructions(role: &termloop_core::session_launch::AgentMcpRole) -> &'st
     match role {
         role if role.is_agent_creator() => "Agent Creator profile.",
         termloop_core::session_launch::AgentMcpRole::Interactive => {
-            "Interactive Session profile. When a visible Core-managed workflow step is active, use only workflow_delegate and workflow_step_complete as that prompt directs; Core owns its participant and transition. Otherwise use ask_to whenever the user wants another Claude or Codex involved — ask, consult, discuss, second opinion, or review — including short provider-named requests in any language such as 'ask codex' or 'discuss this with codex'; the user never has to name TermLoop, MCP, or the tool, and you compose the helper's message from the current conversation. Use send_to_agent instead whenever an exact existing TermLoop Session ID is present and the user wants something delivered there — any phrasing, any language — to return an answer to a received TermLoop handoff using its exact Source Session ID, or to send the one completion/blocker report required by a visible Steward Task assignment to its exact Steward Session ID; compose that message yourself, never guess or fuzzily resolve a Session ID, the target may be in any Project or worktree, and you must not poll for a reply. When you are the Agent working a Task whose Project walks a Playbook, read the step your Task stands at with playbook_step_read, and when your own work meets or is blocked at that step's completion criteria, report it once with playbook_step_report; a report is a claim the step's evaluator verifies unless that step trusts it. When the user or a TermLoop Quick Action instruction asks for a Jira issue or Task for some work — for example 'promote this to Jira' or 'open another task for that', in any language — propose it once with propose_jira_task after you understand that work, then wait for the user's answer; do not draft the issue in chat or ask the user to confirm it, its project, or its epic first, because the proposal is where the user reviews and edits it."
+            "Interactive Session profile. When a visible Core-managed workflow step is active, use only workflow_delegate and workflow_step_complete as that prompt directs; Core owns its participant and transition. Otherwise use ask_to whenever the user wants another Claude or Codex involved — ask, consult, discuss, second opinion, or review — including short provider-named requests in any language such as 'ask codex' or 'discuss this with codex'; the user never has to name TermLoop, MCP, or the tool, and you compose the helper's message from the current conversation. Use send_to_agent instead whenever an exact existing TermLoop Session ID is present and the user wants something delivered there — any phrasing, any language — or to return an answer to a received TermLoop handoff using its exact Source Session ID; compose that message yourself, never guess or fuzzily resolve a Session ID, the target may be in any Project or worktree, and you must not poll for a reply. When you are the Agent working a Task whose Project walks a Playbook, read the step your Task stands at with playbook_step_read, and when your own work meets or is blocked at that step's completion criteria, report it once with playbook_step_report; a report is a claim the step's evaluator verifies unless that step trusts it. When the user or a TermLoop Quick Action instruction asks for a Jira issue or Task for some work — for example 'promote this to Jira' or 'open another task for that', in any language — propose it once with propose_jira_task after you understand that work, then wait for the user's answer; do not draft the issue in chat or ask the user to confirm it, its project, or its epic first, because the proposal is where the user reviews and edits it."
         }
         termloop_core::session_launch::AgentMcpRole::Improver { .. } => {
             "Target-bound Improve Agent profile. Read the active snapshot through configuration_version_read. Discuss and prepare changes freely, but call configuration_version_write only after the user says to apply, save, use, or an equivalent confirmation. That call applies the target's normal configuration command and records a new active snapshot only when the effective content changed; preserve every field the user did not ask to change."
@@ -1258,7 +1257,6 @@ async fn send_steward_agent_message(
 async fn steward_task_agent_request(
     project_id: &str,
     steward_session_id: &str,
-    token: &str,
     params: StewardTaskAgentRequestParams,
     state: &AppState,
 ) -> Result<Value, termloop_core::CoreError> {
@@ -1293,7 +1291,13 @@ async fn steward_task_agent_request(
         &params.task_id,
         &params.session_id,
     )?;
-    core.send_to_agent(token, &params.session_id, &params.message)
+    core.send_steward_agent_message(
+        steward_session_id,
+        project_id,
+        &params.session_id,
+        &params.message,
+    )?;
+    Ok(json!({ "sessionId": params.session_id, "status": "submitting" }))
 }
 
 async fn steward_next_assignment(
@@ -2157,9 +2161,7 @@ mod tests {
         assert!(
             send_to_agent["description"]
                 .as_str()
-                .is_some_and(|description| description.contains(
-                    "visible `builtin.steward.task-assignment` explicitly supplies the exact Steward Session ID"
-                ))
+                .is_some_and(|description| !description.contains("Steward Session ID"))
         );
         let task_agent_request = steward
             .iter()
@@ -2168,12 +2170,12 @@ mod tests {
         assert!(task_agent_request["inputSchema"]["properties"]["checkId"].is_object());
         assert!(task_agent_request["inputSchema"]["properties"]["taskId"].is_object());
         assert!(task_agent_request["inputSchema"]["properties"]["sessionId"].is_object());
-        assert_eq!(task_agent_request["annotations"]["readOnlyHint"], false);
         assert!(
-            task_agent_request["description"]
-                .as_str()
-                .is_some_and(|description| description.contains("may return one visible handoff"))
+            task_agent_request["description"].as_str().is_some_and(
+                |description| description.contains("never ask the Agent to report back")
+            )
         );
+        assert_eq!(task_agent_request["annotations"]["readOnlyHint"], false);
     }
 
     #[test]

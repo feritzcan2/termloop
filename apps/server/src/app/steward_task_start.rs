@@ -139,7 +139,6 @@ pub(super) async fn start(
             }
             let preview = super::control::preview_steward_task_agent_session(
                 launch_params.clone(),
-                steward_session_id,
                 &params.task_id,
                 &params.assignment,
                 Instant::now() + Duration::from_secs(15),

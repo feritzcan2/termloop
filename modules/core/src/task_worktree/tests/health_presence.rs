@@ -457,3 +457,92 @@ fn a_fork_into_a_task_takes_that_tasks_name_instead_of_a_fork_name() {
         .unwrap();
     assert!(into_task.fork_name().is_none());
 }
+
+#[test]
+fn observation_timeout_keeps_last_known_health_for_a_bounded_window() {
+    let mut fixture = Fixture::new();
+    let (task_id, destination, _, _) = provision_cleanup_fixture(&mut fixture);
+    let runner = GitRunner::discover().unwrap();
+    let clean = runner.inspect_worktree_health(&destination).unwrap();
+    let retention_ms = 10 * 60 * 1000;
+    let first = fixture
+        .runtime
+        .apply_task_worktree_health(&task_id, clean.clone(), 10)
+        .unwrap();
+
+    // A timeout inside the window keeps the projection and its success time.
+    let kept = fixture
+        .runtime
+        .apply_failed_task_worktree_health_observation(
+            &task_id,
+            &CoreError::GitObservationTimedOut,
+            10 + retention_ms,
+        )
+        .unwrap();
+    assert!(!kept.changed);
+    assert_eq!(kept.observation_sequence, first.observation_sequence);
+    let health = fixture
+        .runtime
+        .cached_task_worktree_health(&task_id)
+        .unwrap();
+    assert!(health.launch_ready);
+    assert_eq!(health.observed_at_epoch_ms, 10);
+
+    // Past the window, measured from the last success, it becomes unknown.
+    let expired = fixture
+        .runtime
+        .apply_failed_task_worktree_health_observation(
+            &task_id,
+            &CoreError::GitObservationTimedOut,
+            11 + retention_ms,
+        )
+        .unwrap();
+    assert!(expired.changed);
+    let health = fixture
+        .runtime
+        .cached_task_worktree_health(&task_id)
+        .unwrap();
+    assert_eq!(health.summary, WorktreeHealthSummary::Unknown);
+    assert!(!health.launch_ready);
+
+    // An unknown projection is never "kept" by a later timeout.
+    let still_unknown = fixture
+        .runtime
+        .apply_failed_task_worktree_health_observation(
+            &task_id,
+            &CoreError::GitObservationTimedOut,
+            12 + retention_ms,
+        )
+        .unwrap();
+    assert!(!still_unknown.changed);
+    assert_eq!(
+        fixture
+            .runtime
+            .cached_task_worktree_health(&task_id)
+            .unwrap()
+            .summary,
+        WorktreeHealthSummary::Unknown
+    );
+
+    // Any non-timeout failure projects unknown immediately.
+    fixture
+        .runtime
+        .apply_task_worktree_health(&task_id, clean, 20)
+        .unwrap();
+    let failed = fixture
+        .runtime
+        .apply_failed_task_worktree_health_observation(
+            &task_id,
+            &CoreError::RepositoryUnavailable,
+            21,
+        )
+        .unwrap();
+    assert!(failed.changed);
+    assert!(
+        !fixture
+            .runtime
+            .cached_task_worktree_health(&task_id)
+            .unwrap()
+            .launch_ready
+    );
+}

@@ -377,7 +377,7 @@ fn configuration_improvers_share_the_provider_neutral_task_evidence_policy() {
             ImproverTarget::Playbook {
                 project_name: "Nucleus",
             },
-            25,
+            26,
         ),
     ];
 
@@ -418,8 +418,10 @@ fn playbook_builder_reviews_every_step_and_declares_the_new_snapshot_contract() 
     let launch = prompt_improver_launch(target);
     let delivered = launch.delivered_prompt().unwrap();
 
-    assert_eq!(template.version, 25);
-    assert_eq!(launch.provenance().template_version, 25);
+    assert_eq!(template.version, 26);
+    assert_eq!(launch.provenance().template_version, 26);
+    assert!(delivered.contains("never require the Agent to report back"));
+    assert!(!delivered.contains("direct return handoff"));
     for expected in [
         "two compact review",
         "For a scoped edit to one or a few existing steps",
@@ -2635,7 +2637,7 @@ fn ask_to_reply_is_one_visible_terminal_safe_delivery() {
 #[test]
 fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
     let prompt = executor_prompt(ExecutorRole::Steward).unwrap();
-    assert_eq!(prompt.provenance().template_version, 45);
+    assert_eq!(prompt.provenance().template_version, 46);
     assert!(prompt.authored_preview().contains("routine_finding_read"));
     assert!(prompt.authored_preview().contains("playbook_read"));
     assert!(prompt.authored_preview().contains("task_set_steward_brief"));
@@ -2718,12 +2720,12 @@ fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
     assert!(
         prompt
             .authored_preview()
-            .contains("When a Task Agent sends its assignment report")
+            .contains("read that Agent's reply\nwith `task_agent_transcript_tail_read`")
     );
     assert!(
         prompt
             .authored_preview()
-            .contains("call `agent_message_send` to the same running Source Session")
+            .contains("call `agent_message_send` to the same running Agent Session")
     );
     assert!(
         prompt
@@ -2898,7 +2900,7 @@ fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
         default_steward_system_prompt()
     );
     let latest_retired =
-        include_str!("../../../resources/prompts/retired/builtin.steward.executor.v44.md")
+        include_str!("../../../resources/prompts/retired/builtin.steward.executor.v45.md")
             .splitn(3, "\n\n")
             .nth(2)
             .unwrap()
@@ -2940,7 +2942,7 @@ fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
 #[test]
 fn pipeline_prompts_use_live_provider_neutral_evidence_and_one_outcome_contract() {
     let steward = executor_prompt(ExecutorRole::Steward).unwrap();
-    assert_eq!(steward.provenance().template_version, 45);
+    assert_eq!(steward.provenance().template_version, 46);
     let steward = steward.authored_preview();
     assert!(steward.contains("stage title is only a label"));
     assert!(steward.contains("steward_complete_assignment"));
@@ -3566,7 +3568,6 @@ fn task_workflow_is_visible_versioned_and_launch_bound() {
 fn steward_task_assignment_is_stable_visible_and_terminal_safe() {
     let without_jira = steward_task_assignment_prompt(
         "task-123",
-        "123e4567-e89b-42d3-a456-426614174000",
         "Fix OAuth callback",
         Some("Reproduce the redirect failure."),
         None,
@@ -3576,7 +3577,6 @@ fn steward_task_assignment_is_stable_visible_and_terminal_safe() {
     assert!(!without_jira.delivered_prompt().contains("Jira issue:"));
     let prompt = steward_task_assignment_prompt(
         "task-123",
-        "123e4567-e89b-42d3-a456-426614174000",
         "Fix OAuth callback",
         Some("Reproduce the redirect failure."),
         Some("https://example.atlassian.net/browse/TERM-42"),
@@ -3587,22 +3587,19 @@ fn steward_task_assignment_is_stable_visible_and_terminal_safe() {
         prompt.provenance().template_ref,
         "builtin.steward.task-assignment"
     );
-    assert_eq!(prompt.provenance().template_version, 3);
+    assert_eq!(prompt.provenance().template_version, 4);
     assert!(
         prompt
             .delivered_prompt()
             .contains("Assignment ID: `task-agent-start:task-123`")
     );
     assert!(prompt.delivered_prompt().contains("Fix OAuth callback"));
+    assert!(!prompt.delivered_prompt().contains("Steward"));
+    assert!(!prompt.delivered_prompt().contains("send_to_agent"));
     assert!(
         prompt
             .delivered_prompt()
-            .contains("Steward Session ID: `123e4567-e89b-42d3-a456-426614174000`")
-    );
-    assert!(
-        prompt
-            .delivered_prompt()
-            .contains("call `send_to_agent` once")
+            .contains("here in this conversation")
     );
     assert!(
         prompt
@@ -3613,20 +3610,12 @@ fn steward_task_assignment_is_stable_visible_and_terminal_safe() {
     assert!(!prompt.delivered_prompt().contains("{{assignment}}"));
     assert_terminal_submission(prompt.terminal_input_sequence(), prompt.delivered_prompt());
     assert!(matches!(
-        steward_task_assignment_prompt(
-            "task",
-            "123e4567-e89b-42d3-a456-426614174000",
-            "Title",
-            None,
-            None,
-            "unsafe\u{1b}[201~message"
-        ),
+        steward_task_assignment_prompt("task", "Title", None, None, "unsafe\u{1b}[201~message"),
         Err(InvocationError::InvalidPromptBinding)
     ));
     assert!(matches!(
         steward_task_assignment_prompt(
             "task",
-            "123e4567-e89b-42d3-a456-426614174000",
             "Title",
             None,
             Some("https://example.atlassian.net/browse/TERM-42\u{1b}"),
@@ -3642,7 +3631,6 @@ fn steward_task_assignment_is_stable_visible_and_terminal_safe() {
         "default",
         "default",
         "task-123",
-        "123e4567-e89b-42d3-a456-426614174000",
         "Fix OAuth callback",
         Some("Reproduce the redirect failure."),
         Some("https://example.atlassian.net/browse/TERM-42"),

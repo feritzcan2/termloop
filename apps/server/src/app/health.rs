@@ -874,8 +874,9 @@ async fn run_scheduled_health_job(
                             plan.with_observation(Ok(observation.clone())),
                             current_epoch_ms(),
                         ),
-                        Err(_) => core.apply_unknown_task_worktree_health(
+                        Err(error) => core.apply_failed_task_worktree_health_observation(
                             &target.task_id,
+                            error,
                             current_epoch_ms(),
                         ),
                     };

@@ -14,6 +14,11 @@ use termloop_gitio::{
 const GLOBAL_HEALTH_CAP: usize = 256;
 const PROJECT_HEALTH_CAP: usize = 64;
 const ATTACHED_SESSION_CAP: usize = 64;
+/// How long a known health projection survives consecutive observation
+/// timeouts. A large repository under concurrent Git load can exceed the
+/// bounded background budget without anything about the checkout changing;
+/// flipping the Task to unknown on each miss made it flap to Unavailable.
+const TIMEOUT_RETENTION_MS: u64 = 10 * 60 * 1000;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct WorktreeHealthCacheKey {
@@ -507,16 +512,41 @@ impl CoreRuntime {
                 }
                 Ok(applied)
             }
-            Err(_) => self.apply_task_worktree_health_facts(
+            Err(error) => self.apply_failed_task_worktree_health_observation(
                 &observed.task_id,
-                TaskWorktreeHealthFacts::unknown(
-                    WorktreePathProjectionState::Unknown,
-                    WorktreeRegistrationProjectionState::Unknown,
-                    WorktreeHeadProjectionState::Unknown,
-                ),
+                &error,
                 observed_at_epoch_ms,
             ),
         }
+    }
+
+    /// A timed-out observation keeps the last known projection for this exact
+    /// proof/generation for a bounded window measured from its last success,
+    /// whose time it leaves untouched. Every other failure, an already unknown
+    /// projection, or an expired window projects unknown as before.
+    pub fn apply_failed_task_worktree_health_observation(
+        &mut self,
+        task_id: &str,
+        error: &CoreError,
+        observed_at_epoch_ms: u64,
+    ) -> Result<ProjectionApply, CoreError> {
+        if matches!(error, CoreError::GitObservationTimedOut)
+            && let Some(existing) = self.worktree_projections.entries.get(task_id)
+            && existing.summary != WorktreeHealthSummary::Unknown
+            && observed_at_epoch_ms.saturating_sub(existing.observed_at_epoch_ms)
+                <= TIMEOUT_RETENTION_MS
+            && self.store.managed_worktrees().iter().any(|proof| {
+                proof.task_id == task_id
+                    && proof.operation_id == existing.managed_worktree_operation_id
+                    && proof.worktree_generation == existing.worktree_generation
+            })
+        {
+            return Ok(ProjectionApply {
+                changed: false,
+                observation_sequence: existing.observation_sequence,
+            });
+        }
+        self.apply_unknown_task_worktree_health(task_id, observed_at_epoch_ms)
     }
 
     fn apply_task_worktree_branch_evidence(
