@@ -298,30 +298,56 @@ struct ProjectGitHostQueue {
     explicit_streak: usize,
 }
 
+/// Waiting for, or holding, a Project's Git observation lane at least this
+/// long is reported with the acquiring call site so a stalled change read
+/// names the observation it queued behind.
+const OBSERVATION_LANE_REPORT_THRESHOLD: Duration = Duration::from_secs(1);
+
 enum ObservationGateCommand {
     Acquire {
         project_id: String,
         priority: ObservationPriority,
-        ready: oneshot::Sender<()>,
+        source: &'static std::panic::Location<'static>,
+        ready: oneshot::Sender<FairObservationPermit>,
     },
     Release {
         project_id: String,
     },
 }
 
+struct QueuedObservation {
+    source: &'static std::panic::Location<'static>,
+    ready: oneshot::Sender<FairObservationPermit>,
+}
+
 #[derive(Default)]
 struct ProjectObservationQueue {
-    explicit: VecDeque<oneshot::Sender<()>>,
-    background: VecDeque<oneshot::Sender<()>>,
+    explicit: VecDeque<QueuedObservation>,
+    background: VecDeque<QueuedObservation>,
 }
 
 pub(super) struct FairObservationPermit {
     commands: mpsc::UnboundedSender<ObservationGateCommand>,
     project_id: String,
+    priority: ObservationPriority,
+    source: &'static std::panic::Location<'static>,
+    admitted_at: Instant,
 }
 
 impl Drop for FairObservationPermit {
     fn drop(&mut self) {
+        let held = self.admitted_at.elapsed();
+        if held >= OBSERVATION_LANE_REPORT_THRESHOLD {
+            tracing::warn!(
+                event = "git_observation_hold",
+                project_id = %self.project_id,
+                priority = ?self.priority,
+                source_file = self.source.file(),
+                source_line = self.source.line(),
+                held_ms = super::core_lock::duration_ms(held),
+                "Git observation lane hold exceeded the report threshold"
+            );
+        }
         let _ = self.commands.send(ObservationGateCommand::Release {
             project_id: self.project_id.clone(),
         });
@@ -331,40 +357,71 @@ impl Drop for FairObservationPermit {
 impl FairObservationGate {
     pub(super) fn new() -> Self {
         let (commands, receiver) = mpsc::unbounded_channel();
-        tokio::spawn(run_observation_gate(receiver));
+        // A weak handle lets permits release into the gate without keeping
+        // its task alive after every gate handle and permit is gone.
+        let release = commands.downgrade();
+        tokio::spawn(run_observation_gate(receiver, release));
         Self { commands }
     }
 
-    pub(super) async fn acquire(
+    #[track_caller]
+    pub(super) fn acquire(
         &self,
         project_id: impl Into<String>,
         priority: ObservationPriority,
-    ) -> Result<FairObservationPermit, CoreError> {
-        let project_id = project_id.into();
-        let (ready, wait) = oneshot::channel();
-        self.commands
-            .send(ObservationGateCommand::Acquire {
-                project_id: project_id.clone(),
-                priority,
-                ready,
-            })
-            .map_err(|_| CoreError::GitObservationTimedOut)?;
-        wait.await.map_err(|_| CoreError::GitObservationTimedOut)?;
-        Ok(FairObservationPermit {
-            commands: self.commands.clone(),
-            project_id,
-        })
+    ) -> impl std::future::Future<Output = Result<FairObservationPermit, CoreError>> + '_ {
+        self.acquire_from(project_id.into(), priority, std::panic::Location::caller())
     }
 
-    pub(super) async fn acquire_until(
+    #[track_caller]
+    pub(super) fn acquire_until(
         &self,
         project_id: impl Into<String>,
         priority: ObservationPriority,
         deadline: Instant,
+    ) -> impl std::future::Future<Output = Result<FairObservationPermit, CoreError>> + '_ {
+        let acquire =
+            self.acquire_from(project_id.into(), priority, std::panic::Location::caller());
+        async move {
+            tokio::time::timeout_at(deadline, acquire)
+                .await
+                .map_err(|_| CoreError::GitObservationTimedOut)?
+        }
+    }
+
+    async fn acquire_from(
+        &self,
+        project_id: String,
+        priority: ObservationPriority,
+        source: &'static std::panic::Location<'static>,
     ) -> Result<FairObservationPermit, CoreError> {
-        tokio::time::timeout_at(deadline, self.acquire(project_id, priority))
-            .await
-            .map_err(|_| CoreError::GitObservationTimedOut)?
+        let requested_at = Instant::now();
+        let (ready, wait) = oneshot::channel();
+        self.commands
+            .send(ObservationGateCommand::Acquire {
+                project_id,
+                priority,
+                source,
+                ready,
+            })
+            .map_err(|_| CoreError::GitObservationTimedOut)?;
+        // The gate sends the permit itself. A waiter cancelled after admission
+        // drops the undelivered permit with its channel, which releases the
+        // lane instead of leaking an admitted slot.
+        let permit = wait.await.map_err(|_| CoreError::GitObservationTimedOut)?;
+        let waited = permit.admitted_at.saturating_duration_since(requested_at);
+        if waited >= OBSERVATION_LANE_REPORT_THRESHOLD {
+            tracing::warn!(
+                event = "git_observation_wait",
+                project_id = %permit.project_id,
+                priority = ?priority,
+                source_file = source.file(),
+                source_line = source.line(),
+                wait_ms = super::core_lock::duration_ms(waited),
+                "Git observation lane wait exceeded the report threshold"
+            );
+        }
+        Ok(permit)
     }
 }
 
@@ -663,7 +720,10 @@ fn choose_git_host_background(queue: &mut ProjectGitHostQueue) -> bool {
     take_background
 }
 
-async fn run_observation_gate(mut receiver: mpsc::UnboundedReceiver<ObservationGateCommand>) {
+async fn run_observation_gate(
+    mut receiver: mpsc::UnboundedReceiver<ObservationGateCommand>,
+    release: mpsc::WeakUnboundedSender<ObservationGateCommand>,
+) {
     let mut queues = HashMap::<String, ProjectObservationQueue>::new();
     let mut projects = VecDeque::<String>::new();
     let mut active_projects = HashSet::<String>::new();
@@ -673,12 +733,14 @@ async fn run_observation_gate(mut receiver: mpsc::UnboundedReceiver<ObservationG
             ObservationGateCommand::Acquire {
                 project_id,
                 priority,
+                source,
                 ready,
             } => {
                 let queue = queues.entry(project_id.clone()).or_default();
+                let queued = QueuedObservation { source, ready };
                 match priority {
-                    ObservationPriority::Explicit => queue.explicit.push_back(ready),
-                    ObservationPriority::Background => queue.background.push_back(ready),
+                    ObservationPriority::Explicit => queue.explicit.push_back(queued),
+                    ObservationPriority::Background => queue.background.push_back(queued),
                 }
                 if !projects.contains(&project_id) {
                     projects.push_back(project_id);
@@ -689,44 +751,83 @@ async fn run_observation_gate(mut receiver: mpsc::UnboundedReceiver<ObservationG
                 active_projects.remove(&project_id);
             }
         }
+        // A user-requested read must not wait for another Project's
+        // background refresh to take one of the shared slots, so every
+        // Project's explicit work is offered a slot before any background work.
         while active < 2 {
-            let turns = projects.len();
-            let mut admitted = false;
-            for _ in 0..turns {
-                let Some(project_id) = projects.pop_front() else {
-                    break;
-                };
-                if active_projects.contains(&project_id) {
-                    projects.push_back(project_id);
-                    continue;
-                }
-                let Some(queue) = queues.get_mut(&project_id) else {
-                    continue;
-                };
-                let ready = queue
-                    .explicit
-                    .pop_front()
-                    .or_else(|| queue.background.pop_front());
-                if !queue.explicit.is_empty() || !queue.background.is_empty() {
-                    projects.push_back(project_id.clone());
-                } else {
-                    queues.remove(&project_id);
-                }
-                let Some(ready) = ready else {
-                    continue;
-                };
-                if ready.send(()).is_ok() {
-                    active += 1;
-                    active_projects.insert(project_id);
-                    admitted = true;
-                    break;
-                }
-            }
-            if !admitted {
+            let admitted = admit_next_observation(
+                &mut queues,
+                &mut projects,
+                &active_projects,
+                ObservationPriority::Explicit,
+                &release,
+            )
+            .or_else(|| {
+                admit_next_observation(
+                    &mut queues,
+                    &mut projects,
+                    &active_projects,
+                    ObservationPriority::Background,
+                    &release,
+                )
+            });
+            let Some(project_id) = admitted else {
                 break;
-            }
+            };
+            active += 1;
+            active_projects.insert(project_id);
         }
     }
+}
+
+/// Admits the first live waiter of `priority`, visiting Projects round-robin
+/// and skipping a Project whose lane is already active. Waiters whose request
+/// was cancelled while queued are discarded on the way.
+fn admit_next_observation(
+    queues: &mut HashMap<String, ProjectObservationQueue>,
+    projects: &mut VecDeque<String>,
+    active_projects: &HashSet<String>,
+    priority: ObservationPriority,
+    release: &mpsc::WeakUnboundedSender<ObservationGateCommand>,
+) -> Option<String> {
+    for _ in 0..projects.len() {
+        let project_id = projects.pop_front()?;
+        if active_projects.contains(&project_id) {
+            projects.push_back(project_id);
+            continue;
+        }
+        let Some(queue) = queues.get_mut(&project_id) else {
+            continue;
+        };
+        let lane = match priority {
+            ObservationPriority::Explicit => &mut queue.explicit,
+            ObservationPriority::Background => &mut queue.background,
+        };
+        lane.retain(|queued| !queued.ready.is_closed());
+        let next = lane.pop_front();
+        if queue.explicit.is_empty() && queue.background.is_empty() {
+            queues.remove(&project_id);
+        } else {
+            projects.push_back(project_id.clone());
+        }
+        let Some(queued) = next else {
+            continue;
+        };
+        let commands = release.upgrade()?;
+        let permit = FairObservationPermit {
+            commands,
+            project_id: project_id.clone(),
+            priority,
+            source: queued.source,
+            admitted_at: Instant::now(),
+        };
+        // If the waiter disappeared after the liveness check, the undelivered
+        // permit drops here and queues its own Release, so it still counts as
+        // admitted until that Release is processed.
+        let _ = queued.ready.send(permit);
+        return Some(project_id);
+    }
+    None
 }
 
 #[cfg(test)]
@@ -765,42 +866,105 @@ mod tests {
                 .send(ObservationGateCommand::Acquire {
                     project_id: project_id.into(),
                     priority,
+                    source: std::panic::Location::caller(),
                     ready,
                 })
                 .unwrap();
             wait
         };
-        let cap_probe = enqueue("cap-probe", ObservationPriority::Explicit);
+        let mut cap_probe = enqueue("cap-probe", ObservationPriority::Explicit);
         assert!(
-            tokio::time::timeout(Duration::from_millis(25), cap_probe)
+            tokio::time::timeout(Duration::from_millis(25), &mut cap_probe)
                 .await
                 .is_err(),
             "a third live observation bypassed the two-slot cap"
         );
+        drop(cap_probe);
         let project_a_background = enqueue("project-a", ObservationPriority::Background);
         let project_a_explicit = enqueue("project-a", ObservationPriority::Explicit);
         let project_b_background = enqueue("project-b", ObservationPriority::Background);
         drop(first);
-        project_a_explicit.await.unwrap();
+        let project_a_explicit = project_a_explicit.await.unwrap();
 
         drop(second);
-        project_b_background.await.unwrap();
+        let project_b_background = project_b_background.await.unwrap();
 
+        drop(project_a_explicit);
+        let project_a_background = project_a_background.await.unwrap();
+        drop((project_a_background, project_b_background));
+    }
+
+    #[tokio::test]
+    async fn observation_gate_admits_explicit_work_before_other_projects_background_work() {
+        let gate = FairObservationGate::new();
+        let first = gate
+            .acquire("occupied-a", ObservationPriority::Background)
+            .await
+            .unwrap();
+        let second = gate
+            .acquire("occupied-b", ObservationPriority::Background)
+            .await
+            .unwrap();
+        let background_gate = gate.clone();
+        let background = tokio::spawn(async move {
+            background_gate
+                .acquire("background-project", ObservationPriority::Background)
+                .await
+        });
+        tokio::task::yield_now().await;
+        let explicit_gate = gate.clone();
+        let explicit = tokio::spawn(async move {
+            explicit_gate
+                .acquire("explicit-project", ObservationPriority::Explicit)
+                .await
+        });
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        drop(first);
+        let explicit = tokio::time::timeout(Duration::from_secs(1), explicit)
+            .await
+            .expect("explicit observation waited behind another Project's background work")
+            .unwrap()
+            .unwrap();
+        assert!(
+            !background.is_finished(),
+            "background work took the only free slot ahead of explicit work"
+        );
+        drop((second, explicit));
+        drop(background.await.unwrap().unwrap());
+    }
+
+    #[tokio::test]
+    async fn observation_gate_releases_a_slot_admitted_to_a_cancelled_waiter() {
+        let gate = FairObservationGate::new();
+        let first = gate
+            .acquire("project", ObservationPriority::Explicit)
+            .await
+            .unwrap();
+        // Simulate a waiter whose request is cancelled at the instant it is
+        // admitted: the permit is delivered but never received.
+        let (ready, wait) = oneshot::channel();
         gate.commands
-            .send(ObservationGateCommand::Release {
-                project_id: "project-a".into(),
+            .send(ObservationGateCommand::Acquire {
+                project_id: "project".into(),
+                priority: ObservationPriority::Explicit,
+                source: std::panic::Location::caller(),
+                ready,
             })
             .unwrap();
-        project_a_background.await.unwrap();
-        gate.commands
-            .send(ObservationGateCommand::Release {
-                project_id: "project-b".into(),
-            })
-            .unwrap();
-        gate.commands
-            .send(ObservationGateCommand::Release {
-                project_id: "project-a".into(),
-            })
+        let waiting_gate = gate.clone();
+        let next = tokio::spawn(async move {
+            waiting_gate
+                .acquire("project", ObservationPriority::Explicit)
+                .await
+        });
+        drop(first);
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        drop(wait);
+        tokio::time::timeout(Duration::from_secs(1), next)
+            .await
+            .expect("a cancelled admitted waiter leaked the Project lane")
+            .unwrap()
             .unwrap();
     }
 
@@ -816,6 +980,7 @@ mod tests {
             .send(ObservationGateCommand::Acquire {
                 project_id: "project".into(),
                 priority: ObservationPriority::Explicit,
+                source: std::panic::Location::caller(),
                 ready,
             })
             .unwrap();
@@ -827,12 +992,7 @@ mod tests {
             "a second observation for the same Project ran concurrently"
         );
         drop(first);
-        wait.await.unwrap();
-        gate.commands
-            .send(ObservationGateCommand::Release {
-                project_id: "project".into(),
-            })
-            .unwrap();
+        drop(wait.await.unwrap());
     }
 
     #[tokio::test]

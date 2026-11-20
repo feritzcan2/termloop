@@ -839,16 +839,9 @@ async fn run_scheduled_health_job(
     }
 
     if !job.targets.is_empty() {
-        // Keep the scheduler slot until the bounded Git operation has actually
-        // returned. The runner carries the absolute deadline into discovery and
-        // platform kills the process tree at expiry; dropping a JoinHandle would
-        // not provide that guarantee.
-        let Ok(_permit) = git_observation_gate
-            .acquire(&job.project_id, ObservationPriority::Background)
-            .await
-        else {
-            return;
-        };
+        // Plan before taking the Project's Git lane: waiting for a busy core
+        // lock while holding it would make every explicit change read for the
+        // Project queue behind core contention instead of Git work.
         let plans = {
             let core = core.lock().await;
             job.targets
@@ -861,10 +854,22 @@ async fn run_scheduled_health_job(
                 .collect::<Vec<_>>()
         };
         if let Some((_, first)) = plans.first() {
+            // Keep the lane until the bounded Git operation has actually
+            // returned. The runner carries the absolute deadline into discovery
+            // and platform kills the process tree at expiry; dropping a
+            // JoinHandle would not provide that guarantee. Applying the result
+            // needs only the core lock, so the lane is released first.
+            let Ok(permit) = git_observation_gate
+                .acquire(&job.project_id, ObservationPriority::Background)
+                .await
+            else {
+                return;
+            };
             let first = first.clone();
-            let shared = match tokio::task::spawn_blocking(move || first.observe_shared()).await {
-                Ok(shared) => shared,
-                Err(_) => return,
+            let shared = tokio::task::spawn_blocking(move || first.observe_shared()).await;
+            drop(permit);
+            let Ok(shared) = shared else {
+                return;
             };
             for (target, plan) in plans {
                 let applied = {
