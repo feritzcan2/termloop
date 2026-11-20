@@ -146,6 +146,8 @@ pub enum McpToolName {
     StewardSystemPromptRead,
     #[serde(rename = "steward_system_prompt_update")]
     StewardSystemPromptUpdate,
+    #[serde(rename = "project_agent_start")]
+    ProjectAgentStart,
     #[serde(rename = "task_agent_start")]
     TaskAgentStart,
     #[serde(rename = "task_create")]
@@ -195,7 +197,7 @@ pub enum McpToolName {
 }
 
 impl McpToolName {
-    pub const ALL: [Self; 39] = [
+    pub const ALL: [Self; 40] = [
         Self::AskTo,
         Self::SendToAgent,
         Self::ReplyToRequest,
@@ -212,6 +214,7 @@ impl McpToolName {
         Self::CompanionTranscriptRead,
         Self::StewardSystemPromptRead,
         Self::StewardSystemPromptUpdate,
+        Self::ProjectAgentStart,
         Self::TaskAgentStart,
         Self::TaskCreate,
         Self::TaskRename,
@@ -255,6 +258,7 @@ impl McpToolName {
             Self::CompanionTranscriptRead => "companion_transcript_read",
             Self::StewardSystemPromptRead => "steward_system_prompt_read",
             Self::StewardSystemPromptUpdate => "steward_system_prompt_update",
+            Self::ProjectAgentStart => "project_agent_start",
             Self::TaskAgentStart => "task_agent_start",
             Self::TaskCreate => "task_create",
             Self::TaskRename => "task_rename",
@@ -303,6 +307,7 @@ impl std::str::FromStr for McpToolName {
             "companion_transcript_read" => Ok(Self::CompanionTranscriptRead),
             "steward_system_prompt_read" => Ok(Self::StewardSystemPromptRead),
             "steward_system_prompt_update" => Ok(Self::StewardSystemPromptUpdate),
+            "project_agent_start" => Ok(Self::ProjectAgentStart),
             "task_agent_start" => Ok(Self::TaskAgentStart),
             "task_create" => Ok(Self::TaskCreate),
             "task_rename" => Ok(Self::TaskRename),
@@ -1549,6 +1554,7 @@ mod tests {
                 "companion_transcript_read",
                 "steward_system_prompt_read",
                 "steward_system_prompt_update",
+                "project_agent_start",
                 "task_agent_start",
                 "task_create",
                 "task_rename",

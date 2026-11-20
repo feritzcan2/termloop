@@ -253,6 +253,23 @@
         "openWorldHint": false
       }
     },
+    "project_agent_start": {
+      "description": "Start one new ordinary Agent in this authenticated Project's own checkout, without creating or attaching a Task, and deliver its first instruction. Use it only when the user, an explicit user-approved proposal, or the exact whileWaiting policy of the current Routine finding authorizes starting an independent Agent for bounded work such as a pull request review; never use it to replace a Task Agent, and never start it merely to check facts you can read yourself. Each call launches a separate new Agent, so record what you already started and never repeat a call for the same work item. Pass a short visible title for the Agent row, and an assignment written as a direct first-person instruction that states what to do, its scope, and what is and is not authorized. The Agent shares the Project checkout with other Agents, so tell it not to switch branches, edit files, or change the working tree unless the work requires it. Omit agentId, model, permission, and reasoning unless the user or the authorizing policy names them; the defaults are Claude, opus, acceptEdits (auto), and medium reasoning. Success means the inspected launch committed and TermLoop is delivering the assignment; read the outcome later through agent_status_read or the work's own external evidence instead of asking the Agent to report back.",
+      "role": "steward",
+      "params": {
+        "$ref": "#/$defs/mcpStewardProjectAgentStartParams"
+      },
+      "result": {
+        "$ref": "#/$defs/mcpStewardProjectAgentStartResult"
+      },
+      "annotations": {
+        "title": "Start an independent Project Agent",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
     "task_agent_start": {
       "description": "Start or idempotently reuse a Steward-started Agent for an existing Task in this authenticated Project. Read task_read first. When any other current ordinary Agent is already attached to the exact Task worktree, Core refuses to launch a second Agent and returns its exact Session ID with suggestedAction messageExistingAgent; deliver the assignment with agent_message_send instead. When the user explicitly requests a provider or model, pass agentId and the optional matching model; an explicit provider with no model uses that provider's default model, permission, and reasoning. Otherwise omit both fields and TermLoop replays the exact provider, model, permission, and reasoning from the last successful ordinary Agent launch. Never infer a provider/model preference from the Steward's own launch. Invalid missing-provider or cross-provider model selections are rejected by Core. TermLoop chooses a safe managed branch and sibling worktree, performs the inspected launch, and returns success only after the visible assignment is delivered. Do not call shell or Git tools to plan paths or refs.",
       "role": "steward",
@@ -1684,6 +1701,162 @@
           "minLength": 1,
           "maxLength": 8192,
           "x-utf8-max-bytes": 8192
+        }
+      }
+    },
+    "mcpStewardProjectAgentStartParams": {
+      "x-codegen": true,
+      "x-codegen-name": "McpStewardProjectAgentStartParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "assignment"
+      ],
+      "properties": {
+        "title": {
+          "description": "Short visible name for the new Agent row, for example 'PrReview: Jane - Fix payment retry'.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "assignment": {
+          "description": "The complete first instruction delivered to the new Agent, written in the user's own voice.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "agentId": {
+          "description": "Agent provider. Omit to use claude.",
+          "type": "string",
+          "enum": [
+            "claude",
+            "codex"
+          ]
+        },
+        "model": {
+          "description": "Model for agentId. Omit to use opus for Claude, or the provider default for Codex. Claude models: opus[1m], fable, sonnet, haiku, opus. Codex models: gpt-6-astra, gpt-6.1-sol, gpt-6-sol, gpt-6-luna, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5, gpt-5.5-pro.",
+          "type": "string",
+          "enum": [
+            "default",
+            "opus[1m]",
+            "fable",
+            "sonnet",
+            "haiku",
+            "opus",
+            "gpt-6-astra",
+            "gpt-6.1-sol",
+            "gpt-6-sol",
+            "gpt-6-luna",
+            "gpt-5.6-sol",
+            "gpt-5.6-terra",
+            "gpt-5.6-luna",
+            "gpt-5.5",
+            "gpt-5.5-pro"
+          ]
+        },
+        "permission": {
+          "description": "Permission mode. Omit to use acceptEdits (auto) for Claude, or the provider default for Codex.",
+          "type": "string",
+          "enum": [
+            "default",
+            "acceptEdits",
+            "plan",
+            "bypassPermissions"
+          ]
+        },
+        "reasoning": {
+          "description": "Reasoning effort. Omit to use medium.",
+          "type": "string",
+          "enum": [
+            "default",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        }
+      }
+    },
+    "mcpStewardProjectAgentStartResult": {
+      "x-codegen": true,
+      "x-codegen-name": "McpStewardProjectAgentStartResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sessionId",
+        "title",
+        "cwd",
+        "agentId",
+        "model",
+        "permission",
+        "reasoning",
+        "status"
+      ],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "cwd": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agentId": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "codex"
+          ]
+        },
+        "model": {
+          "type": "string",
+          "enum": [
+            "default",
+            "opus[1m]",
+            "fable",
+            "sonnet",
+            "haiku",
+            "opus",
+            "gpt-6-astra",
+            "gpt-6.1-sol",
+            "gpt-6-sol",
+            "gpt-6-luna",
+            "gpt-5.6-sol",
+            "gpt-5.6-terra",
+            "gpt-5.6-luna",
+            "gpt-5.5",
+            "gpt-5.5-pro"
+          ]
+        },
+        "permission": {
+          "type": "string",
+          "enum": [
+            "default",
+            "acceptEdits",
+            "plan",
+            "bypassPermissions"
+          ]
+        },
+        "reasoning": {
+          "type": "string",
+          "enum": [
+            "default",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        },
+        "status": {
+          "const": "launched"
         }
       }
     },

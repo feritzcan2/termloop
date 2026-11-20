@@ -61,7 +61,8 @@ pub use session_launch::{
     AgentResumePlanOutcome, AgentResumePreparationError, AgentResumeTargetValidation, CodexRuntime,
     McpAuthorizer, McpPrincipal, ObservedAgentResumeFailure, ObservedSessionRelocationPreview,
     ObservedTaskWorktreeLaunch, SessionRelocationPreviewOutcome, SessionRelocationPreviewPlan,
-    ShellHistoryCheckpoint, ShellHistoryCheckpointPlan, ShellHistoryStore, TaskWorktreeLaunchPlan,
+    ShellHistoryCheckpoint, ShellHistoryCheckpointPlan, ShellHistoryStore,
+    StewardProjectAgentRequest, TaskWorktreeLaunchPlan,
 };
 pub use settings_improvement::{SettingsImproverEntry, settings_entry_kind};
 pub use skills::{SkillCatalogPlan, SkillDeploymentAgent, SkillDeploymentPlan};

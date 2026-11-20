@@ -1550,6 +1550,83 @@ mod tests {
             ),
             Err(CoreError::InvalidParams(field)) if field == "agentId/model"
         ));
+        let request = |title: &'static str| crate::StewardProjectAgentRequest {
+            title,
+            assignment: "Review pull request #42 and post one COMMENT review.",
+            agent_id: None,
+            model: None,
+            permission: None,
+            reasoning: None,
+        };
+        let project_agent = runtime
+            .plan_steward_project_agent_start(
+                "steward-session",
+                &first,
+                request("  PrReview: Jane - Fix payment retry  "),
+            )
+            .unwrap();
+        assert_eq!(project_agent.agent_id(), "claude");
+        assert_eq!(
+            project_agent.steward_agent_name(),
+            Some("PrReview: Jane - Fix payment retry")
+        );
+        assert_eq!(
+            project_agent.steward_agent_selection(),
+            Some(&AgentLaunchSelection::new("opus", "acceptEdits", "medium"))
+        );
+        assert_eq!(
+            std::path::Path::new(project_agent.cwd()),
+            termloop_platform::canonical_existing_directory(&first_folder.to_string_lossy())
+                .unwrap()
+                .as_path()
+        );
+        let explicit_project_agent = runtime
+            .plan_steward_project_agent_start(
+                "steward-session",
+                &first,
+                crate::StewardProjectAgentRequest {
+                    agent_id: Some("codex"),
+                    model: Some("gpt-5.5"),
+                    permission: Some("bypassPermissions"),
+                    reasoning: Some("high"),
+                    ..request("Codex review")
+                },
+            )
+            .unwrap();
+        assert_eq!(explicit_project_agent.agent_id(), "codex");
+        assert_eq!(
+            explicit_project_agent.steward_agent_selection(),
+            Some(&AgentLaunchSelection::new(
+                "gpt-5.5",
+                "bypassPermissions",
+                "high"
+            ))
+        );
+        assert!(matches!(
+            runtime.plan_steward_project_agent_start("steward-session", &first, request("   ")),
+            Err(CoreError::InvalidParams(field)) if field == "title"
+        ));
+        assert!(matches!(
+            runtime.plan_steward_project_agent_start(
+                "steward-session",
+                &first,
+                crate::StewardProjectAgentRequest {
+                    model: Some("gpt-5.5"),
+                    ..request("Mismatched model")
+                },
+            ),
+            Err(CoreError::InvalidParams(_))
+        ));
+        // The Project comes from the authenticated Steward, so another
+        // Project or another Session is refused before any launch planning.
+        assert!(matches!(
+            runtime.plan_steward_project_agent_start("steward-session", &second, request("x")),
+            Err(CoreError::CapabilityDenied)
+        ));
+        assert!(matches!(
+            runtime.plan_steward_project_agent_start("ordinary-agent", &first, request("x")),
+            Err(CoreError::CapabilityDenied)
+        ));
         runtime
             .store
             .insert_session_and_remember_agent_launch(

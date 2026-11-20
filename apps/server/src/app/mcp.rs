@@ -11,13 +11,13 @@ use axum::response::{IntoResponse, Response};
 use serde_json::{Value, json};
 use termloop_contract::current::{
     self as protocol, AskToParams, AskToTarget, ConfigurationVersionWriteParams,
-    McpStewardAgentMessageParams, McpStewardBriefUpdateParams, McpStewardSystemPromptUpdateParams,
-    McpStewardTaskAgentStartParams, McpStewardTaskCreateParams, McpStewardTaskIdParams,
-    McpStewardTaskRenameParams, McpStewardTaskSetJiraUrlParams, McpStewardTaskUpdateBriefParams,
-    McpTaskAgentTranscriptTailReadParams, ProjectionTopic, ReplyToRequestParams,
-    RoutineAssignmentCompleteParams, RoutineAssignmentStatus, RoutineFindingResolveParams,
-    SendToAgentParams, StewardTaskAgentRequestParams, WorkflowDelegateParams,
-    WorkflowStepCompleteParams,
+    McpStewardAgentMessageParams, McpStewardBriefUpdateParams, McpStewardProjectAgentStartParams,
+    McpStewardSystemPromptUpdateParams, McpStewardTaskAgentStartParams, McpStewardTaskCreateParams,
+    McpStewardTaskIdParams, McpStewardTaskRenameParams, McpStewardTaskSetJiraUrlParams,
+    McpStewardTaskUpdateBriefParams, McpTaskAgentTranscriptTailReadParams, ProjectionTopic,
+    ReplyToRequestParams, RoutineAssignmentCompleteParams, RoutineAssignmentStatus,
+    RoutineFindingResolveParams, SendToAgentParams, StewardTaskAgentRequestParams,
+    WorkflowDelegateParams, WorkflowStepCompleteParams,
 };
 use tokio::time::Instant;
 
@@ -507,6 +507,20 @@ async fn tool_call_inner(
             let params: McpStewardSystemPromptUpdateParams = serde_json::from_value(arguments)
                 .expect("generated MCP validation precedes decoding");
             update_steward_system_prompt(project_id, principal.session_id(), params, state).await
+        }
+        (
+            termloop_core::session_launch::AgentMcpRole::Steward { project_id },
+            "project_agent_start",
+        ) => {
+            let params: McpStewardProjectAgentStartParams = serde_json::from_value(arguments)
+                .expect("generated MCP validation precedes decoding");
+            super::steward_project_agent_start::start(
+                project_id,
+                principal.session_id(),
+                params,
+                state,
+            )
+            .await
         }
         (
             termloop_core::session_launch::AgentMcpRole::Steward { project_id },
@@ -2058,6 +2072,9 @@ mod tests {
         assert!(tool_names(&steward).contains(&"task_create"));
         assert!(tool_names(&steward).contains(&"send_to_agent"));
         assert!(tool_names(&steward).contains(&"task_agent_start"));
+        assert!(tool_names(&steward).contains(&"project_agent_start"));
+        assert!(!tool_names(&improver).contains(&"project_agent_start"));
+        assert!(!tool_names(&helper).contains(&"project_agent_start"));
         let task_agent_start = steward
             .iter()
             .find(|tool| tool["name"] == "task_agent_start")

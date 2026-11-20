@@ -42,6 +42,7 @@ mod runtime_health;
 mod shell_history;
 mod steward_change;
 mod steward_presence;
+mod steward_project_agent_start;
 mod steward_task_start;
 mod task_automation;
 mod terminal_grids;

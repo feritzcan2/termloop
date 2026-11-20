@@ -16,6 +16,8 @@ mod fork_preparation;
 mod history_repair;
 mod lifecycle;
 mod project_workflow;
+mod steward_project_agent;
+pub use steward_project_agent::StewardProjectAgentRequest;
 mod terminal_restore;
 pub use terminal_restore::{ShellHistoryCheckpoint, ShellHistoryCheckpointPlan, ShellHistoryStore};
 mod relocation;
@@ -137,6 +139,9 @@ pub struct AgentLaunchPlan {
     /// The rail name for an Improve-with-agent launch, stating the job and its
     /// target rather than leaving another unnamed provider row.
     improver_session_name: Option<String>,
+    /// The Steward-chosen rail name for an independent Project Agent. Its
+    /// presence also keeps that launch out of the remembered user selection.
+    steward_agent_name: Option<String>,
     workflow_creator: Option<workflow_creator::WorkflowCreatorLaunch>,
     prepared_launch: Option<termloop_invocation::LaunchPayload>,
     mcp_authorizer: McpAuthorizer,
@@ -679,6 +684,7 @@ impl CoreRuntime {
             settings_entry_id: None,
             improver_prompt_owner_id: None,
             improver_session_name: None,
+            steward_agent_name: None,
             workflow_creator: None,
             prepared_launch: None,
             mcp_authorizer: self.mcp_authorizer.clone(),
@@ -2100,7 +2106,8 @@ impl CoreRuntime {
             plan.mcp_role,
             AgentMcpRole::Interactive | AgentMcpRole::Improver { .. }
         ) && plan.helper_prompt.is_none()
-            && plan.steward_task_assignment.is_none();
+            && plan.steward_task_assignment.is_none()
+            && plan.steward_agent_name.is_none();
         let inserted = if let Some(workflow) = plan.workflow_launch.as_ref() {
             let now = termloop_platform::current_epoch_ms();
             self.store.insert_workflow_coordinator_session(
@@ -2292,6 +2299,9 @@ impl AgentLaunchPlan {
 }
 
 fn launch_session_name(plan: &AgentLaunchPlan) -> Option<String> {
+    if let Some(name) = plan.steward_agent_name.as_deref() {
+        return Some(name.chars().take(SESSION_NAME_MAX_CHARS).collect());
+    }
     plan.workflow_launch
         .as_ref()
         .map(|workflow| {
