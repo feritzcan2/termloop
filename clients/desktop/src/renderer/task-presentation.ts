@@ -128,6 +128,12 @@ function unavailableNote(task: Task): string {
   return "TermLoop cannot prove this checkout is safe to launch in.";
 }
 
+/// The stages a freshly provisioned worktree passes through before it is
+/// launch-ready; a pending launch waits through them instead of failing.
+export function taskStageConverging(id: TaskStageId): boolean {
+  return id === "provisioning" || id === "planning" || id === "branchOnly" || id === "observing";
+}
+
 export function taskStage(task: Task, deleting: boolean, provisioningInFlight = false): TaskStage {
   if (deleting) return stageOf("deleting");
   if (provisioningInFlight) return stageOf("provisioning");

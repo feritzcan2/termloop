@@ -61,6 +61,14 @@ pub(in crate::app::control) async fn fork_agent_session(
                         deadline.saturating_duration_since(Instant::now()) > delay
                     });
                 if !retryable {
+                    // The client shows only a sentence; keep the typed refusal
+                    // so a fork that never started can be diagnosed later.
+                    tracing::warn!(
+                        attempt,
+                        error = ?failure.error,
+                        child_started = failure.child.is_some(),
+                        "agent fork failed"
+                    );
                     if let Some((session_id, runtime_epoch)) = failure.child.as_ref()
                         && !retain_failed_agent_fork(state, session_id, *runtime_epoch).await
                     {

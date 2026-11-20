@@ -683,6 +683,14 @@ button.task-signal.issue:hover { color: var(--warning); }
 .task-launch-icon.agent-claude:hover:not(:disabled) { color: var(--agent-claude); }
 .task-launch-icon.agent-codex:hover:not(:disabled) { color: var(--agent-codex); }
 .task-launch-icon.agent-opencode:hover:not(:disabled) { color: var(--agent-opencode); }
+/* A Jira Task's first Agent: quiet while it waits or starts, kept on the card
+   with Retry when it fails instead of vanishing as a transient message. */
+.task-agent-start { margin: 2px 0 3px 7px; color: var(--sidebar-dimmer); font-size: 11px; line-height: 1.35; }
+.task-agent-start p { margin: 0; }
+.task-agent-start[data-phase="failed"] { padding: 5px 7px; border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent); border-radius: 5px; color: var(--danger); }
+.task-agent-start[data-phase="failed"] strong { font-weight: 600; }
+.task-agent-start-actions { display: flex; gap: 5px; margin-top: 5px; }
+.task-agent-start-actions button { padding: 2px 8px; font-size: 11px; }
 
 /* A run configuration is a launcher, so it lives in the Start row beside the
    terminal and agent launchers rather than in a card stack of its own. The chip

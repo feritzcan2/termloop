@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { SessionRelocationPreviewDto } from "@termloop/contract/current";
 import type { Task } from "./model.js";
-import { taskStage } from "./task-presentation.js";
+import { taskStage, taskStageConverging } from "./task-presentation.js";
 
 export type BackgroundSessionRelocationIntent = {
   sessionId: string;
@@ -39,7 +39,7 @@ export function BackgroundSessionRelocation({ intents, tasks, preview, relocate,
       if (!task) continue;
       const stage = taskStage(task, false);
       if (stage.id !== "ready") {
-        if (stage.id === "provisioning" || stage.id === "planning" || stage.id === "branchOnly" || stage.id === "observing") continue;
+        if (taskStageConverging(stage.id)) continue;
         finish(intent.taskId);
         reopen(intent);
         continue;

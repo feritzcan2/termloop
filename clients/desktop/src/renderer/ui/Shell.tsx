@@ -117,6 +117,7 @@ import type {
 import { ProjectDialog, ProjectDetailsDialog } from "./project-dialogs/project-dialogs.js";
 import { DeleteProjectDialog } from "./project-dialogs/delete-project-dialog.js";
 import { BackgroundSessionRelocation, type BackgroundSessionRelocationIntent } from "../background-session-relocation.js";
+import { usePendingTaskAgentStarts } from "../pending-task-agent-start.js";
 import { connectionStatusSuffix, isVersionMismatchMessage } from "../connection-source-status.js";
 import {
   appearancePreference,
@@ -608,6 +609,10 @@ export function Shell(props: ShellProps) {
   const repairBackgroundRelocation = useCallback((sessionId: string) => {
     setProviderHistoryRepairSessionId(sessionId);
   }, []);
+  const reportTaskAgentStartFailure = useCallback((issueKey: string, failure: string) => {
+    props.reportMessage?.(`${issueKey} was created, but its agent could not start: ${failure}`);
+  }, [props.reportMessage]);
+  const taskAgentStarts = usePendingTaskAgentStarts(props.projectTasks, reportTaskAgentStartFailure);
   const beginBackgroundRelocation = useCallback((
     sessionId: string,
     params: TaskProvisionWorktreeParams,
@@ -1748,6 +1753,9 @@ export function Shell(props: ShellProps) {
           <div ref={sidebarScrollRef} className="sidebar-scroll">
           <WorkspaceRailCache visible={workspaceView === "overview"}><TaskRail
             projectId={props.selectedProject?.id}
+            agentStarts={taskAgentStarts.views}
+            retryAgentStart={taskAgentStarts.retry}
+            dismissAgentStart={taskAgentStarts.dismiss}
             projectFolder={props.selectedProject?.folder_path}
             tasks={props.projectTasks}
             gitHostProjections={props.gitHostProjections}
@@ -2640,10 +2648,11 @@ export function Shell(props: ShellProps) {
             const provisioning = await props.provisionTaskWorktree(params);
             if (provisioning) return failed(provisioning);
             const agentId = session.process.agent_id;
-            const launch = startWith === "fork"
-              ? await props.jiraTaskProposals!.forkIntoTask(session.id, taskId, kickoffMessage)
-              : agentId ? await props.launchTaskAgent(taskId, agentId, undefined, undefined, undefined, kickoffMessage) : "The proposing Session has no agent.";
-            if (launch) failed(launch);
+            // The new worktree is launchable only once core has observed it,
+            // so the start waits for that and stays retryable on the card.
+            taskAgentStarts.begin(taskId, startWith, issueKey, async () => startWith === "fork"
+              ? props.jiraTaskProposals!.forkIntoTask(session.id, taskId, kickoffMessage)
+              : agentId ? props.launchTaskAgent(taskId, agentId, undefined, undefined, undefined, kickoffMessage) : "The proposing Session has no agent.");
           }).catch((cause: unknown) => failed(cause instanceof Error ? cause.message : String(cause)));
         }}
       /> : null}

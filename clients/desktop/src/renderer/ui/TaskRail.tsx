@@ -1,5 +1,6 @@
 import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useOverlayLease } from "./overlay-lease.js";
+import type { TaskAgentStartView } from "../pending-task-agent-start.js";
 import { useDraggable, useDroppable, type DraggableAttributes, type DraggableSyntheticListeners } from "@dnd-kit/core";
 import type { AgentGroupLayout } from "../../layout/model.js";
 import { agentName, basename, canDismissTaskWorktreeProvisioning, isLiveSession, taskJiraIssueKey, type AgentStatus, type BranchCommitSummary, type GitHostProjection, type RunConfiguration, type RunRuntime, type Session, type Task, type TaskDeleteWorktreeResult, type TaskDeleteWorktreeReview, type WorkflowConfiguration, type WorkflowExecution } from "../model.js";
@@ -267,6 +268,10 @@ export type TaskRailProps = {
   menuSessionId: string | undefined;
   deletingTaskIds: ReadonlySet<string>;
   provisioningTaskIds?: ReadonlySet<string> | undefined;
+  /// The pending or failed first Agent of an approved Jira Task, by Task ID.
+  agentStarts?: ReadonlyMap<string, TaskAgentStartView> | undefined;
+  retryAgentStart?: ((taskId: string) => void) | undefined;
+  dismissAgentStart?: ((taskId: string) => void) | undefined;
   selectSession(sessionId: string): void;
   openSessionMenu(sessionId: string, x: number, y: number, invoker: HTMLElement): void;
   dismissSession(sessionId: string): void;
@@ -482,6 +487,9 @@ export function TaskRail(props: TaskRailProps) {
       detailOpen={props.detailTaskId === task.id}
       deleting={props.deletingTaskIds.has(task.id)}
       provisioning={props.provisioningTaskIds?.has(task.id) ?? false}
+      agentStart={props.agentStarts?.get(task.id)}
+      retryAgentStart={props.retryAgentStart}
+      dismissAgentStart={props.dismissAgentStart}
       nowEpochMs={nowEpochMs}
       focused={focused}
     />
@@ -777,6 +785,9 @@ type TaskGroupProps = {
   detailOpen: boolean;
   deleting: boolean;
   provisioning: boolean;
+  agentStart: TaskAgentStartView | undefined;
+  retryAgentStart: ((taskId: string) => void) | undefined;
+  dismissAgentStart: ((taskId: string) => void) | undefined;
   nowEpochMs: number;
   focused: boolean;
   favorite: boolean;
@@ -1259,6 +1270,12 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
         addRequest={noteAddRequest}
         save={(expected, next) => props.updateDeveloperNotes(task.id, expected, next)}
       /> : null}
+      {props.agentStart && !props.deleting ? <TaskAgentStartNotice
+        taskId={task.id}
+        start={props.agentStart}
+        retry={props.retryAgentStart}
+        dismiss={props.dismissAgentStart}
+      /> : null}
       {collapsed || props.deleting ? null : (
         <div className="task-children">
           <GitHostPullRequests
@@ -1362,6 +1379,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
   && left.visibleSessionIds === right.visibleSessionIds
   && left.menuSessionId === right.menuSessionId
   && left.deleting === right.deleting
+  && left.agentStart === right.agentStart
   && left.nowEpochMs === right.nowEpochMs
   && left.agentCapabilities === right.agentCapabilities
   && left.setupRunImprovement === right.setupRunImprovement
@@ -1371,6 +1389,29 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
   && left.parked === right.parked
   && left.renaming === right.renaming
   && left.disabled === right.disabled);
+
+/// A Jira Task's first Agent while it waits for the worktree, launches, or
+/// failed. A failure stays here with Retry rather than vanishing as a message.
+function TaskAgentStartNotice({ taskId, start, retry, dismiss }: {
+  taskId: string;
+  start: TaskAgentStartView;
+  retry: ((taskId: string) => void) | undefined;
+  dismiss: ((taskId: string) => void) | undefined;
+}) {
+  const agent = start.kind === "fork" ? "the forked agent" : "a fresh agent";
+  if (start.phase !== "failed") {
+    return <p className="task-agent-start" role="status" data-phase={start.phase}>
+      {start.phase === "waiting" ? `Waiting for the worktree to start ${agent}…` : `Starting ${agent}…`}
+    </p>;
+  }
+  return <div className="task-agent-start" role="alert" data-phase="failed">
+    <p><strong>{start.kind === "fork" ? "The forked agent did not start." : "The fresh agent did not start."}</strong> {start.failure}</p>
+    <div className="task-agent-start-actions">
+      {retry ? <button type="button" className="secondary-button" onClick={() => retry(taskId)}>Retry</button> : null}
+      {dismiss ? <button type="button" className="secondary-button quiet" onClick={() => dismiss(taskId)}>Dismiss</button> : null}
+    </div>
+  </div>;
+}
 
 function TaskSessionRow({ session, dropPlacement, children }: {
   session: Session;
