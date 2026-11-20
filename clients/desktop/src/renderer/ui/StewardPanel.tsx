@@ -823,7 +823,13 @@ export function RoutineContextEditor(props: {
           : routineIntervalLabel(props.routine.scheduleIntervalSeconds)}</strong></span>
       <span className="ap-fact"><small>Last run</small><strong>{routineTimeCopy(props.health?.lastAttemptAtEpochMs ?? null)}</strong></span>
       <span className="ap-fact"><small>Next run</small><strong>{routineTimeCopy(props.health?.nextDueAtEpochMs ?? null)}</strong></span>
-      <button type="button" className="ap-btn primary" disabled={props.busy || !props.routine.enabled || props.health?.state === "checking"} onClick={() => void props.runNow()}>Run now</button>
+      <span className="ap-run-actions">
+        <PromptImproveButton improvement={props.improvement} busy={props.busy || improver.busy}
+          title="Start an agent that improves the Steward's evidence check and response policy together for you to approve"
+          label={promptImprovementActionLabel("routineInstructions")}
+          start={() => void improver.start()} setup={props.setupImprovement} />
+        <button type="button" className="ap-btn primary" disabled={props.busy || !props.routine.enabled || props.health?.state === "checking"} onClick={() => void props.runNow()}>Run now</button>
+      </span>
     </div>
     <div className={`ap-status-summary ${status.tone}`} title={statusExplanation(status)}>
       <span className={`ar-flag ${status.tone}`}>{status.label}</span>
@@ -869,10 +875,6 @@ export function RoutineContextEditor(props: {
           <textarea id="routine-instructions" value={instructions} onChange={(event) => setInstructions(event.target.value)}
             aria-label="What the Steward should verify" spellCheck />
           <div className="ap-actions">
-            <PromptImproveButton improvement={props.improvement} busy={props.busy || improver.busy}
-              title="Start an agent that improves the Steward's evidence check and response policy together for you to approve"
-              label={promptImprovementActionLabel("routineInstructions")}
-              start={() => void improver.start()} setup={props.setupImprovement} />
             <button type="button" className="ap-btn primary"
               disabled={props.busy || !instructions.trim() || instructionsByteLength > 9216 || instructions === props.routine.instructions}
               onClick={() => void props.saveInstructions(instructions)}>Save verification instructions</button>
