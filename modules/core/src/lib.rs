@@ -2892,7 +2892,7 @@ fn generated_input_delivery_failure_name(value: GeneratedInputDeliveryFailure) -
         GeneratedInputDeliveryFailure::RuntimeEpochChanged => "runtimeEpochChanged",
         GeneratedInputDeliveryFailure::TerminalClosed => "terminalClosed",
         GeneratedInputDeliveryFailure::SubmitWriteFailed => "submitWriteFailed",
-        GeneratedInputDeliveryFailure::WorkerUnavailable => "workerUnavailable",
+        GeneratedInputDeliveryFailure::WorkerUnavailable => "assistantUnavailable",
     }
 }
 
@@ -2929,6 +2929,16 @@ fn generated_input_settlement_evidence_name(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_unavailable_delivery_worker_uses_the_contract_failure_name() {
+        // `agent.statusList` is schema-validated as a whole, so one unknown
+        // failure name rejects every Session's status for the source.
+        assert_eq!(
+            generated_input_delivery_failure_name(GeneratedInputDeliveryFailure::WorkerUnavailable),
+            "assistantUnavailable"
+        );
+    }
 
     #[test]
     fn codex_app_server_idle_uses_structured_composer_readiness() {
