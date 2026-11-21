@@ -1021,11 +1021,13 @@ export function Shell(props: ShellProps) {
     setChangesPresentation(undefined);
   };
   const dismissChanges = useCallback(() => { setChangesPresentation(undefined); setEditorShown(false); }, []);
+  /// A docked Task detail sits beside the terminal rather than over it, so
+  /// opening a Session leaves it in place.
   const dismissStagePages = useCallback(() => {
     setAssistantSelection(undefined);
-    setDetailTaskId(undefined);
+    if (!detailDocked) setDetailTaskId(undefined);
     setStagePage(undefined);
-  }, []);
+  }, [detailDocked]);
   const detailTask = detailTaskId
     ? props.projectTasks.find((task) => task.id === detailTaskId)
     : undefined;
