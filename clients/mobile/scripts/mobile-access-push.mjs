@@ -84,13 +84,23 @@ export function nextStatusMap(statuses) {
 
 /// Keeps a deferred notification only while the attention state that created it is
 /// still current. A user answering from the Mac must cancel the pending phone alert,
-/// not merely delay it until the desktop becomes idle.
+/// not merely delay it until the desktop becomes idle. Likewise, an attention the
+/// user already dismissed on any client (the daemon acknowledgement covers the
+/// exact status observation) is no longer news for the phone or watch.
 export function retainCurrentAttention(pending, statuses) {
-  const current = nextStatusMap(statuses);
+  const current = new Map(statuses.map((status) => [status.sessionId, status]));
   return new Map([...pending].filter(([sessionId, notification]) => {
     const status = current.get(sessionId);
-    return notification.kind === "needsInput" ? status === "awaitingInput" : status === "idle";
+    if (status === undefined || attentionAcknowledged(status)) return false;
+    return notification.kind === "needsInput" ? status.status === "awaitingInput" : status.status === "idle";
   }));
+}
+
+function attentionAcknowledged(status) {
+  const acknowledgedAt = status.attentionAcknowledgedAtEpochMs;
+  return typeof acknowledgedAt === "number"
+    && typeof status.observedAtEpochMs === "number"
+    && acknowledgedAt >= status.observedAtEpochMs;
 }
 
 /// IOHIDSystem reports nanoseconds since the last keyboard, pointer, or trackpad

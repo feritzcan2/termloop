@@ -184,6 +184,24 @@ describe("mobile APNs attention projection", () => {
 
     expect(retainCurrentAttention(pending, [status("awaitingInput", "hook")]).size).toBe(1);
     expect(retainCurrentAttention(pending, [status("working", "hook")]).size).toBe(0);
+    expect(macDesktopRecentlyActive('"HIDIdleTime" = 1')).toBe(true);
+  });
+
+  it("drops a deferred alert the user already dismissed on the Mac", () => {
+    const notification = attentionTransitions(
+      new Map([[session.id, "working"]]),
+      [status("idle", "hook")],
+      [session],
+    )[0];
+    const pending = new Map([[session.id, notification]]);
+    const observed = { ...status("idle", "hook"), observedAtEpochMs: 10 };
+
+    expect(retainCurrentAttention(pending, [observed]).size).toBe(1);
+    expect(retainCurrentAttention(pending, [{ ...observed, attentionAcknowledgedAtEpochMs: 9 }]).size).toBe(1);
+    expect(retainCurrentAttention(pending, [{ ...observed, attentionAcknowledgedAtEpochMs: 10 }]).size).toBe(0);
+  });
+
+  it("detects recent Mac activity from IOHIDSystem idle time", () => {
     expect(macDesktopRecentlyActive('"HIDIdleTime" = 119000000000')).toBe(true);
     expect(macDesktopRecentlyActive('"HIDIdleTime" = 120000000000')).toBe(false);
     expect(macDesktopRecentlyActive("unsupported host output")).toBe(false);
