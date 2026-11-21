@@ -8,6 +8,10 @@ import type {
   SessionDto,
   SessionRelocationPreviewDto,
   TaskDto,
+  TaskBranchCommitChangeListResult,
+  TaskBranchCommitDiffResult,
+  TaskBranchCommitListResult,
+  TaskBranchCommitPreImageResult,
   TaskWorktreeChangeListResult,
   TaskWorktreeDiffResult,
   TaskWorktreePreImageResult,
@@ -103,6 +107,30 @@ export interface WorktreeChangesPort {
     observationId: string,
     entryId: string,
   ): Promise<TaskWorktreePreImageResult>;
+  /// The Task branch's commits since its base, as one observation. Every
+  /// commit read below is addressed by that observation; `"all"` is the whole
+  /// branch range against its base.
+  listBranchCommits(connectionId: string, taskId: string): Promise<TaskBranchCommitListResult>;
+  listCommitChanges(
+    connectionId: string,
+    taskId: string,
+    observationId: string,
+    commitId: string,
+  ): Promise<TaskBranchCommitChangeListResult>;
+  diffCommit(
+    connectionId: string,
+    taskId: string,
+    observationId: string,
+    commitId: string,
+    entryId: string,
+  ): Promise<TaskBranchCommitDiffResult>;
+  preImageCommit(
+    connectionId: string,
+    taskId: string,
+    observationId: string,
+    commitId: string,
+    entryId: string,
+  ): Promise<TaskBranchCommitPreImageResult>;
 }
 
 /// One Project's delivery pipeline, exactly as the Mac holds it: the pipeline

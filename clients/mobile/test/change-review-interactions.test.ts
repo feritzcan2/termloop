@@ -49,7 +49,7 @@ describe("line feedback interaction", () => {
     const onSelectLine = vi.fn();
     const source = ["first", "context", "old", "tail", ...Array.from({ length: 130 }, (_, index) => `rest ${index}`)].join("\n");
     const tree = expand(ui.WorktreeDiff({ state: "patch", patch, mode: "fullFile",
-      preImage: { task_id: "task", entry_id: "entry", observation_id: "snapshot", state: "content", content: source, revision: "head" },
+      preImage: { state: "content", content: source },
       review: { notedLines: new Set(["new:4"]), onSelectLine },
     }));
     byLabel(tree, "Comment on new line 1").props.onPress();

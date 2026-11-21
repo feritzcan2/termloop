@@ -4,6 +4,9 @@ import { useMemo } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import type { TaskWorktreeDiffState, TaskWorktreePreImageResult } from "@termloop/contract/current";
+
+/// Old-side content of one changed file, from either the worktree or a commit.
+export type DiffPreImage = Pick<TaskWorktreePreImageResult, "state" | "content">;
 import { reconstructFullFile, type FullFileDisplayLine } from "@/presentation/worktree-full-file";
 import { diffReviewLine, reviewLineKey, type ReviewLine } from "@/presentation/change-review-notes";
 import { space } from "@/theme/tokens";
@@ -25,7 +28,7 @@ export function WorktreeDiff({ state, patch, mode = "diff", wrap = true, preImag
   /// Soft-wrap long lines instead of scrolling sideways. A phone is too narrow
   /// for sideways scrolling to be the default way to read code.
   wrap?: boolean | undefined;
-  preImage?: TaskWorktreePreImageResult | undefined;
+  preImage?: DiffPreImage | undefined;
   fullFileLoading?: boolean | undefined;
   fullFileError?: string | undefined;
   review?: WorktreeDiffReview | undefined;
@@ -49,7 +52,7 @@ function ParsedPatch({ patch, mode, wrap, preImage, fullFileLoading, fullFileErr
   patch: string;
   mode: WorktreeDiffMode;
   wrap: boolean;
-  preImage: TaskWorktreePreImageResult | undefined;
+  preImage: DiffPreImage | undefined;
   fullFileLoading: boolean;
   fullFileError: string | undefined;
   review: WorktreeDiffReview | undefined;
@@ -93,7 +96,7 @@ function ParsedPatch({ patch, mode, wrap, preImage, fullFileLoading, fullFileErr
 function ExpandedFile({ files, wrap, preImage, loading, error, review }: {
   files: readonly IFile[];
   wrap: boolean;
-  preImage: TaskWorktreePreImageResult | undefined;
+  preImage: DiffPreImage | undefined;
   loading: boolean;
   error: string | undefined;
   review: WorktreeDiffReview | undefined;
@@ -209,7 +212,7 @@ function diffStateMessage(state: TaskWorktreeDiffState): string {
   }
 }
 
-function sourceForFullFile(preImage: TaskWorktreePreImageResult): string | undefined {
+function sourceForFullFile(preImage: DiffPreImage): string | undefined {
   // A newly added file has no old-side blob. Its bounded patch contains the
   // source, so applying it to an empty pre-image reconstructs the current file.
   if (preImage.state === "absent") return "";

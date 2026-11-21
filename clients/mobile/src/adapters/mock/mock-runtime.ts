@@ -21,6 +21,8 @@ import {
   fixtureSessions,
   fixtureStewardTranscript,
   fixtureTasks,
+  fixtureTaskBranchCommits,
+  fixtureTaskCommitEntries,
   fixtureTaskWorktreeChanges,
   fixtureTaskWorktreeDiffs,
   fixtureTaskWorktreePreImages,
@@ -185,6 +187,26 @@ export function createMockRuntime(options: { workflowPreview?: boolean } = {}): 
         const preImage = fixtureTaskWorktreePreImages[entryId];
         if (preImage === undefined) throw new Error("mock task worktree entry was not found");
         return { ...preImage };
+      },
+      async listBranchCommits(connectionId, taskId) {
+        if (connectionId !== profiles[0]?.id || taskId !== fixtureTaskBranchCommits.task_id) {
+          throw new Error("mock task branch was not found");
+        }
+        return { ...fixtureTaskBranchCommits, commits: fixtureTaskBranchCommits.commits.map((commit) => ({ ...commit })) };
+      },
+      async listCommitChanges(connectionId, taskId, observationId, commitId) {
+        const entries = mockCommitEntries(connectionId === profiles[0]?.id, taskId, observationId, commitId);
+        return { task_id: taskId, observation_id: observationId, commit_id: commitId, state: "available", truncated: false, entries };
+      },
+      async diffCommit(connectionId, taskId, observationId, commitId, entryId) {
+        mockCommitEntry(connectionId === profiles[0]?.id, taskId, observationId, commitId, entryId);
+        const diff = fixtureTaskWorktreeDiffs[entryId]!;
+        return { task_id: taskId, observation_id: observationId, commit_id: commitId, entry_id: entryId, state: diff.state, patch: diff.patch };
+      },
+      async preImageCommit(connectionId, taskId, observationId, commitId, entryId) {
+        mockCommitEntry(connectionId === profiles[0]?.id, taskId, observationId, commitId, entryId);
+        const preImage = fixtureTaskWorktreePreImages[entryId]!;
+        return { task_id: taskId, observation_id: observationId, commit_id: commitId, entry_id: entryId, state: preImage.state, content: preImage.content };
       },
     },
     playbook: {
@@ -503,4 +525,19 @@ function mockRelocationPreview(
       limitations: [],
     },
   };
+}
+
+function mockCommitEntries(knownMac: boolean, taskId: string, observationId: string, commitId: string) {
+  if (!knownMac || taskId !== fixtureTaskBranchCommits.task_id || observationId !== fixtureTaskBranchCommits.observation_id) {
+    throw new Error("mock task branch observation is stale");
+  }
+  const entries = fixtureTaskCommitEntries[commitId];
+  if (entries === undefined) throw new Error("mock commit was not found");
+  return entries.map((entry) => ({ ...entry }));
+}
+
+function mockCommitEntry(knownMac: boolean, taskId: string, observationId: string, commitId: string, entryId: string) {
+  const entry = mockCommitEntries(knownMac, taskId, observationId, commitId).find((candidate) => candidate.entry_id === entryId);
+  if (entry === undefined) throw new Error("mock commit entry was not found");
+  return entry;
 }

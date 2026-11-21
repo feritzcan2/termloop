@@ -38,6 +38,10 @@ import type {
   TaskDto,
   TaskLaunchAgentResult,
   TaskPageDto,
+  TaskBranchCommitChangeListResult,
+  TaskBranchCommitDiffResult,
+  TaskBranchCommitListResult,
+  TaskBranchCommitPreImageResult,
   TaskWorktreeChangeListResult,
   TaskWorktreeDiffResult,
   TaskWorktreePreImageResult,
@@ -68,6 +72,10 @@ type MobileControlMethod =
   | "task.worktreeChangeList"
   | "task.worktreeDiff"
   | "task.worktreePreImage"
+  | "task.branchCommitList"
+  | "task.branchCommitChangeList"
+  | "task.branchCommitDiff"
+  | "task.branchCommitPreImage"
   | "steward.configurationGet"
   | "playbook.get"
   | "playbook.runtime"
@@ -116,6 +124,10 @@ interface MobileControlResults {
   "task.worktreeChangeList": TaskWorktreeChangeListResult;
   "task.worktreeDiff": TaskWorktreeDiffResult;
   "task.worktreePreImage": TaskWorktreePreImageResult;
+  "task.branchCommitList": TaskBranchCommitListResult;
+  "task.branchCommitChangeList": TaskBranchCommitChangeListResult;
+  "task.branchCommitDiff": TaskBranchCommitDiffResult;
+  "task.branchCommitPreImage": TaskBranchCommitPreImageResult;
   "steward.configurationGet": StewardConfigurationGetResult;
   "playbook.get": PlaybookGetResult;
   "playbook.runtime": PlaybookRuntimeResult;
@@ -202,6 +214,10 @@ const RETRYABLE_READ_METHODS: ReadonlySet<MobileControlMethod> = new Set([
   "task.worktreeChangeList",
   "task.worktreeDiff",
   "task.worktreePreImage",
+  "task.branchCommitList",
+  "task.branchCommitChangeList",
+  "task.branchCommitDiff",
+  "task.branchCommitPreImage",
   "steward.configurationGet",
   "playbook.get",
   "playbook.runtime",
@@ -699,6 +715,10 @@ function decodeResult<M extends MobileControlMethod>(
       }
       return value as MobileControlResults[M];
     }
+    case "task.branchCommitList":
+    case "task.branchCommitChangeList":
+    case "task.branchCommitDiff":
+    case "task.branchCommitPreImage":
     case "agent.capabilityList":
     case "agent.libraryGet":
     case "workflow.configurationList":

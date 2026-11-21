@@ -7,6 +7,8 @@ import type {
   ProjectDto,
   SessionDto,
   TaskDto,
+  TaskBranchCommitChangeEntryDto,
+  TaskBranchCommitListResult,
   TaskWorktreeChangeListResult,
   TaskWorktreeDiffResult,
   TaskWorktreePreImageResult,
@@ -92,6 +94,48 @@ export const fixtureTaskWorktreeChanges: TaskWorktreeChangeListResult = {
       entry_id: "mock-task-image", display_path: "assets/review.png", original_display_path: null,
       path_encoding: "utf8", side: "untracked", kind: "untracked", render_state: "notShown",
     },
+  ],
+};
+
+/// The same Task's branch history: two commits since its base. Commit patches
+/// reuse the worktree fixtures; `"all"` is the whole range against the base.
+export const fixtureTaskBranchCommits: TaskBranchCommitListResult = {
+  task_id: "task-mobile",
+  observation_id: "mock-mobile-commits-7",
+  branch_id: "mock-branch",
+  branch_name: "feature/mobile-review",
+  branch_role: "primary",
+  held_by_task_id: null,
+  base_ref: "origin/develop",
+  base_oid: "1111111111111111111111111111111111111111",
+  base_evidence: "provisioned",
+  truncated: false,
+  commits: [
+    {
+      commit_id: "mock-commit-2", branch_id: "mock-branch", branch_name: "feature/mobile-review", short_oid: "a93fe9d",
+      subject: "Add a review entry point to the Task screen", subject_encoding: "utf8", authored_at_epoch_ms: now - 600_000,
+    },
+    {
+      commit_id: "mock-commit-1", branch_id: "mock-branch", branch_name: "feature/mobile-review", short_oid: "7caa9d8",
+      subject: "Label change counts", subject_encoding: "utf8", authored_at_epoch_ms: now - 3_600_000,
+    },
+  ],
+} as TaskBranchCommitListResult;
+
+function commitEntry(entryId: string, displayPath: string, kind: TaskBranchCommitChangeEntryDto["kind"]): TaskBranchCommitChangeEntryDto {
+  return { entry_id: entryId, display_path: displayPath, original_display_path: null, path_encoding: "utf8", kind, render_state: "available" };
+}
+
+export const fixtureTaskCommitEntries: Record<string, TaskBranchCommitChangeEntryDto[]> = {
+  all: [
+    commitEntry("mock-task-route", "src/app/task/[taskId].tsx", "modified"),
+    commitEntry("mock-task-presentation", "src/presentation/task-presentation.ts", "modified"),
+    commitEntry("mock-task-tests", "test/presentation/task-presentation.test.ts", "added"),
+  ],
+  "mock-commit-2": [commitEntry("mock-task-route", "src/app/task/[taskId].tsx", "modified")],
+  "mock-commit-1": [
+    commitEntry("mock-task-presentation", "src/presentation/task-presentation.ts", "modified"),
+    commitEntry("mock-task-tests", "test/presentation/task-presentation.test.ts", "added"),
   ],
 };
 

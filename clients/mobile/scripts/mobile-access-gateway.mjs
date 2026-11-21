@@ -141,6 +141,12 @@ const MOBILE_FULL_CONTROL_METHODS = new Set([
   "task.worktreeChangeList",
   "task.worktreeDiff",
   "task.worktreePreImage",
+  // The same Task's committed branch history, bounded the same way: commits
+  // since the base, their file lists, patches, and old-side content.
+  "task.branchCommitList",
+  "task.branchCommitChangeList",
+  "task.branchCommitDiff",
+  "task.branchCommitPreImage",
   "playbook.get",
   "playbook.runtime",
   "playbook.taskPositionSet",

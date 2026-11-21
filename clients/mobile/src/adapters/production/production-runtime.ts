@@ -791,6 +791,22 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
         const control = controlClient(await resolve(connectionId));
         return await control.call("task.worktreePreImage", { taskId, observationId, entryId });
       },
+      async listBranchCommits(connectionId, taskId) {
+        const control = controlClient(await resolve(connectionId));
+        return await control.call("task.branchCommitList", { taskId });
+      },
+      async listCommitChanges(connectionId, taskId, observationId, commitId) {
+        const control = controlClient(await resolve(connectionId));
+        return await control.call("task.branchCommitChangeList", { taskId, observationId, commitId });
+      },
+      async diffCommit(connectionId, taskId, observationId, commitId, entryId) {
+        const control = controlClient(await resolve(connectionId));
+        return await control.call("task.branchCommitDiff", { taskId, observationId, commitId, entryId });
+      },
+      async preImageCommit(connectionId, taskId, observationId, commitId, entryId) {
+        const control = controlClient(await resolve(connectionId));
+        return await control.call("task.branchCommitPreImage", { taskId, observationId, commitId, entryId });
+      },
     },
 
     terminal: {

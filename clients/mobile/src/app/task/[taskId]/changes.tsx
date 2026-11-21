@@ -11,14 +11,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
+import { KindBadge, kindLabel } from "@/components/change-kind-badge";
 import { ChangeReviewEditor, ChangeReviewPanel } from "@/components/change-review";
 import { Banner, Card, CardDivider, EmptyState, SecondaryButton, SectionHeader } from "@/components/primitives";
 import { Screen, ScreenHeader } from "@/components/screen";
-import { WorktreeDiff } from "@/components/worktree-diff";
+import { WorktreeDiff, type DiffPreImage } from "@/components/worktree-diff";
 import { useMobileRuntime } from "@/composition/runtime-context";
 import { useConnections } from "@/features/connection/connection-store";
 import { useRouteConnection } from "@/features/connection/use-route-connection";
 import { useOverview } from "@/features/overview/overview-store";
+import { BranchChangesList } from "@/features/changes/branch-changes-list";
+import { useBranchChanges } from "@/features/changes/use-branch-changes";
 import { useChangeReview, type ChangeReview } from "@/features/changes/use-change-review";
 import { reviewLineKey } from "@/presentation/change-review-notes";
 import { basename } from "@/presentation/dto-readers";
@@ -35,6 +38,9 @@ import { geometry, radius, space } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
 
 type LoadState = "idle" | "loading" | "ready" | "failed";
+type ChangeScope = "worktree" | "branch";
+/// What a file row and the diff header need, shared by uncommitted and committed entries.
+type ChangeEntryView = Pick<TaskWorktreeChangeEntryDto, "entry_id" | "display_path" | "original_display_path" | "kind">;
 
 /// One Task checkout, one current worktree observation. This is intentionally a
 /// review surface rather than a Git client: every patch is addressed by the
@@ -78,6 +84,9 @@ function TaskChangesScreen({ connectionId, task }: { connectionId: string; task:
   const [preImage, setPreImage] = useState<TaskWorktreePreImageResult | undefined>();
   const [preImageLoading, setPreImageLoading] = useState(false);
   const [preImageError, setPreImageError] = useState<string | undefined>();
+  const [scope, setScope] = useState<ChangeScope>("worktree");
+  const branch = useBranchChanges(runtime.worktreeChanges, connectionId, taskId, scope === "branch");
+  const branchCommitCount = branch.commits?.commits.length ?? 0;
 
   const reload = useCallback(async () => {
     const sequence = ++listSequence.current;
@@ -238,13 +247,48 @@ function TaskChangesScreen({ connectionId, task }: { connectionId: string; task:
     setSelectedEntryId(undefined);
   }, []);
 
+  // A clean worktree has nothing to review here, so open on the committed branch
+  // once when it has commits. After that the scope is the reviewer's choice.
+  const scopeChosen = useRef(false);
+  useEffect(() => {
+    if (scopeChosen.current || changes === undefined || branch.commits === undefined) return;
+    scopeChosen.current = true;
+    if (changes.entries.length === 0 && branchCommitCount > 0) setScope("branch");
+  }, [branch.commits, branchCommitCount, changes]);
+
+  const branchEntries = branch.changes?.entries ?? [];
+  const branchEntryIndex = branchEntries.findIndex((entry) => entry.entry_id === branch.selectedEntryId);
+  const branchEntry = branchEntries[branchEntryIndex];
+  const nextBranchEntry = branchEntryIndex < 0 ? undefined : branchEntries[branchEntryIndex + 1];
+  const inBranch = scope === "branch";
+
   const currentDiff = diff?.entry_id === selectedEntryId && diff?.observation_id === changes?.observation_id ? diff : undefined;
   const currentPreImage = preImage?.entry_id === selectedEntryId && preImage?.observation_id === changes?.observation_id ? preImage : undefined;
 
   return (
     <Screen>
       <ScreenHeader back="Task" title="Changes" subtitle={task.title} />
-      {load === "loading" && changes === undefined ? (
+      {branchCommitCount === 0 ? null : (
+        <ScopeSwitch
+          scope={scope}
+          uncommitted={changes?.entries.length}
+          commits={branchCommitCount}
+          onChange={setScope}
+        />
+      )}
+      {inBranch ? (
+        <ScrollView
+          contentContainerStyle={styles.content}
+          refreshControl={<RefreshControl refreshing={branch.commitsLoading} onRefresh={() => void branch.reload()} tintColor={color.textSecondary} />}
+        >
+          <BranchChangesList
+            branch={branch}
+            renderEntry={(entry) => (
+              <ChangeRow entry={entry} selected={entry.entry_id === branch.selectedEntryId} onSelect={() => branch.selectEntry(entry.entry_id)} />
+            )}
+          />
+        </ScrollView>
+      ) : load === "loading" && changes === undefined ? (
         <View style={styles.centre}><ActivityIndicator color={color.accentStrong} /></View>
       ) : load === "failed" && changes === undefined ? (
         <View style={styles.centre}>
@@ -330,17 +374,44 @@ function TaskChangesScreen({ connectionId, task }: { connectionId: string; task:
           )}
 
           {changes.entries.length === 0 ? (
-            <EmptyState title="No changes" body="This worktree is clean in the current snapshot." />
+            <EmptyState
+              title="No uncommitted changes"
+              body={branchCommitCount > 0 ? "Everything is committed. Open Branch to review the commits." : "This worktree is clean in the current snapshot."}
+            />
           ) : sections.length === 0 ? (
             <EmptyState title="Review complete" body="Every file in this observation is marked reviewed. Pull to refresh before trusting a new worktree state." />
           ) : null}
         </ScrollView>
       )}
-      <View style={styles.feedbackBar}>
-        <SecondaryButton label={`Feedback (${review.notes.length})`} onPress={() => review.setShowNotes(true)} />
-        <Text style={styles.modalFooterHint}>Add line comments, then send together</Text>
-      </View>
-      {selectedEntry === undefined && !review.showNotes ? null : (
+      {inBranch ? null : (
+        <View style={styles.feedbackBar}>
+          <SecondaryButton label={`Feedback (${review.notes.length})`} onPress={() => review.setShowNotes(true)} />
+          <Text style={styles.modalFooterHint}>Add line comments, then send together</Text>
+        </View>
+      )}
+      {inBranch && branchEntry !== undefined && !review.showNotes ? (
+        <ChangeDiffModal
+          entry={branchEntry}
+          diff={branch.diff}
+          loading={branch.diffLoading}
+          error={branch.diffError}
+          position={branchEntryIndex + 1}
+          total={branchEntries.length}
+          hasNext={nextBranchEntry !== undefined}
+          fullFile={branch.fullFile}
+          wrap={wrap}
+          onWrapChange={setWrap}
+          fullFileAvailable={branch.diff?.state === "patch" && branch.diffError === undefined}
+          preImage={branch.preImage}
+          preImageLoading={branch.preImageLoading}
+          preImageError={branch.preImageError}
+          onFullFileChange={branch.setFullFile}
+          review={review}
+          observationId={undefined}
+          onReview={() => branch.selectEntry(nextBranchEntry?.entry_id)}
+          onClose={() => branch.selectEntry(undefined)}
+        />
+      ) : (inBranch || selectedEntry === undefined) && !review.showNotes ? null : (
         <ChangeDiffModal
           entry={selectedEntry}
           diff={currentDiff}
@@ -358,6 +429,7 @@ function TaskChangesScreen({ connectionId, task }: { connectionId: string; task:
           preImageError={preImageError}
           onFullFileChange={setFullFile}
           review={review}
+          commentEntry={selectedEntry}
           observationId={changes?.observation_id}
           onReview={() => { if (selectedEntry) markReviewed(selectedEntry.entry_id, true); }}
           onClose={() => {
@@ -383,8 +455,38 @@ function UnavailableChanges({ title, body }: { title: string; body: string }) {
   );
 }
 
+function ScopeSwitch({ scope, uncommitted, commits, onChange }: {
+  scope: ChangeScope;
+  uncommitted: number | undefined;
+  commits: number;
+  onChange(scope: ChangeScope): void;
+}) {
+  const styles = useStyles();
+  const options: { id: ChangeScope; label: string }[] = [
+    { id: "worktree", label: uncommitted === undefined ? "Uncommitted" : `Uncommitted · ${uncommitted}` },
+    { id: "branch", label: `Branch · ${commits} ${commits === 1 ? "commit" : "commits"}` },
+  ];
+  return (
+    <View style={[styles.viewToggle, styles.scopeSwitch]} accessibilityRole="tablist">
+      {options.map((option) => (
+        <Pressable
+          key={option.id}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: scope === option.id }}
+          onPress={() => onChange(option.id)}
+          style={({ pressed }) => [styles.viewToggleButton, styles.scopeOption, scope === option.id ? styles.viewToggleButtonSelected : null, pressed ? styles.viewToggleButtonPressed : null]}
+        >
+          <Text style={[styles.viewToggleLabel, scope === option.id ? styles.viewToggleLabelSelected : null]}>{option.label}</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+/// Without `onMarkReviewed` the row is read-only: committed history has no
+/// review tracker, and the trailing mark is omitted.
 function ChangeRow({ entry, selected, reviewed = false, onSelect, onMarkReviewed }: {
-  entry: TaskWorktreeChangeEntryDto;
+  entry: ChangeEntryView;
   selected: boolean;
   reviewed?: boolean | undefined;
   onSelect(): void;
@@ -414,9 +516,7 @@ function ChangeRow({ entry, selected, reviewed = false, onSelect, onMarkReviewed
         </View>
       </Pressable>
       <Text style={styles.rowChevron} accessibilityElementsHidden>›</Text>
-      {onMarkReviewed === undefined ? (
-        <View style={[styles.reviewMark, styles.reviewMarkDone]}><Text style={styles.reviewMarkDoneText}>✓</Text></View>
-      ) : (
+      {onMarkReviewed === undefined ? <View style={styles.rowEnd} /> : (
         <Pressable
           onPress={onMarkReviewed}
           accessibilityRole="button"
@@ -447,13 +547,14 @@ function ChangeDiffModal({
   preImageLoading,
   preImageError,
   review,
+  commentEntry,
   observationId,
   onFullFileChange,
   onReview,
   onClose,
 }: {
-  entry: TaskWorktreeChangeEntryDto | undefined;
-  diff: TaskWorktreeDiffResult | undefined;
+  entry: ChangeEntryView | undefined;
+  diff: Pick<TaskWorktreeDiffResult, "state" | "patch"> | undefined;
   loading: boolean;
   error: string | undefined;
   position: number;
@@ -463,10 +564,12 @@ function ChangeDiffModal({
   wrap: boolean;
   onWrapChange(value: boolean): void;
   fullFileAvailable: boolean;
-  preImage: TaskWorktreePreImageResult | undefined;
+  preImage: DiffPreImage | undefined;
   preImageLoading: boolean;
   preImageError: string | undefined;
   review: ChangeReview;
+  /// Line comments target uncommitted work only; committed diffs are read-only.
+  commentEntry?: TaskWorktreeChangeEntryDto | undefined;
   observationId: string | undefined;
   onFullFileChange(value: boolean): void;
   onReview(): void;
@@ -570,9 +673,9 @@ function ChangeDiffModal({
                 preImage={preImage}
                 fullFileLoading={preImageLoading}
                 fullFileError={preImageError}
-                review={observationId && !review.sending ? {
-                  notedLines: new Set(review.notes.filter((note) => note.observationId === observationId && note.entryId === entry.entry_id).map(reviewLineKey)),
-                  onSelectLine: (line) => review.openLine(observationId, entry, line),
+                review={observationId && commentEntry && !review.sending ? {
+                  notedLines: new Set(review.notes.filter((note) => note.observationId === observationId && note.entryId === commentEntry.entry_id).map(reviewLineKey)),
+                  onSelectLine: (line) => review.openLine(observationId, commentEntry, line),
                 } : undefined}
               />
             ) : (
@@ -581,17 +684,23 @@ function ChangeDiffModal({
           </Card>
         </ScrollView> : null}
         {review.draft ? <ChangeReviewEditor review={review} /> : review.showNotes ? null : <View style={styles.modalFooter}>
-          <View style={styles.modalFeedbackBar}>
-            <Text style={styles.modalFooterHint}>Tap any line to comment</Text>
-            <SecondaryButton label={`Feedback (${review.notes.length})`} onPress={() => review.setShowNotes(true)} />
-          </View>
+          {commentEntry === undefined ? null : (
+            <View style={styles.modalFeedbackBar}>
+              <Text style={styles.modalFooterHint}>Tap any line to comment</Text>
+              <SecondaryButton label={`Feedback (${review.notes.length})`} onPress={() => review.setShowNotes(true)} />
+            </View>
+          )}
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={hasNext ? "Mark reviewed and open next file" : "Mark reviewed"}
-            onPress={onReview}
+            accessibilityLabel={commentEntry === undefined
+              ? (hasNext ? "Open next file" : "Close diff")
+              : (hasNext ? "Mark reviewed and open next file" : "Mark reviewed")}
+            onPress={commentEntry === undefined && !hasNext ? onClose : onReview}
             style={({ pressed }) => [styles.reviewNextButton, pressed ? styles.reviewNextButtonPressed : null]}
           >
-            <Text style={styles.reviewNextButtonText}>{hasNext ? "Review & next  →" : "Mark reviewed  ✓"}</Text>
+            <Text style={styles.reviewNextButtonText}>{commentEntry === undefined
+              ? (hasNext ? "Next file  →" : "Done  ✓")
+              : (hasNext ? "Review & next  →" : "Mark reviewed  ✓")}</Text>
           </Pressable>
         </View>}
         </KeyboardAvoidingView>
@@ -599,45 +708,6 @@ function ChangeDiffModal({
       </SafeAreaProvider>
     </Modal>
   );
-}
-
-function KindBadge({ kind }: { kind: TaskWorktreeChangeEntryDto["kind"] }) {
-  const styles = useStyles();
-  const { color } = useTheme();
-  const tint = kindColor(kind, color);
-  return (
-    <View style={[styles.kindBadge, { borderColor: tint }]} accessibilityElementsHidden>
-      <Text style={[styles.kind, { color: tint }]}>{kindGlyph(kind)}</Text>
-    </View>
-  );
-}
-
-function kindColor(kind: TaskWorktreeChangeEntryDto["kind"], color: ReturnType<typeof useTheme>["color"]): string {
-  switch (kind) {
-    case "added":
-    case "untracked": return color.success;
-    case "deleted": return color.danger;
-    case "unmerged": return color.warning;
-    case "renamed":
-    case "copied":
-    case "modified": return color.accentStrong;
-  }
-}
-
-function kindLabel(kind: TaskWorktreeChangeEntryDto["kind"]): string {
-  return kind === "untracked" ? "new" : kind;
-}
-
-function kindGlyph(kind: TaskWorktreeChangeEntryDto["kind"]): string {
-  switch (kind) {
-    case "added":
-    case "untracked": return "A";
-    case "deleted": return "D";
-    case "renamed": return "R";
-    case "copied": return "C";
-    case "unmerged": return "!";
-    case "modified": return "M";
-  }
 }
 
 function messageOf(cause: unknown, fallback: string): string {
@@ -674,12 +744,11 @@ const useStyles = createThemedStyles(({ color }) => ({
   rowChevron: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 23, lineHeight: 25, marginRight: 2 },
   rowTitle: { alignItems: "center", flexDirection: "row", gap: space.md },
   rowText: { flex: 1, gap: 2, minWidth: 0 },
-  kindBadge: { alignItems: "center", borderRadius: 6, borderWidth: 1.5, height: 24, justifyContent: "center", width: 24 },
-  kind: { fontFamily: fontFamily.mono, fontSize: 12, fontWeight: "800" },
   path: { color: color.text, fontSize: 15, fontWeight: "600", lineHeight: 20 },
   pathReviewed: { color: color.textSecondary },
   directory: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 11.5, lineHeight: 16 },
   original: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 11, lineHeight: 15 },
+  rowEnd: { width: space.md },
   reviewMark: { alignItems: "center", height: geometry.touchTarget, justifyContent: "center", width: geometry.touchTarget },
   reviewMarkText: { color: color.textSecondary, fontFamily: fontFamily.mono, fontSize: 22, lineHeight: 25 },
   reviewMarkPressed: { backgroundColor: color.bgHover },
@@ -705,6 +774,8 @@ const useStyles = createThemedStyles(({ color }) => ({
   wrapToggle: { alignItems: "center", backgroundColor: color.bgRaised, borderRadius: radius.control, justifyContent: "center", minHeight: 34, paddingHorizontal: space.md },
   modalFeedbackBar: { alignItems: "center", alignSelf: "stretch", flexDirection: "row", justifyContent: "space-between", gap: space.sm },
   modalMetaLabel: { color: color.textSecondary, fontFamily: fontFamily.mono, fontSize: 12, fontWeight: "700" },
+  scopeSwitch: { alignSelf: "stretch", marginHorizontal: space.screen, marginTop: space.sm },
+  scopeOption: { flex: 1 },
   viewToggle: { alignSelf: "flex-start", backgroundColor: color.bgRaised, borderRadius: radius.control, flexDirection: "row", overflow: "hidden" },
   viewToggleButton: { alignItems: "center", justifyContent: "center", minHeight: 34, paddingHorizontal: space.md },
   viewToggleButtonSelected: { backgroundColor: color.accentWash },

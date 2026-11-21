@@ -71,6 +71,21 @@ describe("mobile control scope", () => {
       });
       expect(preImage.ok).toBe(true);
 
+      // Committed branch history is a bounded read the Changes screen opens on
+      // once every worktree change is committed.
+      const commits = await call(harness.port, "task.branchCommitList", { taskId: "task-1" });
+      expect(commits.ok).toBe(true);
+      const commitChanges = await call(harness.port, "task.branchCommitChangeList", {
+        taskId: "task-1", observationId: "observation-1", commitId: "all",
+      });
+      expect(commitChanges.ok).toBe(true);
+      for (const method of ["task.branchCommitDiff", "task.branchCommitPreImage"]) {
+        const read = await call(harness.port, method, {
+          taskId: "task-1", observationId: "observation-1", commitId: "all", entryId: "entry-1",
+        });
+        expect(read.ok, method).toBe(true);
+      }
+
       const append = await call(harness.port, "companion.transcriptAppend", {
         projectId: "project-1",
         content: "hello",
