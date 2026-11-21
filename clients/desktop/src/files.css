@@ -114,3 +114,8 @@
 .changes-diff-editor { position: relative; }
 .changes-diff-pending { position: absolute; top: 0; left: 0; }
 .files-sidebar.library-sidebar { grid-template-rows: auto minmax(0, 1fr); }
+
+/* Task detail docked beside terminal panes, in the Files column. */
+.files-sidebar.task-detail-sidebar { display: flex; min-width: 0; min-height: 0; overflow: hidden; }
+.task-detail-sidebar .td-header { gap: 10px; padding: 14px 12px 12px 16px; }
+.task-detail-sidebar .td-body { padding: 14px 16px 32px; }

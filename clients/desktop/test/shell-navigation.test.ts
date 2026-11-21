@@ -110,6 +110,11 @@ describe("Shell navigation from the changes editor", () => {
     expect(rightSidebarToggle({ open: true, view: "steward" }, "steward")).toEqual({ update: { open: false }, clearAssistant: false });
     expect(rightSidebarToggle({ open: true, view: "steward" }, "files")).toEqual({ update: { open: true, view: "files" }, clearAssistant: false });
   });
+
+  it("reveals the clicked view over a docked Task detail instead of closing it", () => {
+    expect(rightSidebarToggle({ open: true, view: "files" }, "files", true)).toEqual({ update: { open: true, view: "files" }, clearAssistant: false });
+    expect(rightSidebarToggle({ open: false, view: "files" }, "steward", true)).toEqual({ update: { open: true, view: "steward" }, clearAssistant: true });
+  });
 });
 
 describe("Shell Session recovery", () => {

@@ -495,12 +495,14 @@ export function shellAssistantStageVisible(
 
 /// An activity bar click. Choosing the open view closes the sidebar. Opening
 /// Steward only reveals its rail: the stage changes when the reader picks an
-/// assistant there, so a pick left over from before must not reappear.
+/// assistant there, so a pick left over from before must not reappear. A docked
+/// Task detail covers the column, so every click then reveals its view.
 export function rightSidebarToggle(
   current: Pick<FilesSidebarPreference, "open" | "view">,
   view: RightSidebarView,
+  detailDocked = false,
 ): { update: Partial<FilesSidebarPreference>; clearAssistant: boolean } {
-  if (current.open && current.view === view) return { update: { open: false }, clearAssistant: false };
+  if (!detailDocked && current.open && current.view === view) return { update: { open: false }, clearAssistant: false };
   return { update: { open: true, view }, clearAssistant: view === "steward" };
 }
 
@@ -717,6 +719,10 @@ export function Shell(props: ShellProps) {
   /// so the page follows the live projection instead of a snapshot taken at the
   /// click, and drops itself when the Task leaves the Project.
   const [detailTaskId, setDetailTaskId] = useState<string>();
+  /// Opened while terminal panes were showing, the Task detail docks in the
+  /// right sidebar column, like Files, instead of taking the stage away.
+  const [detailDocked, setDetailDocked] = useState(false);
+  const terminalShowing = Boolean(props.layout);
   /// The Task last pointed at or clicked in the Task rail; while the Steward
   /// sidebar is open its Playbook highlights it, the pointed one first.
   const [hoveredRailTaskId, setHoveredRailTaskId] = useState<string>();
@@ -934,11 +940,13 @@ export function Shell(props: ShellProps) {
     if ((editorSubject?.taskId ?? null) !== taskId && fileEditor.editor.dirty()
       && !window.confirm("Switching the file root discards unsaved editor changes. Continue?")) return;
     updateFilesSidebar({ open: true, view });
+    if (detailDocked) setDetailTaskId(undefined);
     setChangesPresentation(undefined);
     setFilesPresentation({ projectId: props.selectedProject.id, taskId });
   };
   const toggleRightSidebar = (view: RightSidebarView) => {
-    const toggle = rightSidebarToggle(filesSidebar, view);
+    if (dockedDetailTask) setDetailTaskId(undefined);
+    const toggle = rightSidebarToggle(filesSidebar, view, Boolean(dockedDetailTask));
     if (toggle.clearAssistant) setAssistantSelection(undefined);
     if (toggle.update.open && view === "agents") props.agentLibrary?.reload();
     updateFilesSidebar(toggle.update);
@@ -1021,14 +1029,18 @@ export function Shell(props: ShellProps) {
   const detailTask = detailTaskId
     ? props.projectTasks.find((task) => task.id === detailTaskId)
     : undefined;
+  const dockedDetailTask = detailDocked ? detailTask : undefined;
+  const stageDetailTask = detailDocked ? undefined : detailTask;
+  const rightColumnOpen = filesSidebar.open || Boolean(dockedDetailTask);
   const openTaskDetail = useCallback(
     (taskId: string) => {
       dismissChanges();
       setAssistantSelection(undefined);
       setStagePage(undefined);
+      setDetailDocked(terminalShowing);
       setDetailTaskId(taskId);
     },
-    [dismissChanges],
+    [dismissChanges, terminalShowing],
   );
   const openStagePage = useCallback(
     (page: StagePage) => {
@@ -1290,9 +1302,26 @@ export function Shell(props: ShellProps) {
   const resizeFilesSidebar = useCallback((width: number) => {
     updateFilesSidebar({ width: clampFilesSidebarWidth(width, window.innerWidth, sidebarWidth) });
   }, [sidebarWidth, updateFilesSidebar]);
+  const renderTaskDetail = (task: NonNullable<typeof detailTask>) => <TaskDetailPanel
+      key={task.id}
+      task={task}
+      sessions={detailSessions}
+      statusesById={statusesById}
+      reviewReadySessionIds={props.reviewReadySessionIds}
+      gitHostProjection={props.gitHostProjections.find((projection) => projection.task_id === task.id)}
+      branchCommitSummary={props.branchCommitSummaries.find((summary) => summary.task_id === task.id)}
+      close={() => setDetailTaskId(undefined)}
+      selectSession={selectSession}
+      openFiles={() => openFiles(task.id)}
+      openChanges={(source) => setChangesPresentation({ kind: "task", taskId: task.id, source })}
+      openExternal={props.openExternal}
+      agentCapabilities={props.agentCapabilities}
+      launchTerminal={props.launchTaskTerminal}
+      launchAgent={props.launchTaskAgent}
+    />;
   const appShellStyle = {
     "--sidebar-width": `${sidebarWidth}px`,
-    ...(filesSidebar.open ? { "--files-sidebar-width": `${filesSidebarWidth}px` } : {}),
+    ...(rightColumnOpen ? { "--files-sidebar-width": `${filesSidebarWidth}px` } : {}),
   } as CSSProperties;
   const projectTriggerBounds = projectMenuOpen ? projectTriggerRef.current?.getBoundingClientRect() : undefined;
   const projectMenuStyle = projectTriggerBounds
@@ -1638,7 +1667,7 @@ export function Shell(props: ShellProps) {
         requestSplit={props.openSessionInSplitAtPane}
         draggingChanged={setSessionDragging}
       >
-      <div className={`app-shell${filesSidebar.open ? " files-sidebar-open" : ""}`} style={appShellStyle}>
+      <div className={`app-shell${rightColumnOpen ? " files-sidebar-open" : ""}`} style={appShellStyle}>
         <aside className="sidebar" aria-label="Projects and sessions">
           {showsWindowDragRegion(platform) && <div className="window-drag-region" aria-hidden="true" />}
           <header className="brand-row">
@@ -2016,7 +2045,7 @@ export function Shell(props: ShellProps) {
           draggingChanged={setSidebarDragging}
         />
         <section className="workspace" aria-label="Terminal workspace">
-          {!assistantStageVisible && !detailTask && !stagePage && props.selectedProject ? <SessionTabStrip
+          {!assistantStageVisible && !stageDetailTask && !stagePage && props.selectedProject ? <SessionTabStrip
             sessions={props.projectSessions.filter((session) => !isAssistantSession(session))}
             selectedSessionId={props.selectedSession?.id}
             disabled={disabled}
@@ -2045,23 +2074,7 @@ export function Shell(props: ShellProps) {
                 repairProviderHistory={setProviderHistoryRepairSessionId}
               />}
               {...props.assistantActions}
-            /> : detailTask ? <TaskDetailPanel
-              key={detailTask.id}
-              task={detailTask}
-              sessions={detailSessions}
-              statusesById={statusesById}
-              reviewReadySessionIds={props.reviewReadySessionIds}
-              gitHostProjection={props.gitHostProjections.find((projection) => projection.task_id === detailTask.id)}
-              branchCommitSummary={props.branchCommitSummaries.find((summary) => summary.task_id === detailTask.id)}
-              close={() => setDetailTaskId(undefined)}
-              selectSession={selectSession}
-              openFiles={() => openFiles(detailTask.id)}
-              openChanges={(source) => setChangesPresentation({ kind: "task", taskId: detailTask.id, source })}
-              openExternal={props.openExternal}
-              agentCapabilities={props.agentCapabilities}
-              launchTerminal={props.launchTaskTerminal}
-              launchAgent={props.launchTaskAgent}
-            /> : stagePage?.kind === "workflow" && props.selectedProject ? (stagePage.id && !props.workflowConfigurations.some((configuration) => configuration.id === stagePage.id)
+            /> : stageDetailTask ? renderTaskDetail(stageDetailTask) : stagePage?.kind === "workflow" && props.selectedProject ? (stagePage.id && !props.workflowConfigurations.some((configuration) => configuration.id === stagePage.id)
               ? <StageEditorPlaceholder label="Workflow template" error="This template is no longer available. Your draft has been kept; it cannot overwrite another template." loaded={false} close={() => setStagePage(undefined)} />
               : <WorkflowEditorPanel
               key={workflowDraftKey}
@@ -2231,7 +2244,7 @@ export function Shell(props: ShellProps) {
             ) : null}
           </main>
         </section>
-        {filesSidebar.open ? <>
+        {rightColumnOpen ? <>
           <FilesSidebarResizeHandle
             width={filesSidebarWidth}
             maximum={filesSidebarMaximumWidth(window.innerWidth, sidebarWidth)}
@@ -2239,7 +2252,7 @@ export function Shell(props: ShellProps) {
             reset={() => updateFilesSidebar({ width: FILES_SIDEBAR_DEFAULT_WIDTH })}
             draggingChanged={setSidebarDragging}
           />
-          {filesSidebar.view === "agents" || filesSidebar.view === "skills" || filesSidebar.view === "context" ? <aside className="files-sidebar library-sidebar" aria-label={rightSidebarLabel(filesSidebar.view)}>
+          {dockedDetailTask ? <aside className="files-sidebar task-detail-sidebar" aria-label="Task details">{renderTaskDetail(dockedDetailTask)}</aside> : filesSidebar.view === "agents" || filesSidebar.view === "skills" || filesSidebar.view === "context" ? <aside className="files-sidebar library-sidebar" aria-label={rightSidebarLabel(filesSidebar.view)}>
             <header className="files-sidebar-header">
               <h2>{rightSidebarLabel(filesSidebar.view)}</h2>
               <button type="button" className="icon-button quiet" aria-label={`Close ${rightSidebarLabel(filesSidebar.view)} sidebar`} title={`Close ${rightSidebarLabel(filesSidebar.view)} sidebar`} onClick={() => updateFilesSidebar({ open: false })}><Icon name="close" /></button>
@@ -2370,7 +2383,7 @@ export function Shell(props: ShellProps) {
             unavailable={Boolean(props.selectedProject) && disabled}
           />}
         </> : null}
-        <RightActivityBar open={filesSidebar.open} view={filesSidebar.view} hidden={props.pullRequestsAvailable ? [] : ["pullRequests"]} select={toggleRightSidebar} />
+        <RightActivityBar open={filesSidebar.open && !dockedDetailTask} view={filesSidebar.view} hidden={props.pullRequestsAvailable ? [] : ["pullRequests"]} select={toggleRightSidebar} />
       </div>
       </SidebarSessionDndProvider>
       <OverlayPortal container={props.overlayContainer}>
