@@ -76,26 +76,30 @@ export function AgentSessionRow({ row, task, title, accessibleName, age, onPress
       </View>
       <Text style={styles.chevron} accessibilityElementsHidden>›</Text>
     </Pressable>
-    {onOpenChanges ? (
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`Changes in ${title}'s worktree`}
-        onPress={onOpenChanges}
-        style={({ pressed }) => [styles.key, pressed ? styles.keyPressed : null]}
-      >
-        <Text style={styles.changesLabel}>Changes</Text>
-      </Pressable>
-    ) : null}
-    {task?.jira_url && issueKey ? (
-      <Pressable
-        accessibilityRole="link"
-        accessibilityLabel={`Open ${issueKey} in Jira`}
-        accessibilityHint="Open outside TermLoop"
-        onPress={() => { void openExternalLink(task.jira_url!); }}
-        style={({ pressed }) => [styles.key, pressed ? styles.keyPressed : null]}
-      >
-        <Text style={styles.keyLabel}>{issueKey}</Text>
-      </Pressable>
+    {onOpenChanges || (task?.jira_url && issueKey) ? (
+      <View style={styles.trailing}>
+        {task?.jira_url && issueKey ? (
+          <Pressable
+            accessibilityRole="link"
+            accessibilityLabel={`Open ${issueKey} in Jira`}
+            accessibilityHint="Open outside TermLoop"
+            onPress={() => { void openExternalLink(task.jira_url!); }}
+            style={({ pressed }) => [styles.key, pressed ? styles.keyPressed : null]}
+          >
+            <Text style={styles.keyLabel}>{issueKey}</Text>
+          </Pressable>
+        ) : null}
+        {onOpenChanges ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Changes in ${title}'s worktree`}
+            onPress={onOpenChanges}
+            style={({ pressed }) => [styles.key, pressed ? styles.keyPressed : null]}
+          >
+            <Text style={styles.changesLabel}>Changes</Text>
+          </Pressable>
+        ) : null}
+      </View>
     ) : null}
   </View>;
 }
@@ -119,7 +123,9 @@ const useStyles = createThemedStyles(({ color }) => ({
   taskGlyph: { color: color.textMuted, fontSize: 11 },
   task: { flex: 1, color: color.textSecondary, fontSize: 12 },
   chevron: { color: color.textMuted, fontSize: 15 },
-  key: { justifyContent: "center", paddingHorizontal: space.sm, minWidth: geometry.touchTarget, alignItems: "center" },
+  /// Jira key over Changes, stacked so the row's title keeps its width.
+  trailing: { justifyContent: "center", alignItems: "flex-end", paddingRight: space.xs },
+  key: { flex: 1, maxHeight: geometry.touchTarget, justifyContent: "center", paddingHorizontal: space.sm, minWidth: geometry.touchTarget, alignItems: "flex-end" },
   keyPressed: { opacity: 0.6 },
   changesLabel: { color: color.accentStrong, fontFamily: fontFamily.mono, fontSize: 11, fontWeight: "700" },
   keyLabel: { color: color.warning, fontFamily: fontFamily.mono, fontSize: 11, fontWeight: "700" },
