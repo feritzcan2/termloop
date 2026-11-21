@@ -1,14 +1,13 @@
 import { useMemo } from "react";
-import type { AgentCapabilityDto } from "@termloop/contract/current";
 import type { AgentStatus, BranchCommitSummary, GitHostProjection, Session, Task } from "../model.js";
-import { sessionLabel, taskEffectiveBranch } from "../model.js";
-import { agentAttention, sessionState } from "../session-presentation.js";
+import { taskEffectiveBranch } from "../model.js";
+import { agentAttention } from "../session-presentation.js";
 import {
   integrationTone, taskChangeCount, taskChangedFileLabel, taskDivergence, taskIntegration, taskStage,
 } from "../task-presentation.js";
 import { GitHostPullRequests, TaskMetaLine } from "./TaskRail.js";
 import { TaskBrief } from "./TaskBrief.js";
-import { Icon, agentIconName } from "./Icon.js";
+import { Icon } from "./Icon.js";
 import { pullRequestIdentity, type ChangesOpenSource } from "../change-source.js";
 
 export type TaskDetailPanelProps = {
@@ -23,11 +22,6 @@ export type TaskDetailPanelProps = {
   openFiles?(): void;
   openChanges(source: ChangesOpenSource): void;
   openExternal(url: string, runSessionId?: string): Promise<void>;
-  /** Launchers are optional: a host without them (tests, a read-only stage)
-      simply shows no Start row. */
-  agentCapabilities?: readonly AgentCapabilityDto[] | undefined;
-  launchTerminal?: ((taskId: string) => Promise<unknown>) | undefined;
-  launchAgent?: ((taskId: string, agentId: string) => Promise<unknown>) | undefined;
 };
 
 type AttentionItem = { tone: string; text: string; detail?: string | undefined; act?: { label: string; run(): void } };
@@ -48,8 +42,6 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
     () => agentAttention(props.sessions, props.statusesById, props.reviewReadySessionIds),
     [props.sessions, props.statusesById, props.reviewReadySessionIds],
   );
-  const launchers = (props.agentCapabilities ?? []).filter((capability) => capability.available);
-  const canLaunch = stage.id === "ready" && Boolean(props.launchTerminal || props.launchAgent);
 
   const hasPullRequests = (props.gitHostProjection?.matches.length ?? 0) > 0;
   const openPullRequest = (pullRequest: GitHostProjection["matches"][number]) => props.openChanges({
@@ -132,48 +124,6 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
 
         <div className="td-layout">
           <aside className="td-side">
-            <section className="td-card" aria-label="Sessions">
-              <div className="td-card-head">
-                <h2>Sessions</h2>
-                {props.sessions.length > 0 ? <span className="td-count">{props.sessions.length}</span> : null}
-              </div>
-              {props.sessions.length === 0
-                ? <p className="td-note">No Session is running in this Task.</p>
-                : <ul className="td-agents">
-                  {props.sessions.map((session) => {
-                    const state = sessionState(session, props.statusesById.get(session.id), props.reviewReadySessionIds.has(session.id));
-                    return (
-                      <li key={session.id}>
-                        <button
-                          type="button"
-                          className="td-agent"
-                          title={`${sessionLabel(session)} — ${state.summary} Opens its terminal.`}
-                          onClick={() => props.selectSession(session.id)}
-                        >
-                          <i className={`td-agent-dot ${state.tone}`} aria-hidden="true" />
-                          <span className="td-agent-name">{sessionLabel(session)}</span>
-                          {state.label ? <span className="td-agent-state">{state.label}</span> : null}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>}
-              {canLaunch ? (
-                <div className="td-launch" role="group" aria-label={`Start a new Session in ${task.title}`}>
-                  {props.launchTerminal ? <button type="button" className="td-mini" onClick={() => void props.launchTerminal!(task.id)}><Icon name="terminal" />Terminal</button> : null}
-                  {props.launchAgent ? launchers.map((capability) => (
-                    <button
-                      key={capability.agent_id}
-                      type="button"
-                      className={`td-mini agent-${capability.agent_id}`}
-                      title={`New ${capability.label} Session${capability.integration_level === "launchOnly" ? " (launch only)" : ""}`}
-                      onClick={() => void props.launchAgent!(task.id, capability.agent_id)}
-                    ><Icon name={agentIconName(capability.agent_id)} />{capability.label}</button>
-                  )) : null}
-                </div>
-              ) : null}
-            </section>
-
             <section className="td-card" aria-label="Changes">
               <div className="td-card-head"><h2>Changes</h2></div>
               <div className="td-facts">

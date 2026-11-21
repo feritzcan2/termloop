@@ -3421,10 +3421,6 @@ button.history-row-main { cursor: pointer; }
 .td-mini svg { width: 12px; height: 12px; color: var(--td-dim); }
 .td-mini:hover:not(:disabled) { border-color: rgba(102,179,255,.45); background: var(--accent-wash); color: #fff; }
 .td-mini:hover:not(:disabled) svg { color: var(--accent-strong); }
-.td-mini.agent-claude:hover svg { color: var(--agent-claude); }
-.td-mini.agent-codex:hover svg { color: var(--agent-codex); }
-.td-mini.agent-opencode:hover svg { color: var(--agent-opencode); }
-.td-launch { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 10px; border-top: 1px solid var(--rule); }
 
 .td-steward summary { display: flex; align-items: center; gap: 8px; list-style: none; cursor: pointer; }
 .td-steward summary::-webkit-details-marker { display: none; }
@@ -3462,18 +3458,6 @@ button.history-row-main { cursor: pointer; }
 .td-card .task-pr:hover .task-pr-head, .td-card .task-pr:hover .task-signal-label { color: #fff; }
 .td-card .task-pr-external { width: 22px; height: 22px; color: var(--td-dim); font-size: 13px; }
 
-.td-agents { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
-.td-agent { display: grid; grid-template-columns: 8px minmax(0,1fr) auto; align-items: center; gap: 10px; width: calc(100% + 16px); margin-left: -8px; padding: 7px 8px; border: 0; border-radius: 7px; background: transparent; color: var(--td-body); text-align: left; }
-.td-agent:hover { background: var(--hover); color: var(--td-text); }
-.td-agent-dot { width: 7px; height: 7px; border-radius: 50%; background: #6b7376; }
-.td-agent-dot.working { background: var(--agent-status-working); }
-.td-agent-dot.review { background: var(--agent-status-review); }
-.td-agent-dot.attention { background: var(--agent-status-awaiting); }
-.td-agent-dot.interrupted { background: var(--agent-status-interrupted); }
-.td-agent-dot.busy { background: var(--state-running); }
-.td-agent-dot.blocked { background: var(--state-error); }
-.td-agent-name { overflow: hidden; font-size: 13px; font-weight: 560; text-overflow: ellipsis; white-space: nowrap; }
-.td-agent-state { flex: none; color: var(--td-dim); font: 11.5px/1.4 var(--font-mono); }
 
 
 /* Task Sources — Project-level Jira review page on the terminal stage. */

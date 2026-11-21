@@ -1317,9 +1317,6 @@ export function Shell(props: ShellProps) {
       openFiles={() => openFiles(task.id)}
       openChanges={(source) => setChangesPresentation({ kind: "task", taskId: task.id, source })}
       openExternal={props.openExternal}
-      agentCapabilities={props.agentCapabilities}
-      launchTerminal={props.launchTaskTerminal}
-      launchAgent={props.launchTaskAgent}
     />;
   const appShellStyle = {
     "--sidebar-width": `${sidebarWidth}px`,

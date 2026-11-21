@@ -94,7 +94,7 @@ describe("the Task detail page on screen", () => {
     expect(container.querySelectorAll(".td-now-item")).toHaveLength(1);
     expect(container.textContent).not.toContain("Ready to run agents");
     expect([...container.querySelectorAll(".td-card-head h2")].map((h) => h.textContent))
-      .toEqual(["Sessions", "Changes", "Description"]);
+      .toEqual(["Changes", "Description"]);
     expect(container.textContent).not.toMatch(/pipeline/i);
     expect(container.querySelector(".td-step, .td-spine, .td-meter")).toBeNull();
 
@@ -208,22 +208,14 @@ describe("the Task detail page on screen", () => {
     await unmount();
   });
 
-  it("opens a Session's terminal from its row and offers launchers for a ready Task", async () => {
-    const selected: string[] = [];
-    const launched: string[] = [];
-    const task = detailTask({ worktree_health: health() });
+  it("lists no Sessions or launchers", async () => {
     const { container, unmount } = await mount({
-      task,
+      task: detailTask({ worktree_health: health() }),
       sessions: [{ id: "session-1", kind: "Terminal", name: "shell", process: { cwd: "/worktrees/detail-page" } }],
-      selectSession: (id: string) => selected.push(id),
-      launchTerminal: async (taskId: string) => { launched.push(`terminal:${taskId}`); },
     });
 
-    expect(container.querySelector(".td-count")?.textContent).toBe("1");
-    await act(async () => container.querySelector<HTMLButtonElement>(".td-agent")!.click());
-    expect(selected).toEqual(["session-1"]);
-    await act(async () => container.querySelector<HTMLButtonElement>(".td-launch .td-mini")!.click());
-    expect(launched).toEqual(["terminal:task-1"]);
+    expect(container.querySelector('[aria-label="Sessions"]')).toBeNull();
+    expect(container.querySelector('[aria-label^="Start a new Session"]')).toBeNull();
 
     await unmount();
   });
