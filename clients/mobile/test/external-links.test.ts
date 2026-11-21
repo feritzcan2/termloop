@@ -68,6 +68,20 @@ describe("external link controls", () => {
     expect(onPress).toHaveBeenCalledOnce(); expect(onLongPress).toHaveBeenCalledOnce();
   });
 
+  it("offers the worktree's Changes as its own target beside the Agent row", async () => {
+    const h = await harness("features/agents/agent-session-row.tsx");
+    const model = buildProjectOverview({ projects: fixtureProjects, tasks: fixtureTasks, sessions: fixtureSessions, agentStatuses: fixtureAgentStatuses, stewardEnabledProjectIds: [], stewardExecutorSessionIds: {}, agentGroupsByProject: {} }, fixtureTasks[0]!.project_id);
+    const row = model.agents[0]!;
+    const onPress = vi.fn(); const onOpenChanges = vi.fn();
+    const tree = expand(h.module.AgentSessionRow({ row, title: row.title, accessibleName: row.accessibleName, age: undefined, onPress, onLongPress: vi.fn(), onOpenChanges }));
+    const changes = all(tree).find((node) => node.props.accessibilityLabel === `Changes in ${row.title}'s worktree`)!;
+    changes.props.onPress();
+    expect(onOpenChanges).toHaveBeenCalledOnce();
+    expect(onPress).not.toHaveBeenCalled();
+    const without = expand(h.module.AgentSessionRow({ row, title: row.title, accessibleName: row.accessibleName, age: undefined, onPress, onLongPress: vi.fn() }));
+    expect(all(without).some((node) => node.props.accessibilityLabel?.startsWith("Changes in"))).toBe(false);
+  });
+
   it.each(["stream", "pending", "screen"])("opens links in %s output only on tap", async (kind) => {
     const h = await harness("components/terminal-view.tsx");
     const buffer = { ...emptyTerminalBuffer(), ready: true };

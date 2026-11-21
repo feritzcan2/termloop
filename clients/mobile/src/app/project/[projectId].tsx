@@ -382,6 +382,10 @@ function AgentRowView({ row, membership, nowMs, openActions }: { row: AgentRow; 
     age={age}
     onPress={onPress}
     onLongPress={onLongPress}
+    onOpenChanges={task?.worktree ? () => router.push({
+      pathname: "/task/[taskId]/changes",
+      params: connectionRouteParams(connections.selectedId, { taskId: task.id }),
+    }) : undefined}
   />;
   return session === undefined
     ? content

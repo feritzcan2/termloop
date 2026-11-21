@@ -12,8 +12,9 @@ import { fontFamily } from "@/theme/typography";
 /// One Agent row, shaped like the desktop sidebar's Session row: a tone rail,
 /// the agent's presence dot, one title line, and a mono state line
 /// (state · runner · folder). An attached Task is a third, quiet line, and its
-/// Jira key stays a separate touch target outside the row's own button.
-export function AgentSessionRow({ row, task, title, accessibleName, age, onPress, onLongPress }: {
+/// Jira key and the worktree's Changes stay separate touch targets outside the
+/// row's own button.
+export function AgentSessionRow({ row, task, title, accessibleName, age, onPress, onLongPress, onOpenChanges }: {
   row: AgentRow;
   /// The Task this Agent works in, when no surrounding frame already names it.
   task?: TaskDto | undefined;
@@ -22,6 +23,8 @@ export function AgentSessionRow({ row, task, title, accessibleName, age, onPress
   age: string | undefined;
   onPress(): void;
   onLongPress(): void;
+  /// Present when the Agent works in a Task worktree whose changes can be reviewed.
+  onOpenChanges?: (() => void) | undefined;
 }) {
   const { color, toneColor, toneWash } = useTheme();
   const styles = useStyles();
@@ -73,6 +76,16 @@ export function AgentSessionRow({ row, task, title, accessibleName, age, onPress
       </View>
       <Text style={styles.chevron} accessibilityElementsHidden>›</Text>
     </Pressable>
+    {onOpenChanges ? (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Changes in ${title}'s worktree`}
+        onPress={onOpenChanges}
+        style={({ pressed }) => [styles.key, pressed ? styles.keyPressed : null]}
+      >
+        <Text style={styles.changesLabel}>Changes</Text>
+      </Pressable>
+    ) : null}
     {task?.jira_url && issueKey ? (
       <Pressable
         accessibilityRole="link"
@@ -108,5 +121,6 @@ const useStyles = createThemedStyles(({ color }) => ({
   chevron: { color: color.textMuted, fontSize: 15 },
   key: { justifyContent: "center", paddingHorizontal: space.sm, minWidth: geometry.touchTarget, alignItems: "center" },
   keyPressed: { opacity: 0.6 },
+  changesLabel: { color: color.accentStrong, fontFamily: fontFamily.mono, fontSize: 11, fontWeight: "700" },
   keyLabel: { color: color.warning, fontFamily: fontFamily.mono, fontSize: 11, fontWeight: "700" },
 }));
