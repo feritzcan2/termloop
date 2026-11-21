@@ -12,7 +12,7 @@ import { ActivityIndicator, KeyboardAvoidingView, Modal, Pressable, RefreshContr
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ChangeReviewEditor, ChangeReviewPanel } from "@/components/change-review";
-import { Banner, Card, CardDivider, EmptyState, SecondaryButton, SectionHeader, StatePill } from "@/components/primitives";
+import { Banner, Card, CardDivider, EmptyState, SecondaryButton, SectionHeader } from "@/components/primitives";
 import { Screen, ScreenHeader } from "@/components/screen";
 import { WorktreeDiff } from "@/components/worktree-diff";
 import { useMobileRuntime } from "@/composition/runtime-context";
@@ -25,8 +25,10 @@ import { basename } from "@/presentation/dto-readers";
 import { keyboardAvoidingBehavior } from "@/platform/presentation";
 import {
   nextUnreviewedEntryId,
+  patchLineStats,
   reviewProgress,
   reviewedEntries,
+  splitDisplayPath,
   unreviewedSections,
 } from "@/presentation/worktree-change-review";
 import { geometry, radius, space } from "@/theme/tokens";
@@ -72,6 +74,7 @@ function TaskChangesScreen({ connectionId, task }: { connectionId: string; task:
   const [diffLoading, setDiffLoading] = useState(false);
   const [diffError, setDiffError] = useState<string | undefined>();
   const [fullFile, setFullFile] = useState(false);
+  const [wrap, setWrap] = useState(true);
   const [preImage, setPreImage] = useState<TaskWorktreePreImageResult | undefined>();
   const [preImageLoading, setPreImageLoading] = useState(false);
   const [preImageError, setPreImageError] = useState<string | undefined>();
@@ -347,6 +350,8 @@ function TaskChangesScreen({ connectionId, task }: { connectionId: string; task:
           total={changes?.entries.length ?? 0}
           hasNext={nextEntryIdAfterReview !== undefined}
           fullFile={fullFile}
+          wrap={wrap}
+          onWrapChange={setWrap}
           fullFileAvailable={currentDiff?.state === "patch" && diffError === undefined}
           preImage={currentPreImage}
           preImageLoading={preImageLoading}
@@ -386,6 +391,7 @@ function ChangeRow({ entry, selected, reviewed = false, onSelect, onMarkReviewed
   onMarkReviewed?: (() => void) | undefined;
 }) {
   const styles = useStyles();
+  const { name, directory } = splitDisplayPath(entry.display_path);
   return (
     <View style={[styles.row, selected ? styles.rowSelected : null]}>
       <Pressable
@@ -397,10 +403,15 @@ function ChangeRow({ entry, selected, reviewed = false, onSelect, onMarkReviewed
         style={({ pressed }) => [styles.rowMain, pressed ? styles.rowMainPressed : null]}
       >
         <View style={styles.rowTitle}>
-          <Text style={styles.kind}>{kindGlyph(entry.kind)}</Text>
-          <Text style={styles.path} numberOfLines={2}>{entry.display_path}</Text>
+          <KindBadge kind={entry.kind} />
+          <View style={styles.rowText}>
+            <Text style={[styles.path, reviewed ? styles.pathReviewed : null]} numberOfLines={1} ellipsizeMode="middle">{name}</Text>
+            {directory ? (
+              <Text style={styles.directory} numberOfLines={1} ellipsizeMode="head">{directory}</Text>
+            ) : null}
+            {entry.original_display_path === null ? null : <Text style={styles.original} numberOfLines={1} ellipsizeMode="head">from {entry.original_display_path}</Text>}
+          </View>
         </View>
-        {entry.original_display_path === null ? null : <Text style={styles.original} numberOfLines={1}>from {entry.original_display_path}</Text>}
       </Pressable>
       <Text style={styles.rowChevron} accessibilityElementsHidden>›</Text>
       {onMarkReviewed === undefined ? (
@@ -429,6 +440,8 @@ function ChangeDiffModal({
   total,
   hasNext,
   fullFile,
+  wrap,
+  onWrapChange,
   fullFileAvailable,
   preImage,
   preImageLoading,
@@ -447,6 +460,8 @@ function ChangeDiffModal({
   total: number;
   hasNext: boolean;
   fullFile: boolean;
+  wrap: boolean;
+  onWrapChange(value: boolean): void;
   fullFileAvailable: boolean;
   preImage: TaskWorktreePreImageResult | undefined;
   preImageLoading: boolean;
@@ -459,6 +474,7 @@ function ChangeDiffModal({
 }) {
   const { color } = useTheme();
   const styles = useStyles();
+  const stats = useMemo(() => diff?.state === "patch" ? patchLineStats(diff.patch) : undefined, [diff]);
   return (
     <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
       <SafeAreaProvider>
@@ -484,47 +500,65 @@ function ChangeDiffModal({
         {review.showNotes ? (
           <ChangeReviewPanel review={review} observationId={observationId} onBackToDiff={entry ? () => { review.finishDraft(); review.setShowNotes(false); } : undefined} />
         ) : entry ? <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalContent} bounces={false} keyboardShouldPersistTaps="handled">
-          <View style={styles.modalMeta}>
-            <Text style={styles.modalMetaLabel}>FILE {position}/{total}</Text>
-            <Text style={styles.modalMetaHint}>{fullFile ? "Current file" : "Change focus"}</Text>
+          <View style={styles.fileHeader}>
+            <View style={styles.fileHeaderTop}>
+              <KindBadge kind={entry.kind} />
+              <Text style={styles.fileName} numberOfLines={2}>{splitDisplayPath(entry.display_path).name}</Text>
+            </View>
+            <Text style={styles.diffPath} selectable>{entry.display_path}</Text>
+            {entry.original_display_path === null ? null : <Text style={styles.diffOriginal}>from {entry.original_display_path}</Text>}
+            <View style={styles.fileHeaderMeta}>
+              <Text style={styles.modalMetaLabel}>{kindLabel(entry.kind)} · file {position}/{total}</Text>
+              {stats === undefined ? null : (
+                <Text style={styles.stats}>
+                  <Text style={styles.statsAdded}>+{stats.added}</Text>
+                  {"  "}
+                  <Text style={styles.statsRemoved}>−{stats.removed}</Text>
+                </Text>
+              )}
+            </View>
           </View>
-          <View style={styles.viewToggle} accessibilityRole="tablist">
+          <View style={styles.toolbar}>
+            <View style={styles.viewToggle} accessibilityRole="tablist">
+              <Pressable
+                accessibilityRole="tab"
+                accessibilityState={{ selected: !fullFile }}
+                onPress={() => onFullFileChange(false)}
+                style={({ pressed }) => [styles.viewToggleButton, !fullFile ? styles.viewToggleButtonSelected : null, pressed ? styles.viewToggleButtonPressed : null]}
+              >
+                <Text style={[styles.viewToggleLabel, !fullFile ? styles.viewToggleLabelSelected : null]}>Changes</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="tab"
+                accessibilityState={{ selected: fullFile, disabled: !fullFileAvailable }}
+                disabled={!fullFileAvailable}
+                onPress={() => onFullFileChange(true)}
+                style={({ pressed }) => [
+                  styles.viewToggleButton,
+                  fullFile ? styles.viewToggleButtonSelected : null,
+                  !fullFileAvailable ? styles.viewToggleButtonDisabled : null,
+                  pressed && fullFileAvailable ? styles.viewToggleButtonPressed : null,
+                ]}
+              >
+                <Text style={[
+                  styles.viewToggleLabel,
+                  fullFile ? styles.viewToggleLabelSelected : null,
+                  !fullFileAvailable ? styles.viewToggleLabelDisabled : null,
+                ]}>Full file</Text>
+              </Pressable>
+            </View>
             <Pressable
-              accessibilityRole="tab"
-              accessibilityState={{ selected: !fullFile }}
-              onPress={() => onFullFileChange(false)}
-              style={({ pressed }) => [styles.viewToggleButton, !fullFile ? styles.viewToggleButtonSelected : null, pressed ? styles.viewToggleButtonPressed : null]}
+              accessibilityRole="switch"
+              accessibilityLabel="Wrap long lines"
+              accessibilityState={{ checked: wrap }}
+              onPress={() => onWrapChange(!wrap)}
+              hitSlop={6}
+              style={({ pressed }) => [styles.wrapToggle, wrap ? styles.viewToggleButtonSelected : null, pressed ? styles.viewToggleButtonPressed : null]}
             >
-              <Text style={[styles.viewToggleLabel, !fullFile ? styles.viewToggleLabelSelected : null]}>Diff</Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="tab"
-              accessibilityState={{ selected: fullFile, disabled: !fullFileAvailable }}
-              disabled={!fullFileAvailable}
-              onPress={() => onFullFileChange(true)}
-              style={({ pressed }) => [
-                styles.viewToggleButton,
-                fullFile ? styles.viewToggleButtonSelected : null,
-                !fullFileAvailable ? styles.viewToggleButtonDisabled : null,
-                pressed && fullFileAvailable ? styles.viewToggleButtonPressed : null,
-              ]}
-            >
-              <Text style={[
-                styles.viewToggleLabel,
-                fullFile ? styles.viewToggleLabelSelected : null,
-                !fullFileAvailable ? styles.viewToggleLabelDisabled : null,
-              ]}>Full file</Text>
+              <Text style={[styles.viewToggleLabel, wrap ? styles.viewToggleLabelSelected : null]}>↩ Wrap</Text>
             </Pressable>
           </View>
           <Card style={styles.diffCard}>
-            <View style={styles.diffHeader}>
-              <View style={styles.diffTitle}>
-                <Text style={styles.diffPath} selectable>{entry.display_path}</Text>
-                {entry.original_display_path === null ? null : <Text style={styles.diffOriginal}>from {entry.original_display_path}</Text>}
-              </View>
-              <StatePill tone="quiet" label={entry.kind} />
-            </View>
-            <CardDivider />
             {loading ? (
               <View style={styles.diffLoading}><ActivityIndicator color={color.accentStrong} /></View>
             ) : error === undefined ? (
@@ -532,6 +566,7 @@ function ChangeDiffModal({
                 state={diff?.state ?? "notShown"}
                 patch={diff?.patch ?? null}
                 mode={fullFile ? "fullFile" : "diff"}
+                wrap={wrap}
                 preImage={preImage}
                 fullFileLoading={preImageLoading}
                 fullFileError={preImageError}
@@ -546,8 +581,8 @@ function ChangeDiffModal({
           </Card>
         </ScrollView> : null}
         {review.draft ? <ChangeReviewEditor review={review} /> : review.showNotes ? null : <View style={styles.modalFooter}>
-          <View style={styles.feedbackBar}>
-            <Text style={styles.modalFooterHint}>Tap + beside a line to add feedback</Text>
+          <View style={styles.modalFeedbackBar}>
+            <Text style={styles.modalFooterHint}>Tap any line to comment</Text>
             <SecondaryButton label={`Feedback (${review.notes.length})`} onPress={() => review.setShowNotes(true)} />
           </View>
           <Pressable
@@ -564,6 +599,33 @@ function ChangeDiffModal({
       </SafeAreaProvider>
     </Modal>
   );
+}
+
+function KindBadge({ kind }: { kind: TaskWorktreeChangeEntryDto["kind"] }) {
+  const styles = useStyles();
+  const { color } = useTheme();
+  const tint = kindColor(kind, color);
+  return (
+    <View style={[styles.kindBadge, { borderColor: tint }]} accessibilityElementsHidden>
+      <Text style={[styles.kind, { color: tint }]}>{kindGlyph(kind)}</Text>
+    </View>
+  );
+}
+
+function kindColor(kind: TaskWorktreeChangeEntryDto["kind"], color: ReturnType<typeof useTheme>["color"]): string {
+  switch (kind) {
+    case "added":
+    case "untracked": return color.success;
+    case "deleted": return color.danger;
+    case "unmerged": return color.warning;
+    case "renamed":
+    case "copied":
+    case "modified": return color.accentStrong;
+  }
+}
+
+function kindLabel(kind: TaskWorktreeChangeEntryDto["kind"]): string {
+  return kind === "untracked" ? "new" : kind;
 }
 
 function kindGlyph(kind: TaskWorktreeChangeEntryDto["kind"]): string {
@@ -605,15 +667,19 @@ const useStyles = createThemedStyles(({ color }) => ({
   progressValue: { backgroundColor: color.success, borderRadius: radius.pill, height: "100%" },
   section: { gap: 6 },
   count: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 11, fontWeight: "700", fontVariant: ["tabular-nums"] },
-  row: { alignItems: "center", flexDirection: "row", minHeight: geometry.touchTarget, paddingLeft: space.md },
+  row: { alignItems: "center", flexDirection: "row", minHeight: 56, paddingLeft: space.md },
   rowSelected: { backgroundColor: color.accentWash },
-  rowMain: { flex: 1, minWidth: 0, paddingVertical: 9 },
+  rowMain: { flex: 1, minWidth: 0, paddingVertical: 10 },
   rowMainPressed: { backgroundColor: color.bgHover },
   rowChevron: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 23, lineHeight: 25, marginRight: 2 },
-  rowTitle: { alignItems: "flex-start", flexDirection: "row", gap: space.sm },
-  kind: { color: color.accentStrong, fontFamily: fontFamily.mono, fontSize: 12, fontWeight: "800", width: 12 },
-  path: { color: color.text, flex: 1, fontFamily: fontFamily.mono, fontSize: 12, lineHeight: 17 },
-  original: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 10.5, marginLeft: 20, marginTop: 2 },
+  rowTitle: { alignItems: "center", flexDirection: "row", gap: space.md },
+  rowText: { flex: 1, gap: 2, minWidth: 0 },
+  kindBadge: { alignItems: "center", borderRadius: 6, borderWidth: 1.5, height: 24, justifyContent: "center", width: 24 },
+  kind: { fontFamily: fontFamily.mono, fontSize: 12, fontWeight: "800" },
+  path: { color: color.text, fontSize: 15, fontWeight: "600", lineHeight: 20 },
+  pathReviewed: { color: color.textSecondary },
+  directory: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 11.5, lineHeight: 16 },
+  original: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 11, lineHeight: 15 },
   reviewMark: { alignItems: "center", height: geometry.touchTarget, justifyContent: "center", width: geometry.touchTarget },
   reviewMarkText: { color: color.textSecondary, fontFamily: fontFamily.mono, fontSize: 22, lineHeight: 25 },
   reviewMarkPressed: { backgroundColor: color.bgHover },
@@ -621,18 +687,24 @@ const useStyles = createThemedStyles(({ color }) => ({
   reviewMarkDoneText: { color: color.success, fontFamily: fontFamily.mono, fontSize: 18, fontWeight: "800" },
   reviewedToggle: { minHeight: 24, justifyContent: "center", paddingLeft: space.sm },
   reviewedToggleText: { color: color.accentStrong, fontFamily: fontFamily.mono, fontSize: 12, fontWeight: "700" },
-  diffCard: { overflow: "hidden" },
-  diffHeader: { alignItems: "center", flexDirection: "row", gap: space.sm, padding: space.md },
-  diffTitle: { flex: 1, minWidth: 0 },
-  diffPath: { color: color.text, fontFamily: fontFamily.mono, fontSize: 12, lineHeight: 18 },
-  diffOriginal: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 10.5, marginTop: 2 },
+  diffCard: { overflow: "hidden", padding: 0 },
+  fileHeader: { gap: space.xs },
+  fileHeaderTop: { alignItems: "center", flexDirection: "row", gap: space.sm },
+  fileName: { color: color.text, flex: 1, fontSize: 18, fontWeight: "700", lineHeight: 23 },
+  fileHeaderMeta: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", marginTop: 2 },
+  stats: { fontFamily: fontFamily.mono, fontSize: 13, fontWeight: "700" },
+  statsAdded: { color: color.success },
+  statsRemoved: { color: color.danger },
+  diffPath: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 11.5, lineHeight: 16 },
+  diffOriginal: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 11, lineHeight: 15 },
   diffLoading: { alignItems: "center", minHeight: 104, justifyContent: "center" },
   diffError: { padding: space.sm },
-  modalContent: { gap: space.md, padding: space.screen, paddingBottom: space.xl },
+  modalContent: { gap: space.md, paddingHorizontal: space.sm, paddingTop: space.md, paddingBottom: space.xl },
   modalScroll: { flex: 1 },
-  modalMeta: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
-  modalMetaLabel: { color: color.accentStrong, fontFamily: fontFamily.mono, fontSize: 11, fontWeight: "800", letterSpacing: 0.7 },
-  modalMetaHint: { color: color.textMuted, fontSize: 11 },
+  toolbar: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", gap: space.sm },
+  wrapToggle: { alignItems: "center", backgroundColor: color.bgRaised, borderRadius: radius.control, justifyContent: "center", minHeight: 34, paddingHorizontal: space.md },
+  modalFeedbackBar: { alignItems: "center", alignSelf: "stretch", flexDirection: "row", justifyContent: "space-between", gap: space.sm },
+  modalMetaLabel: { color: color.textSecondary, fontFamily: fontFamily.mono, fontSize: 12, fontWeight: "700" },
   viewToggle: { alignSelf: "flex-start", backgroundColor: color.bgRaised, borderRadius: radius.control, flexDirection: "row", overflow: "hidden" },
   viewToggleButton: { alignItems: "center", justifyContent: "center", minHeight: 34, paddingHorizontal: space.md },
   viewToggleButtonSelected: { backgroundColor: color.accentWash },
@@ -642,7 +714,7 @@ const useStyles = createThemedStyles(({ color }) => ({
   viewToggleLabelSelected: { color: color.accentStrong },
   viewToggleLabelDisabled: { color: color.textMuted },
   modalFooter: { alignItems: "center", borderTopColor: color.rule, borderTopWidth: StyleSheet.hairlineWidth, gap: space.sm, padding: space.md },
-  modalFooterHint: { color: color.textMuted, fontSize: 11 },
+  modalFooterHint: { color: color.textMuted, flexShrink: 1, fontSize: 12 },
   reviewNextButton: { alignItems: "center", backgroundColor: color.accentStrong, borderRadius: radius.control, justifyContent: "center", minHeight: geometry.touchTarget, paddingHorizontal: space.lg, width: "100%" },
   reviewNextButtonPressed: { backgroundColor: color.accent },
   reviewNextButtonText: { color: color.onAccent, fontFamily: fontFamily.mono, fontSize: 13, fontWeight: "800" },

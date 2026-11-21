@@ -59,8 +59,19 @@ describe("line feedback interaction", () => {
       [{ lineSide: "new", lineNumber: 1 }], [{ lineSide: "new", lineNumber: 4 }], [{ lineSide: "new", lineNumber: 135 }],
     ]);
     expect(nodes(tree).filter((node) => node.props.accessibilityLabel?.startsWith("Comment on old"))).toHaveLength(0);
-    expect(byLabel(tree, "Comment on new line 1").props.children.join("")).toBe("+ first\n");
-    expect(byLabel(tree, "Comment on new line 135").props.children.join("")).toBe("+ rest 129\n");
+    expect(byLabel(tree, "Comment on new line 1").props.children.join("")).toBe("first\n");
+    expect(byLabel(tree, "Comment on new line 135").props.children.join("")).toBe("rest 129\n");
+  });
+
+  it("drops shared indentation and wraps by default without sideways scrolling", async () => {
+    const ui = await diffHarness();
+    const indented = patch.replace(" context\n-old\n+new\n+added\n tail\n", "         context\n-        old\n+            new\n+        added\n         tail\n");
+    const wrapped = expand(ui.WorktreeDiff({ state: "patch", patch: indented }));
+    const texts = nodes(wrapped).filter((node) => node.type === "Text").map((node) => node.props.children);
+    expect(texts).toEqual(expect.arrayContaining(["context", "old", "    new", "added"]));
+    expect(nodes(wrapped).some((node) => node.type === "ScrollView")).toBe(false);
+    const scrolling = expand(ui.WorktreeDiff({ state: "patch", patch: indented, wrap: false }));
+    expect(nodes(scrolling).some((node) => node.type === "ScrollView" && node.props.horizontal)).toBe(true);
   });
 
   it("offers no line actions for unavailable or unparseable patches", async () => {

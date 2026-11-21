@@ -56,3 +56,26 @@ export function reviewProgress(
 ): { reviewed: number; total: number } {
   return { reviewed: reviewedEntries(entries, reviewedEntryIds).length, total: entries.length };
 }
+
+/// Added and removed line counts of one unified patch, for a glanceable header.
+export function patchLineStats(patch: string | null | undefined): { added: number; removed: number } | undefined {
+  if (!patch) return undefined;
+  let added = 0;
+  let removed = 0;
+  let inHunk = false;
+  for (const line of patch.split("\n")) {
+    if (line.startsWith("@@")) inHunk = true;
+    else if (line.startsWith("diff --git")) inHunk = false;
+    else if (inHunk && line.startsWith("+")) added += 1;
+    else if (inHunk && line.startsWith("-")) removed += 1;
+  }
+  return { added, removed };
+}
+
+/// Splits a display path into the file name and its directory, so a list can
+/// lead with the part a reviewer recognises.
+export function splitDisplayPath(path: string): { name: string; directory: string } {
+  const trimmed = path.endsWith("/") ? path.slice(0, -1) : path;
+  const slash = trimmed.lastIndexOf("/");
+  return slash < 0 ? { name: trimmed, directory: "" } : { name: trimmed.slice(slash + 1), directory: trimmed.slice(0, slash) };
+}

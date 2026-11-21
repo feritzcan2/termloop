@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   firstUnreviewedEntryId,
+  patchLineStats,
+  splitDisplayPath,
   nextUnreviewedEntryId,
   reviewProgress,
   reviewedEntries,
@@ -44,3 +46,16 @@ function entry(side: TaskWorktreeChangeEntryDto["side"], entryId: string): TaskW
     render_state: "available",
   };
 }
+
+describe("change header presentation", () => {
+  it("counts only hunk lines, not file headers", () => {
+    const patch = "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1,2 +1,3 @@\n keep\n-old\n+new\n+more\n";
+    expect(patchLineStats(patch)).toEqual({ added: 2, removed: 1 });
+    expect(patchLineStats(null)).toBeUndefined();
+  });
+
+  it("leads with the file name and keeps the directory", () => {
+    expect(splitDisplayPath("src/app/task/changes.tsx")).toEqual({ name: "changes.tsx", directory: "src/app/task" });
+    expect(splitDisplayPath("README.md")).toEqual({ name: "README.md", directory: "" });
+  });
+});
