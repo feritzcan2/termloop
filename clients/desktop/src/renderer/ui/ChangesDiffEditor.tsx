@@ -313,7 +313,10 @@ function ReviewZone({ view, line, children }: { view: CodeEditor; line: number; 
     domNode.append(portal);
     const isolate = (event: Event) => event.stopPropagation();
     domNode.addEventListener("keydown", isolate);
-    const zone: Monaco.editor.IViewZone = { afterLineNumber: line, heightInPx: 44, domNode, suppressMouseDown: true };
+    // `suppressMouseDown` must stay off: with it, Monaco answers a press in
+    // the zone by focusing its own text area, so typing meant for the comment
+    // lands in the file instead.
+    const zone: Monaco.editor.IViewZone = { afterLineNumber: line, heightInPx: 44, domNode, suppressMouseDown: false };
     let id = "";
     view.changeViewZones((accessor) => { id = accessor.addZone(zone); });
     const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(() => {
