@@ -3,12 +3,14 @@
 type Model = { value: string; language: string; disposed: boolean; getValue(): string; setValue(value: string): void; dispose(): void; getLineCount(): number;
   getFullModelRange(): object; pushEditOperations(_: unknown, edits: { text: string }[]): null };
 type MouseTarget = { type: number; position: { lineNumber: number } };
-type ViewZone = { afterLineNumber: number; domNode: HTMLElement };
+type ViewZone = { afterLineNumber: number; domNode: HTMLElement; onDomNodeTop?(top: number): void };
+type OverlayWidget = { getId(): string; getDomNode(): HTMLElement };
 
-/// One side of a diff view: its gutter mouse hooks, view zones and decorations.
+/// One side of a diff view: its gutter mouse hooks, view zones, overlay widgets and decorations.
 function fakeDiffSide() {
   const mouseDown = new Set<(event: { target: MouseTarget; event: { leftButton: boolean; preventDefault(): void } }) => void>();
   const zones = new Map<string, ViewZone>();
+  const widgets = new Map<string, OverlayWidget>();
   const decorations: unknown[][] = [];
   let nextZone = 0;
   const view = {
@@ -17,6 +19,7 @@ function fakeDiffSide() {
     commands: new Map<number, () => void>(),
     contentListeners: new Set<() => void>(),
     zones,
+    widgets,
     decorations,
     addCommand(key: number, run: () => void) { view.commands.set(key, run); },
     onDidChangeModelContent(listener: () => void) { view.contentListeners.add(listener); },
@@ -27,6 +30,10 @@ function fakeDiffSide() {
     focus() {},
     onMouseDown(listener: (event: { target: MouseTarget; event: { leftButton: boolean; preventDefault(): void } }) => void) { mouseDown.add(listener); },
     getModel: () => view.model,
+    getLayoutInfo: () => ({ width: 800, contentLeft: 60, verticalScrollbarWidth: 14, minimap: { minimapWidth: 0 } }),
+    onDidLayoutChange() { return { dispose() {} }; },
+    addOverlayWidget(widget: OverlayWidget) { widgets.set(widget.getId(), widget); },
+    removeOverlayWidget(widget: OverlayWidget) { widgets.delete(widget.getId()); },
     updateOptions(options: { readOnly?: boolean }) { if (options.readOnly !== undefined) view.readOnly = options.readOnly; },
     createDecorationsCollection(initial: unknown[] = []) {
       const index = decorations.push(initial) - 1;

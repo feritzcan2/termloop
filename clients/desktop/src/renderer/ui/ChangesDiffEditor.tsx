@@ -301,23 +301,40 @@ function NoteMarkers({ monaco, diff, lines }: { monaco: typeof Monaco; diff: Mon
   return null;
 }
 
-/// Renders `children` in a Monaco view zone below `line`, sized to its content.
+let reviewZoneCount = 0;
+
+/// Renders `children` below `line`, sized to its content. A view zone only
+/// reserves the space: Monaco stacks its line layer above view zones, so a
+/// press there never reaches the zone's own elements. The content lives in
+/// an overlay widget kept over that space, as Monaco's own zone widgets do.
 function ReviewZone({ view, line, children }: { view: CodeEditor; line: number; children: ReactNode }) {
   const [content, setContent] = useState<HTMLElement>();
   useLayoutEffect(() => {
     const domNode = document.createElement("div");
     domNode.className = "changes-monaco-zone";
+    domNode.style.position = "absolute";
+    domNode.style.top = "-1000px";
     // React listens on the portal container, so its handlers run before this
     // stops keys from reaching Monaco's own keybindings.
     const portal = document.createElement("div");
     domNode.append(portal);
     const isolate = (event: Event) => event.stopPropagation();
     domNode.addEventListener("keydown", isolate);
-    // `suppressMouseDown` must stay off: with it, Monaco answers a press in
-    // the zone by focusing its own text area, so typing meant for the comment
-    // lands in the file instead.
-    const zone: Monaco.editor.IViewZone = { afterLineNumber: line, heightInPx: 44, domNode, suppressMouseDown: false };
+    const place = () => {
+      const info = view.getLayoutInfo();
+      domNode.style.left = `${info.contentLeft}px`;
+      domNode.style.width = `${Math.max(0, info.width - info.contentLeft - info.minimap.minimapWidth - info.verticalScrollbarWidth)}px`;
+    };
+    const widgetId = `termloop.changes-review-zone.${++reviewZoneCount}`;
+    const widget: Monaco.editor.IOverlayWidget = { getId: () => widgetId, getDomNode: () => domNode, getPosition: () => null };
+    const zone: Monaco.editor.IViewZone = {
+      afterLineNumber: line, heightInPx: 44, domNode: document.createElement("div"),
+      onDomNodeTop: (top) => { domNode.style.top = `${top}px`; },
+    };
     let id = "";
+    view.addOverlayWidget(widget);
+    place();
+    const layout = view.onDidLayoutChange(place);
     view.changeViewZones((accessor) => { id = accessor.addZone(zone); });
     const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(() => {
       const height = portal.offsetHeight;
@@ -329,8 +346,10 @@ function ReviewZone({ view, line, children }: { view: CodeEditor; line: number; 
     setContent(portal);
     return () => {
       observer?.disconnect();
+      layout.dispose();
       domNode.removeEventListener("keydown", isolate);
       view.changeViewZones((accessor) => accessor.removeZone(id));
+      view.removeOverlayWidget(widget);
     };
   }, [line, view]);
   return content ? createPortal(children, content) : null;

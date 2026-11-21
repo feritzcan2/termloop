@@ -229,7 +229,13 @@ describe("Editing local changes in their diff", () => {
     await act(async () => modified.clickGutter(2));
     const zone = [...modified.zones.values()][0]!;
     expect(zone.afterLineNumber).toBe(2);
-    const textarea = zone.domNode.querySelector("textarea")!;
+    // The zone only reserves space; the comment box is an overlay widget
+    // above Monaco's line layer, kept over the zone.
+    expect(zone.domNode.querySelector("textarea")).toBeNull();
+    const widget = [...modified.widgets.values()][0]!.getDomNode();
+    zone.onDomNodeTop?.(57);
+    expect(widget.style.top).toBe("57px");
+    const textarea = widget.querySelector("textarea")!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(textarea, "Rename this");
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
@@ -241,7 +247,8 @@ describe("Editing local changes in their diff", () => {
     await act(async () => fake.current!.saveDiff());
     await settle();
     expect(list).toHaveBeenCalledTimes(2);
-    expect([...modified.zones.values()].map((candidate) => candidate.domNode.textContent)).toEqual([expect.stringContaining("Rename this")]);
+    expect(modified.zones.size).toBe(1);
+    expect([...modified.widgets.values()].map((candidate) => candidate.getDomNode().textContent)).toEqual([expect.stringContaining("Rename this")]);
     expect(container.querySelector(".changes-review-preview pre")?.textContent).toContain("src/alpha.ts:2 (new)");
   });
 
