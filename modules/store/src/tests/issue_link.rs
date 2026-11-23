@@ -88,3 +88,37 @@ fn jira_issue_link_requires_an_existing_task() {
     ));
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn jira_issue_key_is_unique_per_project_not_globally() {
+    let path = std::env::temp_dir().join(format!(
+        "termloop-store-jira-link-project-{}-{}.json",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let authority = issue_core_write_authority_for_composition();
+    let mut store = Store::open(&path).unwrap();
+    store.insert_task(&authority, task("task-1")).unwrap();
+    store.insert_task(&authority, task("task-2")).unwrap();
+    let mut other_project = task("task-3");
+    other_project.project_id = "project-2".into();
+    store.insert_task(&authority, other_project).unwrap();
+    store
+        .insert_task_jira_issue_link(&authority, jira_link("task-1", "TERM-42"))
+        .unwrap();
+    assert!(matches!(
+        store.insert_task_jira_issue_link(&authority, jira_link("task-2", "term-42")),
+        Err(StoreError::ConstraintViolation)
+    ));
+    store
+        .insert_task_jira_issue_link(&authority, jira_link("task-3", "TERM-42"))
+        .unwrap();
+    drop(store);
+
+    let reopened = Store::open(&path).unwrap();
+    assert_eq!(reopened.issue_links().len(), 2);
+    let _ = std::fs::remove_file(path);
+}

@@ -59,14 +59,34 @@ pub(super) fn insert_jira_issue_link_record(
         || links.iter().any(|candidate| {
             (candidate.task_id == link.task_id && candidate.provider == IssueLinkProvider::Jira)
                 || same_source_issue(candidate, &link)
-                || same_site_issue(candidate, &link)
-                || same_site_key(candidate, &link)
+                || (same_task_project(tasks, candidate, &link)
+                    && (same_site_issue(candidate, &link) || same_site_key(candidate, &link)))
         })
     {
         return Err(StoreError::ConstraintViolation);
     }
     links.push(link);
     Ok(())
+}
+
+/// Jira issue uniqueness is per Project: separate Projects may each track the
+/// same issue with their own Task.
+pub(crate) fn same_task_project(
+    tasks: &[termloop_domain::TaskRecord],
+    existing: &IssueLink,
+    incoming: &IssueLink,
+) -> bool {
+    let project_of = |task_id: &str| {
+        tasks
+            .iter()
+            .find(|task| task.id == task_id)
+            .map(|task| task.project_id.as_str())
+    };
+    match (project_of(&existing.task_id), project_of(&incoming.task_id)) {
+        (Some(existing), Some(incoming)) => existing == incoming,
+        // An orphaned link cannot be attributed; keep the conservative global rule.
+        _ => true,
+    }
 }
 
 pub(crate) fn same_source_issue(existing: &IssueLink, incoming: &IssueLink) -> bool {

@@ -612,7 +612,11 @@ fn issue_links_are_invalid(state: &CurrentState) -> bool {
                     && candidate.provider == IssueLinkProvider::Jira
                     && link.provider == IssueLinkProvider::Jira)
                     || super::records::issue_link::same_source_issue(candidate, link)
-                    || super::records::issue_link::same_site_issue(candidate, link)
+                    || (super::records::issue_link::same_task_project(
+                        &state.tasks,
+                        candidate,
+                        link,
+                    ) && super::records::issue_link::same_site_issue(candidate, link))
             })
     })
 }

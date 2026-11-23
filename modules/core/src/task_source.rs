@@ -1037,19 +1037,21 @@ impl CoreRuntime {
         source: &TaskSourceConfiguration,
         external_id: &str,
     ) -> Option<(&'a IssueLink, &'a TaskRecord)> {
-        let link = self.store.issue_links().iter().find(|link| {
-            link.provider == IssueLinkProvider::Jira
-                && link.external_id.as_deref() == Some(external_id)
-                && link
-                    .url
-                    .as_deref()
-                    .is_some_and(|url| same_jira_site(url, &source.site_base_url))
-        })?;
         self.store
-            .tasks()
+            .issue_links()
             .iter()
-            .find(|task| task.id == link.task_id)
-            .map(|task| (link, task))
+            .filter(|link| {
+                link.provider == IssueLinkProvider::Jira
+                    && link.external_id.as_deref() == Some(external_id)
+                    && link
+                        .url
+                        .as_deref()
+                        .is_some_and(|url| same_jira_site(url, &source.site_base_url))
+            })
+            .find_map(|link| {
+                self.source_project_task(source, &link.task_id)
+                    .map(|task| (link, task))
+            })
     }
 
     fn find_possible_legacy_task<'a>(
@@ -1057,21 +1059,38 @@ impl CoreRuntime {
         source: &TaskSourceConfiguration,
         candidate: &TaskSourceCandidateSnapshot,
     ) -> Option<&'a TaskRecord> {
-        let task_id = self.store.issue_links().iter().find_map(|link| {
-            (link.provider == IssueLinkProvider::Jira
-                && link.source_id.is_none()
-                && link.external_id.is_none()
-                && link
-                    .external_ref
-                    .eq_ignore_ascii_case(&candidate.external_ref)
-                && link
-                    .url
-                    .as_deref()
-                    .is_some_and(|url| same_jira_site(url, &source.site_base_url))
-                && same_jira_site(&candidate.url, &source.site_base_url))
-            .then_some(link.task_id.as_str())
-        })?;
-        self.store.tasks().iter().find(|task| task.id == task_id)
+        if !same_jira_site(&candidate.url, &source.site_base_url) {
+            return None;
+        }
+        self.store
+            .issue_links()
+            .iter()
+            .filter(|link| {
+                link.provider == IssueLinkProvider::Jira
+                    && link.source_id.is_none()
+                    && link.external_id.is_none()
+                    && link
+                        .external_ref
+                        .eq_ignore_ascii_case(&candidate.external_ref)
+                    && link
+                        .url
+                        .as_deref()
+                        .is_some_and(|url| same_jira_site(url, &source.site_base_url))
+            })
+            .find_map(|link| self.source_project_task(source, &link.task_id))
+    }
+
+    /// Task-source candidates only ever resolve to Tasks of the source's own
+    /// Project; the same Jira issue may be tracked independently elsewhere.
+    fn source_project_task<'a>(
+        &'a self,
+        source: &TaskSourceConfiguration,
+        task_id: &str,
+    ) -> Option<&'a TaskRecord> {
+        self.store
+            .tasks()
+            .iter()
+            .find(|task| task.id == task_id && task.project_id == source.project_id)
     }
 }
 
@@ -1636,6 +1655,69 @@ mod tests {
             fixture.runtime.task_source_candidates("source-1").unwrap()[0].state,
             "added"
         );
+    }
+
+    #[test]
+    fn jira_link_in_another_project_neither_duplicates_nor_blocks_import() {
+        let mut fixture = Fixture::new();
+        fixture.create_source();
+        let other_root = fixture.root.join("other-project");
+        std::fs::create_dir_all(&other_root).unwrap();
+        let other_project = fixture
+            .runtime
+            .create_project(json!({"name":"Other","folderPath":other_root}))
+            .unwrap();
+        let other_task = fixture
+            .runtime
+            .handle(
+                "task.create",
+                json!({
+                    "projectId": other_project["id"],
+                    "title": "Same issue elsewhere",
+                    "brief": null,
+                    "worktreeIntent": "none"
+                }),
+            )
+            .unwrap();
+        fixture
+            .runtime
+            .store
+            .insert_task_jira_issue_link(
+                &fixture.runtime.write_authority,
+                IssueLink {
+                    task_id: other_task["id"].as_str().unwrap().to_owned(),
+                    provider: IssueLinkProvider::Jira,
+                    external_ref: "TERM-42".into(),
+                    source_id: None,
+                    external_id: None,
+                    external_updated_at: None,
+                    url: Some("https://example.atlassian.net/browse/TERM-42".into()),
+                    sync_authority: IssueLinkSyncAuthority::None,
+                },
+            )
+            .unwrap();
+        let refresh = fixture.refresh("Candidate", "Description");
+        let candidate = &fixture.runtime.task_source_candidates("source-1").unwrap()[0];
+        assert_eq!(candidate.state, "new");
+        assert_eq!(candidate.task_id, None);
+
+        let revision = fixture.runtime.state_revision();
+        let imported = fixture
+            .runtime
+            .import_task_source_candidate(
+                "source-1",
+                "10042",
+                1,
+                refresh.observation_sequence,
+                revision,
+                "task-imported".into(),
+                30,
+            )
+            .unwrap();
+        assert_eq!(imported.task["id"], "task-imported");
+        let candidate = &fixture.runtime.task_source_candidates("source-1").unwrap()[0];
+        assert_eq!(candidate.state, "added");
+        assert_eq!(candidate.task_id.as_deref(), Some("task-imported"));
     }
 
     #[test]
