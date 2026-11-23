@@ -110,6 +110,10 @@ pub enum AgentSignal {
     Notification,
     IdleNotified,
     AmbientNotification,
+    /// A tool boundary a Claude subagent fired. It proves the child is alive,
+    /// not that the lead turn is running: a background child keeps working
+    /// after the lead's `Stop`, so it must not reopen a resting lead.
+    SubagentActivity,
     CompactStarted,
     /// Claude closes every compaction with `SessionStart`. Core reports that
     /// close as this signal only when the compaction ran inside a live turn,
@@ -549,6 +553,13 @@ pub fn reduce_observation(
         AgentSignal::AmbientNotification => {
             previous.map_or(AgentState::Unknown, |previous| previous.state)
         }
+        // An answered child permission prompt resumes the work that was
+        // blocked on it; any other lead state is the lead's own to change.
+        AgentSignal::SubagentActivity => match previous.map(|previous| previous.state) {
+            Some(AgentState::AwaitingInput) => AgentState::Working,
+            Some(state) => state,
+            None => AgentState::Unknown,
+        },
         // `PreCompact` announces the intent, not the outcome: it fires before
         // the provider decides whether there is anything to compact. Claude
         // closes the compaction with `SessionStart`, which leaves a resting
@@ -1546,6 +1557,49 @@ mod tests {
             )
             .state,
             AgentState::Working
+        );
+    }
+
+    #[test]
+    fn background_subagent_activity_keeps_a_resting_lead_idle() {
+        let step = |previous, signal, sequence| {
+            reduce_observation(
+                Some(previous),
+                signal,
+                AgentSignalSource::Hook,
+                sequence,
+                sequence,
+            )
+        };
+        let working = reduce_observation(
+            None,
+            AgentSignal::PromptSubmitted,
+            AgentSignalSource::Hook,
+            1,
+            1,
+        );
+        assert_eq!(
+            step(working, AgentSignal::SubagentActivity, 2).state,
+            AgentState::Working
+        );
+        let idle = step(working, AgentSignal::Stopped, 3);
+        let still_idle = step(idle, AgentSignal::SubagentActivity, 4);
+        assert_eq!(still_idle.state, AgentState::Idle);
+        let awaiting = step(still_idle, AgentSignal::PermissionRequested, 5);
+        assert_eq!(
+            step(awaiting, AgentSignal::SubagentActivity, 6).state,
+            AgentState::Working
+        );
+        assert_eq!(
+            reduce_observation(
+                None,
+                AgentSignal::SubagentActivity,
+                AgentSignalSource::Hook,
+                1,
+                1
+            )
+            .state,
+            AgentState::Unknown
         );
     }
 

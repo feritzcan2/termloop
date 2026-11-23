@@ -62,8 +62,10 @@ pub fn normalize_provider_hook_observation(
 fn normalize_claude_hook(
     input: ProviderHookObservationInput,
 ) -> Option<NormalizedProviderObservation> {
-    let signal =
-        crate::normalize_hook_event(&input.event_name, input.notification_type.as_deref())?;
+    let signal = subagent_scoped_signal(
+        crate::normalize_hook_event(&input.event_name, input.notification_type.as_deref())?,
+        input.subagent.as_ref(),
+    );
     let resume_ref = input
         .native_session_id
         .as_deref()
@@ -157,6 +159,24 @@ fn normalize_opencode_hook(
     })
 }
 
+/// A hook carrying a child's `agent_id` reports that child, not the lead turn.
+/// Attention requests still surface, because the user must answer them.
+fn subagent_scoped_signal(
+    signal: AgentSignal,
+    subagent: Option<&AgentSubagentUpdate>,
+) -> AgentSignal {
+    match (subagent, signal) {
+        (
+            Some(AgentSubagentUpdate::Active { .. }),
+            AgentSignal::ToolStarted | AgentSignal::ToolFinished,
+        ) => AgentSignal::SubagentActivity,
+        (Some(AgentSubagentUpdate::Stopped { .. }), AgentSignal::Failed) => {
+            AgentSignal::AmbientNotification
+        }
+        _ => signal,
+    }
+}
+
 fn canonical_uuid(value: &str) -> Option<String> {
     uuid::Uuid::parse_str(value)
         .ok()
@@ -199,6 +219,47 @@ mod tests {
             AgentSignal::PromptSubmitted
         );
         assert!(normalize_provider_hook_observation("codex", input("BeforeAgent")).is_none());
+    }
+
+    fn child(event_name: &str, subagent: AgentSubagentUpdate) -> AgentSignal {
+        let mut hook = input(event_name);
+        hook.subagent = Some(subagent);
+        normalize_provider_hook_observation("claude", hook)
+            .unwrap()
+            .signal
+    }
+
+    #[test]
+    fn claude_subagent_hooks_do_not_drive_the_lead_turn() {
+        let active = || AgentSubagentUpdate::Active {
+            key: "subagent:a1".into(),
+            agent_type: None,
+            activity: None,
+        };
+        assert_eq!(child("PreToolUse", active()), AgentSignal::SubagentActivity);
+        assert_eq!(
+            child("PostToolUse", active()),
+            AgentSignal::SubagentActivity
+        );
+        assert_eq!(
+            child("PermissionRequest", active()),
+            AgentSignal::PermissionRequested
+        );
+        assert_eq!(
+            child(
+                "StopFailure",
+                AgentSubagentUpdate::Stopped {
+                    key: "subagent:a1".into()
+                }
+            ),
+            AgentSignal::AmbientNotification
+        );
+        assert_eq!(
+            normalize_provider_hook_observation("claude", input("PreToolUse"))
+                .unwrap()
+                .signal,
+            AgentSignal::ToolStarted
+        );
     }
 
     #[test]
