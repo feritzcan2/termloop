@@ -3,6 +3,10 @@ use crate::{CoreError, CoreRuntime, required_string, store_error, terminal_error
 use serde_json::{Value, json};
 use termloop_domain::{ResumeFailureReason, ResumeProvider, SessionKind, SessionRecord};
 
+/// Windows grants console processes a few seconds after session end; every
+/// provider exit caused by it lands well inside this window.
+const SHUTDOWN_EXIT_REARM_WINDOW: std::time::Duration = std::time::Duration::from_secs(5);
+
 pub struct ReconciledSessionExits {
     pub state_revision: Option<u64>,
     pub exited_session_ids: Vec<String>,
@@ -46,6 +50,8 @@ impl CoreRuntime {
         self.store
             .mark_session_exited(&self.write_authority, &session_id)
             .map_err(store_error)?;
+        // An explicit stop is never re-armed by a daemon shutdown that follows.
+        self.recent_agent_exits.remove(&session_id);
         self.agent_observations.remove(&session_id);
         // Termination retires only the current process. The Session descriptor
         // remains resumable, so keep its Ask-To routing and continuation until
@@ -345,6 +351,21 @@ impl CoreRuntime {
         reaped: Vec<termloop_terminal::ReapedTerminal>,
     ) -> ReconciledSessionExits {
         let previous_revision = self.store.revision();
+        if self
+            .resume_shutdown
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            // OS session end and daemon teardown kill provider processes too.
+            // Those exits are not user intent, so they must leave the durable
+            // Session running for the next daemon's automatic resume.
+            return ReconciledSessionExits {
+                state_revision: None,
+                exited_session_ids: Vec::new(),
+                retired_runtimes: Vec::new(),
+                changed_cwds: Vec::new(),
+                errors: Vec::new(),
+            };
+        }
         for event in reaped {
             if self.terminal_exit_is_current(&event) {
                 self.pending_session_exits
@@ -427,6 +448,11 @@ impl CoreRuntime {
             return Ok(());
         }
         let was_resuming = self.resume_reservations.contains(session_id);
+        let was_running_agent = self.store.sessions().iter().any(|session| {
+            session.id == *session_id
+                && session.kind == SessionKind::Agent
+                && session.lifecycle_state == "running"
+        });
         if was_resuming {
             self.store
                 .mark_session_resume_failed(
@@ -445,6 +471,10 @@ impl CoreRuntime {
                 .map_err(store_error)?;
         }
         // Only consume runtime state after the durable transition commits.
+        if was_running_agent && !was_resuming {
+            self.recent_agent_exits
+                .insert(session_id.clone(), std::time::Instant::now());
+        }
         self.record_run_exit(session_id, event.exit_code);
         result.exited_session_ids.push(session_id.clone());
         if let Some(cwd) = self.session_cwd(session_id) {
@@ -581,6 +611,44 @@ impl CoreRuntime {
             }
         }
         restored
+    }
+
+    /// Re-arms automatic resume for Agents whose provider process exited just
+    /// before daemon shutdown began. On Windows, OS session end signals every
+    /// console concurrently, so a provider can die and be reconciled as an
+    /// ordinary exit before the daemon's own shutdown signal stops the exit
+    /// reconciler. Only an exit within the bounded window that left an exact,
+    /// confirmed provider conversation is returned to `resuming`.
+    pub fn rearm_agent_exits_interrupted_by_shutdown(&mut self) -> usize {
+        let now = std::time::Instant::now();
+        let recent = std::mem::take(&mut self.recent_agent_exits)
+            .into_iter()
+            .filter(|(_, exited_at)| {
+                now.saturating_duration_since(*exited_at) <= SHUTDOWN_EXIT_REARM_WINDOW
+            })
+            .map(|(session_id, _)| session_id)
+            .collect::<Vec<_>>();
+        let mut rearmed = 0;
+        for session_id in recent {
+            let eligible = self.store.sessions().iter().any(|session| {
+                session.id == session_id
+                    && session.lifecycle_state == "exited"
+                    && session.archived_at_epoch_ms.is_none()
+                    && manual_agent_resume_available(session)
+            }) && self.store.agent_conversation_readiness(&session_id)
+                == Some(termloop_domain::AgentConversationReadiness::Resumable)
+                && !self.session_is_archive_suspended(&session_id)
+                && !self.session_is_persistent_assistant_executor(&session_id);
+            if eligible
+                && self
+                    .store
+                    .mark_session_resuming(&self.write_authority, &session_id)
+                    .is_ok()
+            {
+                rearmed += 1;
+            }
+        }
+        rearmed
     }
 
     pub(crate) fn release_agent_terminal_hold_for_resume(

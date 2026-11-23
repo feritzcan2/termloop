@@ -652,6 +652,14 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
             .with_graceful_shutdown(async move {
                 wait_for_daemon_shutdown(control_shutdown_requests).await;
                 resume_shutdown_flag.store(true, Ordering::Release);
+                // The flag stops core from committing further exits; provider
+                // exits that OS session end delivered before this signal are
+                // returned to automatic resume before anything slower runs.
+                shutdown_state
+                    .core
+                    .lock()
+                    .await
+                    .rearm_agent_exits_interrupted_by_shutdown();
                 // Stop accepting remote work before capturing the restart
                 // handoff. Otherwise a remote launch could race in after the
                 // snapshot and be lost during daemon teardown.

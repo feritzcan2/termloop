@@ -247,6 +247,10 @@ pub struct CoreRuntime {
     /// At most one uncommitted terminal exit per current Session. Failed
     /// persistence is retried without consuming its runtime retirement intent.
     pub(crate) pending_session_exits: HashMap<String, termloop_terminal::ReapedTerminal>,
+    /// When each ordinary Agent exit was committed. Runtime-only evidence for
+    /// re-arming exits that OS session end delivered just before the daemon's
+    /// own shutdown signal.
+    pub(crate) recent_agent_exits: HashMap<String, std::time::Instant>,
     pub(crate) pending_agent_resume_refs: HashMap<String, termloop_domain::ResumeRef>,
     pub(crate) preview_tickets: runtime::preview_tickets::PreviewTicketRuntime,
     pub(crate) session_history: session_launch::session_history::SessionHistoryRuntime,
@@ -744,6 +748,7 @@ impl CoreRuntime {
             pending_agent_forks: HashSet::new(),
             agent_terminal_holds: HashSet::new(),
             pending_session_exits: HashMap::new(),
+            recent_agent_exits: HashMap::new(),
             pending_agent_resume_refs: HashMap::new(),
             preview_tickets: runtime::preview_tickets::PreviewTicketRuntime::default(),
             session_history: session_launch::session_history::SessionHistoryRuntime::default(),
