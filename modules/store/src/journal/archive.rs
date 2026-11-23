@@ -431,6 +431,7 @@ impl Store {
             return Err(StoreError::ConstraintViolation);
         }
         let previous = self.state.clone();
+        let mut moved_session_ids = Vec::new();
         for suspension in self
             .state
             .task_archive_suspensions
@@ -441,6 +442,7 @@ impl Store {
             })
         {
             suspension.reason = TaskSuspensionReason::ClosedWorktreeRemoved;
+            moved_session_ids.push(suspension.session_id.clone());
             let session = self
                 .state
                 .sessions
@@ -452,6 +454,12 @@ impl Store {
             session.process.cwd = project_folder.clone();
             session.resume_launch_guard = None;
         }
+        // A finished relocation's receipt proves the Session sits at its
+        // target checkout; once the Session is moved off it, that proof no
+        // longer holds and must go with the move.
+        self.state
+            .session_relocation_receipts
+            .retain(|receipt| !moved_session_ids.contains(&receipt.session_id));
         let task = &mut self.state.tasks[task_index];
         task.archived_at_epoch_ms = None;
         task.status = TaskStatus::Closed;
@@ -529,6 +537,7 @@ impl Store {
                 .iter_mut()
                 .find(|session| session.id == *session_id)
                 .ok_or(StoreError::NotFound)?;
+            let previous_cwd = session.process.cwd.clone();
             if suspension.reason == TaskSuspensionReason::Closed
                 && let Some(cwd) = relocated_cwd.as_ref()
             {
@@ -540,6 +549,11 @@ impl Store {
             {
                 session.process.cwd = cwd.clone();
                 session.resume_launch_guard = recreated_guard;
+            }
+            if session.process.cwd != previous_cwd {
+                self.state
+                    .session_relocation_receipts
+                    .retain(|receipt| receipt.session_id != *session_id);
             }
             if suspension.prior_lifecycle_state == "running" {
                 session.lifecycle_state = "resumeFailed".into();

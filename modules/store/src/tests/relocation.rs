@@ -352,3 +352,59 @@ fn target_task_status_and_delete_are_guarded_during_relocation() {
     );
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn open_releases_a_receipt_whose_session_left_the_relocation_target() {
+    let (path, authority, mut store, proof) = relocation_fixture("stale-receipt");
+    let resume_ref = store.sessions()[0].resume_ref.clone().unwrap();
+    store
+        .begin_session_relocation(&authority, operation(&proof, "relocation-stale"))
+        .unwrap();
+    store
+        .mark_session_relocation_target_starting(
+            &authority,
+            "agent-relocation",
+            "relocation-stale",
+            21,
+        )
+        .unwrap();
+    store
+        .commit_session_relocation(
+            &authority,
+            "agent-relocation",
+            "relocation-stale",
+            8,
+            &resume_ref,
+        )
+        .unwrap();
+    assert_eq!(store.session_relocation_receipts().len(), 1);
+    drop(store);
+
+    // The state an older close-after-worktree-removal persisted: the Session
+    // was moved back to the Project root and lost its checkout guard, but its
+    // receipt still claimed it sat in the removed checkout. Every validated
+    // write then failed with a constraint violation.
+    let mut persisted: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    let session = &mut persisted["sessions"][0];
+    session["process"]["cwd"] = "/repo".into();
+    session["resume_launch_guard"] = serde_json::Value::Null;
+    session["lifecycle_state"] = "exited".into();
+    std::fs::write(&path, serde_json::to_vec(&persisted).unwrap()).unwrap();
+
+    let mut reopened = Store::open(&path).unwrap();
+    assert!(reopened.session_relocation_receipts().is_empty());
+    let revision = reopened.revision();
+    reopened
+        .insert_project(
+            &authority,
+            ProjectRecord {
+                id: "project-after-repair".into(),
+                name: "After".into(),
+                folder_path: "/after".into(),
+            },
+        )
+        .unwrap();
+    assert!(reopened.revision() > revision);
+    let _ = std::fs::remove_file(path);
+}

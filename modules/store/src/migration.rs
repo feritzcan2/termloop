@@ -1,6 +1,6 @@
 use termloop_domain::{
     AgentConversationReadiness, AgentConversationReadinessRecord, ResumeFailureReason,
-    ResumeProvider, SessionKind,
+    ResumeProvider, SessionKind, SessionRelocationTarget,
 };
 
 use super::validation::validate_current_state;
@@ -568,6 +568,7 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
                 serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
             state.schema_version = CURRENT_SCHEMA_VERSION;
             sanitize_resume_metadata(&mut state);
+            release_stale_relocation_receipts(&mut state);
             validate_current_state(&state)?;
             Ok((state, true))
         }
@@ -575,9 +576,11 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
             let mut state: CurrentState =
                 serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
             let released_targets = release_deleted_task_archive_targets(&mut state);
+            let released_receipts = release_stale_relocation_receipts(&mut state);
             let sanitized = (removed_retired_session_topics
                 || sanitize_resume_metadata(&mut state))
-                | released_targets;
+                | released_targets
+                | released_receipts;
             validate_current_state(&state)?;
             Ok((state, sanitized))
         }
@@ -602,6 +605,26 @@ fn release_deleted_task_archive_targets(state: &mut CurrentState) -> bool {
         changed |= operation.targets.len() != before;
     }
     changed
+}
+
+/// A relocation receipt only proves that its Session still sits at the
+/// relocation target. Closing a Task whose checkout was removed used to move
+/// the Session to the Project root without dropping the receipt, which left
+/// every later write failing whole-state validation. A receipt whose Session
+/// has left that target proves nothing, so it is released; a receipt that
+/// still matches its Session is kept and validated as before.
+fn release_stale_relocation_receipts(state: &mut CurrentState) -> bool {
+    let before = state.session_relocation_receipts.len();
+    let sessions = &state.sessions;
+    state.session_relocation_receipts.retain(|receipt| {
+        sessions.iter().any(|session| {
+            session.id == receipt.session_id
+                && session.process.cwd == receipt.target_cwd
+                && (receipt.target != SessionRelocationTarget::TaskWorktree
+                    || session.resume_launch_guard.is_some())
+        })
+    });
+    state.session_relocation_receipts.len() != before
 }
 
 fn remove_orphan_task_branch_sets(value: &mut serde_json::Value) {
