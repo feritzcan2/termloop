@@ -125,6 +125,7 @@ import {
   subscribeAppearancePreference,
 } from "../appearance-theme.js";
 import type { FolderPickerActions } from "./project-dialogs/folder-picker.js";
+import brandMarkIcon from "../../assets/termloop-brand-mark.png";
 import { connectionProfileIdOf } from "../../connection-scope.js";
 import {
   SIDEBAR_MIN_WIDTH,
@@ -1671,7 +1672,7 @@ export function Shell(props: ShellProps) {
           {showsWindowDragRegion(platform) && <div className="window-drag-region" aria-hidden="true" />}
           <header className="brand-row">
             <div className="brand-cluster">
-              <div className="brand"><span className="brand-mark" aria-hidden="true"><i /><i /></span><strong>TermLoop</strong></div>
+              <div className="brand"><img className="brand-mark" src={brandMarkIcon} alt="" aria-hidden="true" /><strong>TermLoop</strong></div>
             </div>
             <div className="brand-actions"><button className="icon-button quiet" title="Command palette" aria-label="Open command palette" aria-keyshortcuts="Control+Shift+P Meta+Shift+P" onClick={openCommandPalette}><Icon name="search" /></button><button className="icon-button quiet" title="Add Project" aria-label="Add Project" onClick={props.openProjectDialog}><Icon name="add" /></button></div>
           </header>

@@ -31,7 +31,7 @@ await Promise.all([
   build({ entryPoints: ["src/preload.ts"], outfile: "dist/preload.cjs", bundle: true, platform: "node", format: "cjs", external: ["electron"] }),
   build({ entryPoints: ["src/utility/terminal-gateway.ts"], outfile: "dist/terminal-gateway.js", bundle: true, platform: "node", format: "esm", external: ["electron", "ws"] }),
   // Splitting keeps the lazily imported editor out of the startup bundle.
-  build({ entryPoints: { renderer: "src/renderer/index.tsx" }, outdir: "dist", splitting: true, chunkNames: "chunks/[name]-[hash]", bundle: true, platform: "browser", format: "esm", jsx: "automatic", loader: { ".css": "css", ".ttf": "file", ".svg": "dataurl" }, assetNames: "[name]" }),
+  build({ entryPoints: { renderer: "src/renderer/index.tsx" }, outdir: "dist", splitting: true, chunkNames: "chunks/[name]-[hash]", bundle: true, platform: "browser", format: "esm", jsx: "automatic", loader: { ".css": "css", ".ttf": "file", ".svg": "dataurl", ".png": "dataurl" }, assetNames: "[name]" }),
   build({ entryPoints: [fileURLToPath(import.meta.resolve("monaco-editor/editor/editor.worker.js"))], outfile: "dist/monaco-editor.worker.js", bundle: true, platform: "browser", format: "esm", minify: true }),
   cp("src/index.html", "dist/index.html"),
   cp(path.join(checkout, "resources/prompts"), "dist/prompts", { recursive: true }),
