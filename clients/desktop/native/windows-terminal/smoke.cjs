@@ -115,6 +115,10 @@ app.whenReady().then(async () => {
     driver.key(children[0].handle, 0x52, 1, 0x12); // Ctrl+R stays terminal history search.
     driver.key(children[0].handle, 0x52, 3, 0x12); // Ctrl+Shift+R renames the Session.
     driver.key(children[0].handle, 0x50, 3, 0x10); // Ctrl+Shift+P opens the palette.
+    driver.key(children[0].handle, 0x46, 1, 0x06); // Ctrl+F stays terminal cursor movement.
+    driver.key(children[0].handle, 0x46, 3, 0x06); // Ctrl+Shift+F forks the Agent.
+    driver.key(children[0].handle, 0x47, 3, 0x07); // Ctrl+Shift+G opens Source Control.
+    driver.key(children[0].handle, 0x53, 3, 0x13); // Ctrl+Shift+S opens the Steward.
     driver.key(children[0].handle, 0x41, 0, 0x61);
     addon.write(first.surfaceId, "\x1b[?2004h");
     require("electron").clipboard.writeText("line one\r\nline two");
@@ -124,6 +128,11 @@ app.whenReady().then(async () => {
     assert(inputs.some(([kind, id, value]) => kind === "input" && id === first.surfaceId && value === "a"));
     assert(inputs.some(([kind, , value]) => kind === "shortcut" && value === "renameSession"));
     assert(inputs.some(([kind, , value]) => kind === "shortcut" && value === "commandPalette"));
+    assert(inputs.some(([kind, id, value]) => kind === "input" && id === first.surfaceId && value === "\x06"));
+    for (const shortcut of ["forkSession", "sourceControl", "steward"]) {
+      assert(inputs.some(([kind, , value]) => kind === "shortcut" && value === shortcut), shortcut);
+    }
+    assert.equal(inputs.filter(([kind, , value]) => kind === "input" && value === "\x07").length, 0);
     assert(inputs.some(([kind, id, value]) => kind === "input" && id === first.surfaceId && value === "\x1b[200~line one\rline two\x1b[201~"));
     assert(!inputs.some(([kind, , value]) => kind === "input" && value === "\x10"));
     assert.equal(driver.pasteMode(["\x1b[?20", "04h"], "a\r\nb"), "\x1b[200~a\rb\x1b[201~");

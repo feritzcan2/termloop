@@ -183,6 +183,11 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM key, LPARAM flags,
       if (ctrl && shift && !alt && key == 'P') shortcut = u"commandPalette";
       else if (ctrl && !shift && !alt && key == 'T') shortcut = u"newTerminal";
       else if (ctrl && shift && !alt && key == 'R') shortcut = u"renameSession";
+      // Ctrl+Shift keeps Ctrl+F/G/S as terminal control bytes, matching the
+      // renderer's non-mac chords in src/renderer/command-surface.ts.
+      else if (ctrl && shift && !alt && key == 'F') shortcut = u"forkSession";
+      else if (ctrl && shift && !alt && key == 'G') shortcut = u"sourceControl";
+      else if (ctrl && shift && !alt && key == 'S') shortcut = u"steward";
       else if (ctrl && alt && !shift && key == VK_LEFT) shortcut = u"focusPreviousPane";
       else if (ctrl && alt && !shift && key == VK_RIGHT) shortcut = u"focusNextPane";
       else if (ctrl && !alt && key == 'V' && (IsClipboardFormatAvailable(CF_DIB) || IsClipboardFormatAvailable(CF_DIBV5))) shortcut = u"pasteImage";
