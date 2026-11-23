@@ -55,3 +55,11 @@ unicode-normalization = "0.1.24"
 zeroize = "1.8.2"
 jsonschema = { version = "0.57.0", default-features = false }
 rusqlite = { version = "0.40.2", default-features = false, features = ["bundled"] }
+
+# Keep line tables for backtraces; full variable debuginfo makes every Agent
+# build and link slower and inflates target directories.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false

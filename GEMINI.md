@@ -33,6 +33,10 @@ remote clients.
   multi-module, schema, generated-code, platform, shared-build changes, or when
   the user requests them. Do not rerun an unchanged broad check on the same
   commit unless relevant files changed after its successful result.
+- While iterating on Rust, run only the affected test binary with a name
+  filter, for example `cargo test -p <crate> --lib <filter>`. Do not run a
+  separate `cargo check`; run `cargo clippy` and the full crate tests once,
+  before delivery.
 - Keep command output bounded but preserve exit status, summaries, and complete
   failing diagnostics. The final response lists changed paths, commands and
   results, skipped or unmeasured cases, remaining risks, and material
