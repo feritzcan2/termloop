@@ -408,3 +408,54 @@ fn open_releases_a_receipt_whose_session_left_the_relocation_target() {
     assert!(reopened.revision() > revision);
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn commit_refuses_to_persist_state_that_would_not_load() {
+    let (path, authority, mut store, proof) = relocation_fixture("refused-commit");
+    let revision = store.revision();
+    let persisted = std::fs::read(&path).unwrap();
+    // A receipt naming a checkout its Session never moved into.
+    store
+        .state
+        .session_relocation_receipts
+        .push(termloop_domain::SessionRelocationReceipt {
+            operation_id: "orphan-receipt".into(),
+            session_id: "agent-relocation".into(),
+            project_id: "project-cleanup".into(),
+            target: termloop_domain::SessionRelocationTarget::TaskWorktree,
+            target_task_id: "task-relocation".into(),
+            target_cwd: proof.registered_worktree_path.clone(),
+            target_worktree_generation: proof.worktree_generation,
+            target_managed_worktree_operation_id: proof.operation_id.clone(),
+            runtime_epoch: 7,
+        });
+    let error = store
+        .insert_project(
+            &authority,
+            ProjectRecord {
+                id: "project-unrelated".into(),
+                name: "Unrelated".into(),
+                folder_path: "/unrelated".into(),
+            },
+        )
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        StoreError::InvalidState {
+            rule: "session relocation records"
+        }
+    ));
+    assert_eq!(
+        error.to_string(),
+        "the change would leave invalid session relocation records"
+    );
+    assert_eq!(store.revision(), revision);
+    assert!(
+        store
+            .projects()
+            .iter()
+            .all(|project| project.id != "project-unrelated")
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), persisted);
+    let _ = std::fs::remove_file(path);
+}

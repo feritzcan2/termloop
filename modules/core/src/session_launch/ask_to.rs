@@ -2009,7 +2009,7 @@ mod tests {
         let second_helper_request_id = second_plan.ask_to_request_id().unwrap().to_owned();
         insert_running_helper(&mut runtime, &second_helper_id, &project_id);
         runtime.mcp_authorizer.register(
-            second_helper_id,
+            second_helper_id.clone(),
             7,
             AgentMcpRole::Helper {
                 request_id: Some(second_helper_request_id.clone()),
@@ -2021,6 +2021,20 @@ mod tests {
                 "second-helper-token",
                 &second_helper_request_id,
                 "other answer".into(),
+            )
+            .unwrap();
+        // Reply delivery clears the helper's current request with the flag,
+        // as the first helper's did above.
+        let second_conversation_id = runtime.ask_to_requests[&second_helper_request_id]
+            .conversation_id
+            .clone();
+        runtime
+            .store
+            .set_ask_to_current_request(
+                &runtime.write_authority,
+                &second_helper_id,
+                &second_conversation_id,
+                None,
             )
             .unwrap();
         runtime

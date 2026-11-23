@@ -772,13 +772,7 @@ fn a_failed_archive_of_an_active_task_no_longer_blocks_a_fresh_archive() {
                 project_id: fixture.project_id.clone(),
                 worktree_path: None,
                 worktree_generation: 0,
-                targets: vec![termloop_domain::TaskArchiveTarget {
-                    session_id: "deleted-agent".into(),
-                    runtime_epoch: 1,
-                    prior_lifecycle_state: "running".into(),
-                    prior_resume_failure: None,
-                    was_live_agent: true,
-                }],
+                targets: Vec::new(),
                 state: termloop_domain::TaskArchiveOperationState::Prepared,
             },
         )

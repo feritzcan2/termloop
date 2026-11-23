@@ -925,11 +925,20 @@ fn restart_reconcile_resumes_current_assistants_and_sweeps_only_obsolete_debris(
     let mut exited_ordinary = ordinary_agent_session("ordinary-exited", "project-a");
     exited_ordinary.lifecycle_state = "exited".into();
     store.state.sessions.push(exited_ordinary);
-    store.state.agent_conversation_readiness = ["steward-live", "ordinary-exited"]
-        .into_iter()
-        .map(|session_id| AgentConversationReadinessRecord {
-            session_id: session_id.into(),
-            readiness: AgentConversationReadiness::Unconfirmed,
+    // Every Agent Session carries exactly one readiness record; only the
+    // running ordinary Agent had its conversation confirmed.
+    store.state.agent_conversation_readiness = store
+        .state
+        .sessions
+        .iter()
+        .filter(|session| session.kind == SessionKind::Agent)
+        .map(|session| AgentConversationReadinessRecord {
+            session_id: session.id.clone(),
+            readiness: if session.id == "ordinary-running" {
+                AgentConversationReadiness::Resumable
+            } else {
+                AgentConversationReadiness::Unconfirmed
+            },
         })
         .collect();
 

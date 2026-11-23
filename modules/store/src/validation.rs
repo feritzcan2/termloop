@@ -29,37 +29,97 @@ pub(super) fn validate_stale_resolution_failure(
 }
 
 pub(super) fn validate_current_state(state: &CurrentState) -> Result<(), StoreError> {
-    if state.schema_version != CURRENT_SCHEMA_VERSION
-        || !termloop_domain::valid_agent_accounts(&state.agent_accounts)
-        || !state.agent_library.is_valid()
-        || super::records::agent_library::session_profiles_are_invalid(state)
-        || companion_records_are_invalid(state)
-        || steward_configurations_are_invalid(state)
-        || steward_conversation_refs_are_invalid(state)
-        || !state.worker_configurations.is_empty()
-        || run_configurations_are_invalid(state)
-        || workflow_configurations_are_invalid(state)
-        || workflow_executions_are_invalid(state)
-        || run_setup_marks_are_invalid(state)
-        || configuration_versions_are_invalid(state)
-        || tracker_configurations_are_invalid(state)
-        || playbook_configurations_are_invalid(state)
-        || playbook_step_progress_is_invalid(state)
-        || super::records::playbook_evaluation::records_are_invalid(state)
-        || sessions_are_invalid(state)
-        || deleted_sessions_are_invalid(state)
-        || agent_conversation_readiness_is_invalid(state)
-        || agent_plans_are_invalid(state)
-        || issue_links_are_invalid(state)
-        || super::records::task_branch::task_branch_sets_are_invalid(state)
-        || task_source_configurations_are_invalid(state)
-        || project_task_automation_configurations_are_invalid(state)
-        || archive_records_are_invalid(state)
-        || relocation_records_are_invalid(state)
-        || state
-            .last_agent_launch_selection
-            .as_ref()
-            .is_some_and(|selection| !selection.is_valid())
+    match invalid_state_rule(state) {
+        Some(_) => Err(StoreError::CorruptRecord),
+        None => Ok(()),
+    }
+}
+
+type StateRule = (&'static str, fn(&CurrentState) -> bool);
+
+/// Every whole-state invariant, by name, in the order they are checked. The
+/// name is what a refused commit reports, so a violation can be traced to
+/// its records instead of surfacing only as a failed write.
+const STATE_RULES: &[StateRule] = &[
+    ("schema version", |state| {
+        state.schema_version != CURRENT_SCHEMA_VERSION
+    }),
+    ("agent accounts", |state| {
+        !termloop_domain::valid_agent_accounts(&state.agent_accounts)
+    }),
+    ("agent library", |state| !state.agent_library.is_valid()),
+    (
+        "session agent profiles",
+        super::records::agent_library::session_profiles_are_invalid,
+    ),
+    ("companion records", companion_records_are_invalid),
+    ("steward configurations", steward_configurations_are_invalid),
+    (
+        "steward conversation refs",
+        steward_conversation_refs_are_invalid,
+    ),
+    ("retired worker configurations", |state| {
+        !state.worker_configurations.is_empty()
+    }),
+    ("run configurations", run_configurations_are_invalid),
+    (
+        "workflow configurations",
+        workflow_configurations_are_invalid,
+    ),
+    ("workflow executions", workflow_executions_are_invalid),
+    ("run setup marks", run_setup_marks_are_invalid),
+    ("configuration versions", configuration_versions_are_invalid),
+    ("tracker configurations", tracker_configurations_are_invalid),
+    (
+        "playbook configurations",
+        playbook_configurations_are_invalid,
+    ),
+    ("playbook step progress", playbook_step_progress_is_invalid),
+    (
+        "playbook evaluations",
+        super::records::playbook_evaluation::records_are_invalid,
+    ),
+    ("sessions", sessions_are_invalid),
+    ("deleted sessions", deleted_sessions_are_invalid),
+    (
+        "agent conversation readiness",
+        agent_conversation_readiness_is_invalid,
+    ),
+    ("agent plans", agent_plans_are_invalid),
+    ("issue links", issue_links_are_invalid),
+    (
+        "task branch sets",
+        super::records::task_branch::task_branch_sets_are_invalid,
+    ),
+    (
+        "task source configurations",
+        task_source_configurations_are_invalid,
+    ),
+    (
+        "project task automation configurations",
+        project_task_automation_configurations_are_invalid,
+    ),
+    ("archive records", archive_records_are_invalid),
+    ("session relocation records", relocation_records_are_invalid),
+    (
+        "task and worktree records",
+        task_and_worktree_records_are_invalid,
+    ),
+];
+
+/// The first whole-state invariant `state` violates, if any.
+pub(super) fn invalid_state_rule(state: &CurrentState) -> Option<&'static str> {
+    STATE_RULES
+        .iter()
+        .find(|(_, is_invalid)| is_invalid(state))
+        .map(|(name, _)| *name)
+}
+
+fn task_and_worktree_records_are_invalid(state: &CurrentState) -> bool {
+    state
+        .last_agent_launch_selection
+        .as_ref()
+        .is_some_and(|selection| !selection.is_valid())
         || state
             .mcp_tool_description_overrides
             .iter()
@@ -179,10 +239,6 @@ pub(super) fn validate_current_state(state: &CurrentState) -> Result<(), StoreEr
                     .as_ref()
                     .is_some_and(|failure| validate_stale_resolution_failure(failure).is_err())
         })
-    {
-        return Err(StoreError::CorruptRecord);
-    }
-    Ok(())
 }
 
 fn configuration_versions_are_invalid(state: &CurrentState) -> bool {
@@ -556,11 +612,13 @@ fn archive_records_are_invalid(state: &CurrentState) -> bool {
                                     task.archived_at_epoch_ms
                                         == Some(suspension.archived_at_epoch_ms)
                                 }
+                                // Reopen may recreate the checkout first; the
+                                // parked Agents then wait in it until reopen
+                                // takes them back.
                                 TaskSuspensionReason::ClosedWorktreeRemoved => {
                                     suspension.task_id.as_deref() == Some(task.id.as_str())
                                         && task.archived_at_epoch_ms.is_none()
                                         && task.status == TaskStatus::Closed
-                                        && task.worktree.is_none()
                                 }
                                 // A closed Task may later be archived; its
                                 // close-parked Agents stay with it until reopen.

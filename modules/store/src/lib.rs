@@ -274,6 +274,8 @@ pub enum StoreError {
     ManagedWorktreeProofChanged { task_id: String },
     #[error("corrupt current-state record")]
     CorruptRecord,
+    #[error("the change would leave invalid {rule}")]
+    InvalidState { rule: &'static str },
     #[error("storage error: {0}")]
     Io(String),
 }
@@ -487,6 +489,12 @@ impl Store {
 
     fn commit(&mut self) -> Result<u64, StoreError> {
         records::agent_library::prune_session_profiles(&mut self.state);
+        // A write must never persist state the store would refuse to load:
+        // one bad record would then refuse every later write, in every
+        // Project, until it is repaired by hand.
+        if let Some(rule) = validation::invalid_state_rule(&self.state) {
+            return Err(StoreError::InvalidState { rule });
+        }
         self.state.revision += 1;
         self.persisted_bytes = persist_state(&self.path, &self.state, self.persisted_bytes)?;
         Ok(self.state.revision)
