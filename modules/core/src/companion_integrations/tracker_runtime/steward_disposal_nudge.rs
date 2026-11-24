@@ -11,6 +11,11 @@ use super::*;
 
 const STEWARD_DISPOSAL_NUDGES_MAX: usize = 256;
 
+/// A disposal is one finished Steward action, not a burst of provider
+/// observations, so its re-check needs no debounce window. The short wait only
+/// leaves room for the Git host to serve what the action just changed.
+const STEWARD_DISPOSAL_RECHECK_MS: u64 = 3_000;
+
 impl CoreRuntime {
     /// The Tasks of the current step-waiting findings among these IDs. Read it
     /// before the findings are removed.
@@ -56,7 +61,11 @@ impl CoreRuntime {
                 .tracker_runtime
                 .steward_disposal_nudged
                 .contains_key(&key)
-                || !self.nudge_playbook_steps(std::slice::from_ref(task_id), now_epoch_ms)
+                || !self.nudge_playbook_steps_after(
+                    std::slice::from_ref(task_id),
+                    now_epoch_ms,
+                    STEWARD_DISPOSAL_RECHECK_MS,
+                )
             {
                 continue;
             }

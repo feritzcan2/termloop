@@ -23,7 +23,19 @@ impl CoreRuntime {
     /// Brings each Task's current automatic step forward. Returns whether any
     /// step became due earlier, so the caller wakes the step scheduler.
     pub(crate) fn nudge_playbook_steps(&mut self, task_ids: &[String], now_epoch_ms: u64) -> bool {
-        let wake_at = now_epoch_ms.saturating_add(NUDGE_DEBOUNCE_MS);
+        self.nudge_playbook_steps_after(task_ids, now_epoch_ms, NUDGE_DEBOUNCE_MS)
+    }
+
+    /// Like `nudge_playbook_steps`, with the caller choosing how long the
+    /// re-check waits. Only a single finished event, which has no burst to
+    /// coalesce, uses a shorter wait than `NUDGE_DEBOUNCE_MS`.
+    pub(crate) fn nudge_playbook_steps_after(
+        &mut self,
+        task_ids: &[String],
+        now_epoch_ms: u64,
+        delay_ms: u64,
+    ) -> bool {
+        let wake_at = now_epoch_ms.saturating_add(delay_ms);
         let mut nudged = false;
         for task_id in task_ids {
             let Some((routine_id, due_at)) = self.playbook_automatic_step_for_task(task_id) else {

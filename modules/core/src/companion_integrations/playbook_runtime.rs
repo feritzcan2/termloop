@@ -2722,7 +2722,8 @@ pub(crate) mod tests {
             NOW + 2_000,
         );
         assert_eq!(update["stepCheckRequested"], true);
-        let nudged_at = NOW + 2_000 + 15_000;
+        // A single finished Steward action needs no debounce window.
+        let nudged_at = NOW + 2_000 + 3_000;
         assert_eq!(
             runtime.step_nudge_epoch_ms("routine-pr", "task-1"),
             nudged_at
