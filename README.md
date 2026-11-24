@@ -23,76 +23,57 @@
   <a href="docs/development.md">Build from source</a>
 </p>
 
-<a href="https://termloop.ai/#ask-to"><img src="artifacts/marketing/readme/ask-to.gif?v=3d96d2f93fcc" alt="Ask To: The answer returns to the requesting agent." width="960"></a>
+<p align="center">
+  <img src="artifacts/marketing/readme/hero-agents.png?v=26b3e30b2426" alt="TermLoop running four Claude Code agents in parallel, each in its own Task worktree with an open pull request." width="100%">
+  <br>
+  <sub>Four Claude Code agents working in parallel: each Task has its own branch, worktree and pull request into <code>develop</code>.</sub>
+</p>
 
-## Why TermLoop
+<table>
+  <tr>
+    <td width="33%" valign="top"><strong>⚡ Parallel agents</strong><br>Run Claude Code, Codex and plain terminals side by side, each in its own Task worktree.</td>
+    <td width="33%" valign="top"><strong>🔀 Branches and PRs in view</strong><br>See every Task's branch, change count and pull request status without leaving the workspace.</td>
+    <td width="33%" valign="top"><strong>📝 Review in place</strong><br>Comment on diff lines and send the notes straight to the agent that wrote the code.</td>
+  </tr>
+  <tr>
+    <td valign="top"><strong>🤝 Agents ask agents</strong><br>Ask To starts a visible helper Session. Its answer returns to the agent that asked.</td>
+    <td valign="top"><strong>🖥️ Remote servers feel local</strong><br>Connect Linux servers over SSH or Tailscale. Their Sessions sit in the same sidebar.</td>
+    <td valign="top"><strong>♻️ Sessions survive the window</strong><br>A background daemon owns every terminal. Close the app, reopen it, reattach.</td>
+  </tr>
+</table>
 
-- **No more copy-paste between agents.** Ask Codex to review what Claude Code wrote, or hand a brief to a Session that is already running. Answers come back to the agent that asked.
-- **Remote servers feel local.** Connect a Linux server, cloud VM, or another computer over SSH or Tailscale. Its Projects and live terminals appear in the same sidebar as your local ones.
-- **Sessions survive the window.** A background daemon owns every terminal and process. Close the app, reopen it, and reattach to the same live Sessions.
-- **Work stays organized.** Projects, Tasks with acceptance criteria, optional Git worktrees, diffs, and review notes live next to the agents doing the work.
-- **Bring your own agents.** TermLoop launches the Claude Code and Codex CLIs with your existing subscriptions and sign-ins. It does not proxy model traffic.
-- **Follow along from anywhere.** Pair the mobile Companion for Project visibility, terminal input, and iPhone or Apple Watch notifications.
+TermLoop launches the Claude Code and Codex CLIs with your existing subscriptions and sign-ins. It does not proxy model traffic, and your code stays on your machine.
 
-## Download
+## See it work
 
-Get the latest installer from [Releases](https://github.com/feritzcan2/termloop/releases/latest):
+### Several Tasks, one view of the PRs
 
-| Platform | Package |
-| --- | --- |
-| macOS (Apple silicon and Intel) | Universal `.dmg` or `.zip` |
-| Windows (x64) | `.exe` installer |
-| Linux (x86_64) | `.AppImage` or `.deb` |
+Each Task gets its own branch and worktree, so agents don't step on each other. Every Task row links to its pull request, and the PRs panel shows each one with its checks: feature branches into `develop`, and the release PR from `develop` into `main`.
 
-Each release also ships a headless `termloop-server` archive for [remote servers](#remote-servers), plus a `SHA256SUMS` file for verifying downloads.
+<p align="center">
+  <img src="artifacts/marketing/readme/tasks-and-prs.png?v=37f5568519a5" alt="Four Tasks in the sidebar, each linked to its open pull request, next to the PRs panel listing feature PRs into develop and the release PR from develop into main." width="776">
+</p>
 
-**Requirements:** to run agent Sessions, install and sign in to the [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and/or [Codex](https://github.com/openai/codex) CLI on the computer running TermLoop. Ordinary terminal Sessions need nothing extra.
+### Changes: review notes become the next change
 
-## Remote servers
+Open a Task's diff, leave a note on a line, and send the notes to the running agent. It applies them in its own terminal while you watch.
 
-Run agents on a Linux server, a cloud VM, or another desktop, and drive them from your laptop as if they were local. Remote Projects appear in the same sidebar, grouped under each computer's name.
+<a href="https://termloop.ai/#changes"><img src="artifacts/marketing/readme/changes.gif?v=bf42fbda876c" alt="Changes: a note on a diff line is sent to Claude, which applies the change." width="100%"></a>
 
-- **One window, many computers.** Use this computer plus up to eight remote computers at the same time. If one goes offline, work on the others continues.
-- **Agents keep running when you disconnect.** The remote daemon runs as a background service and owns its terminals. Close the laptop, reconnect later, and the same Sessions are still running.
-- **Set up from the app.** Open **Settings → Computers → Add a Linux server**, verify the server's SSH fingerprint, and TermLoop installs the server, starts it as a background service, and connects.
-- **Kept up to date.** Managed Linux servers check hourly for new stable releases and roll back automatically if an update fails.
-- **Private by default.** The server listens only on `127.0.0.1`. You reach it through an SSH tunnel or Tailscale Serve over HTTPS, and every connecting device gets its own credential that the server can revoke.
-- **Dev servers open locally.** Opening a remote dev-server URL forwards it to a local port.
+### Ask To: a second opinion without copy-paste
 
-| How to connect | Use it when |
-| --- | --- |
-| **Add a Linux server** (Settings → Computers) | You have SSH access to a Debian or Ubuntu x64 server with systemd. The first setup needs root or passwordless sudo. |
-| **On your Tailscale network** | The server shares over Tailscale. TermLoop finds it on your tailnet and connects with one click. |
-| **Share this computer** | You want to reach another Mac, Windows, or Linux desktop running TermLoop over SSH or Tailscale. |
-| **Headless install** | You prefer the terminal. Extract the `termloop-server-linux-x64` archive from [Releases](https://github.com/feritzcan2/termloop/releases/latest), run `./install.sh install` as the user that will own the server, then enable access with `termloopctl access enable`. |
+Right-click an agent and choose **Agents → Ask to → Claude**. The agent writes the request itself, a helper Session appears under it, and the helper's review comes back to the agent that asked.
 
-Claude Code and Codex run on the server, so sign them in there from **Settings → Computers → Agent accounts**. The desktop and server must run matching TermLoop versions; the setup wizard installs the version that matches your desktop.
+<a href="https://termloop.ai/#ask-to"><img src="artifacts/marketing/readme/ask-to.gif?v=b132737b3551" alt="Ask To: a helper Claude reviews the rate-limit change and the answer returns to the requesting agent." width="100%"></a>
 
-## Quick start
-
-1. Open TermLoop and add a **Project** pointing at a repository or local folder.
-2. Start a Claude Code or Codex Session, or open an ordinary terminal.
-3. Create a **Task** with the change you want and its acceptance criteria. Add a Task worktree if the change needs its own branch and checkout.
-4. Run the work, inspect the changes, and use **Ask To** to get another agent's review before you decide what to keep.
-
-## Feature tour
-
-Each preview is a short loop from a real Project. Click one to open the 1080p video with playback controls and written steps.
+<details>
+<summary><strong>More demos: Tasks, Quick Actions, Handoff, Session Fork, Code review</strong></summary>
 
 ### Tasks: define the work, add a worktree when needed
 
 Keep the goal, acceptance criteria and checklist in one Task. When the change needs its own checkout, create a branch and worktree from that same Task.
 
 <a href="https://termloop.ai/#tasks"><img src="artifacts/marketing/readme/tasks.gif?v=a0f4d09ed5a4" alt="Tasks: define the work, complete checks, then create an optional worktree from the same Task." width="960"></a>
-
-### Changes: turn review notes into the next change
-
-Open the diff, leave a note on a line and send the review to a running agent.
-
-<a href="https://termloop.ai/#changes"><img src="artifacts/marketing/readme/changes.gif?v=034f576eaa16" alt="Changes: Send the notes to the active agent and follow the update." width="960"></a>
-
-<details>
-<summary><strong>More demos: Quick Actions, Handoff, Session Fork, Code review</strong></summary>
 
 ### Quick Actions: from a prompt to a running agent
 
@@ -108,7 +89,7 @@ Send a visible, composed handoff from one running Project Session to another. Th
 
 ### Session Fork: explore another direction in a real terminal
 
-Fork a Session from the sidebar, see the parent-child relationship, and continue in a new Ghostty terminal. The branch in thinking is explicit instead of becoming another anonymous tab.
+Fork a Session from the sidebar, see the parent-child relationship, and continue in a new terminal. The branch in thinking is explicit instead of becoming another anonymous tab.
 
 <a href="https://termloop.ai/#fork"><img src="artifacts/marketing/readme/fork.gif?v=f6d4a78d45af" alt="Session Fork: Continue in a separate Session with visible parentage." width="960"></a>
 
@@ -120,7 +101,56 @@ Read the diff, compare versions side by side and keep track of the files you hav
 
 </details>
 
-### Coordinate and automate
+## Download
+
+Get the latest installer from [Releases](https://github.com/feritzcan2/termloop/releases/latest):
+
+| Platform | Package |
+| --- | --- |
+| macOS (Apple silicon and Intel) | Universal `.dmg` or `.zip` |
+| Windows (x64) | `.exe` installer |
+| Linux (x86_64) | `.AppImage` or `.deb` |
+
+Each release also ships a headless `termloop-server` archive for [remote servers](#remote-servers), plus a `SHA256SUMS` file for verifying downloads.
+
+**Requirements:** to run agent Sessions, install and sign in to the [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and/or [Codex](https://github.com/openai/codex) CLI on the computer running TermLoop. Ordinary terminal Sessions need nothing extra.
+
+## Quick start
+
+1. Open TermLoop and add a **Project** pointing at a repository or local folder.
+2. Create a **Task** for each change, with its acceptance criteria. Add a Task worktree when the change needs its own branch.
+3. Start a Claude Code or Codex Session in each Task and let them run in parallel.
+4. Review the diff, send line notes back, use **Ask To** for a second opinion, and open the PR.
+
+## Remote servers
+
+Run agents on a Linux server, a cloud VM, or another desktop, and drive them from your laptop as if they were local. Remote Projects appear in the same sidebar, grouped under each computer's name.
+
+- **One window, many computers.** Use this computer plus up to eight remote computers at the same time. If one goes offline, work on the others continues.
+- **Agents keep running when you disconnect.** The remote daemon runs as a background service and owns its terminals. Reconnect later and the same Sessions are still running.
+- **Set up from the app.** Open **Settings → Computers → Add a Linux server**, verify the server's SSH fingerprint, and TermLoop installs the server, starts it as a background service, and connects.
+- **Private by default.** The server listens only on `127.0.0.1`. You reach it through an SSH tunnel or Tailscale Serve over HTTPS, and every connecting device gets its own credential that the server can revoke.
+
+<details>
+<summary><strong>Connection options, updates and agent sign-in</strong></summary>
+
+| How to connect | Use it when |
+| --- | --- |
+| **Add a Linux server** (Settings → Computers) | You have SSH access to a Debian or Ubuntu x64 server with systemd. The first setup needs root or passwordless sudo. |
+| **On your Tailscale network** | The server shares over Tailscale. TermLoop finds it on your tailnet and connects with one click. |
+| **Share this computer** | You want to reach another Mac, Windows, or Linux desktop running TermLoop over SSH or Tailscale. |
+| **Headless install** | You prefer the terminal. Extract the `termloop-server-linux-x64` archive from [Releases](https://github.com/feritzcan2/termloop/releases/latest), run `./install.sh install` as the user that will own the server, then enable access with `termloopctl access enable`. |
+
+Managed Linux servers check hourly for new stable releases and roll back automatically if an update fails. Opening a remote dev-server URL forwards it to a local port.
+
+Claude Code and Codex run on the server, so sign them in there from **Settings → Computers → Agent accounts**. The desktop and server must run matching TermLoop versions; the setup wizard installs the version that matches your desktop.
+
+</details>
+
+## More features
+
+<details>
+<summary><strong>Coordinate and automate</strong></summary>
 
 | Feature | What it helps with |
 | --- | --- |
@@ -132,7 +162,10 @@ Read the diff, compare versions side by side and keep track of the files you hav
 | [Skill library](docs/features.md#skill-library) | Search installed skills, read their instructions, and see where they are deployed. |
 | [Mobile Companion](docs/features.md#mobile-companion) | Pair your phone to follow long-running agents and type into their terminals. |
 
-### Useful every day
+</details>
+
+<details>
+<summary><strong>Useful every day</strong></summary>
 
 | Feature | What it helps with |
 | --- | --- |
@@ -142,6 +175,8 @@ Read the diff, compare versions side by side and keep track of the files you hav
 | [Developer Notes](docs/features.md#developer-notes) | Keep a small checklist beside each Task and tick off the checks as you finish them. |
 | [Notifications](docs/features.md#notification-preferences) | Choose which input requests and review alerts reach your desktop, iPhone and Apple Watch. |
 | [Appearance](docs/features.md#appearance) | Choose Light, Dark or System. Your terminal panes follow the workspace theme. |
+
+</details>
 
 See the [complete feature guide](docs/features.md) for every feature with written steps.
 
