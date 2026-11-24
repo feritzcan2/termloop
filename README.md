@@ -56,15 +56,15 @@ Each Task gets its own branch and worktree, so agents don't step on each other. 
 
 ### Changes: review notes become the next change
 
-Open a Task's diff, leave a note on a line, and send the notes to the running agent. It applies them in its own terminal while you watch.
+Open a Task's diff, leave notes on the lines you want changed, and send them all to the running agent in one go. It applies them in its own terminal, and the diff updates when it is done.
 
-<a href="https://termloop.ai/#changes"><img src="artifacts/marketing/readme/changes.gif?v=bf42fbda876c" alt="Changes: a note on a diff line is sent to Claude, which applies the change." width="100%"></a>
+<a href="https://termloop.ai/#changes"><img src="artifacts/marketing/readme/changes.gif?v=37d9a3f921a0" alt="Changes: two line notes on app.js are sent to Claude, which adds error handling and a refresh timer, and the diff updates." width="100%"></a>
 
 ### Ask To: a second opinion without copy-paste
 
-Right-click an agent and choose **Agents → Ask to → Claude**. The agent writes the request itself, a helper Session appears under it, and the helper's review comes back to the agent that asked.
+Just ask in the prompt: *"Can you ask another Claude agent to review the j/k focus logic before we merge?"* The agent writes the request itself, a helper Session appears under it, and the helper's review comes back to the agent that asked.
 
-<a href="https://termloop.ai/#ask-to"><img src="artifacts/marketing/readme/ask-to.gif?v=b132737b3551" alt="Ask To: a helper Claude reviews the rate-limit change and the answer returns to the requesting agent." width="100%"></a>
+<a href="https://termloop.ai/#ask-to"><img src="artifacts/marketing/readme/ask-to.gif?v=3093711c5db1" alt="Ask To: the request is typed into an agent prompt, a helper Claude reviews the focus logic, and its findings return to the agent that asked." width="100%"></a>
 
 <details>
 <summary><strong>More demos: Tasks, Quick Actions, Handoff, Session Fork, Code review</strong></summary>
