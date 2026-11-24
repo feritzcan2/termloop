@@ -8,7 +8,7 @@ import type {
   WorkflowConfigurationDto,
   ProjectTaskAutomationConfigurationDto,
 } from "@termloop/contract/current";
-import { candidateActions, isStaleExpectationMessage, orderCandidates } from "../task-sources.js";
+import { SCOPE_KIND_LABEL, candidateActions, isStaleExpectationMessage, orderCandidates } from "../task-sources.js";
 import { taskCreationIntent, type TaskImportChoice } from "../project-task-automation.js";
 import { initialTaskImportChoice, rememberTaskImportChoice } from "../task-import-memory.js";
 import { controlErrorMessage } from "../control-error.js";
@@ -22,33 +22,28 @@ export type QuickActionJiraImportActions = Pick<TaskSourceActions,
 
 type Entry = { source: TaskSourceDto; candidate: TaskSourceCandidateDto };
 
-/// Each filter reads one candidate fact; `null` is the "none" bucket (no epic,
-/// unassigned, unknown type) so those issues stay reachable.
-const FILTERS = [
-  { key: "status", label: "Status", all: "All statuses", none: "", read: (candidate: TaskSourceCandidateDto) => candidate.statusName },
-  { key: "epic", label: "Epic", all: "All epics", none: "No epic", read: (candidate: TaskSourceCandidateDto) => candidate.epicKey ?? null },
-  { key: "type", label: "Type", all: "All types", none: "No type", read: (candidate: TaskSourceCandidateDto) => candidate.issueTypeName ?? null },
-  { key: "assignee", label: "Assignee", all: "Everyone", none: "Unassigned", read: (candidate: TaskSourceCandidateDto) => candidate.assigneeDisplay },
-] as const;
-type FilterKey = typeof FILTERS[number]["key"];
-const NONE = "\u0000none";
-const ALL = "";
-
-/// The distinct values one filter can take across the waiting issues, with how
-/// many issues each holds; the epic option also names the epic.
-function filterOptions(entries: readonly Entry[], filter: typeof FILTERS[number]) {
-  const options = new Map<string, { label: string; count: number }>();
-  for (const { candidate } of entries) {
-    const value = filter.read(candidate);
-    const id = value ?? NONE;
-    const label = value === null ? filter.none
-      : filter.key === "epic" && candidate.epicSummary ? `${value} · ${candidate.epicSummary}` : value;
-    const current = options.get(id);
-    options.set(id, { label: current?.label ?? label, count: (current?.count ?? 0) + 1 });
-  }
-  return [...options.entries()]
-    .sort(([left, a], [right, b]) => (left === NONE ? 1 : 0) - (right === NONE ? 1 : 0) || a.label.localeCompare(b.label))
-    .map(([id, option]) => ({ id, ...option }));
+/// A source's own scope, shown as the chips the source editor uses: who the
+/// issues belong to, the boards, the statuses, and any extra JQL.
+function SourceScopeChips({ source, selectedStatuses, toggleStatus }: {
+  source: TaskSourceDto;
+  selectedStatuses: ReadonlySet<string>;
+  toggleStatus(name: string): void;
+}) {
+  return <div className="quick-action-jira-source">
+    <strong>{source.name}</strong>
+    <div className="task-source-chips" role="list" aria-label={`${source.name} scope`}>
+      <span role="listitem" className="task-source-chip quick-action-jira-chip"><span>{SCOPE_KIND_LABEL[source.scopeKind]}</span></span>
+      {source.boards.map((board) => <span key={`board:${board.id}`} role="listitem" className="task-source-chip quick-action-jira-chip" title={`Board ${board.name}`}><span>{board.name}</span></span>)}
+      {source.statuses.map((status) => <span key={`status:${status.id}`} role="listitem" className="quick-action-jira-chip-item"><button
+        type="button"
+        className={`task-source-chip quick-action-jira-chip status${selectedStatuses.has(status.name) ? " selected" : ""}`}
+        aria-pressed={selectedStatuses.has(status.name)}
+        title={`Show only ${status.name}`}
+        onClick={() => toggleStatus(status.name)}
+      ><span>{status.name}</span></button></span>)}
+      {source.jql ? <span role="listitem" className="task-source-chip quick-action-jira-chip" title={source.jql}><span>JQL</span></span> : null}
+    </div>
+  </div>;
 }
 
 /// Imports one waiting Jira issue of the Project's enabled sources as a Task,
@@ -61,6 +56,7 @@ export function QuickActionJiraImport({ projectId, actions, agentCapabilities, w
   workflows?: readonly WorkflowConfigurationDto[] | undefined;
   imported(taskId: string): void;
 }) {
+  const [sources, setSources] = useState<TaskSourceDto[]>([]);
   const [entries, setEntries] = useState<Entry[]>();
   const [stateRevision, setStateRevision] = useState(0);
   const [loadError, setLoadError] = useState<string>();
@@ -68,7 +64,7 @@ export function QuickActionJiraImport({ projectId, actions, agentCapabilities, w
   const [baseBranches, setBaseBranches] = useState<readonly RemoteBranchDto[]>([]);
   const [branchesLoading, setBranchesLoading] = useState(true);
   const [branchesError, setBranchesError] = useState<string>();
-  const [filters, setFilters] = useState<Record<FilterKey, string>>({ status: ALL, epic: ALL, type: ALL, assignee: ALL });
+  const [selectedStatuses, setSelectedStatuses] = useState<ReadonlySet<string>>(new Set());
   const [confirming, setConfirming] = useState<{ externalId: string; choice: TaskImportChoice }>();
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState<string>();
@@ -81,10 +77,11 @@ export function QuickActionJiraImport({ projectId, actions, agentCapabilities, w
   const load = useCallback(async () => {
     try {
       const listed = await actions.list(projectId);
-      const sources = listed.sources.filter((source) => source.enabled);
-      const lists = await Promise.all(sources.map(async (source) => ({ source, result: await actions.listCandidates(source.id) })));
+      const enabled = listed.sources.filter((source) => source.enabled);
+      const lists = await Promise.all(enabled.map(async (source) => ({ source, result: await actions.listCandidates(source.id) })));
       if (!alive.current) return;
       setStateRevision(listed.stateRevision);
+      setSources(enabled);
       setEntries(lists.flatMap(({ source, result }) => orderCandidates(result.candidates)
         .filter((candidate) => candidateActions(candidate).import)
         .map((candidate) => ({ source, candidate }))));
@@ -106,11 +103,13 @@ export function QuickActionJiraImport({ projectId, actions, agentCapabilities, w
       .finally(() => { if (alive.current) setBranchesLoading(false); });
   }, [actions, load, projectId]);
 
-  const options = useMemo(() => FILTERS.map((filter) => ({ filter, options: filterOptions(entries ?? [], filter) })), [entries]);
-  const visible = useMemo(() => (entries ?? []).filter(({ candidate }) => FILTERS.every((filter) => {
-    const selected = filters[filter.key];
-    return selected === ALL || (filter.read(candidate) ?? NONE) === selected;
-  })), [entries, filters]);
+  const visible = useMemo(() => (entries ?? [])
+    .filter(({ candidate }) => selectedStatuses.size === 0 || selectedStatuses.has(candidate.statusName)), [entries, selectedStatuses]);
+  const toggleStatus = (name: string) => setSelectedStatuses((current) => {
+    const next = new Set(current);
+    if (!next.delete(name)) next.add(name);
+    return next;
+  });
 
   const refresh = async () => {
     if (busy || !entries) return;
@@ -163,14 +162,10 @@ export function QuickActionJiraImport({ projectId, actions, agentCapabilities, w
   };
 
   return <section className="quick-action-jira" aria-label="Import Jira issue">
-    <div className="quick-action-jira-filters">
-      {options.map(({ filter, options: values }) => <label key={filter.key}>
-        <span>{filter.label}</span>
-        <select aria-label={`Filter by ${filter.label.toLowerCase()}`} value={filters[filter.key]} disabled={!entries || entries.length === 0} onChange={(event) => setFilters((current) => ({ ...current, [filter.key]: event.target.value }))}>
-          <option value={ALL}>{filter.all}</option>
-          {values.map((option) => <option key={option.id} value={option.id}>{option.label} ({option.count})</option>)}
-        </select>
-      </label>)}
+    <div className="quick-action-jira-scope">
+      <div className="quick-action-jira-sources">
+        {sources.map((source) => <SourceScopeChips key={source.id} source={source} selectedStatuses={selectedStatuses} toggleStatus={toggleStatus} />)}
+      </div>
       <button type="button" className="secondary-button" disabled={busy !== undefined || !entries} onClick={() => void refresh()}>{busy === "refresh" ? "Refreshing…" : "Refresh"}</button>
     </div>
     {error ? <p className="form-error" role="alert">{error}</p> : null}

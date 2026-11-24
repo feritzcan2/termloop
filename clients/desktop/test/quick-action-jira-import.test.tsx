@@ -20,7 +20,11 @@ afterEach(async () => {
 });
 
 const project = { id: "project-1", name: "TermNext", folder_path: "/tmp/termnext" };
-const source = { id: "source-1", name: "PAY board", enabled: true, generation: 4 };
+const source = {
+  id: "source-1", name: "PAY board", enabled: true, generation: 4, scopeKind: "assignedToMe", jql: null,
+  boards: [{ id: "310", name: "Flow Board" }],
+  statuses: [{ id: "1", name: "To Do" }, { id: "3", name: "In Progress" }],
+};
 const candidate = (key: string, summary: string, state: string, extra: { statusName?: string; epicKey?: string | null; epicSummary?: string | null; issueTypeName?: string | null; assigneeDisplay?: string | null } = {}) => ({
   externalId: `ext-${key}`, key, summary, state, observationSequence: 7, statusName: "To Do", assigneeDisplay: null,
   issueTypeName: "Story", epicKey: null, epicSummary: null,
@@ -76,39 +80,28 @@ describe("Quick Action Jira target", () => {
     expect(segment("Jira")).toBeUndefined();
   });
 
-  it("lists only importable issues of enabled sources and filters them by status, epic, type, and assignee", async () => {
+  it("shows each enabled source's scope as chips and narrows the list by its status chips", async () => {
     const actions = jiraActions();
     await renderComposer(true, actions);
     await click(segment("Jira"));
     expect(host.querySelector("#quick-action-prompt")).toBeNull();
+    expect(host.querySelector(".quick-action-jira select")).toBeNull();
     expect(actions.listCandidates).toHaveBeenCalledTimes(1);
     expect(actions.listCandidates).toHaveBeenCalledWith("source-1");
+    const chips = [...host.querySelectorAll('[aria-label="PAY board scope"] [role="listitem"]')].map((chip) => chip.textContent);
+    expect(chips).toEqual(["Assigned to me", "Flow Board", "To Do", "In Progress"]);
     const keys = () => [...host.querySelectorAll("[data-candidate-key]")].map((row) => row.getAttribute("data-candidate-key"));
     expect(keys()).toEqual(["PAY-1", "PAY-3"]);
-    const select = (label: string) => host.querySelector<HTMLSelectElement>(`select[aria-label="Filter by ${label}"]`)!;
-    const optionLabels = (label: string) => [...select(label).options].map((option) => option.textContent);
-    const choose = async (label: string, text: string) => {
-      const option = [...select(label).options].find((candidate) => candidate.textContent === text)!;
-      await act(async () => {
-        select(label).value = option.value;
-        select(label).dispatchEvent(new Event("change", { bubbles: true }));
-      });
-    };
-    expect(host.querySelector('input[type="search"]')).toBeNull();
-    expect(optionLabels("epic")).toEqual(["All epics", "PAY-9 · Reporting (1)", "No epic (1)"]);
-    expect(optionLabels("status")).toEqual(["All statuses", "In Progress (1)", "To Do (1)"]);
-    expect(optionLabels("type")).toEqual(["All types", "Bug (1)", "Story (1)"]);
-    expect(optionLabels("assignee")).toEqual(["Everyone", "Ada (1)", "Unassigned (1)"]);
-    await choose("epic", "PAY-9 · Reporting (1)");
-    expect(keys()).toEqual(["PAY-1"]);
-    await choose("epic", "No epic (1)");
+    const statusChip = (name: string) => [...host.querySelectorAll<HTMLButtonElement>("button.quick-action-jira-chip.status")].find((chip) => chip.textContent === name);
+    await click(statusChip("In Progress"));
+    expect(statusChip("In Progress")!.getAttribute("aria-pressed")).toBe("true");
     expect(keys()).toEqual(["PAY-3"]);
-    await choose("status", "To Do (1)");
-    expect(keys()).toEqual([]);
-    expect(host.textContent).toContain("No waiting Jira issue matches.");
-    await choose("epic", "All epics");
-    await choose("assignee", "Ada (1)");
+    await click(statusChip("To Do"));
+    expect(keys()).toEqual(["PAY-1", "PAY-3"]);
+    await click(statusChip("In Progress"));
     expect(keys()).toEqual(["PAY-1"]);
+    await click(statusChip("To Do"));
+    expect(keys()).toEqual(["PAY-1", "PAY-3"]);
   });
 
   it("imports the confirmed issue with its exact proofs, then closes and opens the Task", async () => {
