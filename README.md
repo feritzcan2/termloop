@@ -167,38 +167,6 @@ See the [complete feature guide](docs/features.md) for every feature with writte
 
 Ask To creates a tracked helper request. Handoff targets an existing Session. Fork creates a separate conversation; it does not by itself create a Git worktree. See the [coordination guide](docs/features.md#coordinate) for the individual steps.
 
-## FAQ
-
-<details>
-<summary><strong>Which agents does TermLoop support?</strong></summary>
-
-Claude Code and OpenAI Codex are the first-class agent launch paths, alongside ordinary terminal and dev-run Sessions. TermLoop uses your existing provider sign-ins rather than proxying model traffic.
-</details>
-
-<details>
-<summary><strong>Where do my code and credentials go?</strong></summary>
-
-Your code stays on your filesystem, and agents connect directly to their providers. TermLoop keeps secrets out of durable product state, logs, URLs, and generated evidence.
-</details>
-
-<details>
-<summary><strong>Does every Task create a worktree?</strong></summary>
-
-No. A Task can have zero or one worktree. Create the Task to track the work, and add a managed checkout only when branch isolation helps.
-</details>
-
-<details>
-<summary><strong>Can multiple agents write in the same worktree?</strong></summary>
-
-Yes. TermLoop does not impose a write lease. You choose whether agents share a checkout or work in isolated Task worktrees.
-</details>
-
-<details>
-<summary><strong>Is TermLoop open source?</strong></summary>
-
-Yes. The source and releases are on GitHub under GPL-3.0-or-later, with a commercial license available. See [License](#license).
-</details>
-
 ## Develop from source
 
 Use **Rust 1.90.0**, **Node.js 22+**, and **pnpm 10.14.0**. Native desktop prerequisites depend on the host; macOS also needs Xcode, Python 3, and **Zig 0.15.2** for the Ghostty host.
