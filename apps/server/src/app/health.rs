@@ -382,9 +382,11 @@ pub(super) async fn trigger_health_for_projects(state: &AppState, projects: &[St
 }
 
 pub(super) async fn run_git_host_scheduler(state: AppState) {
+    // Core decides which projections are due; a settling one (no PR yet, or
+    // checks still running) is due after 15 s, so tick at that cadence.
     let mut interval = tokio::time::interval_at(
-        Instant::now() + Duration::from_secs(30),
-        Duration::from_secs(30),
+        Instant::now() + Duration::from_secs(15),
+        Duration::from_secs(15),
     );
     interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
     loop {

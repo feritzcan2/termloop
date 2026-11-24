@@ -34,6 +34,12 @@ use termloop_store::{
 };
 
 const FRESH_MS: u64 = 2 * 60 * 1_000;
+/// A healthy lookup whose answer is expected to change within seconds: no pull
+/// request yet (an agent usually opens it right after pushing), or an open pull
+/// request whose checks are still running or not yet reported. Recheck it on
+/// this shorter window so the Task follows the PR without waiting out FRESH_MS.
+/// Failures keep FRESH_MS (or their provider retry hint) to avoid hammering.
+const SETTLING_FRESH_MS: u64 = 15_000;
 const STALE_MS: u64 = 30 * 60 * 1_000;
 const MAX_TASKS: usize = 40;
 const MAX_CANDIDATES_PER_TASK: usize = 16;
@@ -680,13 +686,38 @@ fn automatic_git_host_task(task: &TaskRecord) -> bool {
     task.status == TaskStatus::Open && task.branch.is_some()
 }
 
-fn provider_refresh_due(last_attempt_observed_at: u64, now: u64) -> bool {
-    now.saturating_sub(last_attempt_observed_at) >= FRESH_MS
+fn fresh_window_ms<'a>(healthy: bool, matches: impl Iterator<Item = (&'a str, &'a str)>) -> u64 {
+    let mut matches = matches.peekable();
+    let settling = matches.peek().is_none()
+        || matches.any(|(state, checks)| {
+            matches!(state, "open" | "draft") && matches!(checks, "pending" | "notReported")
+        });
+    if healthy && settling {
+        SETTLING_FRESH_MS
+    } else {
+        FRESH_MS
+    }
+}
+
+fn row_fresh_window_ms(row: &ProviderCacheRow) -> u64 {
+    fresh_window_ms(
+        row.failure.is_none(),
+        row.matches
+            .iter()
+            .map(|pr| (pr.state.as_str(), pr.checks.as_str())),
+    )
 }
 
 fn projection_refresh_due(projection: &GitHostTaskProjection, now: u64) -> bool {
+    let window = fresh_window_ms(
+        projection.reason.is_none(),
+        projection
+            .matches
+            .iter()
+            .map(|pr| (pr.state.as_str(), pr.check_rollup.as_str())),
+    );
     projection.freshness == GitHostProjectionFreshness::Stale
-        || provider_refresh_due(projection.last_attempt_observed_at_epoch_ms, now)
+        || now.saturating_sub(projection.last_attempt_observed_at_epoch_ms) >= window
 }
 
 fn cached_projection_for_display(
@@ -813,7 +844,7 @@ impl GitHostPullRequestListPlan {
                         && (self
                             .observed_at
                             .saturating_sub(row.last_attempt_observed_at)
-                            < FRESH_MS
+                            < row_fresh_window_ms(row)
                             || row
                                 .retry_after
                                 .is_some_and(|retry_after| self.observed_at < retry_after))
@@ -1048,7 +1079,8 @@ impl GitHostProviderQueryJob {
             .filter(|job| match &job.query {
                 ProviderQueryJob::Github(_) => {
                     if let Some(row) = job.cache.get(&job.key)
-                        && (job.observed_at.saturating_sub(row.last_attempt_observed_at) < FRESH_MS
+                        && (job.observed_at.saturating_sub(row.last_attempt_observed_at)
+                            < row_fresh_window_ms(&row)
                             || row
                                 .retry_after
                                 .is_some_and(|retry_after| job.observed_at < retry_after))
@@ -2172,16 +2204,37 @@ mod tests {
     }
 
     #[test]
-    fn shared_provider_refresh_is_due_at_exactly_two_minutes_without_jitter() {
-        let observed_at = 10_000;
-        assert!(!provider_refresh_due(
-            observed_at,
-            observed_at + 2 * 60 * 1_000 - 1
-        ));
-        assert!(provider_refresh_due(
-            observed_at,
-            observed_at + 2 * 60 * 1_000
-        ));
+    fn provider_refresh_waits_two_minutes_but_rechecks_settling_lookups_sooner() {
+        let window = |healthy, prs: &[(&str, &str)]| fresh_window_ms(healthy, prs.iter().copied());
+        assert_eq!(window(true, &[]), 15_000, "no PR yet");
+        assert_eq!(window(true, &[("open", "pending")]), 15_000);
+        assert_eq!(window(true, &[("draft", "notReported")]), 15_000);
+        assert_eq!(
+            window(true, &[("merged", "passing"), ("open", "pending")]),
+            15_000
+        );
+        assert_eq!(window(true, &[("open", "passing")]), 2 * 60 * 1_000);
+        assert_eq!(window(true, &[("open", "failing")]), 2 * 60 * 1_000);
+        assert_eq!(window(true, &[("merged", "pending")]), 2 * 60 * 1_000);
+        assert_eq!(
+            window(false, &[]),
+            2 * 60 * 1_000,
+            "failures keep the long window"
+        );
+        assert_eq!(window(false, &[("open", "pending")]), 2 * 60 * 1_000);
+        let mut row = ProviderCacheRow {
+            key: "github|github.com|acme/widget|feature".into(),
+            matches: vec![],
+            truncated: false,
+            parent_resolved: false,
+            failure: None,
+            last_success_observed_at: Some(1),
+            last_attempt_observed_at: 1,
+            retry_after: None,
+        };
+        assert_eq!(row_fresh_window_ms(&row), SETTLING_FRESH_MS);
+        row.failure = Some(ProviderCacheFailure::Offline);
+        assert_eq!(row_fresh_window_ms(&row), FRESH_MS);
     }
 
     #[test]
@@ -2208,9 +2261,24 @@ mod tests {
         };
 
         let (fresh, refresh_due) =
-            cached_projection_for_display(&projection, observed_at + FRESH_MS - 1);
+            cached_projection_for_display(&projection, observed_at + SETTLING_FRESH_MS - 1);
         assert_eq!(fresh.freshness, GitHostProjectionFreshness::Fresh);
         assert!(!refresh_due);
+        let (_, refresh_due) =
+            cached_projection_for_display(&projection, observed_at + SETTLING_FRESH_MS);
+        assert!(
+            refresh_due,
+            "a healthy lookup without a PR rechecks on the short window"
+        );
+
+        let degraded = GitHostTaskProjection {
+            reason: Some(GitHostProjectionReason::Offline),
+            ..projection.clone()
+        };
+        let (_, refresh_due) = cached_projection_for_display(&degraded, observed_at + FRESH_MS - 1);
+        assert!(!refresh_due, "a degraded lookup keeps the full window");
+        let (_, refresh_due) = cached_projection_for_display(&degraded, observed_at + FRESH_MS);
+        assert!(refresh_due);
 
         let (stale, refresh_due) =
             cached_projection_for_display(&projection, observed_at + STALE_MS + 1);
