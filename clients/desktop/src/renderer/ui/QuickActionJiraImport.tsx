@@ -22,6 +22,35 @@ export type QuickActionJiraImportActions = Pick<TaskSourceActions,
 
 type Entry = { source: TaskSourceDto; candidate: TaskSourceCandidateDto };
 
+/// Each filter reads one candidate fact; `null` is the "none" bucket (no epic,
+/// unassigned, unknown type) so those issues stay reachable.
+const FILTERS = [
+  { key: "status", label: "Status", all: "All statuses", none: "", read: (candidate: TaskSourceCandidateDto) => candidate.statusName },
+  { key: "epic", label: "Epic", all: "All epics", none: "No epic", read: (candidate: TaskSourceCandidateDto) => candidate.epicKey ?? null },
+  { key: "type", label: "Type", all: "All types", none: "No type", read: (candidate: TaskSourceCandidateDto) => candidate.issueTypeName ?? null },
+  { key: "assignee", label: "Assignee", all: "Everyone", none: "Unassigned", read: (candidate: TaskSourceCandidateDto) => candidate.assigneeDisplay },
+] as const;
+type FilterKey = typeof FILTERS[number]["key"];
+const NONE = "\u0000none";
+const ALL = "";
+
+/// The distinct values one filter can take across the waiting issues, with how
+/// many issues each holds; the epic option also names the epic.
+function filterOptions(entries: readonly Entry[], filter: typeof FILTERS[number]) {
+  const options = new Map<string, { label: string; count: number }>();
+  for (const { candidate } of entries) {
+    const value = filter.read(candidate);
+    const id = value ?? NONE;
+    const label = value === null ? filter.none
+      : filter.key === "epic" && candidate.epicSummary ? `${value} · ${candidate.epicSummary}` : value;
+    const current = options.get(id);
+    options.set(id, { label: current?.label ?? label, count: (current?.count ?? 0) + 1 });
+  }
+  return [...options.entries()]
+    .sort(([left, a], [right, b]) => (left === NONE ? 1 : 0) - (right === NONE ? 1 : 0) || a.label.localeCompare(b.label))
+    .map(([id, option]) => ({ id, ...option }));
+}
+
 /// Imports one waiting Jira issue of the Project's enabled sources as a Task,
 /// with the same confirmation, remembered choice, and stale-revision retry as
 /// the Task Settings review queue.
@@ -39,7 +68,7 @@ export function QuickActionJiraImport({ projectId, actions, agentCapabilities, w
   const [baseBranches, setBaseBranches] = useState<readonly RemoteBranchDto[]>([]);
   const [branchesLoading, setBranchesLoading] = useState(true);
   const [branchesError, setBranchesError] = useState<string>();
-  const [query, setQuery] = useState("");
+  const [filters, setFilters] = useState<Record<FilterKey, string>>({ status: ALL, epic: ALL, type: ALL, assignee: ALL });
   const [confirming, setConfirming] = useState<{ externalId: string; choice: TaskImportChoice }>();
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState<string>();
@@ -77,12 +106,11 @@ export function QuickActionJiraImport({ projectId, actions, agentCapabilities, w
       .finally(() => { if (alive.current) setBranchesLoading(false); });
   }, [actions, load, projectId]);
 
-  const visible = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!entries || !needle) return entries ?? [];
-    return entries.filter(({ candidate }) => candidate.key.toLowerCase().includes(needle)
-      || candidate.summary.toLowerCase().includes(needle));
-  }, [entries, query]);
+  const options = useMemo(() => FILTERS.map((filter) => ({ filter, options: filterOptions(entries ?? [], filter) })), [entries]);
+  const visible = useMemo(() => (entries ?? []).filter(({ candidate }) => FILTERS.every((filter) => {
+    const selected = filters[filter.key];
+    return selected === ALL || (filter.read(candidate) ?? NONE) === selected;
+  })), [entries, filters]);
 
   const refresh = async () => {
     if (busy || !entries) return;
@@ -135,8 +163,14 @@ export function QuickActionJiraImport({ projectId, actions, agentCapabilities, w
   };
 
   return <section className="quick-action-jira" aria-label="Import Jira issue">
-    <div className="quick-action-jira-search">
-      <input type="search" aria-label="Search Jira issues" placeholder="Search waiting Jira issues by key or summary" value={query} autoFocus onChange={(event) => setQuery(event.target.value)} />
+    <div className="quick-action-jira-filters">
+      {options.map(({ filter, options: values }) => <label key={filter.key}>
+        <span>{filter.label}</span>
+        <select aria-label={`Filter by ${filter.label.toLowerCase()}`} value={filters[filter.key]} disabled={!entries || entries.length === 0} onChange={(event) => setFilters((current) => ({ ...current, [filter.key]: event.target.value }))}>
+          <option value={ALL}>{filter.all}</option>
+          {values.map((option) => <option key={option.id} value={option.id}>{option.label} ({option.count})</option>)}
+        </select>
+      </label>)}
       <button type="button" className="secondary-button" disabled={busy !== undefined || !entries} onClick={() => void refresh()}>{busy === "refresh" ? "Refreshing…" : "Refresh"}</button>
     </div>
     {error ? <p className="form-error" role="alert">{error}</p> : null}
@@ -150,7 +184,7 @@ export function QuickActionJiraImport({ projectId, actions, agentCapabilities, w
               return <li key={`${entry.source.id}:${candidate.externalId}`} className="task-candidate-row" data-candidate-key={candidate.key}>
                 <div className="task-candidate-main">
                   <div className="task-candidate-title"><code>{candidate.key}</code><strong>{candidate.summary}</strong></div>
-                  <small>{candidate.statusName}{candidate.assigneeDisplay ? ` · ${candidate.assigneeDisplay}` : " · Unassigned"} · {entry.source.name}</small>
+                  <small>{[candidate.issueTypeName, candidate.statusName, candidate.assigneeDisplay ?? "Unassigned", candidate.epicKey ? `Epic ${candidate.epicKey}${candidate.epicSummary ? ` · ${candidate.epicSummary}` : ""}` : null, entry.source.name].filter(Boolean).join(" · ")}</small>
                 </div>
                 <div className="task-candidate-actions">
                   <button

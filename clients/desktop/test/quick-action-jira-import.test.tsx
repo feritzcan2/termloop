@@ -21,16 +21,21 @@ afterEach(async () => {
 
 const project = { id: "project-1", name: "TermNext", folder_path: "/tmp/termnext" };
 const source = { id: "source-1", name: "PAY board", enabled: true, generation: 4 };
-const candidate = (key: string, summary: string, state: string, observationSequence = 7) => ({
-  externalId: `ext-${key}`, key, summary, state, observationSequence, statusName: "To Do", assigneeDisplay: null,
-  updatedAt: "2026-11-20T10:00:00Z", url: `https://jira.example/browse/${key}`, taskId: null,
+const candidate = (key: string, summary: string, state: string, extra: { statusName?: string; epicKey?: string | null; epicSummary?: string | null; issueTypeName?: string | null; assigneeDisplay?: string | null } = {}) => ({
+  externalId: `ext-${key}`, key, summary, state, observationSequence: 7, statusName: "To Do", assigneeDisplay: null,
+  issueTypeName: "Story", epicKey: null, epicSummary: null,
+  updatedAt: "2026-11-20T10:00:00Z", url: `https://jira.example/browse/${key}`, taskId: null, ...extra,
 });
 
 function jiraActions(importCandidate = vi.fn(async () => ({ task: { id: "task-9", title: "Refund export" } }))) {
   return {
     list: vi.fn(async () => ({ sources: [source, { ...source, id: "source-off", enabled: false }], stateRevision: 11 })),
     listCandidates: vi.fn(async () => ({
-      candidates: [candidate("PAY-1", "Refund export", "new"), candidate("PAY-2", "Already added", "added"), candidate("PAY-3", "Ledger cleanup", "new")],
+      candidates: [
+        candidate("PAY-1", "Refund export", "new", { epicKey: "PAY-9", epicSummary: "Reporting", assigneeDisplay: "Ada" }),
+        candidate("PAY-2", "Already added", "added", { epicKey: "PAY-9" }),
+        candidate("PAY-3", "Ledger cleanup", "new", { statusName: "In Progress", issueTypeName: "Bug" }),
+      ],
       lastSuccessfulAtEpochMs: 1,
     })),
     importCandidate,
@@ -71,7 +76,7 @@ describe("Quick Action Jira target", () => {
     expect(segment("Jira")).toBeUndefined();
   });
 
-  it("lists only importable issues of enabled sources and filters them", async () => {
+  it("lists only importable issues of enabled sources and filters them by status, epic, type, and assignee", async () => {
     const actions = jiraActions();
     await renderComposer(true, actions);
     await click(segment("Jira"));
@@ -80,12 +85,30 @@ describe("Quick Action Jira target", () => {
     expect(actions.listCandidates).toHaveBeenCalledWith("source-1");
     const keys = () => [...host.querySelectorAll("[data-candidate-key]")].map((row) => row.getAttribute("data-candidate-key"));
     expect(keys()).toEqual(["PAY-1", "PAY-3"]);
-    const search = host.querySelector<HTMLInputElement>('input[aria-label="Search Jira issues"]')!;
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "ledger");
-      search.dispatchEvent(new Event("input", { bubbles: true }));
-    });
+    const select = (label: string) => host.querySelector<HTMLSelectElement>(`select[aria-label="Filter by ${label}"]`)!;
+    const optionLabels = (label: string) => [...select(label).options].map((option) => option.textContent);
+    const choose = async (label: string, text: string) => {
+      const option = [...select(label).options].find((candidate) => candidate.textContent === text)!;
+      await act(async () => {
+        select(label).value = option.value;
+        select(label).dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    };
+    expect(host.querySelector('input[type="search"]')).toBeNull();
+    expect(optionLabels("epic")).toEqual(["All epics", "PAY-9 · Reporting (1)", "No epic (1)"]);
+    expect(optionLabels("status")).toEqual(["All statuses", "In Progress (1)", "To Do (1)"]);
+    expect(optionLabels("type")).toEqual(["All types", "Bug (1)", "Story (1)"]);
+    expect(optionLabels("assignee")).toEqual(["Everyone", "Ada (1)", "Unassigned (1)"]);
+    await choose("epic", "PAY-9 · Reporting (1)");
+    expect(keys()).toEqual(["PAY-1"]);
+    await choose("epic", "No epic (1)");
     expect(keys()).toEqual(["PAY-3"]);
+    await choose("status", "To Do (1)");
+    expect(keys()).toEqual([]);
+    expect(host.textContent).toContain("No waiting Jira issue matches.");
+    await choose("epic", "All epics");
+    await choose("assignee", "Ada (1)");
+    expect(keys()).toEqual(["PAY-1"]);
   });
 
   it("imports the confirmed issue with its exact proofs, then closes and opens the Task", async () => {

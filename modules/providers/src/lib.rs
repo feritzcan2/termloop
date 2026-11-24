@@ -32,7 +32,7 @@ pub use issue_key_pull_requests::{
 };
 
 pub use jira::{
-    JiraBoard, JiraBoardListResult, JiraBoardSource, JiraCloudClient, JiraCredential,
+    JiraBoard, JiraBoardListResult, JiraBoardSource, JiraCloudClient, JiraCredential, JiraEpicRef,
     JiraIssueRefError, JiraIssueSnapshot, JiraIssueSource, JiraSearchError, JiraSearchRequest,
     JiraSearchResult, JiraSearchScope, JiraSprint, JiraSprintListResult, JiraSprintSource,
     JiraSprintState, NormalizedJiraIssueRef, normalize_jira_issue_url,

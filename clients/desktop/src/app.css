@@ -2006,9 +2006,11 @@ button.changes-branch-current:hover:not(:disabled) { border-color: rgba(102,179,
 .quick-action-worktree { max-width: 280px; height: 24px; margin-left: 10px; padding: 0 6px; border: 1px solid var(--qa-rule); border-radius: 6px; background: transparent; color: var(--qa-text); font: 12px var(--qa-font); }
 .quick-action-worktree-empty { margin-left: 10px; color: light-dark(#6a6a6b, #8b9093); font: 12px var(--qa-font); }
 .quick-action-jira { display: grid; grid-template-rows: auto minmax(0,1fr); gap: 8px; max-height: 360px; min-height: 141px; padding: 10px 12px; border-bottom: 1px solid var(--qa-rule); font-family: var(--qa-font); }
-.quick-action-jira-search { display: flex; gap: 8px; }
-.quick-action-jira-search input { flex: 1; height: 28px; padding: 0 8px; border: 1px solid var(--qa-rule); border-radius: 6px; background: transparent; color: var(--qa-text); font: 13px var(--qa-font); }
-.quick-action-jira-search .secondary-button { height: 28px; padding: 0 10px; font-size: 11px; }
+.quick-action-jira-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.quick-action-jira-filters label { display: grid; gap: 3px; min-width: 0; flex: 1 1 120px; }
+.quick-action-jira-filters label > span { color: light-dark(#6a6a6b, #8b9093); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; }
+.quick-action-jira-filters select { width: 100%; height: 26px; padding: 0 6px; border: 1px solid var(--qa-rule); border-radius: 6px; background: transparent; color: var(--qa-text); font: 12px var(--qa-font); }
+.quick-action-jira-filters .secondary-button { height: 26px; padding: 0 10px; font-size: 11px; }
 .quick-action-jira-list { display: grid; align-content: start; gap: 6px; min-height: 0; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
 .quick-action-jira-list .task-candidate-title code { color: var(--qa-text); font-size: 11px; }
 .quick-action-jira-empty { margin: 0; color: light-dark(#6a6a6b, #8b9093); font-size: 12px; }

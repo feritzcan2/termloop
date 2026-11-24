@@ -76,6 +76,9 @@ pub struct TaskSourceCandidateSnapshot {
     pub status_name: String,
     pub assignee_display: Option<String>,
     pub updated_at: String,
+    pub issue_type_name: Option<String>,
+    pub epic_key: Option<String>,
+    pub epic_summary: Option<String>,
 }
 
 impl From<JiraIssueSnapshot> for TaskSourceCandidateSnapshot {
@@ -89,6 +92,9 @@ impl From<JiraIssueSnapshot> for TaskSourceCandidateSnapshot {
             status_name: issue.status_name,
             assignee_display: issue.assignee_display,
             updated_at: issue.updated_at,
+            issue_type_name: issue.issue_type_name,
+            epic_key: issue.epic.as_ref().map(|epic| epic.key.clone()),
+            epic_summary: issue.epic.and_then(|epic| epic.summary),
         }
     }
 }
@@ -1333,6 +1339,8 @@ mod tests {
                             status_category: None,
                             assignee_display: Some("Ada".into()),
                             updated_at: updated_at.into(),
+                            issue_type_name: None,
+                            epic: None,
                         }],
                         truncated: false,
                     }),

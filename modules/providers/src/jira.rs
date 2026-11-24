@@ -56,6 +56,9 @@ impl std::fmt::Debug for JiraCredential<'_> {
     }
 }
 
+/// The issue fields every candidate read asks Jira for.
+const JIRA_ISSUE_FIELDS: &str = "summary,description,status,assignee,updated,issuetype,parent";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JiraIssueSnapshot {
     pub external_id: String,
@@ -69,6 +72,16 @@ pub struct JiraIssueSnapshot {
     pub status_category: Option<String>,
     pub assignee_display: Option<String>,
     pub updated_at: String,
+    /// The issue's own type, such as `Story` or `Bug`.
+    pub issue_type_name: Option<String>,
+    /// The epic the issue sits under, when Jira reports an epic-level parent.
+    pub epic: Option<JiraEpicRef>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JiraEpicRef {
+    pub key: String,
+    pub summary: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -237,7 +250,7 @@ impl JiraIssueSource for JiraCloudClient {
                     .json(&serde_json::json!({
                         "jql": jql,
                         "maxResults": JIRA_SEARCH_LIMIT,
-                        "fields": ["summary", "description", "status", "assignee", "updated"]
+                        "fields": JIRA_ISSUE_FIELDS.split(',').collect::<Vec<_>>()
                     }))
                     .send()
                     .map_err(|_| JiraSearchError::Unavailable)?;
@@ -323,7 +336,7 @@ fn board_issue_url(
     let mut query = url.query_pairs_mut();
     query
         .append_pair("maxResults", &JIRA_SEARCH_LIMIT.to_string())
-        .append_pair("fields", "summary,description,status,assignee,updated");
+        .append_pair("fields", JIRA_ISSUE_FIELDS);
     if let Some(jql) = combined_board_jql(jql, status_ids)? {
         query.append_pair("jql", &jql);
     }
@@ -481,7 +494,7 @@ impl JiraSprintSource for JiraCloudClient {
         let response = self
             .client
             .get(format!(
-                "{site}/rest/agile/1.0/sprint/{sprint_id}/issue?maxResults={JIRA_SEARCH_LIMIT}&fields=summary,description,status,assignee,updated"
+                "{site}/rest/agile/1.0/sprint/{sprint_id}/issue?maxResults={JIRA_SEARCH_LIMIT}&fields={JIRA_ISSUE_FIELDS}"
             ))
             .basic_auth(credential.email, Some(credential.api_token))
             .header(reqwest::header::ACCEPT, "application/json")
@@ -1084,6 +1097,61 @@ struct SearchFields {
     #[serde(default)]
     assignee: Option<AssigneeField>,
     updated: String,
+    #[serde(default)]
+    issuetype: Option<IssueTypeField>,
+    #[serde(default)]
+    parent: Option<ParentField>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IssueTypeField {
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    hierarchy_level: Option<i64>,
+}
+
+#[derive(Deserialize)]
+struct ParentField {
+    /// Defaulted so a malformed parent drops only the epic, never the issue.
+    #[serde(default)]
+    key: String,
+    #[serde(default)]
+    fields: Option<ParentFields>,
+}
+
+#[derive(Deserialize)]
+struct ParentFields {
+    #[serde(default)]
+    summary: Option<String>,
+    #[serde(default)]
+    issuetype: Option<IssueTypeField>,
+}
+
+/// Jira places epics at hierarchy level 1. A site that omits the level is
+/// matched by the default epic type name, so a sub-task's parent story never
+/// reads as an epic.
+fn decode_epic(parent: Option<ParentField>) -> Option<JiraEpicRef> {
+    let parent = parent?;
+    let fields = parent.fields?;
+    let issuetype = fields.issuetype?;
+    let epic = match issuetype.hierarchy_level {
+        Some(level) => level == 1,
+        None => issuetype
+            .name
+            .is_some_and(|name| name.trim().eq_ignore_ascii_case("epic")),
+    };
+    if !epic || !valid_issue_key(&parent.key) {
+        return None;
+    }
+    Some(JiraEpicRef {
+        key: parent.key,
+        summary: fields
+            .summary
+            .map(|summary| truncate_utf8(summary.trim(), 256))
+            .filter(|summary| !summary.is_empty()),
+    })
 }
 
 #[derive(Deserialize)]
@@ -1215,6 +1283,13 @@ fn decode_search_issue(site: &str, issue: SearchIssue) -> Option<JiraIssueSnapsh
             .map(|assignee| truncate_utf8(assignee.display_name.trim(), 256))
             .filter(|value| !value.is_empty()),
         updated_at: issue.fields.updated.trim().to_owned(),
+        issue_type_name: issue
+            .fields
+            .issuetype
+            .and_then(|issuetype| issuetype.name)
+            .map(|name| truncate_utf8(name.trim(), 256))
+            .filter(|name| !name.is_empty()),
+        epic: decode_epic(issue.fields.parent),
     })
 }
 
@@ -1466,6 +1541,8 @@ mod tests {
             status_category: None,
             assignee_display: None,
             updated_at: "2026-08-26T10:00:00.000+0000".into(),
+            issue_type_name: None,
+            epic: None,
         };
         let mut issues = vec![];
         let mut issue_ids = std::collections::HashSet::new();
@@ -1830,6 +1907,23 @@ mod tests {
     }
 
     #[test]
+    fn a_parent_without_a_usable_key_drops_only_the_epic() {
+        let result = decode_sprint_issue_bytes(
+            "https://example.atlassian.net",
+            br#"{"startAt":0,"maxResults":50,"total":1,"issues":[
+              {"id":"10044","key":"PAY-44","fields":{
+                "summary":"Keep me","status":{"name":"To Do"},"updated":"2026-10-20T10:00:00.000+0000",
+                "parent":{"fields":{"issuetype":{"name":"Epic","hierarchyLevel":1}}}
+              }}
+            ]}"#,
+        )
+        .unwrap();
+        assert_eq!(result.issues.len(), 1);
+        assert_eq!(result.issues[0].epic, None);
+        assert_eq!(result.issues[0].issue_type_name, None);
+    }
+
+    #[test]
     fn sprint_issues_decode_snapshots_and_truncate_on_total() {
         let result = decode_sprint_issue_bytes(
             "https://example.atlassian.net",
@@ -1838,10 +1932,14 @@ mod tests {
               "issues":[
                 {"id":"10042","key":"PAY-42","fields":{
                   "summary":"Fix CORS","description":{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Allow the portal origin"}]}]},
-                  "status":{"name":"In Progress"},"assignee":{"displayName":"Ada"},"updated":"2026-10-21T10:00:00.000+0000"
+                  "status":{"name":"In Progress"},"assignee":{"displayName":"Ada"},"updated":"2026-10-21T10:00:00.000+0000",
+                  "issuetype":{"name":"Story","hierarchyLevel":0},
+                  "parent":{"key":"PAY-9","fields":{"summary":" Portal hardening ","issuetype":{"name":"Epic","hierarchyLevel":1}}}
                 }},
                 {"id":"10043","key":"PAY-43","fields":{
-                  "summary":"Rotate keys","status":{"name":"To Do"},"assignee":null,"updated":"2026-10-20T10:00:00.000+0000"
+                  "summary":"Rotate keys","status":{"name":"To Do"},"assignee":null,"updated":"2026-10-20T10:00:00.000+0000",
+                  "issuetype":{"name":"Sub-task","hierarchyLevel":-1},
+                  "parent":{"key":"PAY-42","fields":{"summary":"Fix CORS","issuetype":{"name":"Story","hierarchyLevel":0}}}
                 }}
               ]
             }"#,
@@ -1860,6 +1958,19 @@ mod tests {
         );
         assert_eq!(result.issues[0].assignee_display.as_deref(), Some("Ada"));
         assert_eq!(result.issues[1].assignee_display, None);
+        assert_eq!(result.issues[0].issue_type_name.as_deref(), Some("Story"));
+        assert_eq!(
+            result.issues[0].epic,
+            Some(JiraEpicRef {
+                key: "PAY-9".into(),
+                summary: Some("Portal hardening".into())
+            })
+        );
+        assert_eq!(
+            result.issues[1].issue_type_name.as_deref(),
+            Some("Sub-task")
+        );
+        assert_eq!(result.issues[1].epic, None);
 
         let complete = decode_sprint_issue_bytes(
             "https://example.atlassian.net",
