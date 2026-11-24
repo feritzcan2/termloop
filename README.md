@@ -57,49 +57,20 @@ Press Shift twice, type what you want, and hit Enter. A new Claude Session start
 Each Task gets its own branch and worktree, so agents don't step on each other. Its card shows the status, branch, commits, pull request and the agents working on it. The PRs panel lists every PR with its checks: feature branches into `develop`, and the release PR from `develop` into `main`.
 
 <p align="center">
-  <img src="artifacts/marketing/readme/task-view.png?v=df4a8b3930ef" alt="The Tasks tab with Task cards showing status, branch, commits, pull request and agents, next to the PRs panel listing feature PRs into develop and the release PR from develop into main." width="776">
+  <img src="artifacts/marketing/readme/task-view.png?v=dbd823452ed2" alt="The full TermLoop window: the Tasks tab with Task cards showing status, branch, commits, pull request and agents, an agent working in its terminal, and the PRs panel listing feature PRs into develop and the release PR from develop into main." width="100%">
 </p>
 
 ### Changes: review notes become the next change
 
 Open a Task's diff, leave notes on the lines you want changed, and send them all to the running agent in one go. It applies them in its own terminal, and the diff updates when it is done.
 
-<a href="https://termloop.ai/#changes"><img src="artifacts/marketing/readme/changes.gif?v=37d9a3f921a0" alt="Changes: two line notes on app.js are sent to Claude, which adds error handling and a refresh timer, and the diff updates." width="100%"></a>
+<a href="https://termloop.ai/#changes"><img src="artifacts/marketing/readme/changes.gif?v=6cd8ff8091d2" alt="Changes: line notes on app.js are sent to Claude, which applies them in its terminal next to the sidebar, and the diff updates." width="100%"></a>
 
 ### Ask To: a second opinion without copy-paste
 
 Just ask in the prompt: *"Can you ask another Claude agent to review the j/k focus logic before we merge?"* The agent writes the request itself, a helper Session appears under it, and the helper's review comes back to the agent that asked.
 
 <a href="https://termloop.ai/#ask-to"><img src="artifacts/marketing/readme/ask-to.gif?v=fafaf52525fa" alt="Ask To: the request is typed into an agent prompt, a helper Claude reviews the focus logic, and its findings return to the agent that asked." width="100%"></a>
-
-<details>
-<summary><strong>More demos: Tasks, Handoff, Session Fork, Code review</strong></summary>
-
-### Tasks: define the work, add a worktree when needed
-
-Keep the goal, acceptance criteria and checklist in one Task. When the change needs its own checkout, create a branch and worktree from that same Task.
-
-<a href="https://termloop.ai/#tasks"><img src="artifacts/marketing/readme/tasks.gif?v=a0f4d09ed5a4" alt="Tasks: define the work, complete checks, then create an optional worktree from the same Task." width="960"></a>
-
-### Handoff: move context to the agent already in the work
-
-Send a visible, composed handoff from one running Project Session to another. The target receives the brief in its own real terminal and continues from there.
-
-<a href="https://termloop.ai/#handoff"><img src="artifacts/marketing/readme/handoff.gif?v=5b3652d04424" alt="Handoff: The destination receives the handoff in its own terminal." width="960"></a>
-
-### Session Fork: explore another direction in a real terminal
-
-Fork a Session from the sidebar, see the parent-child relationship, and continue in a new terminal. The branch in thinking is explicit instead of becoming another anonymous tab.
-
-<a href="https://termloop.ai/#fork"><img src="artifacts/marketing/readme/fork.gif?v=f6d4a78d45af" alt="Session Fork: Continue in a separate Session with visible parentage." width="960"></a>
-
-### Code review: review changes where they happened
-
-Read the diff, compare versions side by side and keep track of the files you have checked.
-
-<a href="https://termloop.ai/#full-file-review"><img src="artifacts/marketing/readme/full-file-review.gif?v=4a187822c00c" alt="Code review: Mark files reviewed and revisit them from the reviewed list." width="960"></a>
-
-</details>
 
 ## Download
 
