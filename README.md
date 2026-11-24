@@ -72,6 +72,14 @@ Just ask in the prompt: *"Can you ask another Claude agent to review the j/k foc
 
 <a href="https://termloop.ai/#ask-to"><img src="artifacts/marketing/readme/ask-to.gif?v=fafaf52525fa" alt="Ask To: the request is typed into an agent prompt, a helper Claude reviews the focus logic, and its findings return to the agent that asked." width="100%"></a>
 
+### Mobile: your agents in your pocket
+
+Pair your phone with your computer and follow every agent from anywhere: see which Tasks need you, open an agent's live terminal, and type a reply. It's the same Sessions your desktop runs, not a copy.
+
+<p align="center">
+  <img src="artifacts/marketing/readme/mobile.png?v=f65df6a90707" alt="TermLoop Mobile on three iPhones over the desktop app: the Agents list with seven active Claude agents, the Tasks list with Task cards and their agents, and a live agent terminal with a reply box." width="100%">
+</p>
+
 ## Download
 
 Get the latest installer from [Releases](https://github.com/feritzcan2/termloop/releases/latest):
