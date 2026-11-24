@@ -318,36 +318,51 @@ pub(super) fn create_tracked_process_record_with(
         .ok_or(PlatformError::RuntimeDirectoryUnavailable)?;
     std_fs::create_dir_all(parent)?;
     let record = format!("v1\n{process_id}\n{identity}\n");
-    let mut options = std_fs::OpenOptions::new();
-    options.create_new(true).write(true);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        use std::os::unix::fs::PermissionsExt;
         std_fs::set_permissions(parent, std_fs::Permissions::from_mode(0o700))?;
-        options.mode(0o600);
     }
     #[cfg(windows)]
     crate::fs::harden_private_directory(parent)?;
-    let mut file = options.open(path)?;
+    if path.exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "process ownership record already exists",
+        )
+        .into());
+    }
+    // The record is published only after its complete content is durable.
+    // A daemon killed mid-write (OS session end terminates it without a
+    // signal) must never leave an empty record under the real name: recovery
+    // cannot trust it, so the Session would stay blocked on every Retry. The
+    // staging name lacks the `.process` extension and is ignored by recovery.
+    let staging = path.with_extension("process-staging");
+    let mut options = std_fs::OpenOptions::new();
+    options.create(true).truncate(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(&staging)?;
     #[cfg(windows)]
-    if let Err(error) = crate::fs::harden_private_file(path) {
+    if let Err(error) = crate::fs::harden_private_file(&staging) {
         drop(file);
-        if let Err(removal_error) = std_fs::remove_file(path)
-            && removal_error.kind() != io::ErrorKind::NotFound
-        {
-            return Err(PlatformError::ProcessOwnershipUncertain);
-        }
+        let _ = std_fs::remove_file(&staging);
         return Err(error);
     }
     if let Err(error) = write_record(&mut file, record.as_bytes()) {
         drop(file);
-        if let Err(removal_error) = std_fs::remove_file(path)
-            && removal_error.kind() != io::ErrorKind::NotFound
-        {
-            return Err(PlatformError::ProcessOwnershipUncertain);
-        }
+        let _ = std_fs::remove_file(&staging);
         return Err(error.into());
     }
+    drop(file);
+    // A hard link publishes atomically and, unlike rename, refuses to replace
+    // a record another owner created meanwhile.
+    let published = std_fs::hard_link(&staging, path);
+    let _ = std_fs::remove_file(&staging);
+    published?;
     Ok(())
 }
 

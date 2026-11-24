@@ -489,6 +489,36 @@ fn failed_post_create_record_write_removes_only_its_owned_partial_file() {
 }
 
 #[test]
+fn record_is_published_only_after_its_content_is_complete() {
+    let directory = std::env::temp_dir().join(format!(
+        "termloop-atomic-process-record-{}-{}",
+        std::process::id(),
+        current_epoch_ms()
+    ));
+    let path = directory.join("atomic.process");
+    let staging = directory.join("atomic.process-staging");
+    // A staging leftover from a daemon killed mid-write never blocks the
+    // next owner of the record id.
+    std_fs::create_dir_all(&directory).unwrap();
+    std_fs::write(&staging, b"").unwrap();
+    create_tracked_process_record_with(&path, std::process::id(), "fixture-identity", |file, record| {
+        // A kill at this point must leave no record under the real name.
+        assert!(!path.exists());
+        io::Write::write_all(file, record)?;
+        file.sync_all()
+    })
+    .unwrap();
+    assert_eq!(
+        std_fs::read_to_string(&path).unwrap(),
+        format!("v1\n{}\nfixture-identity\n", std::process::id())
+    );
+    assert!(!staging.exists());
+    let report = reap_tracked_managed_processes(&directory).unwrap();
+    assert!(report.uncertain_record_ids.is_empty());
+    let _ = std_fs::remove_dir_all(directory);
+}
+
+#[test]
 fn bounded_tracked_command_removes_ownership_record() {
     let directory = std::env::temp_dir().join(format!(
         "termloop-bounded-processes-{}-{}",
