@@ -1747,6 +1747,18 @@ if (ownsSingleInstance) void app.whenReady().then(async () => {
       }
     });
   }
+  // Windows emits neither before-quit nor will-quit when the OS session ends,
+  // and the managed daemon is killed with this process. Request its graceful
+  // shutdown as soon as session end is queried, before provider exits caused
+  // by it can be committed as ordinary Agent exits.
+  const exitForSessionEnd = () => {
+    void prepareForApplicationExit().finally(() => {
+      readyToQuit = true;
+      app.quit();
+    });
+  };
+  window.on("query-session-end", exitForSessionEnd);
+  window.on("session-end", exitForSessionEnd);
   if (requestedTerminalRenderer() === "ghostty") {
     const addon = loadGhosttyHostAddon(app.getAppPath());
     if (addon) {

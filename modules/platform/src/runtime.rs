@@ -244,20 +244,30 @@ pub async fn wait_for_daemon_shutdown_signal() {
     #[cfg(windows)]
     {
         use tokio::signal::windows;
-        // Console close and OS shutdown must reach the daemon like Ctrl-C so
-        // teardown (job-object cleanup included) runs instead of being killed
-        // mid-flight. Registration failure falls back to plain Ctrl-C.
+        // Console close, user logoff, and OS shutdown must reach the daemon
+        // like Ctrl-C so teardown (job-object cleanup included) runs instead
+        // of being killed mid-flight. Powering off ends the interactive user
+        // session first, which a console process observes as logoff, not
+        // shutdown. Registration failure falls back to plain Ctrl-C.
         match (
             windows::ctrl_c(),
             windows::ctrl_break(),
             windows::ctrl_close(),
+            windows::ctrl_logoff(),
             windows::ctrl_shutdown(),
         ) {
-            (Ok(mut ctrl_c), Ok(mut ctrl_break), Ok(mut ctrl_close), Ok(mut ctrl_shutdown)) => {
+            (
+                Ok(mut ctrl_c),
+                Ok(mut ctrl_break),
+                Ok(mut ctrl_close),
+                Ok(mut ctrl_logoff),
+                Ok(mut ctrl_shutdown),
+            ) => {
                 tokio::select! {
                     _ = ctrl_c.recv() => {}
                     _ = ctrl_break.recv() => {}
                     _ = ctrl_close.recv() => {}
+                    _ = ctrl_logoff.recv() => {}
                     _ = ctrl_shutdown.recv() => {}
                 }
             }
