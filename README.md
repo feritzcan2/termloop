@@ -64,7 +64,7 @@ Open a Task's diff, leave notes on the lines you want changed, and send them all
 
 Just ask in the prompt: *"Can you ask another Claude agent to review the j/k focus logic before we merge?"* The agent writes the request itself, a helper Session appears under it, and the helper's review comes back to the agent that asked.
 
-<a href="https://termloop.ai/#ask-to"><img src="artifacts/marketing/readme/ask-to.gif?v=3093711c5db1" alt="Ask To: the request is typed into an agent prompt, a helper Claude reviews the focus logic, and its findings return to the agent that asked." width="100%"></a>
+<a href="https://termloop.ai/#ask-to"><img src="artifacts/marketing/readme/ask-to.gif?v=fafaf52525fa" alt="Ask To: the request is typed into an agent prompt, a helper Claude reviews the focus logic, and its findings return to the agent that asked." width="100%"></a>
 
 <details>
 <summary><strong>More demos: Tasks, Quick Actions, Handoff, Session Fork, Code review</strong></summary>
