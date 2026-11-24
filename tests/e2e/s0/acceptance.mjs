@@ -284,10 +284,14 @@ try {
     assert.ok(slots.length <= 64);
     for (const slot of slots.filter((name) => name.endsWith(".bin"))) {
       const file = path.join(historyDirectory, slot);
-      const metadata = await stat(file);
+      // The daemon may release an exited Session's slot between readdir and stat.
+      const vanished = (error) => { if (error.code === "ENOENT") return undefined; throw error; };
+      const metadata = await stat(file).catch(vanished);
+      if (!metadata) continue;
       assert.ok(metadata.size <= 1024 * 1024);
       if (process.platform !== "win32") assert.equal(metadata.mode & 0o777, 0o600);
-      if ((await readFile(file)).includes(Buffer.from("TERMLOOP_PERSISTED_SHELL_OUTPUT"))) checkpointed = true;
+      const contents = await readFile(file).catch(vanished);
+      if (contents?.includes(Buffer.from("TERMLOOP_PERSISTED_SHELL_OUTPUT"))) checkpointed = true;
     }
     if (!checkpointed) await new Promise((resolve) => setTimeout(resolve, 100));
   }

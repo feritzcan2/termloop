@@ -154,14 +154,7 @@ impl CoreRuntime {
             "decline" => ("decline", "Not now.".to_owned()),
             _ => return Err(CoreError::InvalidParams("decision".into())),
         };
-        self.append_companion_message(
-            project_id,
-            "user",
-            kind,
-            refs,
-            content,
-            created_at_epoch_ms,
-        )
+        self.append_companion_message(project_id, "user", kind, refs, content, created_at_epoch_ms)
     }
 
     pub fn append_companion_message(
