@@ -501,12 +501,17 @@ fn record_is_published_only_after_its_content_is_complete() {
     // next owner of the record id.
     std_fs::create_dir_all(&directory).unwrap();
     std_fs::write(&staging, b"").unwrap();
-    create_tracked_process_record_with(&path, std::process::id(), "fixture-identity", |file, record| {
-        // A kill at this point must leave no record under the real name.
-        assert!(!path.exists());
-        io::Write::write_all(file, record)?;
-        file.sync_all()
-    })
+    create_tracked_process_record_with(
+        &path,
+        std::process::id(),
+        "fixture-identity",
+        |file, record| {
+            // A kill at this point must leave no record under the real name.
+            assert!(!path.exists());
+            io::Write::write_all(file, record)?;
+            file.sync_all()
+        },
+    )
     .unwrap();
     assert_eq!(
         std_fs::read_to_string(&path).unwrap(),

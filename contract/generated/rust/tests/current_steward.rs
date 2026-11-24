@@ -184,7 +184,10 @@ fn steward_auto_compaction_is_optional_and_bounded_per_provider_unit() {
         params
     };
     // Older clients omit the field and keep the saved value.
-    assert!(validate_method_params("steward.configurationSet", &params(json!(null))));
+    assert!(validate_method_params(
+        "steward.configurationSet",
+        &params(json!(null))
+    ));
     for (claude, codex, valid) in [
         (250_000, 90, true),
         (100_000, 1, true),

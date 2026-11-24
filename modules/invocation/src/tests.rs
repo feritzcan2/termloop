@@ -2639,8 +2639,16 @@ fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
     let prompt = executor_prompt(ExecutorRole::Steward).unwrap();
     assert_eq!(prompt.provenance().template_version, 47);
     assert!(prompt.authored_preview().contains("routine_finding_read"));
-    assert!(prompt.authored_preview().contains("Use `project_agent_start` only when"));
-    assert!(prompt.authored_preview().contains("except through\n`project_agent_start`"));
+    assert!(
+        prompt
+            .authored_preview()
+            .contains("Use `project_agent_start` only when")
+    );
+    assert!(
+        prompt
+            .authored_preview()
+            .contains("except through\n`project_agent_start`")
+    );
     assert!(prompt.authored_preview().contains("playbook_read"));
     assert!(prompt.authored_preview().contains("task_set_steward_brief"));
     assert!(prompt.authored_preview().contains("task_agent_start"));

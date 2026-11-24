@@ -458,7 +458,9 @@ fn auto_compaction_reaches_each_provider_in_its_own_unit() {
             .any(|args| args == ["-c", "model_post_turn_compact_threshold_percent=90"])
     );
     assert_eq!(
-        payload.codex_runtime_policy().post_turn_compact_threshold_percent,
+        payload
+            .codex_runtime_policy()
+            .post_turn_compact_threshold_percent,
         Some(90)
     );
     assert!(
@@ -477,7 +479,12 @@ fn auto_compaction_reaches_each_provider_in_its_own_unit() {
     let request = LaunchRequest::interactive("codex", "/tmp/example", &template);
     let payload = resolve(request).unwrap().into_payload();
     assert!(!payload.args().iter().any(|arg| arg.contains("compact")));
-    assert_eq!(payload.codex_runtime_policy().post_turn_compact_threshold_percent, None);
+    assert_eq!(
+        payload
+            .codex_runtime_policy()
+            .post_turn_compact_threshold_percent,
+        None
+    );
 }
 
 #[test]
@@ -492,10 +499,16 @@ fn auto_compaction_rejects_out_of_range_values_and_other_agents() {
         claude_window_tokens: 50_000,
         codex_threshold_percent: 90,
     });
-    assert!(matches!(resolve(request), Err(InvocationError::InvalidAutoCompaction)));
+    assert!(matches!(
+        resolve(request),
+        Err(InvocationError::InvalidAutoCompaction)
+    ));
     let mut request = LaunchRequest::interactive("gemini", "/tmp/example", &template);
     request.auto_compaction = Some(termloop_domain::AutoCompactionSettings::default());
-    assert!(matches!(resolve(request), Err(InvocationError::InvalidAutoCompaction)));
+    assert!(matches!(
+        resolve(request),
+        Err(InvocationError::InvalidAutoCompaction)
+    ));
 }
 
 #[test]
