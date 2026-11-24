@@ -1,4 +1,5 @@
-import type { TaskImportChoice } from "./project-task-automation.js";
+import type { ProjectTaskAutomationConfigurationDto } from "@termloop/contract/current";
+import { DEFAULT_TASK_WORKTREE_PREFIX, projectTaskAutomationDraftFrom, type TaskImportChoice } from "./project-task-automation.js";
 import { QUICK_ACTION_AGENT_PERMISSIONS, QUICK_ACTION_AGENT_REASONING } from "./quick-action-memory.js";
 
 // Client-local form preferences, scoped to the connection-qualified Project ID.
@@ -59,4 +60,27 @@ export function rememberTaskImportChoice(
   } catch {
     // Unavailable storage must not interrupt editing or Task creation.
   }
+}
+
+/// The choice an import confirmation opens with: the last local selection for
+/// this Project, else the Project default, else a plain Task without a worktree.
+export function initialTaskImportChoice(
+  projectId: string,
+  automation: ProjectTaskAutomationConfigurationDto | undefined,
+  fallbackBaseRef: string | undefined,
+  storage?: Pick<Storage, "getItem">,
+): TaskImportChoice {
+  return readTaskImportChoice(projectId, storage) ?? (automation
+    ? projectTaskAutomationDraftFrom(automation, fallbackBaseRef)
+    : {
+      createWorktree: false,
+      worktreePrefix: DEFAULT_TASK_WORKTREE_PREFIX,
+      baseRef: fallbackBaseRef ?? null,
+      agentId: null,
+      model: null,
+      permission: null,
+      reasoning: null,
+      kickoffMessage: null,
+      workflowId: null,
+    });
 }

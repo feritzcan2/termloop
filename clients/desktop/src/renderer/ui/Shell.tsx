@@ -2475,6 +2475,11 @@ export function Shell(props: ShellProps) {
         discardImage={props.discardQuickActionImage}
         loadAccounts={props.loadAgentAccounts}
         jiraTaskSourceAvailable={props.jiraTaskSourceAvailable}
+        jiraImport={{
+          actions: props.taskSourceActions,
+          workflows: props.workflowConfigurations,
+          openTask: (taskId) => { setWorkspaceView("overview"); openTaskDetail(taskId); },
+        }}
         preview={props.previewQuickAction}
         launch={props.launchQuickAction}
         createShortcut={(draft) => setQuickActionShortcuts(saveQuickActionShortcut(draft))}

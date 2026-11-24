@@ -1,7 +1,7 @@
 import { agentReasoningOptions } from "../agent-reasoning.js";
 import type { AgentAccountDto } from "@termloop/contract/current";
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
-import type { AgentCapabilityDto, AgentLibraryEntry, AgentProfileDto, QuickActionParams, QuickActionPreviewResult } from "@termloop/contract/current";
+import type { AgentCapabilityDto, AgentLibraryEntry, AgentProfileDto, QuickActionParams, QuickActionPreviewResult, WorkflowConfigurationDto } from "@termloop/contract/current";
 import type { QuickActionImageHandle } from "../../quick-action-image.js";
 import type { Project, Task } from "../model.js";
 import { connectionProfileIdOf } from "../../connection-scope.js";
@@ -28,6 +28,7 @@ import { requireQuickActionPreview } from "../quick-action-result.js";
 import { quickActionShortcutUnavailable, type QuickActionShortcutDraft } from "../quick-action-shortcuts.js";
 import { QuickActionShortcutEditor } from "./QuickActionShortcutEditor.js";
 import { Icon } from "./Icon.js";
+import { QuickActionJiraImport, type QuickActionJiraImportActions } from "./QuickActionJiraImport.js";
 import { agentCliProblem, launchErrorMessage, type AgentCliProblem } from "../control-error.js";
 
 const IMAGE_LIMIT_MESSAGE = `Quick Action supports up to ${QUICK_ACTION_IMAGE_LIMIT} image attachments.`;
@@ -64,7 +65,7 @@ const PuzzleGlyph = () => <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M
 const profileSupportsCapability = (profile: AgentProfileDto, capability: AgentCapabilityDto) =>
   profile.agent_ids.includes(capability.agent_id) && capability.permissions.length > 0;
 
-export function QuickActionComposer({ projects, selectedProject, tasks = [], capabilities, profiles, libraryProfiles = [], initialTemplateRef, manageAgents, openAgentAccounts, initialAgent, loadAccounts, jiraTaskSourceAvailable, droppedFilePath, pasteImage, restoreImage, discardImage, preview, launch, createShortcut, close }: {
+export function QuickActionComposer({ projects, selectedProject, tasks = [], capabilities, profiles, libraryProfiles = [], initialTemplateRef, manageAgents, openAgentAccounts, initialAgent, loadAccounts, jiraTaskSourceAvailable, jiraImport, droppedFilePath, pasteImage, restoreImage, discardImage, preview, launch, createShortcut, close }: {
   projects: readonly Project[];
   selectedProject: Project | undefined;
   tasks?: readonly Task[];
@@ -80,6 +81,12 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
   loadAccounts?: ((projectId: string) => Promise<AgentAccountDto[]>) | undefined;
   /** Whether the Project has an enabled Jira Task Source; the intake option is hidden otherwise. */
   jiraTaskSourceAvailable?: ((projectId: string) => Promise<boolean>) | undefined;
+  /** Imports a waiting Jira issue as a Task from the Jira target; offered only with an enabled Jira Task Source. */
+  jiraImport?: {
+    actions: QuickActionJiraImportActions;
+    workflows?: readonly WorkflowConfigurationDto[] | undefined;
+    openTask(taskId: string): void;
+  } | undefined;
   droppedFilePath?: ((file: File) => string) | undefined;
   pasteImage(projectId: string): Promise<QuickActionImageHandle>;
   restoreImage(attachmentId: string): Promise<QuickActionImageHandle>;
@@ -121,14 +128,28 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
     ?? (projects.some((project) => project.id === memory.projectId) ? memory.projectId : undefined)
     ?? projects[0]?.id ?? "");
   const [agentId, setAgentId] = useState<AgentId>(initialAgentId);
-  const [target, setTarget] = useState<"run" | "worktree">("run");
+  const [requestedTarget, setTarget] = useState<"run" | "worktree" | "jira">("run");
+  const [jiraSource, setJiraSource] = useState<{ projectId: string; available: boolean }>();
+  const [jiraTaskRequested, setJiraTaskRequested] = useState(false);
+  const jiraAvailable = jiraSource?.projectId === projectId && jiraSource.available;
+  // A Project without an enabled Jira source falls back to Run.
+  const target = requestedTarget === "jira" && !(jiraAvailable && jiraImport) ? "run" : requestedTarget;
+  useEffect(() => {
+    if (!jiraTaskSourceAvailable || !projectId) return;
+    let live = true;
+    void jiraTaskSourceAvailable(projectId)
+      .then((available) => { if (live) setJiraSource({ projectId, available }); })
+      .catch(() => { if (live) setJiraSource({ projectId, available: false }); });
+    return () => { live = false; };
+  }, [jiraTaskSourceAvailable, projectId]);
   const [selectedTaskId, setSelectedTaskId] = useState<string>();
   const worktreeTasks = useMemo(() => tasks.filter((task) => task.project_id === projectId && task.worktree && task.archived_at_epoch_ms === null), [projectId, tasks]);
   const worktreeTask = worktreeTasks.find((task) => task.id === selectedTaskId) ?? worktreeTasks[0];
   // Run mode launches in the Project folder; Worktree mode launches in the
   // selected Task's managed worktree, resolved again by the main process.
   const taskId = target === "worktree" ? worktreeTask?.id : undefined;
-  const targetUnavailable = target === "worktree" && !taskId;
+  // The Jira target imports an issue instead of launching, so no preview runs there.
+  const targetUnavailable = (target === "worktree" && !taskId) || target === "jira";
   const [accountChoices, setAccountChoices] = useState<{ projectId: string; accounts: AgentAccountDto[] }>();
   const [selectedAccount, setSelectedAccount] = useState<{ projectId: string; agentId: string; accountId: string }>();
   const [accountError, setAccountError] = useState<string>();
@@ -145,19 +166,9 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
     void loadAccounts(projectId).then((accounts) => { if (live) setAccountChoices({ projectId, accounts }); }).catch((cause) => { if (live) setAccountError(cause instanceof Error ? cause.message : "Could not load server accounts"); });
     return () => { live = false; };
   }, [accountReload, loadAccounts, projectId]);
-  const [jiraSource, setJiraSource] = useState<{ projectId: string; available: boolean }>();
-  const [jiraTaskRequested, setJiraTaskRequested] = useState(false);
-  useEffect(() => {
-    if (!jiraTaskSourceAvailable || !projectId) return;
-    let live = true;
-    void jiraTaskSourceAvailable(projectId)
-      .then((available) => { if (live) setJiraSource({ projectId, available }); })
-      .catch(() => { if (live) setJiraSource({ projectId, available: false }); });
-    return () => { live = false; };
-  }, [jiraTaskSourceAvailable, projectId]);
   // The approved proposal moves this Agent into a new Task worktree, which
   // only a free-prompt Agent started in the Project folder can do.
-  const jiraTaskOffered = jiraSource?.projectId === projectId && jiraSource.available
+  const jiraTaskOffered = jiraAvailable
     && templateRef === FREE_PROMPT_TEMPLATE_REF && target === "run";
   const jiraTaskIntake = jiraTaskOffered && jiraTaskRequested ? true : undefined;
   const [model, setModel] = useState(() => initialPreset?.model && initialCapability?.models.includes(initialPreset.model)
@@ -297,7 +308,7 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
   };
   const keyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === "Escape") { event.preventDefault(); close(); }
-    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); setAdvancedOpen((open) => !open); }
+    if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && target !== "jira") { event.preventDefault(); setAdvancedOpen((open) => !open); }
   };
   const acceptsDroppedFiles = (event: DragEvent<HTMLTextAreaElement>) => (
     droppedFilePath !== undefined && event.dataTransfer.types.includes("Files")
@@ -400,6 +411,7 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
           <div className="quick-action-segmented">
             <button type="button" className={target === "run" ? "active" : undefined} aria-pressed={target === "run"} onClick={() => setTarget("run")}>Run</button>
             <button type="button" className={target === "worktree" ? "active" : undefined} aria-pressed={target === "worktree"} onClick={() => setTarget("worktree")}>Worktree</button>
+            {jiraAvailable && jiraImport ? <button type="button" className={target === "jira" ? "active" : undefined} aria-pressed={target === "jira"} onClick={() => setTarget("jira")}>Jira</button> : null}
           </div>
           {target === "worktree" ? worktreeTasks.length > 0
             ? <select className="quick-action-worktree" aria-label="Task worktree" value={worktreeTask?.id ?? ""} disabled={running} onChange={(event) => setSelectedTaskId(event.target.value)}>
@@ -407,8 +419,16 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
             </select>
             : <span className="quick-action-worktree-empty" role="status">No Task worktree in this Project</span> : null}
           {shortcutCreated ? <span className="shortcut-created" role="status">Shortcut created</span> : null}
-          {createShortcut ? <button ref={shortcutTriggerRef} className="create-shortcut" type="button" disabled={shortcutDisabled} aria-expanded={shortcutOpen} onClick={() => { setShortcutCreated(false); setShortcutOpen((open) => !open); }}><Icon name="star" />Create shortcut</button> : null}
+          {createShortcut && target !== "jira" ? <button ref={shortcutTriggerRef} className="create-shortcut" type="button" disabled={shortcutDisabled} aria-expanded={shortcutOpen} onClick={() => { setShortcutCreated(false); setShortcutOpen((open) => !open); }}><Icon name="star" />Create shortcut</button> : null}
         </div>
+        {target === "jira" && jiraImport ? <QuickActionJiraImport
+          key={projectId}
+          projectId={projectId}
+          actions={jiraImport.actions}
+          agentCapabilities={capabilities}
+          workflows={jiraImport.workflows}
+          imported={(taskId) => { close(); jiraImport.openTask(taskId); }}
+        /> : <>
         <main className="quick-action-body">
           <label htmlFor="quick-action-prompt">{selectedProfile ? "Scope / task" : "Prompt"}</label>
           <textarea ref={promptRef} id="quick-action-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} onPaste={(event) => { void paste(event); }} onDragOver={(event) => { if (acceptsDroppedFiles(event)) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } }} onDrop={dropFiles} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.ctrlKey) { event.preventDefault(); void submit(); } }} placeholder={selectedProfile?.description ?? "What would you like to run? Paste an image with ⌘V."} spellCheck={false} />
@@ -461,7 +481,8 @@ export function QuickActionComposer({ projects, selectedProject, tasks = [], cap
               : <pre>Enter a prompt to inspect the exact launch manifest.</pre>}
           </>}
         </section> : null}
-        <footer><strong>termloop</strong>{running ? <em>launching…</em> : null}<span><kbd>↵</kbd> run</span><span><kbd>⌘↵</kbd> advanced</span><span><kbd>esc</kbd> dismiss</span></footer>
+        </>}
+        <footer><strong>termloop</strong>{running ? <em>launching…</em> : null}{target === "jira" ? null : <><span><kbd>↵</kbd> run</span><span><kbd>⌘↵</kbd> advanced</span></>}<span><kbd>esc</kbd> dismiss</span></footer>
       </form>
     </div>
   );

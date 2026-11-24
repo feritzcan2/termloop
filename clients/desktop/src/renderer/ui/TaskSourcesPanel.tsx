@@ -73,7 +73,6 @@ import {
 } from "../task-sources.js";
 import {
   agentLabel,
-  DEFAULT_TASK_WORKTREE_PREFIX,
   projectTaskAutomationChanged,
   projectTaskAutomationDraftFrom,
   projectTaskAutomationError,
@@ -83,7 +82,7 @@ import {
   type TaskImportChoice,
 } from "../project-task-automation.js";
 import { controlErrorMessage } from "../control-error.js";
-import { readTaskImportChoice, rememberTaskImportChoice } from "../task-import-memory.js";
+import { initialTaskImportChoice, rememberTaskImportChoice } from "../task-import-memory.js";
 import { Icon } from "./Icon.js";
 import { WorktreeAgentChoice, type ProjectTaskAutomationActions } from "./ProjectTaskAutomation.js";
 import { sortRemoteBranches } from "./worktree-path-suggestion.js";
@@ -733,19 +732,7 @@ export function TaskSourcesPanel(props: TaskSourcesPanelProps) {
                             setNotice(undefined);
                             setImportChoice({
                               externalId: candidate.externalId,
-                              choice: readTaskImportChoice(props.projectId) ?? (automation
-                                ? projectTaskAutomationDraftFrom(automation.configuration, baseBranches[0]?.exact_ref)
-                                : {
-                                  createWorktree: false,
-                                  worktreePrefix: DEFAULT_TASK_WORKTREE_PREFIX,
-                                  baseRef: baseBranches[0]?.exact_ref ?? null,
-                                  agentId: null,
-                                  model: null,
-                                  permission: null,
-                                  reasoning: null,
-                                  kickoffMessage: null,
-                                  workflowId: null,
-                                }),
+                              choice: initialTaskImportChoice(props.projectId, automation?.configuration, baseBranches[0]?.exact_ref),
                             });
                           }}
                         >{busy === `import:${candidate.externalId}` ? "Importing…" : "Import as Task"}</button> : null}
@@ -1219,7 +1206,7 @@ function IntakeFields({ idPrefix, value, activeTaskLimit, busy, change, changeAc
 /// Importing is an explicit act, so the worktree and agent it will produce are
 /// confirmed before the command runs. Options restore the last local selection,
 /// fall back to Project defaults, and are sent as a resolved one-shot selection.
-function CandidateImportOptions({ candidateKey, choice, busy, importing, agentCapabilities, workflows, baseBranches, branchesLoading, branchesError, change, confirm, cancel }: {
+export function CandidateImportOptions({ candidateKey, choice, busy, importing, agentCapabilities, workflows, baseBranches, branchesLoading, branchesError, change, confirm, cancel }: {
   candidateKey: string;
   workflows: readonly WorkflowConfigurationDto[];
   choice: TaskImportChoice;
