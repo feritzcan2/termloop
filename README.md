@@ -46,12 +46,18 @@ TermLoop launches the Claude Code and Codex CLIs with your existing subscription
 
 ## See it work
 
-### Several Tasks, one view of the PRs
+### Quick Action: from a prompt to a running agent
 
-Each Task gets its own branch and worktree, so agents don't step on each other. Every Task row links to its pull request, and the PRs panel shows each one with its checks: feature branches into `develop`, and the release PR from `develop` into `main`.
+Press Shift twice, type what you want, and hit Enter. A new Claude Session starts in the project, shows up in the sidebar, and gets to work.
+
+<a href="https://termloop.ai/#quick-actions"><img src="artifacts/marketing/readme/quick-action-launch.gif?v=982ae5f0cb0c" alt="Quick Action: Shift Shift opens the prompt, the request is typed and run, and a new Claude Session appears in the sidebar and starts editing code." width="100%"></a>
+
+### Tasks: one card per piece of work
+
+Each Task gets its own branch and worktree, so agents don't step on each other. Its card shows the status, branch, commits, pull request and the agents working on it. The PRs panel lists every PR with its checks: feature branches into `develop`, and the release PR from `develop` into `main`.
 
 <p align="center">
-  <img src="artifacts/marketing/readme/tasks-and-prs.png?v=37f5568519a5" alt="Four Tasks in the sidebar, each linked to its open pull request, next to the PRs panel listing feature PRs into develop and the release PR from develop into main." width="776">
+  <img src="artifacts/marketing/readme/task-view.png?v=df4a8b3930ef" alt="The Tasks tab with Task cards showing status, branch, commits, pull request and agents, next to the PRs panel listing feature PRs into develop and the release PR from develop into main." width="776">
 </p>
 
 ### Changes: review notes become the next change
@@ -67,19 +73,13 @@ Just ask in the prompt: *"Can you ask another Claude agent to review the j/k foc
 <a href="https://termloop.ai/#ask-to"><img src="artifacts/marketing/readme/ask-to.gif?v=fafaf52525fa" alt="Ask To: the request is typed into an agent prompt, a helper Claude reviews the focus logic, and its findings return to the agent that asked." width="100%"></a>
 
 <details>
-<summary><strong>More demos: Tasks, Quick Actions, Handoff, Session Fork, Code review</strong></summary>
+<summary><strong>More demos: Tasks, Handoff, Session Fork, Code review</strong></summary>
 
 ### Tasks: define the work, add a worktree when needed
 
 Keep the goal, acceptance criteria and checklist in one Task. When the change needs its own checkout, create a branch and worktree from that same Task.
 
 <a href="https://termloop.ai/#tasks"><img src="artifacts/marketing/readme/tasks.gif?v=a0f4d09ed5a4" alt="Tasks: define the work, complete checks, then create an optional worktree from the same Task." width="960"></a>
-
-### Quick Actions: from a prompt to a running agent
-
-Open Quick Actions, write the request and launch an agent with the right context.
-
-<a href="https://termloop.ai/#quick-actions"><img src="artifacts/marketing/readme/quick-actions.gif?v=e7ee5021a7f1" alt="Quick Actions: Launch the Session and follow its work in the terminal." width="960"></a>
 
 ### Handoff: move context to the agent already in the work
 
