@@ -2,6 +2,7 @@
 
 mod azure_pr_checks;
 mod claude_usage;
+mod github_accounts;
 mod integration_status;
 mod issue_key_pull_requests;
 mod jira;
@@ -618,6 +619,7 @@ pub struct GitHubClient {
     discovery_gate: Arc<Mutex<()>>,
     sequence: Arc<AtomicU64>,
     suppression: Arc<Mutex<Option<(ProviderFailure, termloop_platform::MonotonicDeadline)>>>,
+    accounts: github_accounts::GitHubAccountRouter,
 }
 
 impl std::fmt::Debug for GitHubClient {
@@ -638,6 +640,7 @@ impl GitHubClient {
             discovery_gate: Arc::new(Mutex::new(())),
             sequence: Arc::new(AtomicU64::new(0)),
             suppression: Arc::new(Mutex::new(None)),
+            accounts: github_accounts::GitHubAccountRouter::default(),
         }
     }
 
@@ -657,7 +660,7 @@ impl GitHubClient {
             return Err(ProviderFailure::ProviderFailure);
         }
         self.check_suppression()?;
-        let result = self.query_unsuppressed(queries, timeout.min(Duration::from_secs(8)));
+        let result = self.query_by_owner(queries, timeout.min(Duration::from_secs(8)));
         let suppression_failure = result
             .as_ref()
             .err()
@@ -722,8 +725,66 @@ impl GitHubClient {
         }
     }
 
+    /// Each repository owner may need a different `gh` account, so one batch
+    /// is sent per owner and the results are returned in query order.
+    fn query_by_owner(
+        &self,
+        queries: &[PullRequestQuery],
+        timeout: Duration,
+    ) -> Result<Vec<PullRequestQueryResult>, ProviderFailure> {
+        let deadline = termloop_platform::MonotonicDeadline::after(timeout)
+            .map_err(|_| ProviderFailure::Timeout)?;
+        let mut groups: Vec<(String, Vec<usize>)> = Vec::new();
+        for (index, query) in queries.iter().enumerate() {
+            let owner = query.repository.owner.to_ascii_lowercase();
+            match groups.iter_mut().find(|(known, _)| *known == owner) {
+                Some((_, indexes)) => indexes.push(index),
+                None => groups.push((owner, vec![index])),
+            }
+        }
+        let mut results: Vec<Option<PullRequestQueryResult>> = vec![None; queries.len()];
+        let mut first_failure = None;
+        for (owner, indexes) in groups {
+            let group: Vec<PullRequestQuery> = indexes
+                .iter()
+                .map(|&index| queries[index].clone())
+                .collect();
+            let outcome = deadline
+                .remaining()
+                .ok_or(ProviderFailure::Timeout)
+                .and_then(|remaining| self.query_unsuppressed(&owner, &group, remaining));
+            match outcome {
+                Ok(group_results) => {
+                    for (index, result) in indexes.into_iter().zip(group_results) {
+                        results[index] = Some(result);
+                    }
+                }
+                Err(failure) => {
+                    first_failure.get_or_insert(failure);
+                    for index in indexes {
+                        results[index] = Some(PullRequestQueryResult {
+                            query: queries[index].clone(),
+                            matches: Vec::new(),
+                            truncated: false,
+                            parent_resolved: true,
+                            failure: Some(failure),
+                            retry_after_epoch_ms: None,
+                        });
+                    }
+                }
+            }
+        }
+        let results: Vec<PullRequestQueryResult> = results.into_iter().flatten().collect();
+        match first_failure {
+            // A whole-call failure keeps its typed error when no owner answered.
+            Some(failure) if results.iter().all(|result| result.failure.is_some()) => Err(failure),
+            _ => Ok(results),
+        }
+    }
+
     fn query_unsuppressed(
         &self,
+        owner: &str,
         queries: &[PullRequestQuery],
         timeout: Duration,
     ) -> Result<Vec<PullRequestQueryResult>, ProviderFailure> {
@@ -732,17 +793,22 @@ impl GitHubClient {
         if body.len() > MAX_STDIN {
             return Err(ProviderFailure::OutputLimit);
         }
-        let outcome = termloop_platform::run_command(self.request(timeout)?.stdin(body))
-            .map_err(|_| ProviderFailure::ProviderUnavailable)?;
-        classify_termination(&outcome.termination, &outcome.stderr)?;
+        let outcome = self.run_graphql_for_owner(owner, timeout, body)?;
         if outcome.stdout_truncated || outcome.stderr_truncated {
             return Err(ProviderFailure::OutputLimit);
         }
-        parse_graphql_response(
-            queries,
-            &outcome.stdout,
-            termloop_platform::current_epoch_ms(),
-        )
+        let now = termloop_platform::current_epoch_ms();
+        if let Err(failure) = classify_termination(&outcome.termination, &outcome.stderr) {
+            // `gh` exits non-zero when any alias errors, but still prints the
+            // GraphQL document; per-repository errors are typed per query.
+            return match outcome.termination {
+                CommandTermination::Exited { .. } => {
+                    parse_graphql_response(queries, &outcome.stdout, now).map_err(|_| failure)
+                }
+                _ => Err(failure),
+            };
+        }
+        parse_graphql_response(queries, &outcome.stdout, now)
     }
 
     fn ensure_discovered(&self, timeout: Duration) -> Result<(), ProviderFailure> {
@@ -765,15 +831,19 @@ impl GitHubClient {
         classify_termination(&outcome.termination, &outcome.stderr)
     }
 
-    fn request(&self, timeout: Duration) -> Result<CommandRequest, ProviderFailure> {
-        Ok(self.base_request(timeout)?.args([
-            "api",
-            "--hostname",
-            GITHUB_HOST,
-            "graphql",
-            "--input",
-            "-",
-        ]))
+    /// A GraphQL request (body on stdin) routed to the account that can see
+    /// `owner`'s repositories.
+    pub(crate) fn run_graphql_for_owner(
+        &self,
+        owner: &str,
+        timeout: Duration,
+        body: Vec<u8>,
+    ) -> Result<termloop_platform::CommandOutcome, ProviderFailure> {
+        self.run_for_owner(owner, timeout, |request| {
+            request
+                .args(["api", "--hostname", GITHUB_HOST, "graphql", "--input", "-"])
+                .stdin(body.clone())
+        })
     }
 
     fn base_request(&self, timeout: Duration) -> Result<CommandRequest, ProviderFailure> {
@@ -802,7 +872,10 @@ fn classify_termination(
         Err(ProviderFailure::Unauthorized)
     } else if lower.contains("rate limit") || lower.contains("429") {
         Err(ProviderFailure::RateLimited)
-    } else if lower.contains("could not resolve")
+    } else if (lower.contains("could not resolve")
+        // GitHub's "Could not resolve to a Repository" is a visibility miss,
+        // not a DNS failure.
+        && !lower.contains("could not resolve to a"))
         || lower.contains("connection")
         || lower.contains("network")
     {

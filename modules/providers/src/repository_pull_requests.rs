@@ -60,10 +60,9 @@ impl GitHubClient {
         let without_retry = |failure| (failure, None);
         self.ensure_discovered(timeout).map_err(without_retry)?;
         let body = github_repository_search_body(repository, filter).map_err(without_retry)?;
-        let outcome = termloop_platform::run_command(
-            self.request(timeout).map_err(without_retry)?.stdin(body),
-        )
-        .map_err(|_| without_retry(ProviderFailure::ProviderUnavailable))?;
+        let outcome = self
+            .run_graphql_for_owner(&repository.owner, timeout, body)
+            .map_err(without_retry)?;
         classify_termination(&outcome.termination, &outcome.stderr).map_err(without_retry)?;
         if outcome.stdout_truncated || outcome.stderr_truncated {
             return Err(without_retry(ProviderFailure::OutputLimit));

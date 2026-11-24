@@ -231,6 +231,7 @@ impl GitHubClient {
     ) -> Result<GithubMetadata, ProviderFailure> {
         let endpoint = github_pr_endpoint(identity);
         let outcome = self.run_github_changes_command(
+            identity,
             deadline,
             [
                 "api".into(), "--hostname".into(), GITHUB_HOST.into(), "--method".into(),
@@ -256,6 +257,7 @@ impl GitHubClient {
         };
         let endpoint = format!("{}/files", github_pr_endpoint(identity));
         let outcome = self.run_github_changes_command(
+            identity,
             deadline,
             [
                 "api".into(),
@@ -277,18 +279,19 @@ impl GitHubClient {
 
     fn run_github_changes_command<const N: usize>(
         &self,
+        identity: &PullRequestChangeIdentity,
         deadline: termloop_platform::MonotonicDeadline,
         arguments: [String; N],
     ) -> Result<termloop_platform::CommandOutcome, ProviderFailure> {
-        let request = self
-            .base_request(deadline.remaining().ok_or(ProviderFailure::Timeout)?)
+        let outcome = self
+            .run_for_owner(
+                &identity.repository_owner,
+                deadline.remaining().ok_or(ProviderFailure::Timeout)?,
+                |request| request.args(arguments.clone()),
+            )
             .inspect_err(|&failure| {
                 self.record_suppression(failure, None);
             })?;
-        let outcome = termloop_platform::run_command(request.args(arguments)).map_err(|_| {
-            self.record_suppression(ProviderFailure::ProviderUnavailable, None);
-            ProviderFailure::ProviderUnavailable
-        })?;
         if let Err(failure) = classify_termination(&outcome.termination, &outcome.stderr) {
             self.record_suppression(failure, None);
             return Err(failure);

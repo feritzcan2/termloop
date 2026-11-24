@@ -32,8 +32,7 @@ impl GitHubClient {
         let body = github_people_body(repository, numbers)?;
         self.check_suppression()?;
         self.ensure_discovered(timeout)?;
-        let outcome = termloop_platform::run_command(self.request(timeout)?.stdin(body))
-            .map_err(|_| ProviderFailure::ProviderUnavailable)?;
+        let outcome = self.run_graphql_for_owner(&repository.owner, timeout, body)?;
         let result = classify_termination(&outcome.termination, &outcome.stderr).and_then(|()| {
             if outcome.stdout_truncated || outcome.stderr_truncated {
                 Err(ProviderFailure::OutputLimit)
