@@ -708,6 +708,13 @@ fn row_fresh_window_ms(row: &ProviderCacheRow) -> u64 {
     )
 }
 
+/// Whether a cached row has outlived its fresh window and no provider
+/// back-off still holds it.
+fn row_refresh_due(row: &ProviderCacheRow, now: u64) -> bool {
+    now.saturating_sub(row.last_attempt_observed_at) >= row_fresh_window_ms(row)
+        && row.retry_after.is_none_or(|retry_after| now >= retry_after)
+}
+
 fn projection_refresh_due(projection: &GitHostTaskProjection, now: u64) -> bool {
     let window = fresh_window_ms(
         projection.reason.is_none(),
@@ -840,14 +847,7 @@ impl GitHostPullRequestListPlan {
                 let key = cache_key(query);
                 let cached = self.cache.get(&key);
                 let cache_suppresses_refresh = cached.as_ref().is_some_and(|row| {
-                    !observation.snapshot.force_refresh
-                        && (self
-                            .observed_at
-                            .saturating_sub(row.last_attempt_observed_at)
-                            < row_fresh_window_ms(row)
-                            || row
-                                .retry_after
-                                .is_some_and(|retry_after| self.observed_at < retry_after))
+                    !observation.snapshot.force_refresh && !row_refresh_due(row, self.observed_at)
                 });
                 let last_attempt = cached
                     .as_ref()
@@ -1709,6 +1709,11 @@ fn project_task(
         last_attempt = last_attempt.max(row.last_attempt_observed_at);
         last_success = last_success.max(row.last_success_observed_at);
         truncated |= row.truncated;
+        // A candidate a bounded wave deferred keeps an old attempt while its
+        // siblings carry a new one. Mark the projection stale so the follow-up
+        // request refreshes it instead of serving the composed result until the
+        // newest attempt ages out; past STALE_MS its matches are hidden.
+        stale |= row_refresh_due(row, now);
         if !row.parent_resolved {
             all_authoritative = false;
             reason.get_or_insert(GitHostProjectionReason::ParentUnavailable);
@@ -2779,6 +2784,113 @@ mod tests {
                 .map(|pull_request| pull_request.number)
                 .collect::<BTreeSet<_>>(),
             BTreeSet::from([1, 2, 3])
+        );
+        assert_eq!(projection.freshness, GitHostProjectionFreshness::Stale);
+        assert!(projection_refresh_due(projection, observed_at));
+
+        drop(observed);
+        drop(store);
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn deferred_alias_past_stale_window_keeps_the_projection_refresh_due() {
+        let previous_observed_at = 10_000;
+        let observed_at = previous_observed_at + STALE_MS + FRESH_MS;
+        let snapshot = TaskSnapshot {
+            task_id: "task".into(),
+            project_id: "project".into(),
+            branch_name: Some("termloop/generated".into()),
+            repository_root: Some(PathBuf::from("/repo")),
+            worktree_path: Some(PathBuf::from("/repo-worktree")),
+            worktree_generation: 1,
+            recorded_branches: vec![],
+            force_refresh: false,
+        };
+        let facts = azure_worktree_facts(&["UKIE-835-current", "termloop/generated", "UKIE-835"]);
+        let local_facts = GitHostLocalFactsCache::default();
+        let _ = local_facts.insert(local_facts_key(&snapshot).unwrap(), Ok(facts), observed_at);
+        let directory = std::env::temp_dir().join(format!(
+            "termloop-git-host-deferred-stale-wave-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let store = termloop_store::Store::open(directory.join("state.json")).unwrap();
+        let cache = store.open_provider_cache().unwrap();
+        // The leading aliases were refreshed a moment ago. The trailing alias
+        // was deferred until its success aged past STALE_MS.
+        let refreshed_at = observed_at - 1_000;
+        for (number, branch, attempted_at) in [
+            (3, "UKIE-835-current", refreshed_at),
+            (2, "termloop/generated", refreshed_at),
+            (1, "UKIE-835", previous_observed_at),
+        ] {
+            let query = AzurePullRequestQuery {
+                repository: AzureRepository {
+                    organization: "valuespaces".into(),
+                    project: "Nucleus".into(),
+                    name: "Nucleus".into(),
+                },
+                head_branch: branch.into(),
+            };
+            let row = ProviderCacheRow {
+                key: cache_key(&ProviderQuery::Azure(query)),
+                matches: vec![CachedPullRequest {
+                    provider: "azureDevOps".into(),
+                    host: "dev.azure.com".into(),
+                    repository_owner: "valuespaces".into(),
+                    repository_project: Some("Nucleus".into()),
+                    repository_name: "Nucleus".into(),
+                    number,
+                    title: format!("PR {number}"),
+                    url: format!(
+                        "https://dev.azure.com/valuespaces/Nucleus/_git/Nucleus/pullrequest/{number}"
+                    ),
+                    state: "closed".into(),
+                    merge_commit_oid: None,
+                    base_branch: "development".into(),
+                    head_branch: branch.into(),
+                    head_repository_owner: "valuespaces".into(),
+                    head_repository_project: Some("Nucleus".into()),
+                    head_repository_name: "Nucleus".into(),
+                    checks: "unknown".into(),
+                    review: "unknown".into(),
+                    mergeability: "unknown".into(),
+                    updated_at_epoch_ms: previous_observed_at + number,
+                }],
+                truncated: false,
+                parent_resolved: true,
+                failure: None,
+                last_success_observed_at: Some(attempted_at),
+                last_attempt_observed_at: attempted_at,
+                retry_after: None,
+            };
+            cache.update(row).unwrap();
+        }
+
+        let prepared = GitHostPullRequestListPlan {
+            tasks: vec![snapshot],
+            cache,
+            github: None,
+            azure: None,
+            local_facts,
+            observed_at,
+            deadline: termloop_platform::MonotonicDeadline::after(Duration::from_secs(10)).unwrap(),
+        }
+        .prepare();
+
+        assert_eq!(prepared.jobs.len(), 1);
+        assert_eq!(prepared.rows.len(), 3);
+        assert!(prepared.follow_up_task_ids.is_empty());
+        let observed = prepared.complete(Vec::new());
+        let projection = &observed.projections[0];
+        assert_eq!(
+            projection
+                .matches
+                .iter()
+                .map(|pull_request| pull_request.number)
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([2, 3])
         );
         assert_eq!(projection.freshness, GitHostProjectionFreshness::Stale);
         assert!(projection_refresh_due(projection, observed_at));
