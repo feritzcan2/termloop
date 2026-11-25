@@ -37,7 +37,7 @@
   </tr>
   <tr>
     <td valign="top"><strong>🤝 Agents ask agents</strong><br>Ask To starts a visible helper Session. Its answer returns to the agent that asked.</td>
-    <td valign="top"><strong>🖥️ Remote servers feel local</strong><br>Connect Linux servers over SSH or Tailscale. Their Sessions sit in the same sidebar.</td>
+    <td valign="top"><strong>🖥️ Remote servers feel local</strong><br>Every TermLoop computer on your Tailscale network shows up on its own. One click and its Sessions sit in your sidebar.</td>
     <td valign="top"><strong>♻️ Sessions survive the window</strong><br>A background daemon owns every terminal. Close the app, reopen it, reattach.</td>
   </tr>
 </table>
@@ -105,11 +105,13 @@ Each release also ships a headless `termloop-server` archive for [remote servers
 
 ## Remote servers
 
-Run agents on a Linux server, a cloud VM, or another desktop, and drive them from your laptop as if they were local. Remote Projects appear in the same sidebar, grouped under each computer's name.
+Run agents on a Linux server, a cloud VM, or another desktop, and drive them from your laptop as if they were local.
+
+**On Tailscale, there is nothing to configure.** Turn on **Share this computer** once on each machine. Every TermLoop computer on the same tailnet then appears automatically in **Settings → Computers**. Click **Connect** and its Projects show up in your sidebar, grouped under the computer's name. No IP addresses, ports, or SSH keys needed.
 
 - **One window, many computers.** Use this computer plus up to eight remote computers at the same time. If one goes offline, work on the others continues.
 - **Agents keep running when you disconnect.** The remote daemon runs as a background service and owns its terminals. Reconnect later and the same Sessions are still running.
-- **Set up from the app.** Open **Settings → Computers → Add a Linux server**, verify the server's SSH fingerprint, and TermLoop installs the server, starts it as a background service, and connects.
+- **No Tailscale? Use SSH.** Open **Settings → Computers → Add a Linux server**, verify the server's SSH fingerprint, and TermLoop installs the server, starts it as a background service, and connects.
 - **Private by default.** The server listens only on `127.0.0.1`. You reach it through an SSH tunnel or Tailscale Serve over HTTPS, and every connecting device gets its own credential that the server can revoke.
 
 <details>
