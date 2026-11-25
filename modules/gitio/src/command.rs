@@ -10,7 +10,10 @@ use crate::{GitError, GitOperation};
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_OUTPUT_LIMIT: usize = 8 * 1024 * 1024;
 pub const HEALTH_GIT_SUBPROCESS_DEADLINE: Duration = Duration::from_millis(2_500);
-pub const CLEANUP_GIT_SUBPROCESS_DEADLINE: Duration = Duration::from_secs(5);
+/// Total budget shared by one explicit cleanup/repair observation. Several Git
+/// commands consume it, and a healthy repository on a loaded external volume
+/// can need several seconds; a timeout still fails closed.
+pub const CLEANUP_GIT_SUBPROCESS_DEADLINE: Duration = Duration::from_secs(20);
 pub const CLEANUP_GIT_MUTATION_DEADLINE: Duration = Duration::from_secs(60);
 const HEALTH_OUTPUT_LIMIT: usize = 8 * 1024 * 1024;
 

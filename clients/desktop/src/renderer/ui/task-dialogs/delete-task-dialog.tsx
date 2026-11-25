@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { TaskWorktreeCleanupPreviewDto } from "@termloop/contract/current";
+import type { TaskWorktreeCleanupBlocker, TaskWorktreeCleanupPreviewDto } from "@termloop/contract/current";
 import {
   taskDeletePreviewCanProceed,
   taskWorktreeCleanupBlockerMessage,
@@ -8,6 +8,9 @@ import {
 } from "../../model.js";
 
 type StaleDeleteChoice = "forgetStaleBinding" | "discardStaleDirectory";
+
+/** Blockers caused by a busy repository rather than worktree content; inspecting again can clear them. */
+const transientCleanupBlockers = new Set<TaskWorktreeCleanupBlocker>(["timeout", "indexLock"]);
 
 export function StaleDeleteOptions({ preview, choice, choose, allowKeep = true }: {
   preview: TaskWorktreeCleanupPreviewDto;
@@ -44,6 +47,7 @@ export function DeleteTaskDialog({ task, inspect, close, remove, closeAfterWorkt
   const [error, setError] = useState<string>();
   const [preview, setPreview] = useState<TaskWorktreeCleanupPreviewDto>();
   const [staleChoice, setStaleChoice] = useState<StaleDeleteChoice>();
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let active = true;
     setError(undefined);
@@ -69,7 +73,7 @@ export function DeleteTaskDialog({ task, inspect, close, remove, closeAfterWorkt
       if (active) setError(failure instanceof Error ? failure.message : String(failure));
     });
     return () => { active = false; };
-  }, [closeAfterWorktreeRemoval, inspect, task.id, task.worktree?.path]);
+  }, [attempt, closeAfterWorktreeRemoval, inspect, task.id, task.worktree?.path]);
 
   const forgetAvailable = !closeAfterWorktreeRemoval && preview?.stale_resolution.forget_status === "available";
   const disposalAvailable = preview?.stale_resolution.disposal_status === "available"
@@ -77,6 +81,8 @@ export function DeleteTaskDialog({ task, inspect, close, remove, closeAfterWorkt
   const staleResolutionOffered = Boolean(forgetAvailable || disposalAvailable);
   const inspecting = Boolean(task.worktree && !preview && !error);
   const previewCanProceed = Boolean(preview && taskDeletePreviewCanProceed(preview));
+  const retryable = Boolean(task.worktree && !inspecting && (error
+    || (preview && !previewCanProceed && preview.blockers.some((blocker) => transientCleanupBlockers.has(blocker)))));
   const canDelete = Boolean(!task.worktree || (preview
     && previewCanProceed
     && (!staleResolutionOffered || staleChoice)));
@@ -107,7 +113,7 @@ export function DeleteTaskDialog({ task, inspect, close, remove, closeAfterWorkt
                 : canDelete && staleChoice === "forgetStaleBinding" ? "Ready to delete the Task and keep the unverified folder."
                   : canDelete && staleChoice === "discardStaleDirectory" ? "Ready to permanently delete the unverified folder."
                     : canDelete ? closeAfterWorktreeRemoval ? "Ready to remove the worktree and close the Task." : "Ready to delete."
-                      : preview ? "Deletion is blocked." : "Worktree check failed."}
+                      : preview ? null : "Worktree check failed."}
           </p>
           {preview && !previewCanProceed ? <div className="form-error" role="alert">
             <strong>Deletion is blocked.</strong>
@@ -117,7 +123,7 @@ export function DeleteTaskDialog({ task, inspect, close, remove, closeAfterWorkt
         </>}
         {error ? <p className="form-error" role="alert">{error}</p> : null}
       </div>
-      <footer className="dialog-actions"><button className="secondary-button" onClick={close}>Cancel</button><button className="danger-button loading-button" disabled={!canDelete} onClick={submit}>{inspecting ? <span className="loading-spinner" aria-hidden="true" /> : null}{inspecting ? "Checking…" : closeAfterWorktreeRemoval && canDelete ? "Delete worktree & close" : canDelete && staleChoice === "forgetStaleBinding" ? "Delete Task; don't touch files" : canDelete && staleChoice === "discardStaleDirectory" ? "Delete Task and folder" : canDelete ? "Delete" : staleResolutionOffered ? "Choose folder action" : "Delete blocked"}</button></footer>
+      <footer className="dialog-actions"><button className="secondary-button" onClick={close}>Cancel</button>{retryable ? <button className="secondary-button" onClick={() => setAttempt((value) => value + 1)}>Inspect again</button> : null}<button className="danger-button loading-button" disabled={!canDelete} onClick={submit}>{inspecting ? <span className="loading-spinner" aria-hidden="true" /> : null}{inspecting ? "Checking…" : closeAfterWorktreeRemoval && canDelete ? "Delete worktree & close" : canDelete && staleChoice === "forgetStaleBinding" ? "Delete Task; don't touch files" : canDelete && staleChoice === "discardStaleDirectory" ? "Delete Task and folder" : canDelete ? "Delete" : staleResolutionOffered ? "Choose folder action" : "Delete blocked"}</button></footer>
     </section>
   </div>;
 }

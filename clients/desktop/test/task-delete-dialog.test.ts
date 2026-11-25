@@ -119,4 +119,36 @@ describe("Task stale delete confirmation", () => {
     await act(async () => submit.click());
     expect(remove).toHaveBeenCalledWith({ preview, kind: "discardStaleDirectory" });
   });
+
+  it("offers inspecting again after a Git timeout and shows the blocked state once", async () => {
+    const timedOut: TaskWorktreeCleanupPreviewDto = {
+      ...stalePreview(false),
+      blockers: ["timeout"],
+      stale_resolution: { forget_status: "unavailable", disposal_status: "unavailable", blockers: [] },
+    };
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    mounted.push({ root, host });
+    const inspect = vi.fn(async () => timedOut);
+    await act(async () => {
+      root.render(createElement(DeleteTaskDialog, { task: task(), inspect, close: vi.fn(), remove: vi.fn() }));
+    });
+
+    expect(host.textContent!.split("Deletion is blocked.")).toHaveLength(2);
+    const retry = [...host.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Inspect again");
+    expect(retry).toBeDefined();
+    await act(async () => retry!.click());
+    expect(inspect).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not offer inspecting again for content blockers", async () => {
+    const dirty: TaskWorktreeCleanupPreviewDto = {
+      ...stalePreview(false),
+      blockers: ["trackedChanges"],
+      stale_resolution: { forget_status: "unavailable", disposal_status: "unavailable", blockers: [] },
+    };
+    const { host } = await render(dirty);
+    expect(host.textContent).not.toContain("Inspect again");
+  });
 });
