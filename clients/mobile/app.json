@@ -76,8 +76,8 @@
         {
           "microphonePermission": "TermLoop uses the microphone only while recording a voice message.",
           "recordAudioAndroid": true,
-          "enableBackgroundRecording": true,
-          "enableBackgroundPlayback": true
+          "enableBackgroundRecording": false,
+          "enableBackgroundPlayback": false
         }
       ]
     ],

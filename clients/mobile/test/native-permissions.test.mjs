@@ -19,9 +19,13 @@ describe("native permission configuration", () => {
     expect(pluginOptions("expo-audio")?.recordAudioAndroid).toBe(true);
   });
 
-  it("enables iOS background voice audio and Live Activities", () => {
+  it("enables Live Activities without declaring the iOS audio background mode", () => {
+    // App Review (Guideline 2.5.4) rejects UIBackgroundModes=audio unless the
+    // app plays audible content in the background; voice is foreground-only.
+    // expo-audio defaults enableBackgroundPlayback to true, so both stay explicit.
     expect(app.expo.ios.infoPlist.NSSupportsLiveActivities).toBe(true);
-    expect(pluginOptions("expo-audio")?.enableBackgroundRecording).toBe(true);
-    expect(pluginOptions("expo-audio")?.enableBackgroundPlayback).toBe(true);
+    expect(app.expo.ios.infoPlist.UIBackgroundModes ?? []).not.toContain("audio");
+    expect(pluginOptions("expo-audio")?.enableBackgroundRecording).toBe(false);
+    expect(pluginOptions("expo-audio")?.enableBackgroundPlayback).toBe(false);
   });
 });
