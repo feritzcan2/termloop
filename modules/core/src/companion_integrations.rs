@@ -630,16 +630,12 @@ impl CoreRuntime {
             {
                 self.git_host_invalidated_tasks.remove(index);
             }
-            let previous_signal = self
+            let moved = self
                 .git_host_projections
                 .entries
                 .get(&snapshot.task_id)
-                .map(|entry| playbook_signal(&entry.projection));
-            // Only a fresh read that moved a fact a step can depend on counts;
-            // the first observation after start has nothing to compare with.
-            if projection.freshness == GitHostProjectionFreshness::Fresh
-                && previous_signal.is_some_and(|previous| previous != playbook_signal(&projection))
-            {
+                .is_some_and(|entry| moves_playbook_step(&entry.projection, &projection));
+            if moved {
                 nudged_task_ids.push(snapshot.task_id.clone());
                 nudge_at = nudge_at.max(projection.last_attempt_observed_at_epoch_ms);
             }
@@ -658,6 +654,24 @@ impl CoreRuntime {
             .map(|value| (value, changed, follow_up_task_ids, nudged))
             .map_err(|_| CoreError::Store("projection serialization failed".into()))
     }
+}
+
+/// Whether a new projection moved a fact a Playbook step can depend on, so the
+/// Task's current step should be asked sooner. Only a successful read counts;
+/// the first observation after start has nothing to compare with.
+///
+/// A candidate-limited read is not authoritative for display (another branch
+/// alias might hold a pull request it did not query), but every pull request
+/// it did list came from a successful provider read. A nudge only moves the
+/// next check earlier and the step re-reads live state itself, so such a read
+/// still counts. Without this, a Task whose worktree evidence is truncated
+/// never gets a merge nudge and waits out its step's backed-off delay.
+fn moves_playbook_step(previous: &GitHostTaskProjection, next: &GitHostTaskProjection) -> bool {
+    let successful_read = next.freshness == GitHostProjectionFreshness::Fresh
+        || (next.freshness == GitHostProjectionFreshness::Unavailable
+            && next.reason == Some(GitHostProjectionReason::CandidateLimit)
+            && !next.truncated);
+    successful_read && playbook_signal(previous) != playbook_signal(next)
 }
 
 /// The pull-request facts a Playbook step can depend on, in a stable order.
@@ -2289,6 +2303,95 @@ mod tests {
             cached_projection_for_display(&projection, observed_at + STALE_MS + 1);
         assert_eq!(stale.freshness, GitHostProjectionFreshness::Stale);
         assert!(refresh_due);
+    }
+
+    #[test]
+    fn a_candidate_limited_merge_observation_still_nudges_the_playbook_step() {
+        let pull_request = |state: &str| GitHostPullRequestSummary {
+            provider: "github".into(),
+            host: "github.com".into(),
+            repository_owner: "owner".into(),
+            repository_project: None,
+            repository_name: "repo".into(),
+            number: 458,
+            title: "Promote".into(),
+            url: "https://github.com/owner/repo/pull/458".into(),
+            state: state.into(),
+            merge_commit_oid: None,
+            base_branch: "master".into(),
+            head_branch: "NUCLEUS-3021-MASTER".into(),
+            head_repository_owner: "owner".into(),
+            head_repository_project: None,
+            head_repository_name: "repo".into(),
+            check_rollup: "passing".into(),
+            check_rollup_source: "provider".into(),
+            review_signal: "approved".into(),
+            review_signal_source: "provider".into(),
+            merge_conflict: "none".into(),
+            merge_conflict_source: "provider".into(),
+            activity_at_epoch_ms: 1,
+            activity_at_source: "provider".into(),
+        };
+        let open = GitHostTaskProjection {
+            usage: "displayOnly",
+            task_id: "task".into(),
+            branch_name: Some("NUCLEUS-3021".into()),
+            repository_provider: Some("github".into()),
+            repository_host: Some("github.com".into()),
+            repository_owner: Some("owner".into()),
+            repository_project: None,
+            repository_name: Some("repo".into()),
+            quality: GitHostProjectionQuality::Matches,
+            freshness: GitHostProjectionFreshness::Unavailable,
+            reason: Some(GitHostProjectionReason::CandidateLimit),
+            matches: vec![pull_request("open")],
+            truncated: false,
+            candidate_truncated: true,
+            freshness_generation: 1,
+            last_success_observed_at_epoch_ms: Some(1),
+            last_attempt_observed_at_epoch_ms: 1,
+        };
+        let merged = GitHostTaskProjection {
+            matches: vec![pull_request("merged")],
+            ..open.clone()
+        };
+        assert!(moves_playbook_step(&open, &merged));
+        assert!(!moves_playbook_step(&merged, &merged), "nothing moved");
+
+        let fresh = GitHostTaskProjection {
+            freshness: GitHostProjectionFreshness::Fresh,
+            reason: None,
+            candidate_truncated: false,
+            ..merged.clone()
+        };
+        assert!(moves_playbook_step(&open, &fresh));
+
+        // A failed or partial read lists fewer pull requests without anything
+        // having moved, so it never nudges.
+        for (freshness, reason, truncated) in [
+            (
+                GitHostProjectionFreshness::Unavailable,
+                Some(GitHostProjectionReason::Offline),
+                false,
+            ),
+            (
+                GitHostProjectionFreshness::Unavailable,
+                Some(GitHostProjectionReason::CandidateLimit),
+                true,
+            ),
+            (GitHostProjectionFreshness::Stale, None, false),
+        ] {
+            let failed = GitHostTaskProjection {
+                freshness,
+                reason,
+                truncated,
+                ..merged.clone()
+            };
+            assert!(
+                !moves_playbook_step(&open, &failed),
+                "{freshness:?} {reason:?}"
+            );
+        }
     }
 
     #[test]
