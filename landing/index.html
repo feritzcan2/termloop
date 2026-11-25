@@ -335,6 +335,11 @@
       *,*::before,*::after { transition:none!important; animation:none!important; }
       .will-reveal { opacity:1; transform:none; }
     }
+    .showcase-figure { margin:0; }
+    .showcase-figure img { display:block; width:100%; height:auto; }
+    .showcase-figure figcaption { margin-top:14px; color:var(--muted); font-size:14.5px; }
+    .mobile-showcase .demo-frame { background:#0c0c0e; }
+    .mobile-actions { display:flex; flex-wrap:wrap; gap:12px; margin-top:28px; }
   </style>
   <link rel="stylesheet" href="assets/feature-guide.css?v=47164739a983">
 </head>
@@ -342,7 +347,7 @@
   <header class="topbar">
     <div class="shell topbar-inner">
       <a class="brand" href="#top" aria-label="TermLoop home"><span class="brand-mark" aria-hidden="true">❯_</span><span>TermLoop</span></a>
-      <nav class="nav-links" aria-label="Primary navigation"><a href="#model">How it works</a><a href="#features">Product tour</a><a href="#principles">Principles</a><a href="#faq">FAQ</a></nav>
+      <nav class="nav-links" aria-label="Primary navigation"><a href="#model">How it works</a><a href="#features">Product tour</a><a href="#tasks-and-prs">Tasks &amp; PRs</a><a href="#mobile">Mobile</a><a href="#principles">Principles</a></nav>
       <div class="nav-actions"><a class="button small" href="https://github.com/feritzcan2/termloop" target="_blank" rel="noopener">GitHub ↗</a><a class="button primary small" href="/download">Download</a></div>
     </div>
   </header>
@@ -358,13 +363,13 @@
           <div class="availability"><span><i class="status-dot"></i>available now</span><span>open source</span><span>your subscriptions</span><span>no telemetry</span></div>
         </div>
         <!-- DEMO HERO START -->
-        <div class="hero-demo" id="ask-to" data-demo data-demo-label="Ask To">
-          <p class="feature-kicker">Ask To</p><h2>Get a second opinion without copy-paste.</h2>
+        <div class="hero-demo" id="quick-actions" data-demo data-demo-label="Quick Actions">
+          <p class="feature-kicker">Quick Actions</p><h2>From a prompt to a running agent.</h2>
           <div class="feature-media"><div class="demo-frame">
-    <video controls muted loop playsinline preload="metadata" poster="assets/videos/tour/ask-to.jpg?v=9f0e0bbd3ed7" width="1920" height="1080" aria-label="Ask To demonstration" aria-describedby="ask-to-caption"><source src="assets/videos/tour/ask-to.mp4?v=061dd7fc7cbe" type="video/mp4"><track kind="captions" src="assets/videos/tour/ask-to.vtt?v=0c43d7ac8ae7" srclang="en" label="English"><a href="assets/videos/tour/ask-to.mp4?v=061dd7fc7cbe">Watch Ask To</a></video>
-    </div><div class="demo-actions"><button type="button" data-play-demo hidden>Play demo</button><button type="button" data-expand-demo hidden>Fullscreen</button><a href="assets/videos/tour/ask-to.mp4?v=061dd7fc7cbe" download>MP4 ↓</a><span data-duration></span></div>
-    <p class="demo-caption" id="ask-to-caption">Ask one agent to consult another agent. TermLoop creates a visible helper Session, preserves the relationship, and returns the answer to the requester.</p>
-    <details class="feature-instructions"><summary>How to use Ask To</summary><ol><li>Ask another agent.</li><li>See the helper.</li><li>Get the answer.</li></ol></details></div>
+    <video controls muted loop playsinline preload="metadata" poster="assets/videos/tour/quick-actions.jpg?v=ed2695d5dc56" width="1920" height="1080" aria-label="Quick Actions demonstration" aria-describedby="quick-actions-caption"><source src="assets/videos/tour/quick-actions.mp4?v=c72e67d24780" type="video/mp4"><track kind="captions" src="assets/videos/tour/quick-actions.vtt?v=d1a71320a3b1" srclang="en" label="English"><a href="assets/videos/tour/quick-actions.mp4?v=c72e67d24780">Watch Quick Actions</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden>Play demo</button><button type="button" data-expand-demo hidden>Fullscreen</button><a href="assets/videos/tour/quick-actions.mp4?v=c72e67d24780" download>MP4 ↓</a><span data-duration></span></div>
+    <p class="demo-caption" id="quick-actions-caption">Press Shift twice, type what you want and hit Enter. A new Claude Session starts in the Project, shows up in the sidebar and gets to work.</p>
+    <details class="feature-instructions"><summary>How to use Quick Actions</summary><ol><li>Press Shift twice.</li><li>Write the request.</li><li>The agent starts working.</li></ol></details></div>
         </div>
         <!-- DEMO HERO END -->
       </div>
@@ -382,15 +387,30 @@
       </div>
     </div></section>
 
+    <section class="section" id="tasks-and-prs"><div class="shell">
+      <div class="section-heading"><div><p class="prompt-line">git worktree list</p><h2>Many Tasks. One window.</h2></div><p>Each Task gets its own branch and worktree, so agents don't step on each other. Its card shows the status, branch, commits, pull request and the agents working on it. The PRs panel lists every PR with its checks: feature branches into <code>develop</code>, and the release PR from <code>develop</code> into <code>main</code>.</p></div>
+      <figure class="showcase-figure"><div class="demo-frame"><img src="assets/showcase/tasks-and-prs.jpg?v=9978113e4ee7" width="1920" height="1080" loading="lazy" alt="The full TermLoop window: the Tasks tab with Task cards showing status, branch, commits, pull request and agents, an agent working in its terminal, and the PRs panel listing feature PRs into develop and the release PR from develop into main."></div></figure>
+    </div></section>
+
     <section class="tour" id="features"><div class="shell">
-      <div class="section-heading"><div><p class="prompt-line">7 essential workflows</p><h2>See the work stay connected.</h2></div><p>Launch an agent, get a second opinion, and turn review notes into the next change. Follow real work in populated Projects.</p></div>
-      <nav class="demo-nav" aria-label="Demo navigation"><a href="#ask-to">Ask To</a><a href="#quick-actions">Quick Actions</a><a href="#handoff">Handoff</a><a href="#fork">Session Fork</a><a href="#tasks">Tasks</a><a href="#changes">Changes</a><a href="#full-file-review">Code review</a><a href="#everyday">Everyday tools ↓</a></nav>
+      <div class="section-heading"><div><p class="prompt-line">7 essential workflows</p><h2>See the work stay connected.</h2></div><p>Turn review notes into the next change, get a second opinion, and hand work between agents. Recorded in a real Project with four Claude agents at work.</p></div>
+      <nav class="demo-nav" aria-label="Demo navigation"><a href="#quick-actions">Quick Actions</a><a href="#changes">Changes</a><a href="#ask-to">Ask To</a><a href="#tasks">Tasks</a><a href="#handoff">Handoff</a><a href="#fork">Session Fork</a><a href="#full-file-review">Code review</a><a href="#everyday">Everyday tools ↓</a></nav>
       <div class="tour-controls"><label class="autoplay-option"><input type="checkbox" id="demo-autoplay" checked disabled> Auto-play visible demos</label><label>Speed <select id="video-speed" disabled><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option></select></label></div>
-      <article class="feature-story" id="quick-actions" data-demo data-demo-label="Quick Actions"><div class="feature-copy"><span class="feature-kicker">Quick Actions</span><h3>From a prompt to a running agent.</h3></div><div class="feature-media"><div class="demo-frame">
-    <video controls muted loop playsinline preload="none" poster="assets/videos/tour/quick-actions.jpg?v=b2bd6ca9ed7c" width="1920" height="1080" aria-label="Quick Actions demonstration" aria-describedby="quick-actions-caption"><source src="assets/videos/tour/quick-actions.mp4?v=47a92adbdbbf" type="video/mp4"><track kind="captions" src="assets/videos/tour/quick-actions.vtt?v=2586462532bc" srclang="en" label="English"><a href="assets/videos/tour/quick-actions.mp4?v=47a92adbdbbf">Watch Quick Actions</a></video>
-    </div><div class="demo-actions"><button type="button" data-play-demo hidden>Play demo</button><button type="button" data-expand-demo hidden>Fullscreen</button><a href="assets/videos/tour/quick-actions.mp4?v=47a92adbdbbf" download>MP4 ↓</a><span data-duration></span></div>
-    <p class="demo-caption" id="quick-actions-caption">Open Quick Actions, write the request and launch an agent with the right context.</p>
-    <details class="feature-instructions"><summary>How to use Quick Actions</summary><ol><li>Write a request.</li><li>Choose an agent.</li><li>Launch the Session.</li></ol></details></div></article>
+      <article class="feature-story" id="changes" data-demo data-demo-label="Changes"><div class="feature-copy"><span class="feature-kicker">Changes</span><h3>Turn review notes into the next change.</h3></div><div class="feature-media"><div class="demo-frame">
+    <video controls muted loop playsinline preload="none" poster="assets/videos/tour/changes.jpg?v=8fac39bfedcc" width="1920" height="1080" aria-label="Changes demonstration" aria-describedby="changes-caption"><source src="assets/videos/tour/changes.mp4?v=934d2aaa7770" type="video/mp4"><track kind="captions" src="assets/videos/tour/changes.vtt?v=6f050b19cd04" srclang="en" label="English"><a href="assets/videos/tour/changes.mp4?v=934d2aaa7770">Watch Changes</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden>Play demo</button><button type="button" data-expand-demo hidden>Fullscreen</button><a href="assets/videos/tour/changes.mp4?v=934d2aaa7770" download>MP4 ↓</a><span data-duration></span></div>
+    <p class="demo-caption" id="changes-caption">Open a Task's diff, leave notes on the lines you want changed and send them all to the running agent in one go. It applies them in its own terminal, next to the sidebar.</p>
+    <details class="feature-instructions"><summary>How to use Changes</summary><ol><li>Open the Task diff.</li><li>Leave notes on lines.</li><li>Send them to the agent.</li></ol></details></div></article>
+<article class="feature-story" id="ask-to" data-demo data-demo-label="Ask To"><div class="feature-copy"><span class="feature-kicker">Ask To</span><h3>Get a second opinion without copy-paste.</h3></div><div class="feature-media"><div class="demo-frame">
+    <video controls muted loop playsinline preload="none" poster="assets/videos/tour/ask-to.jpg?v=9178bce21c68" width="1920" height="1080" aria-label="Ask To demonstration" aria-describedby="ask-to-caption"><source src="assets/videos/tour/ask-to.mp4?v=e469adbab9b2" type="video/mp4"><track kind="captions" src="assets/videos/tour/ask-to.vtt?v=ff0f227eadcf" srclang="en" label="English"><a href="assets/videos/tour/ask-to.mp4?v=e469adbab9b2">Watch Ask To</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden>Play demo</button><button type="button" data-expand-demo hidden>Fullscreen</button><a href="assets/videos/tour/ask-to.mp4?v=e469adbab9b2" download>MP4 ↓</a><span data-duration></span></div>
+    <p class="demo-caption" id="ask-to-caption">Just ask in the prompt: &quot;Can you ask another Claude agent to review this?&quot; A helper Session appears under the agent, and its review comes back to the agent that asked.</p>
+    <details class="feature-instructions"><summary>How to use Ask To</summary><ol><li>Ask in the prompt.</li><li>A helper Session reviews.</li><li>The answer comes back.</li></ol></details></div></article>
+<article class="feature-story" id="tasks" data-demo data-demo-label="Tasks"><span id="task-briefs" aria-hidden="true"></span><span id="task-worktrees" aria-hidden="true"></span><div class="feature-copy"><span class="feature-kicker">Tasks</span><h3>Define the work. Add a worktree when needed.</h3></div><div class="feature-media"><div class="demo-frame">
+    <video controls muted loop playsinline preload="none" poster="assets/videos/tour/tasks.jpg?v=85b39bf59d70" width="1920" height="1080" aria-label="Tasks demonstration" aria-describedby="tasks-caption"><source src="assets/videos/tour/tasks.mp4?v=5ed9ffde293d" type="video/mp4"><track kind="captions" src="assets/videos/tour/tasks.vtt?v=b5a8e495b2c8" srclang="en" label="English"><a href="assets/videos/tour/tasks.mp4?v=5ed9ffde293d">Watch Tasks</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden>Play demo</button><button type="button" data-expand-demo hidden>Fullscreen</button><a href="assets/videos/tour/tasks.mp4?v=5ed9ffde293d" download>MP4 ↓</a><span data-duration></span></div>
+    <p class="demo-caption" id="tasks-caption">Keep the goal, acceptance criteria and checklist in one Task. When the change needs its own checkout, create a branch and worktree from that same Task.</p>
+    <details class="feature-instructions"><summary>How to use Tasks</summary><ol><li>Define the work.</li><li>Complete the checks.</li><li>Add a worktree.</li></ol></details></div></article>
 <article class="feature-story" id="handoff" data-demo data-demo-label="Handoff"><div class="feature-copy"><span class="feature-kicker">Handoff</span><h3>Move context to the agent already in the work.</h3></div><div class="feature-media"><div class="demo-frame">
     <video controls muted loop playsinline preload="none" poster="assets/videos/tour/handoff.jpg?v=f1f5bea36aa6" width="1920" height="1080" aria-label="Handoff demonstration" aria-describedby="handoff-caption"><source src="assets/videos/tour/handoff.mp4?v=423994105f3c" type="video/mp4"><track kind="captions" src="assets/videos/tour/handoff.vtt?v=9cc1f228ce64" srclang="en" label="English"><a href="assets/videos/tour/handoff.mp4?v=423994105f3c">Watch Handoff</a></video>
     </div><div class="demo-actions"><button type="button" data-play-demo hidden>Play demo</button><button type="button" data-expand-demo hidden>Fullscreen</button><a href="assets/videos/tour/handoff.mp4?v=423994105f3c" download>MP4 ↓</a><span data-duration></span></div>
@@ -401,16 +421,6 @@
     </div><div class="demo-actions"><button type="button" data-play-demo hidden>Play demo</button><button type="button" data-expand-demo hidden>Fullscreen</button><a href="assets/videos/tour/fork.mp4?v=81abe8a3f140" download>MP4 ↓</a><span data-duration></span></div>
     <p class="demo-caption" id="fork-caption">Fork a Session from the sidebar, see the parent-child relationship, and continue in a new Ghostty terminal. The branch in thinking is explicit instead of becoming another anonymous tab.</p>
     <details class="feature-instructions"><summary>How to use Session Fork</summary><ol><li>Choose a Session.</li><li>Fork the conversation.</li><li>Continue separately.</li></ol></details></div></article>
-<article class="feature-story" id="tasks" data-demo data-demo-label="Tasks"><span id="task-briefs" aria-hidden="true"></span><span id="task-worktrees" aria-hidden="true"></span><div class="feature-copy"><span class="feature-kicker">Tasks</span><h3>Define the work. Add a worktree when needed.</h3></div><div class="feature-media"><div class="demo-frame">
-    <video controls muted loop playsinline preload="none" poster="assets/videos/tour/tasks.jpg?v=85b39bf59d70" width="1920" height="1080" aria-label="Tasks demonstration" aria-describedby="tasks-caption"><source src="assets/videos/tour/tasks.mp4?v=5ed9ffde293d" type="video/mp4"><track kind="captions" src="assets/videos/tour/tasks.vtt?v=b5a8e495b2c8" srclang="en" label="English"><a href="assets/videos/tour/tasks.mp4?v=5ed9ffde293d">Watch Tasks</a></video>
-    </div><div class="demo-actions"><button type="button" data-play-demo hidden>Play demo</button><button type="button" data-expand-demo hidden>Fullscreen</button><a href="assets/videos/tour/tasks.mp4?v=5ed9ffde293d" download>MP4 ↓</a><span data-duration></span></div>
-    <p class="demo-caption" id="tasks-caption">Keep the goal, acceptance criteria and checklist in one Task. When the change needs its own checkout, create a branch and worktree from that same Task.</p>
-    <details class="feature-instructions"><summary>How to use Tasks</summary><ol><li>Define the work.</li><li>Complete the checks.</li><li>Add a worktree.</li></ol></details></div></article>
-<article class="feature-story" id="changes" data-demo data-demo-label="Changes"><div class="feature-copy"><span class="feature-kicker">Changes</span><h3>Turn review notes into the next change.</h3></div><div class="feature-media"><div class="demo-frame">
-    <video controls muted loop playsinline preload="none" poster="assets/videos/tour/changes.jpg?v=414a73f57830" width="1920" height="1080" aria-label="Changes demonstration" aria-describedby="changes-caption"><source src="assets/videos/tour/changes.mp4?v=6d5171e27f42" type="video/mp4"><track kind="captions" src="assets/videos/tour/changes.vtt?v=6182438376ad" srclang="en" label="English"><a href="assets/videos/tour/changes.mp4?v=6d5171e27f42">Watch Changes</a></video>
-    </div><div class="demo-actions"><button type="button" data-play-demo hidden>Play demo</button><button type="button" data-expand-demo hidden>Fullscreen</button><a href="assets/videos/tour/changes.mp4?v=6d5171e27f42" download>MP4 ↓</a><span data-duration></span></div>
-    <p class="demo-caption" id="changes-caption">Open the diff, leave a note on a line and send the review to a running agent.</p>
-    <details class="feature-instructions"><summary>How to use Changes</summary><ol><li>Leave a note.</li><li>Send it to the agent.</li><li>See the update.</li></ol></details></div></article>
 <article class="feature-story" id="full-file-review" data-demo data-demo-label="Code review"><div class="feature-copy"><span class="feature-kicker">Code review</span><h3>Review changes where they happened.</h3></div><div class="feature-media"><div class="demo-frame">
     <video controls muted loop playsinline preload="none" poster="assets/videos/tour/full-file-review.jpg?v=1da387012d67" width="1920" height="1080" aria-label="Code review demonstration" aria-describedby="full-file-review-caption"><source src="assets/videos/tour/full-file-review.mp4?v=c88a1f6059b1" type="video/mp4"><track kind="captions" src="assets/videos/tour/full-file-review.vtt?v=5c80f7153f61" srclang="en" label="English"><a href="assets/videos/tour/full-file-review.mp4?v=c88a1f6059b1">Watch Code review</a></video>
     </div><div class="demo-actions"><button type="button" data-play-demo hidden>Play demo</button><button type="button" data-expand-demo hidden>Fullscreen</button><a href="assets/videos/tour/full-file-review.mp4?v=c88a1f6059b1" download>MP4 ↓</a><span data-duration></span></div>
@@ -455,17 +465,10 @@
       </div>
     </div></section>
 
-    <section class="section faq" id="faq"><div class="shell faq-grid">
-      <div><p class="prompt-line">straight answers</p><h2>Frequently asked.</h2></div>
-      <div class="faq-list">
-        <details open><summary>Which agents does TermLoop support?</summary><p>The first-class agent launch paths are Claude Code and OpenAI Codex, alongside ordinary terminal and dev-run Sessions. TermLoop uses your existing provider sign-ins rather than proxying model traffic.</p></details>
-        <details><summary>Does every Task create a worktree?</summary><p>No. A Task can have zero or one worktree. Create the Task to track work; provision a managed checkout only when branch isolation is useful.</p></details>
-        <details><summary>Can multiple agents write in the same worktree?</summary><p>Yes. TermLoop does not impose a product-level write lease or artificial launch gate. You choose whether agents share a checkout or work in isolated Task worktrees.</p></details>
-        <details><summary>Where do my code and credentials go?</summary><p>Your code remains on your filesystem. Agents connect directly to their providers. TermLoop keeps secrets out of durable product state, logs, URLs, and generated evidence.</p></details>
-        <details><summary>Which desktop platforms are available?</summary><p>The current public desktop download is for macOS. TermLoop Next treats macOS, Linux, and Windows as release gates; broader availability follows verified native builds rather than an untested compatibility claim.</p></details>
-        <details><summary>Is the mobile connection real?</summary><p>Yes. The companion pairs with a running desktop instance for Project visibility and terminal input. The public demo intentionally masks the one-time QR payload.</p></details>
-        <details><summary>Is TermLoop open source?</summary><p>Yes. The public source and releases are available on GitHub, including the terminal and agent-workflow layers.</p></details>
-      </div>
+    <section class="section mobile-showcase" id="mobile"><div class="shell">
+      <div class="section-heading"><div><p class="prompt-line">ssh -t pocket</p><h2>Your agents, in your pocket.</h2></div><p>Pair your phone with your computer and follow every agent from anywhere: see which Tasks need you, open an agent's live terminal, and type a reply. It's the same Sessions your desktop runs, not a copy.</p></div>
+      <figure class="showcase-figure"><div class="demo-frame"><img src="assets/showcase/mobile.jpg?v=b839930e66ba" width="1920" height="1200" loading="lazy" alt="TermLoop Mobile on three iPhones over the desktop app: the Agents list with seven active Claude agents, the Tasks list with Task cards and their agents, and a live agent terminal with a reply box."></div></figure>
+      <div class="mobile-actions"><a class="button primary" href="https://apps.apple.com/app/termloop-mobile/id6765898303" target="_blank" rel="noopener">Get it on the App Store ↗</a><a class="button" href="https://github.com/feritzcan2/termloop/blob/main/docs/features.md#mobile-companion" target="_blank" rel="noopener">How pairing works ↗</a></div>
     </div></section>
 
     <section class="final-cta"><div class="shell"><div class="cta-box">
@@ -476,7 +479,7 @@
 
   <footer><div class="shell footer-inner">
     <span class="brand-line">❯ <b>termloop</b> · built for real coding-agent workflows</span>
-    <nav class="footer-links" aria-label="Footer navigation"><a href="#features">Features</a><a href="#faq">FAQ</a><a href="privacy-policy/">Privacy</a><a href="mailto:feritzcan93@gmail.com">Contact</a><a href="https://github.com/feritzcan2/termloop" target="_blank" rel="noopener">GitHub</a></nav>
+    <nav class="footer-links" aria-label="Footer navigation"><a href="#features">Features</a><a href="#mobile">Mobile</a><a href="privacy-policy/">Privacy</a><a href="mailto:feritzcan93@gmail.com">Contact</a><a href="https://github.com/feritzcan2/termloop" target="_blank" rel="noopener">GitHub</a></nav>
     <span>© 2026</span>
   </div></footer>
 

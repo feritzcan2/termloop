@@ -1,29 +1,59 @@
 [
   {
-    "id": "ask-to",
-    "group": "coordinate",
-    "label": "Ask To",
-    "title": "Get a second opinion without copy-paste.",
-    "description": "Ask one agent to consult another agent. TermLoop creates a visible helper Session, preserves the relationship, and returns the answer to the requester.",
-    "steps": [
-      "Ask another agent.",
-      "See the helper.",
-      "Get the answer."
-    ],
-    "provenance": "Launchpad Demo"
-  },
-  {
     "id": "quick-actions",
     "group": "run",
     "label": "Quick Actions",
     "title": "From a prompt to a running agent.",
-    "description": "Open Quick Actions, write the request and launch an agent with the right context.",
+    "description": "Press Shift twice, type what you want and hit Enter. A new Claude Session starts in the Project, shows up in the sidebar and gets to work.",
     "steps": [
-      "Write a request.",
-      "Choose an agent.",
-      "Launch the Session."
+      "Press Shift twice.",
+      "Write the request.",
+      "The agent starts working."
     ],
-    "provenance": "Original desktop recording"
+    "provenance": "README demo recording"
+  },
+  {
+    "id": "changes",
+    "group": "review",
+    "label": "Changes",
+    "title": "Turn review notes into the next change.",
+    "description": "Open a Task's diff, leave notes on the lines you want changed and send them all to the running agent in one go. It applies them in its own terminal, next to the sidebar.",
+    "steps": [
+      "Open the Task diff.",
+      "Leave notes on lines.",
+      "Send them to the agent."
+    ],
+    "provenance": "README demo recording"
+  },
+  {
+    "id": "ask-to",
+    "group": "coordinate",
+    "label": "Ask To",
+    "title": "Get a second opinion without copy-paste.",
+    "description": "Just ask in the prompt: \"Can you ask another Claude agent to review this?\" A helper Session appears under the agent, and its review comes back to the agent that asked.",
+    "steps": [
+      "Ask in the prompt.",
+      "A helper Session reviews.",
+      "The answer comes back."
+    ],
+    "provenance": "README demo recording"
+  },
+  {
+    "id": "tasks",
+    "group": "run",
+    "label": "Tasks",
+    "title": "Define the work. Add a worktree when needed.",
+    "description": "Keep the goal, acceptance criteria and checklist in one Task. When the change needs its own checkout, create a branch and worktree from that same Task.",
+    "steps": [
+      "Define the work.",
+      "Complete the checks.",
+      "Add a worktree."
+    ],
+    "provenance": "Launchpad Demo",
+    "aliases": [
+      "task-briefs",
+      "task-worktrees"
+    ]
   },
   {
     "id": "handoff",
@@ -50,36 +80,6 @@
       "Continue separately."
     ],
     "provenance": "Launchpad Demo"
-  },
-  {
-    "id": "tasks",
-    "group": "run",
-    "label": "Tasks",
-    "title": "Define the work. Add a worktree when needed.",
-    "description": "Keep the goal, acceptance criteria and checklist in one Task. When the change needs its own checkout, create a branch and worktree from that same Task.",
-    "steps": [
-      "Define the work.",
-      "Complete the checks.",
-      "Add a worktree."
-    ],
-    "provenance": "Launchpad Demo",
-    "aliases": [
-      "task-briefs",
-      "task-worktrees"
-    ]
-  },
-  {
-    "id": "changes",
-    "group": "review",
-    "label": "Changes",
-    "title": "Turn review notes into the next change.",
-    "description": "Open the diff, leave a note on a line and send the review to a running agent.",
-    "steps": [
-      "Leave a note.",
-      "Send it to the agent.",
-      "See the update."
-    ],
-    "provenance": "Original desktop recording"
   },
   {
     "id": "full-file-review",

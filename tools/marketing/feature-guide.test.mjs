@@ -53,7 +53,7 @@ test('Tasks presents its optional worktree within one video and keeps old deep l
     assert(!readme.includes(`readme/${id}.gif`));
   }
   assert(tasks.includes('from that same Task'));
-  assert(readme.includes('readme/tasks.gif'));
+  assert(readme.includes('readme/task-view.png'));
 });
 test('Quick Actions and Changes remain primary demos; everyday tools use linked cards', () => {
   const page = readFileSync(new URL('../../landing/index.html', import.meta.url), 'utf8');

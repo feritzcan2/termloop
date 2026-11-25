@@ -1,59 +1,14 @@
 {
   "id": "ask-to",
-  "duration": 5.0,
+  "duration": 27.667,
   "width": 1920,
   "height": 1080,
   "fps": 30,
-  "frames": 150,
+  "frames": 830,
   "audio": false,
-  "captureKind": "edited-video",
-  "sources": [
-    {
-      "source": "ask-to.mkv",
-      "root": "recordings",
-      "sourceSha256": "f3a097c59111240fbfc3bcb16d4423c2a15323e20257c5a08232b7b7dbf07836",
-      "duration": 151.933,
-      "fps": 30.0
-    }
-  ],
-  "shots": [
-    {
-      "source": 0,
-      "start": 28.2,
-      "end": 29.7,
-      "duration": 1.5,
-      "crop": [
-        0,
-        160,
-        960,
-        540
-      ]
-    },
-    {
-      "source": 0,
-      "start": 115,
-      "end": 116.5,
-      "duration": 1.5,
-      "crop": [
-        0,
-        80,
-        800,
-        450
-      ]
-    },
-    {
-      "source": 0,
-      "start": 149,
-      "end": 151,
-      "duration": 2,
-      "crop": [
-        440,
-        550,
-        896,
-        504
-      ]
-    }
-  ],
-  "sha256": "061dd7fc7cbe92506fc125fc43f3929d2925e2b83975a8d1aa840343cdca4868",
-  "editing": "Selected moments from real recordings. Hard cuts omit waits; fixed close-ups enlarge the action. Source frame rate retained; no invented UI or terminal content."
+  "captureKind": "readme-recording",
+  "source": "artifacts/marketing/readme (README demo, askto3.mp4)",
+  "sourceSha256": "f25e1910fb8befee7b80100bb0589a56741218e5a419529ebd7080a9244e48cf",
+  "sha256": "e469adbab9b251066ce6e53943bc83e507bc0b72129bfcc95ec22dc62281f084",
+  "editing": "Full-window recording of the Launchpad demo Project with four Claude agents; waits are sped up, nothing is staged."
 }

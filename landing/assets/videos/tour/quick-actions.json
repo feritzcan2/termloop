@@ -1,47 +1,14 @@
 {
   "id": "quick-actions",
-  "duration": 5.0,
+  "duration": 19.167,
   "width": 1920,
   "height": 1080,
-  "fps": 20,
-  "frames": 100,
+  "fps": 30,
+  "frames": 575,
   "audio": false,
-  "captureKind": "edited-video",
-  "sources": [
-    {
-      "source": "assets/videos/quick-action.mp4",
-      "root": "landing",
-      "sourceSha256": "b3dba8d5369aa75118bb1f105981165633d6e6ac5c1cb6c70793fe2a61f5188b",
-      "duration": 5.65,
-      "fps": 20.0
-    }
-  ],
-  "shots": [
-    {
-      "source": 0,
-      "start": 1.75,
-      "end": 3.8,
-      "duration": 2.4,
-      "crop": [
-        360,
-        200,
-        1200,
-        675
-      ]
-    },
-    {
-      "source": 0,
-      "start": 3.8,
-      "end": 5.65,
-      "duration": 2.6,
-      "crop": [
-        0,
-        0,
-        1120,
-        630
-      ]
-    }
-  ],
-  "sha256": "47a92adbdbbfdc1a7d479e2bbf68ebf365ac12a8e5a42cc3aec9d82f804347c5",
-  "editing": "Selected moments from real recordings. Hard cuts omit waits; fixed close-ups enlarge the action. Source frame rate retained; no invented UI or terminal content."
+  "captureKind": "readme-recording",
+  "source": "artifacts/marketing/readme (README demo, qa.mp4)",
+  "sourceSha256": "900781aa9d7a540a3e55fd08c7a84fc91e6bd9f499d4c3696f83e06ea79af1ee",
+  "sha256": "c72e67d24780eb6fda3246e10f13412289806a97d773feab66c005b864c8c0c1",
+  "editing": "Full-window recording of the Launchpad demo Project with four Claude agents; waits are sped up, nothing is staged."
 }

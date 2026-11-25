@@ -4,12 +4,12 @@ The homepage and GitHub README feature **7 essential workflows**, followed by 6 
 
 The demos focus on the action in five seconds; Tasks takes six seconds to include its optional worktree. Fixed close-ups enlarge menus, forms and changed lines. Explicit cuts omit waiting and repeated navigation. Fork retains its continuous sequence with smooth wait acceleration and click ripples. Tasks selects moments from the brief and worktree chapters. Quick Actions and Changes retain their recorded 20 and 15 FPS. Only the most visible video plays automatically; manual pause and reduced-motion preferences are respected.
 
-- [Ask To](../../landing/assets/videos/tour/ask-to.mp4): Ask one agent to consult another agent. TermLoop creates a visible helper Session, preserves the relationship, and returns the answer to the requester.
-- [Quick Actions](../../landing/assets/videos/tour/quick-actions.mp4): Open Quick Actions, write the request and launch an agent with the right context.
+- [Quick Actions](../../landing/assets/videos/tour/quick-actions.mp4): Press Shift twice, type what you want and hit Enter. A new Claude Session starts in the Project, shows up in the sidebar and gets to work.
+- [Changes](../../landing/assets/videos/tour/changes.mp4): Open a Task's diff, leave notes on the lines you want changed and send them all to the running agent in one go. It applies them in its own terminal, next to the sidebar.
+- [Ask To](../../landing/assets/videos/tour/ask-to.mp4): Just ask in the prompt: "Can you ask another Claude agent to review this?" A helper Session appears under the agent, and its review comes back to the agent that asked.
+- [Tasks](../../landing/assets/videos/tour/tasks.mp4): Keep the goal, acceptance criteria and checklist in one Task. When the change needs its own checkout, create a branch and worktree from that same Task.
 - [Handoff](../../landing/assets/videos/tour/handoff.mp4): Send a visible, composed handoff from one running Project Session to another. The target receives the brief in its own real terminal and continues from there.
 - [Session Fork](../../landing/assets/videos/tour/fork.mp4): Fork a Session from the sidebar, see the parent-child relationship, and continue in a new Ghostty terminal. The branch in thinking is explicit instead of becoming another anonymous tab.
-- [Tasks](../../landing/assets/videos/tour/tasks.mp4): Keep the goal, acceptance criteria and checklist in one Task. When the change needs its own checkout, create a branch and worktree from that same Task.
-- [Changes](../../landing/assets/videos/tour/changes.mp4): Open the diff, leave a note on a line and send the review to a running agent.
 - [Code review](../../landing/assets/videos/tour/full-file-review.mp4): Read the diff, compare versions side by side and keep track of the files you have checked.
 
 Everyday tools use compact illustrated cards with links to their written guides, without adding more video players: Keep Awake, Pause to Read, Task Favorites, Developer Notes, Notifications, Appearance. Their decorative previews are not live app controls.

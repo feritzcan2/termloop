@@ -9,7 +9,7 @@ const escape = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '
 const media = f => {
   const base = `assets/videos/tour/${f.id}`;
   return `<div class="feature-media"><div class="demo-frame">
-    <video controls muted loop playsinline preload="${f.id === 'ask-to' ? 'metadata' : 'none'}" poster="${base}.jpg" width="1920" height="1080" aria-label="${escape(f.label)} demonstration" aria-describedby="${f.id}-caption"><source src="${base}.mp4" type="video/mp4"><track kind="captions" src="${base}.vtt" srclang="en" label="English"><a href="${base}.mp4">Watch ${escape(f.label)}</a></video>
+    <video controls muted loop playsinline preload="${f.id === catalog[0].id ? 'metadata' : 'none'}" poster="${base}.jpg" width="1920" height="1080" aria-label="${escape(f.label)} demonstration" aria-describedby="${f.id}-caption"><source src="${base}.mp4" type="video/mp4"><track kind="captions" src="${base}.vtt" srclang="en" label="English"><a href="${base}.mp4">Watch ${escape(f.label)}</a></video>
     </div><div class="demo-actions"><button type="button" data-play-demo hidden>Play demo</button><button type="button" data-expand-demo hidden>Fullscreen</button><a href="${base}.mp4" download>MP4 ↓</a><span data-duration></span></div>
     <p class="demo-caption" id="${f.id}-caption">${escape(f.description)}</p>
     <details class="feature-instructions"><summary>How to use ${escape(f.label)}</summary><ol>${f.steps.map(step => `<li>${escape(step)}</li>`).join('')}</ol></details></div>`;
@@ -37,7 +37,7 @@ const heroMarkup = `        <!-- DEMO HERO START -->
         </div>
         <!-- DEMO HERO END -->`;
 const tour = `    <section class="tour" id="features"><div class="shell">
-      <div class="section-heading"><div><p class="prompt-line">${catalog.length} essential workflows</p><h2>See the work stay connected.</h2></div><p>Launch an agent, get a second opinion, and turn review notes into the next change. Follow real work in populated Projects.</p></div>
+      <div class="section-heading"><div><p class="prompt-line">${catalog.length} essential workflows</p><h2>See the work stay connected.</h2></div><p>Turn review notes into the next change, get a second opinion, and hand work between agents. Recorded in a real Project with four Claude agents at work.</p></div>
       <nav class="demo-nav" aria-label="Demo navigation">${catalog.map(f => `<a href="#${f.id}">${escape(f.label)}</a>`).join('')}<a href="#everyday">Everyday tools ↓</a></nav>
       <div class="tour-controls"><label class="autoplay-option"><input type="checkbox" id="demo-autoplay" checked disabled> Auto-play visible demos</label><label>Speed <select id="video-speed" disabled><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option></select></label></div>
       ${features.map(f => `<article class="feature-story" id="${f.id}" data-demo data-demo-label="${escape(f.label)}">${(f.aliases || []).map(id => `<span id="${id}" aria-hidden="true"></span>`).join('')}<div class="feature-copy"><span class="feature-kicker">${escape(f.label)}</span><h3>${escape(f.title)}</h3></div>${media(f)}</article>`).join('\n')}

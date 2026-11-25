@@ -1,13 +1,13 @@
 WEBVTT
 
 1
-00:00:00.000 --> 00:00:01.300 line:5%
-Write a request.
+00:00:00.000 --> 00:00:03.000 line:5%
+Press Shift twice.
 
 2
-00:00:01.300 --> 00:00:02.400 line:5%
-Choose an agent.
+00:00:03.000 --> 00:00:08.000 line:5%
+Write the request.
 
 3
-00:00:02.400 --> 00:00:05.000 line:5%
-Launch the Session.
+00:00:08.000 --> 00:00:19.167 line:5%
+The agent starts working.
