@@ -267,7 +267,10 @@ describe("Assistant rail Session classification", () => {
       endDrag: () => undefined,
     }));
     const markup = `${stepMarkup}${tailMarkup}`;
-    expect(markup.match(/class="assistant-task-row/g)).toHaveLength(tasks.length);
+    // Closed Tasks leave the Playbook entirely; they stay reachable from History.
+    expect(markup.match(/class="assistant-task-row/g)).toHaveLength(tasks.length - placement.closed.length);
+    expect(markup).not.toContain("Closed Tasks");
+    expect(markup).not.toContain("Closed Task<");
     expect(markup.match(/data-playbook-processing="true"/g)).toHaveLength(2);
     expect(markup.match(/draggable="true"/g)).toHaveLength(5);
     expect(markup.match(/data-playbook-task-id=/g)).toHaveLength(5);

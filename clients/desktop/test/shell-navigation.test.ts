@@ -218,7 +218,6 @@ describe("Shell sidebar sizing", () => {
       projectRelocation: true,
       providerHistoryRepair: false,
       taskRail: false,
-      archivedRail: false,
     })).toBe(true);
   });
 
@@ -239,7 +238,6 @@ describe("Shell sidebar sizing", () => {
       providerHistoryRepair: false,
       [surface]: true,
       taskRail: false,
-      archivedRail: false,
     })).toBe(true);
     expect(shellNativeOverlayOpen({
       projectDialog: false,
@@ -256,7 +254,6 @@ describe("Shell sidebar sizing", () => {
       projectRelocation: false,
       providerHistoryRepair: false,
       taskRail: false,
-      archivedRail: false,
     })).toBe(false);
   });
 });

@@ -39,7 +39,7 @@ import { TaskDetailPanel } from "./TaskDetailPanel.js";
 import { OverlayPortal } from "./OverlayPortal.js";
 import { DEV_SERVER_SEED, RunEditorDialog } from "./TaskRuns.js";
 import type { RunImprovement } from "./TaskRuns.js";
-import { ArchivedRail, archivedRailVisible, useArchivedTasks } from "./ArchivedRail.js";
+import { useArchivedTasks } from "./ArchivedRail.js";
 import { useDeletedSessions } from "./DeletedRail.js";
 import { ChangesOverlay, type ChangesSubject } from "./ChangesOverlay.js";
 import { taskReviewAgentSessions } from "../changes-review.js";
@@ -537,7 +537,6 @@ export function shellNativeOverlayOpen(state: {
   taskRail: boolean;
   projectWorkflow?: boolean;
   workflowClose?: boolean;
-  archivedRail: boolean;
   historyRail?: boolean;
   playbook?: boolean;
   jiraTaskProposal?: boolean;
@@ -745,7 +744,6 @@ export function Shell(props: ShellProps) {
   useEffect(() => {
     if (workspaceView !== "agents") setAgentSearchOpen(false);
   }, [workspaceView]);
-  const [archivedRailOverlayOpen, setArchivedRailOverlayOpen] = useOverlayLeaseCount();
   const [historyRailOverlayOpen, setHistoryRailOverlayOpen] = useOverlayLeaseCount();
   const [playbookOverlayOpen, setPlaybookOverlayOpen] = useOverlayLeaseCount();
   const [jiraProposalOverlayOpen, setJiraProposalOverlayOpen] = useOverlayLeaseCount();
@@ -1271,7 +1269,6 @@ export function Shell(props: ShellProps) {
     taskRail: taskRailOverlayOpen,
     projectWorkflow: projectWorkflowOverlayOpen,
     workflowClose: Boolean(workflowCloseTarget),
-    archivedRail: archivedRailOverlayOpen,
     historyRail: historyRailOverlayOpen,
     playbook: playbookOverlayOpen,
     jiraTaskProposal: jiraProposalOverlayOpen,
@@ -1970,21 +1967,6 @@ export function Shell(props: ShellProps) {
             />
           </WorkspaceRailCache>
           {workspaceView === "agents" ? <SidebarShortcutTips platform={platform} scrollRef={sidebarScrollRef} /> : null}
-          {/* Archived Agent history lives in History; this footer is Task-only. */}
-          <WorkspaceRailCache visible={archivedRailVisible(true, workspaceView)}><ArchivedRail
-            tasks={archived.tasks}
-            loading={archived.loading}
-            disabled={disabled}
-            deletingTaskIds={props.deletingTaskIds}
-            restore={archived.restore}
-            inspectTaskWorktreeCleanup={props.inspectTaskWorktreeCleanup}
-            deleteTask={(task, review) => props.deleteArchivedTaskAndWorktree(task, review).then((result) => {
-              if (result.status === "completed") archived.reload();
-              return result;
-            })}
-            overlayVisibilityChanged={setArchivedRailOverlayOpen}
-            overlayContainer={props.overlayContainer}
-          /></WorkspaceRailCache>
           {props.appUpdate ? <UpdateNotice update={props.appUpdate} /> : null}
           <footer className="sidebar-footer">
             <div className="sidebar-footer-actions sidebar-footer-start">

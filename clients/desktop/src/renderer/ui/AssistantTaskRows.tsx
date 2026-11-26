@@ -176,7 +176,6 @@ export function AssistantTaskTail(props: {
   const groups = [
     { key: "completed", label: "Completed Tasks", tasks: props.placement.completed },
     { key: "unplaced", label: "Tasks awaiting pipeline position", tasks: props.placement.unplaced },
-    { key: "closed", label: "Closed Tasks", tasks: props.placement.closed },
   ] as const;
   return <>{groups.map((group) => group.tasks.length > 0 ? <section
     key={group.key}
