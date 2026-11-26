@@ -12,7 +12,8 @@ use std::collections::{HashMap, HashSet};
 use termloop_domain::{
     PlaybookConfiguration, PlaybookDeterministicCheck, PlaybookGateKind, PlaybookMilestone,
     PlaybookPipeline, PlaybookStepProgress, PlaybookStepVerdict, RoutineActionHandling,
-    RoutineTriggerMode, StewardConfiguration, TASK_STEWARD_BRIEF_MAX_BYTES, TrackerConfiguration,
+    RoutineTriggerMode, StewardConfiguration, TASK_STEWARD_BRIEF_MAX_BYTES, TaskStatus,
+    TrackerConfiguration,
 };
 use termloop_store::PlaybookApply;
 
@@ -449,11 +450,38 @@ impl CoreRuntime {
 
     /// Steward-facing read of the current Playbook. The caller's Project scope
     /// comes from its authenticated principal, never from arguments.
+    ///
+    /// Step progress is limited to Tasks still on the board (open and not
+    /// archived). Answers recorded for closed or archived Tasks are retained
+    /// in state but would otherwise grow this bounded MCP result with every
+    /// finished Task until it exceeds the generated result limit.
     pub fn playbook_projection_for_executor(&self, project_id: &str) -> Result<Value, CoreError> {
         if !self.project_exists(project_id) {
             return Err(CoreError::NotFound);
         }
-        let runtime = self.playbook_runtime(json!({"projectId": project_id}))?;
+        let mut runtime = self.playbook_runtime(json!({"projectId": project_id}))?;
+        let active_task_ids = self
+            .store
+            .tasks()
+            .iter()
+            .filter(|task| {
+                task.project_id == project_id
+                    && task.status == TaskStatus::Open
+                    && task.archived_at_epoch_ms.is_none()
+            })
+            .map(|task| task.id.as_str())
+            .collect::<HashSet<_>>();
+        if let Some(steps) = runtime["steps"].as_array_mut() {
+            for step in steps {
+                if let Some(progress) = step["progress"].as_array_mut() {
+                    progress.retain(|entry| {
+                        entry["taskId"]
+                            .as_str()
+                            .is_some_and(|task_id| active_task_ids.contains(task_id))
+                    });
+                }
+            }
+        }
         Ok(json!({
             "playbook": self.playbook_value(project_id)?,
             "runtime": runtime,

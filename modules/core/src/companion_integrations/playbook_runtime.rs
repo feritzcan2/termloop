@@ -1154,6 +1154,47 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn executor_projection_drops_step_progress_of_closed_tasks() {
+        let (mut runtime, root, project_id) = pipeline_runtime();
+        for task_id in ["task-1", "task-2"] {
+            let revision = runtime.state_revision();
+            runtime
+                .set_task_playbook_position(&project_id, task_id, 1, 1, revision, NOW)
+                .unwrap();
+        }
+        runtime
+            .store
+            .set_task_status(
+                &runtime.write_authority,
+                "task-1",
+                termloop_domain::TaskStatus::Closed,
+                NOW + 1,
+            )
+            .unwrap();
+
+        let progress_task_ids = |runtime_view: &Value| {
+            runtime_view["steps"][0]["progress"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|entry| entry["taskId"].as_str().unwrap().to_owned())
+                .collect::<Vec<_>>()
+        };
+        let executor = runtime
+            .playbook_projection_for_executor(&project_id)
+            .unwrap();
+        assert_eq!(progress_task_ids(&executor["runtime"]), vec!["task-2"]);
+        // The client-facing runtime read keeps every recorded answer.
+        let board = runtime
+            .playbook_runtime(json!({"projectId": project_id}))
+            .unwrap();
+        let mut board_ids = progress_task_ids(&board);
+        board_ids.sort();
+        assert_eq!(board_ids, vec!["task-1", "task-2"]);
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
     fn task_position_set_rebuilds_answers_and_fences_an_older_claim() {
         let (mut runtime, root, project_id) = pipeline_runtime();
         let initial_revision = runtime.state_revision();
