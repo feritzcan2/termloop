@@ -526,10 +526,10 @@
       }
     },
     "playbook_read": {
-      "description": "Read this Project's complete current delivery Playbook and document revision. For a Project Steward the result also includes the derived current runtime so one message can use a coherent current position, evidence, and retry state. A Playbook Builder must call it immediately before every edit and preserve every pipeline, step, field, and stable ID the user did not ask to change.",
+      "description": "Read this Project's current delivery Playbook, document revision, and derived runtime for its open Tasks. Every step lists its identity, gate, and `whileWaiting.mode`; the full `completeWhen` and `whileWaiting.instructions` are included only for steps where an open Task is waiting, and other steps carry `definitionOmitted: true`. Pass `milestoneIds` to also receive the full definition of those exact steps, for example an earlier stage needed to restore a Task's prerequisite chain. Runtime step `progress` holds only the current answer of each Task waiting at that step, and `passedTaskIds` names the open Tasks that passed it.",
       "role": "steward",
       "params": {
-        "$ref": "#/$defs/assistantEmptyParams"
+        "$ref": "#/$defs/mcpPlaybookReadParams"
       },
       "result": {
         "$ref": "#/$defs/assistantTextResult"
@@ -1312,6 +1312,25 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {}
+    },
+    "mcpPlaybookReadParams": {
+      "x-codegen": true,
+      "x-codegen-name": "McpPlaybookReadParams",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "milestoneIds": {
+          "description": "Exact Playbook step IDs whose full definitions to include in addition to the steps where open Tasks are waiting.",
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      }
     },
     "mcpTaskReadParams": {
       "x-codegen": true,

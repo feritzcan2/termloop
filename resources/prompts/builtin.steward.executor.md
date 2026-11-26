@@ -298,7 +298,8 @@ passed, such as its linked work item remaining behind the pipeline's current
 issue stage. Missing, stale, ambiguous, or inaccessible evidence is not state
 drift.
 
-For state drift, read the full current Playbook and the exact Task again. You may
+For state drift, read the exact Task again and call `playbook_read` with the
+IDs of this Task's earlier recorded stages as `milestoneIds`. You may
 use the current `whileWaiting` policy from this same Task's earlier recorded
 stages, in pipeline order, solely to restore the prerequisite chain leading to
 its active stage. Each action's own stated prerequisites must already be proven

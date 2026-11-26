@@ -451,16 +451,26 @@ impl CoreRuntime {
     /// Steward-facing read of the current Playbook. The caller's Project scope
     /// comes from its authenticated principal, never from arguments.
     ///
-    /// Step progress is limited to Tasks still on the board (open and not
-    /// archived). Answers recorded for closed or archived Tasks are retained
-    /// in state but would otherwise grow this bounded MCP result with every
-    /// finished Task until it exceeds the generated result limit.
-    pub fn playbook_projection_for_executor(&self, project_id: &str) -> Result<Value, CoreError> {
+    /// The result is a bounded MCP text result, so it carries only what one
+    /// Steward decision needs rather than the whole document and history:
+    /// - a step's full `completeWhen` and `whileWaiting.instructions` only
+    ///   where an open Task waits, or when the caller names it in
+    ///   `detail_milestone_ids`;
+    /// - per step, only the current answer of each Task waiting there, plus
+    ///   the IDs of open Tasks that passed it. Answers of closed or archived
+    ///   Tasks and passed-step evidence stay in state but would otherwise grow
+    ///   this result with every finished Task.
+    pub fn playbook_projection_for_executor(
+        &self,
+        project_id: &str,
+        detail_milestone_ids: &[String],
+    ) -> Result<Value, CoreError> {
         if !self.project_exists(project_id) {
             return Err(CoreError::NotFound);
         }
+        let mut playbook = self.playbook_value(project_id)?;
         let mut runtime = self.playbook_runtime(json!({"projectId": project_id}))?;
-        let active_task_ids = self
+        let open_task_ids = self
             .store
             .tasks()
             .iter()
@@ -471,19 +481,44 @@ impl CoreRuntime {
             })
             .map(|task| task.id.as_str())
             .collect::<HashSet<_>>();
-        if let Some(steps) = runtime["steps"].as_array_mut() {
-            for step in steps {
-                if let Some(progress) = step["progress"].as_array_mut() {
-                    progress.retain(|entry| {
-                        entry["taskId"]
-                            .as_str()
-                            .is_some_and(|task_id| active_task_ids.contains(task_id))
-                    });
-                }
+        let known = playbook["milestones"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|milestone| milestone["id"].as_str())
+            .collect::<HashSet<_>>();
+        if detail_milestone_ids
+            .iter()
+            .any(|id| !known.contains(id.as_str()))
+        {
+            return Err(CoreError::InvalidParams("milestoneIds".into()));
+        }
+        let mut detailed = detail_milestone_ids.iter().cloned().collect::<HashSet<_>>();
+        for step in runtime["steps"].as_array_mut().into_iter().flatten() {
+            compact_executor_runtime_step(step, &open_task_ids);
+            if step["waitingTaskIds"]
+                .as_array()
+                .is_some_and(|waiting| !waiting.is_empty())
+                && let Some(id) = step["milestoneId"].as_str()
+            {
+                detailed.insert(id.to_owned());
+            }
+        }
+        for milestone in playbook["milestones"].as_array_mut().into_iter().flatten() {
+            compact_executor_milestone(milestone, &detailed);
+        }
+        // Saved pipelines are inactive; nobody stands on their steps.
+        for pipeline in playbook["savedPipelines"]
+            .as_array_mut()
+            .into_iter()
+            .flatten()
+        {
+            for milestone in pipeline["milestones"].as_array_mut().into_iter().flatten() {
+                compact_executor_milestone(milestone, &HashSet::new());
             }
         }
         Ok(json!({
-            "playbook": self.playbook_value(project_id)?,
+            "playbook": playbook,
             "runtime": runtime,
             "stateRevision": self.store.revision(),
         }))
@@ -697,6 +732,53 @@ fn bounded_check_name(title: &str) -> String {
         value.push(character);
     }
     value
+}
+
+/// Keeps a step's long prose only when it is in `detailed`; otherwise the
+/// Steward still sees the step's identity, gate, and `whileWaiting.mode`.
+fn compact_executor_milestone(milestone: &mut Value, detailed: &HashSet<String>) {
+    if milestone["id"]
+        .as_str()
+        .is_some_and(|id| detailed.contains(id))
+    {
+        return;
+    }
+    if let Some(fields) = milestone.as_object_mut() {
+        fields.remove("completeWhen");
+        fields.insert("definitionOmitted".into(), Value::Bool(true));
+    }
+    if let Some(while_waiting) = milestone["whileWaiting"].as_object_mut() {
+        while_waiting.remove("instructions");
+    }
+}
+
+/// Replaces a runtime step's answer history with the current answer of each
+/// Task waiting there and the IDs of open Tasks that passed it.
+fn compact_executor_runtime_step(step: &mut Value, open_task_ids: &HashSet<&str>) {
+    let waiting = step["waitingTaskIds"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect::<HashSet<_>>();
+    let Value::Array(progress) = step["progress"].take() else {
+        return;
+    };
+    let mut current = Vec::new();
+    let mut passed_task_ids = Vec::new();
+    for entry in progress {
+        let Some(task_id) = entry["taskId"].as_str().map(str::to_owned) else {
+            continue;
+        };
+        if waiting.contains(&task_id) {
+            current.push(entry);
+        } else if open_task_ids.contains(task_id.as_str()) && entry["verdict"] == "passed" {
+            passed_task_ids.push(Value::String(task_id));
+        }
+    }
+    step["progress"] = Value::Array(current);
+    step["passedTaskIds"] = Value::Array(passed_task_ids);
 }
 
 fn playbook_projection(
@@ -1062,12 +1144,12 @@ mod tests {
         assert_eq!(read["playbook"]["milestones"][0]["id"], "pr-approved");
         assert_eq!(
             runtime
-                .playbook_projection_for_executor(&project_id)
+                .playbook_projection_for_executor(&project_id, &[])
                 .unwrap()["playbook"]["revision"],
             1
         );
         let executor_projection = runtime
-            .playbook_projection_for_executor(&project_id)
+            .playbook_projection_for_executor(&project_id, &[])
             .unwrap();
         assert_eq!(
             executor_projection["runtime"]["activePipelineName"],

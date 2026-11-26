@@ -514,13 +514,12 @@ async fn tool_call_inner(
                 .steward_system_prompt_for_executor(principal.session_id(), project_id),
         ),
         (termloop_core::session_launch::AgentMcpRole::Steward { project_id }, "playbook_read") => {
-            text_result(
-                state
-                    .core
-                    .lock()
-                    .await
-                    .playbook_projection_for_executor(project_id),
-            )
+            let params: protocol::McpPlaybookReadParams = serde_json::from_value(arguments)
+                .expect("generated MCP validation precedes decoding");
+            text_result(state.core.lock().await.playbook_projection_for_executor(
+                project_id,
+                params.milestone_ids.as_deref().unwrap_or_default(),
+            ))
         }
         (
             termloop_core::session_launch::AgentMcpRole::Steward { project_id },

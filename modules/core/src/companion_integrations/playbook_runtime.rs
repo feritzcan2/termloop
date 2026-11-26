@@ -1154,7 +1154,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn executor_projection_drops_step_progress_of_closed_tasks() {
+    fn executor_projection_carries_only_current_answers_and_waiting_step_definitions() {
         let (mut runtime, root, project_id) = pipeline_runtime();
         for task_id in ["task-1", "task-2"] {
             let revision = runtime.state_revision();
@@ -1171,26 +1171,61 @@ pub(crate) mod tests {
                 NOW + 1,
             )
             .unwrap();
-
-        let progress_task_ids = |runtime_view: &Value| {
-            runtime_view["steps"][0]["progress"]
+        let task_ids = |values: &Value| {
+            let mut ids = values
                 .as_array()
                 .unwrap()
                 .iter()
-                .map(|entry| entry["taskId"].as_str().unwrap().to_owned())
-                .collect::<Vec<_>>()
+                .map(|value| {
+                    value
+                        .get("taskId")
+                        .unwrap_or(value)
+                        .as_str()
+                        .unwrap()
+                        .to_owned()
+                })
+                .collect::<Vec<_>>();
+            ids.sort();
+            ids
         };
+
         let executor = runtime
-            .playbook_projection_for_executor(&project_id)
+            .playbook_projection_for_executor(&project_id, &[])
             .unwrap();
-        assert_eq!(progress_task_ids(&executor["runtime"]), vec!["task-2"]);
+        let steps = &executor["runtime"]["steps"];
+        // Passed-step evidence and closed Tasks' answers are not carried.
+        assert_eq!(steps[0]["progress"], json!([]));
+        assert_eq!(steps[0]["passedTaskIds"], json!(["task-2"]));
+        assert_eq!(steps[1]["waitingTaskIds"], json!(["task-2"]));
+        assert_eq!(steps[1]["passedTaskIds"], json!([]));
+        // Only the step an open Task waits at keeps its long definition.
+        let milestones = &executor["playbook"]["milestones"];
+        assert_eq!(milestones[0]["definitionOmitted"], true);
+        assert!(milestones[0].get("completeWhen").is_none());
+        assert!(milestones[0]["whileWaiting"].get("instructions").is_none());
+        assert!(milestones[0]["whileWaiting"].get("mode").is_some());
+        assert!(milestones[1].get("definitionOmitted").is_none());
+        assert!(milestones[1]["completeWhen"].is_string());
+        assert!(milestones[1]["whileWaiting"]["instructions"].is_string());
+
+        // An earlier stage can be requested explicitly; unknown IDs fail.
+        let requested = runtime
+            .playbook_projection_for_executor(&project_id, &["pr-open".into()])
+            .unwrap();
+        assert!(requested["playbook"]["milestones"][0]["completeWhen"].is_string());
+        assert!(matches!(
+            runtime.playbook_projection_for_executor(&project_id, &["missing".into()]),
+            Err(CoreError::InvalidParams(field)) if field == "milestoneIds"
+        ));
+
         // The client-facing runtime read keeps every recorded answer.
         let board = runtime
             .playbook_runtime(json!({"projectId": project_id}))
             .unwrap();
-        let mut board_ids = progress_task_ids(&board);
-        board_ids.sort();
-        assert_eq!(board_ids, vec!["task-1", "task-2"]);
+        assert_eq!(
+            task_ids(&board["steps"][0]["progress"]),
+            vec!["task-1", "task-2"]
+        );
         std::fs::remove_dir_all(root).ok();
     }
 
