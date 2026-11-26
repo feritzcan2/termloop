@@ -10,6 +10,8 @@ use termloop_agents::{
     AgentHistoryPreviewRole, AgentHistoryScan, AgentHistoryScanIssue, DiscoveredAgentConversation,
 };
 
+mod steward_transcript;
+
 const HISTORY_CACHE_REFRESH_INTERVAL: Duration = Duration::from_secs(10 * 60);
 const RECENT_CANDIDATES_PER_PROVIDER: usize = 20;
 const FULL_CANDIDATES_PER_PROVIDER: usize = 200;
@@ -453,13 +455,7 @@ impl CoreRuntime {
             "provider": provider,
             "model": conversation.model,
             "updated_at_epoch_ms": conversation.updated_at_epoch_ms,
-            "preview_messages": conversation.preview_messages.iter().map(|message| json!({
-                "role": match message.role {
-                    AgentHistoryPreviewRole::User => "user",
-                    AgentHistoryPreviewRole::Assistant => "assistant",
-                },
-                "text": message.text,
-            })).collect::<Vec<_>>(),
+            "preview_messages": history_messages_json(&conversation.preview_messages),
         }))
     }
 
@@ -530,13 +526,7 @@ impl CoreRuntime {
                         "status": "available",
                         "provider": entry.conversation.agent_id,
                         "updatedAtEpochMs": entry.conversation.updated_at_epoch_ms,
-                        "messages": entry.conversation.tail_messages.iter().map(|message| json!({
-                            "role": match message.role {
-                                AgentHistoryPreviewRole::User => "user",
-                                AgentHistoryPreviewRole::Assistant => "assistant",
-                            },
-                            "text": message.text,
-                        })).collect::<Vec<_>>(),
+                        "messages": history_messages_json(&entry.conversation.tail_messages),
                     })
                 } else {
                     json!({
@@ -894,13 +884,7 @@ fn history_result(cached: &CachedProjectHistory) -> Value {
                 "updated_at_epoch_ms": entry.conversation.updated_at_epoch_ms,
                 "project_match": entry.project_match,
                 "owner_project_name": entry.owner.as_ref().map(|owner| owner.project_name.as_str()),
-                "preview_messages": entry.conversation.preview_messages.iter().map(|message| json!({
-                    "role": match message.role {
-                        AgentHistoryPreviewRole::User => "user",
-                        AgentHistoryPreviewRole::Assistant => "assistant",
-                    },
-                    "text": message.text,
-                })).collect::<Vec<_>>(),
+                "preview_messages": history_messages_json(&entry.conversation.preview_messages),
             })
         })
         .collect::<Vec<_>>();
@@ -925,6 +909,21 @@ fn unavailable_history_preview(provider: &str) -> Value {
         "updated_at_epoch_ms": null,
         "preview_messages": [],
     })
+}
+
+fn history_messages_json(messages: &[termloop_agents::AgentHistoryPreviewMessage]) -> Vec<Value> {
+    messages
+        .iter()
+        .map(|message| {
+            json!({
+                "role": match message.role {
+                    AgentHistoryPreviewRole::User => "user",
+                    AgentHistoryPreviewRole::Assistant => "assistant",
+                },
+                "text": message.text,
+            })
+        })
+        .collect()
 }
 
 fn task_agent_tail_unavailable(task_id: &str, reason: &str) -> Value {
@@ -1344,6 +1343,165 @@ mod tests {
         ));
         assert!(!tail.to_string().contains("helper-in-task-worktree"));
         assert!(!tail.to_string().contains("provider-history"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    fn agent_session(
+        id: &str,
+        project_id: &str,
+        cwd: &str,
+        resume_ref: Option<ResumeRef>,
+        improver_target: Option<termloop_domain::ImproverSessionTarget>,
+    ) -> SessionRecord {
+        SessionRecord {
+            id: id.into(),
+            project_id: project_id.into(),
+            name: None,
+            kind: SessionKind::Agent,
+            process: ProcessDescriptor {
+                program: "claude".into(),
+                args: Vec::new(),
+                cwd: cwd.into(),
+                agent_id: Some("claude".into()),
+                template_ref: Some("builtin.agent.interactive".into()),
+                template_version: Some(1),
+            },
+            launch_selection: Default::default(),
+            lifecycle_state: "running".into(),
+            runtime_epoch: 1,
+            archived_at_epoch_ms: None,
+            ask_to_source_session_id: None,
+            fork_source_session_id: None,
+            run_configuration_id: None,
+            improver_target,
+            ask_to_continuation: None,
+            resume_ref,
+            resume_launch_guard: None,
+            resume_failure: None,
+        }
+    }
+
+    #[test]
+    fn improver_reads_only_its_own_projects_steward_transcript_tail() {
+        use termloop_domain::{ImproverSessionTarget, ImproverSessionTargetKind};
+        let (mut runtime, project_id, native_id, root, conversation) = fixture();
+        let cwd = conversation.cwd.clone();
+        let target = ImproverSessionTarget {
+            target_kind: ImproverSessionTargetKind::RoutineInstructions,
+            target_id: Some("routine-1".into()),
+        };
+        let other_target = ImproverSessionTarget {
+            target_kind: ImproverSessionTargetKind::StewardInstructions,
+            target_id: None,
+        };
+        runtime
+            .store
+            .insert_session(
+                &runtime.write_authority,
+                SessionRecord {
+                    process: ProcessDescriptor {
+                        template_ref: Some("builtin.improver.routine-instructions".into()),
+                        ..agent_session("improver", &project_id, &cwd, None, None).process
+                    },
+                    ..agent_session("improver", &project_id, &cwd, None, Some(target.clone()))
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            runtime
+                .improver_diagnostics_project("improver", &target)
+                .unwrap(),
+            project_id
+        );
+        assert!(matches!(
+            runtime.improver_diagnostics_project("improver", &other_target),
+            Err(CoreError::CapabilityDenied)
+        ));
+        assert!(matches!(
+            runtime.improver_diagnostics_project("missing", &target),
+            Err(CoreError::CapabilityDenied)
+        ));
+
+        let unconfigured = runtime
+            .steward_transcript_tail_projection_for_improver(&project_id)
+            .unwrap();
+        assert_eq!(unconfigured["status"], "unavailable");
+        assert_eq!(unconfigured["reason"], "stewardNotConfigured");
+
+        runtime
+            .store
+            .insert_session(
+                &runtime.write_authority,
+                agent_session(
+                    "steward",
+                    &project_id,
+                    &cwd,
+                    Some(conversation.resume_ref.clone()),
+                    None,
+                ),
+            )
+            .unwrap();
+        let revision = runtime.store.revision();
+        runtime
+            .store
+            .set_steward_configuration(
+                &runtime.write_authority,
+                termloop_domain::StewardConfiguration {
+                    project_id: project_id.clone(),
+                    agent_id: termloop_domain::StewardAgentId::Claude,
+                    model: "default".into(),
+                    permission: "default".into(),
+                    reasoning: "default".into(),
+                    playbook_evaluator: Default::default(),
+                    auto_compaction: Default::default(),
+                    enabled: true,
+                    system_prompt: String::new(),
+                    executor_session_id: Some("steward".into()),
+                    generation: 1,
+                    updated_at_epoch_ms: 1,
+                },
+                revision,
+            )
+            .unwrap();
+        let not_scanned = runtime
+            .steward_transcript_tail_projection_for_improver(&project_id)
+            .unwrap();
+        assert_eq!(not_scanned["reason"], "historyNotScanned");
+        assert_eq!(not_scanned["sessionId"], "steward");
+
+        let plan = match runtime
+            .plan_session_history_list(json!({
+                "projectId": project_id,
+                "force": true,
+                "fillCache": true,
+            }))
+            .unwrap()
+        {
+            SessionHistoryListPlanOutcome::Observe(plan) => plan,
+            SessionHistoryListPlanOutcome::Current(_) => panic!("forced list must scan"),
+        };
+        let source_path = conversation.source.path().display().to_string();
+        runtime
+            .complete_session_history_list(ObservedSessionHistoryScan {
+                plan,
+                scan: AgentHistoryScan {
+                    conversations: vec![conversation],
+                    issues: Vec::new(),
+                    candidate_limit_reached: false,
+                },
+            })
+            .unwrap();
+        let tail = runtime
+            .steward_transcript_tail_projection_for_improver(&project_id)
+            .unwrap();
+        assert_eq!(tail["status"], "available");
+        assert_eq!(tail["sessionId"], "steward");
+        assert_eq!(
+            tail["messages"][1]["text"],
+            "Implemented it; focused tests passed."
+        );
+        assert!(!tail.to_string().contains(&source_path));
+        assert!(!tail.to_string().contains(&native_id));
         let _ = std::fs::remove_dir_all(root);
     }
 

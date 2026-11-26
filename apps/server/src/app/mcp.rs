@@ -269,6 +269,36 @@ async fn tool_call_inner(
             .read_improver_configuration_version(principal.session_id(), target),
         (
             termloop_core::session_launch::AgentMcpRole::Improver { target },
+            "routine_report_read",
+        ) => {
+            let core = state.core.lock().await;
+            text_result(
+                core.improver_diagnostics_project(principal.session_id(), target)
+                    .and_then(|project_id| {
+                        core.list_tracker_runtime(json!({ "projectId": project_id }))
+                    }),
+            )
+        }
+        (
+            termloop_core::session_launch::AgentMcpRole::Improver { target },
+            "companion_transcript_read",
+        ) => {
+            let core = state.core.lock().await;
+            text_result(
+                core.improver_diagnostics_project(principal.session_id(), target)
+                    .and_then(|project_id| {
+                        core.list_companion_transcript(
+                            json!({ "projectId": project_id, "limit": 50 }),
+                        )
+                    }),
+            )
+        }
+        (
+            termloop_core::session_launch::AgentMcpRole::Improver { target },
+            "steward_transcript_tail_read",
+        ) => text_result(read_steward_transcript_tail(principal.session_id(), target, state).await),
+        (
+            termloop_core::session_launch::AgentMcpRole::Improver { target },
             "configuration_version_write",
         ) => {
             let params: ConfigurationVersionWriteParams = serde_json::from_value(arguments)
@@ -755,7 +785,7 @@ fn role_instructions(role: &termloop_core::session_launch::AgentMcpRole) -> &'st
             "Interactive Session profile. When a visible Core-managed workflow step is active, use only workflow_delegate and workflow_step_complete as that prompt directs; Core owns its participant and transition. Otherwise use ask_to whenever the user wants another Claude or Codex involved — ask, consult, discuss, second opinion, or review — including short provider-named requests in any language such as 'ask codex' or 'discuss this with codex'; the user never has to name TermLoop, MCP, or the tool, and you compose the helper's message from the current conversation. Use send_to_agent instead whenever an exact existing TermLoop Session ID is present and the user wants something delivered there — any phrasing, any language — or to return an answer to a received TermLoop handoff using its exact Source Session ID; compose that message yourself, never guess or fuzzily resolve a Session ID, the target may be in any Project or worktree, and you must not poll for a reply. When you are the Agent working a Task whose Project walks a Playbook, read the step your Task stands at with playbook_step_read, and when your own work meets or is blocked at that step's completion criteria, report it once with playbook_step_report; a report is a claim the step's evaluator verifies unless that step trusts it. When the user or a TermLoop Quick Action instruction asks for a Jira issue or Task for some work — for example 'promote this to Jira' or 'open another task for that', in any language — propose it once with propose_jira_task after you understand that work, then wait for the user's answer; do not draft the issue in chat or ask the user to confirm it, its project, or its epic first, because the proposal is where the user reviews and edits it."
         }
         termloop_core::session_launch::AgentMcpRole::Improver { .. } => {
-            "Target-bound Improve Agent profile. Read the active snapshot through configuration_version_read. Discuss and prepare changes freely, but call configuration_version_write only after the user says to apply, save, use, or an equivalent confirmation. That call applies the target's normal configuration command and records a new active snapshot only when the effective content changed; preserve every field the user did not ask to change."
+            "Target-bound Improve Agent profile. Read the active snapshot through configuration_version_read. To debug how the Steward or a Routine actually behaved, read routine_report_read, companion_transcript_read, and steward_transcript_tail_read before concluding; never say the Steward's records are invisible without trying them. Discuss and prepare changes freely, but call configuration_version_write only after the user says to apply, save, use, or an equivalent confirmation. That call applies the target's normal configuration command and records a new active snapshot only when the effective content changed; preserve every field the user did not ask to change."
         }
         termloop_core::session_launch::AgentMcpRole::Steward { .. } => {
             "Authenticated Project Steward profile. Follow the visible versioned Steward and assignment prompts. Hold one assignment at a time, inspect its exact Task identity with task_read, apply its authorized waiting policy, verify provider truth live with the tools available in this Session, then complete the exact claim. Handle required findings and continue through steward_next_assignment until idle; never poll an idle result. You may ask or delegate to only the canonical existing Task Agent selected by task_read; never launch a duplicate."
@@ -878,6 +908,38 @@ async fn read_task_agent_transcript_tail(
     task_id: &str,
     state: &AppState,
 ) -> Result<Value, termloop_core::CoreError> {
+    refresh_managed_session_history(project_id, state).await?;
+    state
+        .core
+        .lock()
+        .await
+        .task_agent_transcript_tail_projection_for_executor(project_id, task_id)
+}
+
+async fn read_steward_transcript_tail(
+    session_id: &str,
+    target: &termloop_core::ImproverSessionTarget,
+    state: &AppState,
+) -> Result<Value, termloop_core::CoreError> {
+    let project_id = state
+        .core
+        .lock()
+        .await
+        .improver_diagnostics_project(session_id, target)?;
+    refresh_managed_session_history(&project_id, state).await?;
+    state
+        .core
+        .lock()
+        .await
+        .steward_transcript_tail_projection_for_improver(&project_id)
+}
+
+/// Rescans provider history for one Project outside the core lock so managed
+/// Session tails reflect the newest transcript before a projection reads them.
+async fn refresh_managed_session_history(
+    project_id: &str,
+    state: &AppState,
+) -> Result<(), termloop_core::CoreError> {
     let outcome = state.core.lock().await.plan_session_history_list(json!({
         "projectId": project_id,
         "force": true,
@@ -889,9 +951,7 @@ async fn read_task_agent_transcript_tail(
         let observed = tokio::task::spawn_blocking(move || plan.observe(&cancellation))
             .await
             .map_err(|error| {
-                termloop_core::CoreError::Terminal(format!(
-                    "Task Agent transcript scan failed: {error}"
-                ))
+                termloop_core::CoreError::Terminal(format!("Agent transcript scan failed: {error}"))
             })?;
         state
             .core
@@ -899,11 +959,7 @@ async fn read_task_agent_transcript_tail(
             .await
             .complete_session_history_list(observed)?;
     }
-    state
-        .core
-        .lock()
-        .await
-        .task_agent_transcript_tail_projection_for_executor(project_id, task_id)
+    Ok(())
 }
 
 struct McpHistoryScanCancellation(Arc<AtomicBool>);
@@ -2064,10 +2120,14 @@ mod tests {
             [
                 "ask_to",
                 "send_to_agent",
+                "routine_report_read",
+                "companion_transcript_read",
+                "steward_transcript_tail_read",
                 "configuration_version_read",
                 "configuration_version_write"
             ]
         );
+        assert!(!tool_names(&steward).contains(&"steward_transcript_tail_read"));
         assert!(!tool_names(&improver).contains(&"task_create"));
         assert!(tool_names(&steward).contains(&"task_create"));
         assert!(tool_names(&steward).contains(&"send_to_agent"));

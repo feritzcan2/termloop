@@ -86,7 +86,7 @@ const IMPROVER_RUN_CONFIGURATION_NEW_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const IMPROVER_STEWARD_INSTRUCTIONS_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.improver.steward-instructions",
-    version: 7,
+    version: 8,
     authored_body: include_str!(
         "../../../resources/prompts/builtin.improver.steward-instructions.md"
     ),
@@ -114,7 +114,7 @@ const IMPROVER_MCP_TOOL_DESCRIPTION_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const IMPROVER_ROUTINE_INSTRUCTIONS_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.improver.routine-instructions",
-    version: 12,
+    version: 13,
     authored_body: include_str!(
         "../../../resources/prompts/builtin.improver.routine-instructions.md"
     ),

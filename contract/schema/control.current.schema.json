@@ -2885,6 +2885,7 @@
         "task_agent_request",
         "routine_report_read",
         "companion_transcript_read",
+        "steward_transcript_tail_read",
         "steward_system_prompt_read",
         "steward_system_prompt_update",
         "project_agent_start",
@@ -2994,8 +2995,8 @@
           "items": {
             "$ref": "#/$defs/mcpToolSettingsDto"
           },
-          "minItems": 40,
-          "maxItems": 40,
+          "minItems": 41,
+          "maxItems": 41,
           "uniqueItems": true
         }
       }

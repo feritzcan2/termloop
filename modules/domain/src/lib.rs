@@ -142,6 +142,8 @@ pub enum McpToolName {
     RoutineReportRead,
     #[serde(rename = "companion_transcript_read")]
     CompanionTranscriptRead,
+    #[serde(rename = "steward_transcript_tail_read")]
+    StewardTranscriptTailRead,
     #[serde(rename = "steward_system_prompt_read")]
     StewardSystemPromptRead,
     #[serde(rename = "steward_system_prompt_update")]
@@ -197,7 +199,7 @@ pub enum McpToolName {
 }
 
 impl McpToolName {
-    pub const ALL: [Self; 40] = [
+    pub const ALL: [Self; 41] = [
         Self::AskTo,
         Self::SendToAgent,
         Self::ReplyToRequest,
@@ -212,6 +214,7 @@ impl McpToolName {
         Self::TaskAgentRequest,
         Self::RoutineReportRead,
         Self::CompanionTranscriptRead,
+        Self::StewardTranscriptTailRead,
         Self::StewardSystemPromptRead,
         Self::StewardSystemPromptUpdate,
         Self::ProjectAgentStart,
@@ -256,6 +259,7 @@ impl McpToolName {
             Self::TaskAgentRequest => "task_agent_request",
             Self::RoutineReportRead => "routine_report_read",
             Self::CompanionTranscriptRead => "companion_transcript_read",
+            Self::StewardTranscriptTailRead => "steward_transcript_tail_read",
             Self::StewardSystemPromptRead => "steward_system_prompt_read",
             Self::StewardSystemPromptUpdate => "steward_system_prompt_update",
             Self::ProjectAgentStart => "project_agent_start",
@@ -305,6 +309,7 @@ impl std::str::FromStr for McpToolName {
             "task_agent_request" => Ok(Self::TaskAgentRequest),
             "routine_report_read" | "tracker_report_read" => Ok(Self::RoutineReportRead),
             "companion_transcript_read" => Ok(Self::CompanionTranscriptRead),
+            "steward_transcript_tail_read" => Ok(Self::StewardTranscriptTailRead),
             "steward_system_prompt_read" => Ok(Self::StewardSystemPromptRead),
             "steward_system_prompt_update" => Ok(Self::StewardSystemPromptUpdate),
             "project_agent_start" => Ok(Self::ProjectAgentStart),
@@ -1552,6 +1557,7 @@ mod tests {
                 "task_agent_request",
                 "routine_report_read",
                 "companion_transcript_read",
+                "steward_transcript_tail_read",
                 "steward_system_prompt_read",
                 "steward_system_prompt_update",
                 "project_agent_start",

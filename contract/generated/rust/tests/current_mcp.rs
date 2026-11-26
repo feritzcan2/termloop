@@ -24,6 +24,9 @@ fn role_profile_tools_are_generated_bounded_and_not_control_methods() {
         [
             "ask_to",
             "send_to_agent",
+            "routine_report_read",
+            "companion_transcript_read",
+            "steward_transcript_tail_read",
             "configuration_version_read",
             "configuration_version_write"
         ]

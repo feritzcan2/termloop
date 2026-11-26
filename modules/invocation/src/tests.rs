@@ -324,8 +324,25 @@ fn improver_assets_bind_visible_context_and_require_version_tools() {
     ];
     for target in targets {
         let template = target.template().unwrap();
+        let debugs_steward = matches!(
+            target,
+            ImproverTarget::StewardInstructions { .. } | ImproverTarget::RoutineInstructions { .. }
+        );
         let launch = prompt_improver_launch(target);
         let delivered = launch.delivered_prompt().unwrap();
+        if debugs_steward {
+            for tool in [
+                "routine_report_read",
+                "companion_transcript_read",
+                "steward_transcript_tail_read",
+            ] {
+                assert!(
+                    delivered.contains(tool),
+                    "{} must offer {tool}",
+                    template.id
+                );
+            }
+        }
         assert!(!delivered.contains("{{"));
         assert!(!delivered.contains("}}"));
         assert!(delivered.contains("configuration_version_read"));
@@ -364,7 +381,7 @@ fn configuration_improvers_share_the_provider_neutral_task_evidence_policy() {
                 built_in_instructions: "Protected Routine behavior.",
                 max_bytes: 9_216,
             },
-            12,
+            13,
         ),
         (
             ImproverTarget::RoutineBuilder {

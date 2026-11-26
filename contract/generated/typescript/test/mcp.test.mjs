@@ -28,9 +28,13 @@ test("MCP role definitions are generated and excluded from control methods", () 
   assert.deepEqual(MCP_IMPROVER_TOOLS, [
     "ask_to",
     "send_to_agent",
+    "routine_report_read",
+    "companion_transcript_read",
+    "steward_transcript_tail_read",
     "configuration_version_read",
     "configuration_version_write",
   ]);
+  assert.ok(!MCP_STEWARD_TOOLS.includes("steward_transcript_tail_read"));
   assert.deepEqual(MCP_AGENT_CREATOR_TOOLS, ["ask_to", "send_to_agent", "agent_library_read", "agent_profile_create"]);
   assert.ok(MCP_STEWARD_TOOLS.includes("task_create"));
   assert.ok(MCP_STEWARD_TOOLS.includes("send_to_agent"));
