@@ -548,7 +548,7 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         invalidations: invalidations.clone(),
         health_triggers,
         health_demands,
-        git_observation_gate: git_observation_gate.clone(),
+        git_observation_gate,
         git_host_query_scheduler,
         repair_request_locks: Arc::new(StdMutex::new(HashMap::new())),
         task_source_refresh_locks: Arc::new(StdMutex::new(HashMap::new())),
@@ -604,7 +604,12 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         state.observation_sequence.clone(),
         state.invalidations.clone(),
         state.health_demands.clone(),
-        git_observation_gate,
+        // Worktree health is a read-only `git status` (optional locks are off)
+        // that can take seconds on a large checkout. Its own lane keeps it from
+        // holding the shared one that user-requested reads and changes wait on;
+        // it still runs at most once per Project at a time. Core rejects a
+        // result whose worktree generation changed meanwhile.
+        FairObservationGate::new(),
     ));
     tokio::spawn(run_health_integrity_fallback(state.clone()));
     tokio::spawn(run_git_host_scheduler(state.clone()));

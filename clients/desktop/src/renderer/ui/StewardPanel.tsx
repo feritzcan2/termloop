@@ -20,7 +20,7 @@ import { PlaybookEvaluatorSettings } from "./PlaybookEvaluatorSettings.js";
 import { AutoCompactionSettings } from "./AutoCompactionSettings.js";
 import { StewardHowItWorksButton, type StewardHowItWorksOverlay } from "./StewardHowItWorks.js";
 import { QUICK_ACTION_AGENT_MODELS, QUICK_ACTION_AGENT_PERMISSIONS, QUICK_ACTION_AGENT_REASONING, type QuickActionReasoning } from "../quick-action-memory.js";
-import { ConfigurationVersions, PromptImproveButton, promptImprovementActionLabel, usePromptImprovement, type PromptImprovement } from "./PromptImprovement.js";
+import { PromptImproveButton, promptImprovementActionLabel, usePromptImprovement, type PromptImprovement } from "./PromptImprovement.js";
 import { assistantInstructionsEditableSuffix } from "../prompt-settings.js";
 import { routineDisplayStatus, statusExplanation } from "./assistant-status.js";
 import { CompanionTopicCard, currentStewardInteraction, groupCompanionTopics } from "./companion-chat.js";
@@ -841,7 +841,6 @@ export function RoutineContextEditor(props: {
   const improver = usePromptImprovement(
     props.improvement,
     { surface: "routineInstructions", ownerId: props.routine.id },
-    { watch: true },
   );
   const status = routineDisplayStatus(props.routine, props.health);
   return <section className="ap-routine-context">
@@ -909,7 +908,6 @@ export function RoutineContextEditor(props: {
       <details className="ap-details ap-instructions-details" open>
         <summary>What should the Steward verify?</summary>
         <div className="ap-instructions-editor">
-          <ConfigurationVersions controller={improver} reload={props.reload} />
           <div className="ap-editor-head">
             <label htmlFor="routine-instructions">Describe the sources to inspect and the facts to report.</label>
             <small>{instructionsByteLength} / 9216 bytes</small>
@@ -1014,7 +1012,6 @@ export function StewardSystemPromptCard(props: {
   const unchanged = currentInstructions !== undefined && instructions.trim() === currentInstructions;
   const improver = usePromptImprovement(props.improvement, { surface: "stewardInstructions", ownerId: null });
   return <section className="ap-form">
-    <ConfigurationVersions controller={improver} reload={props.reload} />
     <div className="ap-editor ap-composed-prompt ap-single-instructions-editor">
       <div className="ap-editor-head">
         <label htmlFor="steward-system-instructions">Your Steward instructions</label>

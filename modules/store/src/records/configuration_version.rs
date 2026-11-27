@@ -222,6 +222,13 @@ pub(crate) fn initialize_configuration_version_selections(state: &mut CurrentSta
             set_active_version(state, &version.project_id, version.target, &version.id);
         }
     }
+    let selections = std::mem::take(&mut state.configuration_version_selections);
+    state.configuration_versions.retain(|version| {
+        selections
+            .iter()
+            .any(|selection| selection.version_id == version.id)
+    });
+    state.configuration_version_selections = selections;
 }
 
 pub(crate) fn record_steward_version(

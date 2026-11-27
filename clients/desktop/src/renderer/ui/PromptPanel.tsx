@@ -4,29 +4,22 @@ import { useCallback, useEffect, useState } from "react";
 
 import { promptBodyError, promptKind, PROMPT_MAX_CHARACTERS, type PromptAsset } from "../prompt-settings.js";
 import { Icon } from "./Icon.js";
-import { ConfigurationVersions, useConfigurationVersions, type ConfigurationVersionActions } from "./PromptImprovement.js";
 
 /// Stage page for one catalog prompt. Built-in edits are stored in this app
 /// profile; runtime projections returned by Core are shown read only, because
 /// nothing here owns them.
-export function PromptPanel({ scopeContext, prompt, update, reset, apply, versions, reload, close }: {
+export function PromptPanel({ scopeContext, prompt, update, reset, apply, reload, close }: {
   scopeContext?: SettingsScopeContext | undefined;
   prompt: PromptAsset;
   update(id: string, body: string): Promise<PromptAsset[]>;
   reset(id: string): Promise<PromptAsset[]>;
   apply(prompts: PromptAsset[]): void;
-  versions?: ConfigurationVersionActions | undefined;
   reload?: (() => void) | undefined;
   close(): void;
 }) {
   const [draft, setDraft] = useState(prompt.effectiveBody);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  const versionController = useConfigurationVersions(
-    prompt.overridePath ? versions : undefined,
-    { kind: "settingsPrompt", targetId: prompt.overridePath ?? prompt.id },
-    { watch: true, refreshKey: prompt.effectiveBody },
-  );
 
   useEffect(() => {
     setDraft(prompt.effectiveBody);
@@ -105,7 +98,6 @@ export function PromptPanel({ scopeContext, prompt, update, reset, apply, versio
         <span>Provider-managed system prompts are not observable by TermLoop.</span>
         <code>{[...draft].length.toLocaleString("en-US")} / {PROMPT_MAX_CHARACTERS.toLocaleString("en-US")}</code>
       </div>
-      <ConfigurationVersions controller={versionController} reload={reload ?? (() => undefined)} />
     </section>
   );
 }

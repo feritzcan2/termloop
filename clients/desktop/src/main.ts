@@ -1154,16 +1154,6 @@ handleIpc(
     controlCall("assistantPrompt.improveLaunch", params),
 );
 handleIpc(
-  "termloop:configuration-version-list",
-  (_event, params: import("@termloop/contract/current").ConfigurationVersionListParams) =>
-    controlCall("configuration.versionList", params),
-);
-handleIpc(
-  "termloop:configuration-version-restore",
-  (_event, params: import("@termloop/contract/current").ConfigurationVersionRestoreParams) =>
-    controlCall("configuration.versionRestore", params),
-);
-handleIpc(
   "termloop:run-runtime-list",
   (_event, params: import("@termloop/contract/current").RunRuntimeListParams) =>
     controlCall("run.runtimeList", params),

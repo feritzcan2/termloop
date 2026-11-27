@@ -28,6 +28,8 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
     if schema_version < 63 {
         remove_orphan_task_branch_sets(&mut value);
     }
+    let removed_inactive_configuration_versions =
+        remove_inactive_configuration_versions(&mut value);
     match schema_version {
         1 => {
             add_legacy_generation_fields(&mut value)?;
@@ -580,7 +582,8 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
             let sanitized = (removed_retired_session_topics
                 || sanitize_resume_metadata(&mut state))
                 | released_targets
-                | released_receipts;
+                | released_receipts
+                | removed_inactive_configuration_versions;
             validate_current_state(&state)?;
             Ok((state, sanitized))
         }
@@ -625,6 +628,45 @@ fn release_stale_relocation_receipts(state: &mut CurrentState) -> bool {
         })
     });
     state.session_relocation_receipts.len() != before
+}
+
+/// Configuration history is no longer kept: only the snapshot each target's
+/// selection names survives. State written before the selections existed has
+/// no selection array and is left to the ordered migrations, which record a
+/// single snapshot per target.
+fn remove_inactive_configuration_versions(value: &mut serde_json::Value) -> bool {
+    let Some(active_ids) = value
+        .get("configuration_version_selections")
+        .and_then(serde_json::Value::as_array)
+        .map(|selections| {
+            selections
+                .iter()
+                .filter_map(|selection| {
+                    selection
+                        .get("versionId")
+                        .or_else(|| selection.get("version_id"))
+                        .and_then(serde_json::Value::as_str)
+                })
+                .map(str::to_owned)
+                .collect::<std::collections::HashSet<_>>()
+        })
+    else {
+        return false;
+    };
+    let Some(versions) = value
+        .get_mut("configuration_versions")
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return false;
+    };
+    let before = versions.len();
+    versions.retain(|version| {
+        version
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|id| active_ids.contains(id))
+    });
+    versions.len() != before
 }
 
 fn remove_orphan_task_branch_sets(value: &mut serde_json::Value) {

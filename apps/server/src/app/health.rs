@@ -20,6 +20,10 @@ use super::{AppState, current_epoch_ms};
 
 const GLOBAL_HEALTH_WATCH_CAP: usize = 256;
 const PROJECT_HEALTH_WATCH_CAP: usize = 64;
+/// A worktree that an Agent keeps writing to fires watch events continuously.
+/// Observing it again within this interval only adds another `git status`
+/// to the Project's Git lane; later triggers are folded into one deferred job.
+const HEALTH_OBSERVATION_MIN_INTERVAL: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone)]
 pub(super) enum HealthTrigger {
@@ -597,6 +601,8 @@ pub(super) async fn run_health_scheduler(
     let mut rerun =
         HashMap::<termloop_core::task_worktree::WorktreeHealthCacheKey, ScheduledHealthJob>::new();
     let mut active = HashSet::new();
+    let mut last_observed =
+        HashMap::<termloop_core::task_worktree::WorktreeHealthCacheKey, Instant>::new();
     let mut projects = VecDeque::new();
     let mut joins = JoinSet::new();
     let mut ordinal = 0_u64;
@@ -616,6 +622,7 @@ pub(super) async fn run_health_scheduler(
             let trigger_sender = trigger_sender.clone();
             let git_observation_gate = git_observation_gate.clone();
             joins.spawn(async move {
+                let observes = health_job_observes_git(&job);
                 run_scheduled_health_job(
                     &job,
                     &core,
@@ -626,7 +633,7 @@ pub(super) async fn run_health_scheduler(
                     &git_observation_gate,
                 )
                 .await;
-                job.cache_key
+                (job.cache_key, observes)
             });
         }
 
@@ -643,9 +650,10 @@ pub(super) async fn run_health_scheduler(
                     continue;
                 };
                 ordinal = ordinal.saturating_add(1);
-                let Some(job) = resolve_health_trigger(trigger, ordinal, &demands).await else {
+                let Some(mut job) = resolve_health_trigger(trigger, ordinal, &demands).await else {
                     continue;
                 };
+                defer_recent_health_observation(&mut job, &last_observed);
                 if active.contains(&job.cache_key) {
                     merge_health_job(&mut rerun, job, &mut projects);
                 } else {
@@ -653,9 +661,13 @@ pub(super) async fn run_health_scheduler(
                 }
             }
             completed = joins.join_next(), if !joins.is_empty() => {
-                if let Some(Ok(key)) = completed {
+                if let Some(Ok((key, observed))) = completed {
                     active.remove(&key);
-                    if let Some(job) = rerun.remove(&key) {
+                    if observed {
+                        record_health_observation(&mut last_observed, key.clone(), Instant::now());
+                    }
+                    if let Some(mut job) = rerun.remove(&key) {
+                        defer_recent_health_observation(&mut job, &last_observed);
                         merge_health_job(&mut pending, job, &mut projects);
                     }
                 }
@@ -663,6 +675,40 @@ pub(super) async fn run_health_scheduler(
             _ = tokio::time::sleep_until(deadline), if ready_job_deadline.is_some() => {}
         }
     }
+}
+
+fn health_job_observes_git(job: &ScheduledHealthJob) -> bool {
+    !job.unknown && !job.targets.is_empty()
+}
+
+/// Pushes a Git-observing job past the minimum interval since the same
+/// worktree was last observed. Merging keeps the earliest `ready_at`, so a
+/// burst of triggers still becomes one observation at that deferred time.
+fn defer_recent_health_observation(
+    job: &mut ScheduledHealthJob,
+    last_observed: &HashMap<termloop_core::task_worktree::WorktreeHealthCacheKey, Instant>,
+) {
+    if !health_job_observes_git(job) {
+        return;
+    }
+    if let Some(observed_at) = last_observed.get(&job.cache_key) {
+        job.ready_at = job
+            .ready_at
+            .max(*observed_at + HEALTH_OBSERVATION_MIN_INTERVAL);
+    }
+}
+
+fn record_health_observation(
+    last_observed: &mut HashMap<termloop_core::task_worktree::WorktreeHealthCacheKey, Instant>,
+    key: termloop_core::task_worktree::WorktreeHealthCacheKey,
+    now: Instant,
+) {
+    // Entries older than the interval no longer defer anything; dropping them
+    // keeps the map bounded by the worktrees observed in the last interval.
+    last_observed.retain(|_, observed_at| {
+        now.duration_since(*observed_at) < HEALTH_OBSERVATION_MIN_INTERVAL
+    });
+    last_observed.insert(key, now);
 }
 
 fn health_job_wake_deadline(
@@ -1069,6 +1115,75 @@ mod tests {
         assert_eq!(first.targets[0].task_id, "a-1");
         assert_eq!(second.targets[0].task_id, "b-1");
         assert_eq!(third.targets[0].task_id, "a-2");
+    }
+
+    #[test]
+    fn recently_observed_worktree_defers_and_coalesces_new_observations() {
+        let key = termloop_core::task_worktree::WorktreeHealthCacheKey {
+            repository_common_dir: "/common/busy".into(),
+            worktree_root: "/worktree/busy".into(),
+        };
+        let job = |task: &str, ordinal: u64, ready_at: Instant| ScheduledHealthJob {
+            cache_key: key.clone(),
+            project_id: "project".into(),
+            targets: vec![termloop_core::task_worktree::TaskWorktreeWatchTarget {
+                project_id: "project".into(),
+                task_id: task.into(),
+                cache_key: key.clone(),
+                worktree_root: "/worktree/busy".into(),
+                repository_common_dir: "/common/busy".into(),
+            }],
+            branch_targets: Vec::new(),
+            unknown: false,
+            registration_token: None,
+            git_host_change: false,
+            branch_commit_change: false,
+            ready_at,
+            ordinal,
+        };
+        let observed_at = Instant::now();
+        let mut last_observed = HashMap::new();
+        record_health_observation(&mut last_observed, key.clone(), observed_at);
+        let mut pending = HashMap::new();
+        let mut projects = VecDeque::new();
+        for (ordinal, task) in ["task-1", "task-2", "task-1"].into_iter().enumerate() {
+            let mut incoming = job(
+                task,
+                ordinal as u64,
+                observed_at + Duration::from_millis(250),
+            );
+            defer_recent_health_observation(&mut incoming, &last_observed);
+            merge_health_job(&mut pending, incoming, &mut projects);
+        }
+
+        assert_eq!(pending.len(), 1);
+        let deferred_until = observed_at + HEALTH_OBSERVATION_MIN_INTERVAL;
+        assert_eq!(pending[&key].ready_at, deferred_until);
+        assert_eq!(pending[&key].targets.len(), 2);
+        assert!(
+            take_ready_health_job(
+                &mut pending,
+                &mut projects,
+                observed_at + Duration::from_secs(1)
+            )
+            .is_none()
+        );
+        let taken = take_ready_health_job(&mut pending, &mut projects, deferred_until).unwrap();
+        assert_eq!(taken.cache_key, key);
+
+        let mut unknown = job("task-1", 9, observed_at);
+        unknown.unknown = true;
+        defer_recent_health_observation(&mut unknown, &last_observed);
+        assert_eq!(unknown.ready_at, observed_at);
+
+        let later = observed_at + HEALTH_OBSERVATION_MIN_INTERVAL;
+        let other = termloop_core::task_worktree::WorktreeHealthCacheKey {
+            repository_common_dir: "/common/other".into(),
+            worktree_root: "/worktree/other".into(),
+        };
+        record_health_observation(&mut last_observed, other.clone(), later);
+        assert!(!last_observed.contains_key(&key));
+        assert!(last_observed.contains_key(&other));
     }
 
     #[test]

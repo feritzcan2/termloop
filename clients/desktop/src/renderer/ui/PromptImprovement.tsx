@@ -1,19 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type {
-  AssistantPromptImproverTarget,
-  ConfigurationVersionDto,
-  ConfigurationVersionListResult,
-  VersionedConfigurationTarget,
-} from "@termloop/contract/current";
+import { useState } from "react";
+import type { AssistantPromptImproverTarget } from "@termloop/contract/current";
 import type { QuickActionAgentSelection } from "../quick-action-memory.js";
 import { Icon } from "./Icon.js";
 
-export type ConfigurationVersionActions = {
-  versions(target: VersionedConfigurationTarget): Promise<ConfigurationVersionListResult | string>;
-  restore(target: VersionedConfigurationTarget, version: ConfigurationVersionDto, activeVersionId: string | null): Promise<string | undefined>;
-};
-
-export type PromptImprovement = ConfigurationVersionActions & {
+export type PromptImprovement = {
   start(target: AssistantPromptImproverTarget, selection?: QuickActionAgentSelection, options?: { fresh?: boolean }): Promise<string | undefined>;
 };
 
@@ -30,144 +20,26 @@ export function promptImprovementActionLabel(
   }
 }
 
-export function assistantVersionTarget(target: AssistantPromptImproverTarget): VersionedConfigurationTarget {
-  switch (target.surface) {
-    case "stewardInstructions": return { kind: "stewardInstructions", targetId: null };
-    case "routineInstructions": return { kind: "routineInstructions", targetId: target.ownerId };
-    case "routineBuilder": return { kind: "routineBuilder", targetId: target.ownerId };
-    case "playbook": return { kind: "playbook", targetId: null };
-  }
-}
-
-export function useConfigurationVersions(
-  actions: ConfigurationVersionActions | undefined,
-  target: VersionedConfigurationTarget,
-  options?: {
-    watch?: boolean;
-    refreshKey?: string | undefined;
-    start?: (() => Promise<string | undefined>) | undefined;
-  },
-) {
-  const [history, setHistory] = useState<ConfigurationVersionListResult>();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
-  const [awaitingVersion, setAwaitingVersion] = useState(false);
-  const launchBaseVersionId = useRef<string | null | undefined>(undefined);
-  const versionTarget = useMemo<VersionedConfigurationTarget>(() => ({
-    kind: target.kind,
-    targetId: target.targetId,
-  }), [target.kind, target.targetId]);
-  const refresh = useCallback(async () => {
-    if (!actions) return;
-    const result = await actions.versions(versionTarget);
-    if (typeof result === "string") {
-      setError(result);
-      return;
-    }
-    setError(undefined);
-    setHistory(result);
-    const newestId = result.versions.at(-1)?.id ?? null;
-    if (awaitingVersion && newestId !== launchBaseVersionId.current) setAwaitingVersion(false);
-  }, [actions, awaitingVersion, versionTarget]);
-  useEffect(() => { void refresh(); }, [options?.refreshKey, refresh]);
-  useEffect(() => {
-    const onFocus = () => void refresh();
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, [refresh]);
-  useEffect(() => {
-    if (!awaitingVersion && !options?.watch) return;
-    const interval = window.setInterval(() => void refresh(), 1_000);
-    return () => window.clearInterval(interval);
-  }, [awaitingVersion, options?.watch, refresh]);
-
-  const guard = async (work: () => Promise<string | undefined>) => {
-    setBusy(true);
-    setError(undefined);
-    try {
-      const failure = await work();
-      if (failure) setError(failure);
-      return failure;
-    } finally {
-      setBusy(false);
-    }
-  };
-  return {
-    history,
-    busy,
-    error,
-    awaitingVersion,
-    refresh,
-    start: () => guard(async () => {
-      launchBaseVersionId.current = history?.versions.at(-1)?.id ?? null;
-      const failure = await options?.start?.();
-      if (!failure) setAwaitingVersion(true);
-      return failure;
-    }),
-    restore: (version: ConfigurationVersionDto, restored: () => void | Promise<void>) => guard(async () => {
-      if (!actions || !history) return undefined;
-      const activeVersionId = history.activeVersionId;
-      const failure = await actions.restore(versionTarget, version, activeVersionId);
-      if (failure) return failure;
-      await refresh();
-      await restored();
-      return undefined;
-    }),
-  };
-}
-
+/** Starts an improver Agent for one target. The Agent's accepted change reaches
+    the editor through the target's own projection, so this hook reads nothing
+    and keeps no timer; a launch failure is returned to the caller. */
 export function usePromptImprovement(
   improvement: PromptImprovement | undefined,
   target: AssistantPromptImproverTarget,
-  options?: { watch?: boolean; refreshKey?: string | undefined },
 ) {
-  const stableTarget = useMemo<AssistantPromptImproverTarget>(() => ({
-    surface: target.surface,
-    ownerId: target.ownerId,
-  }), [target.ownerId, target.surface]);
-  const versionTarget = useMemo(() => assistantVersionTarget(stableTarget), [stableTarget]);
-  return useConfigurationVersions(improvement, versionTarget, {
-    ...(options?.watch === undefined ? {} : { watch: options.watch }),
-    ...(options?.refreshKey === undefined ? {} : { refreshKey: options.refreshKey }),
-    start: () => improvement?.start(stableTarget) ?? Promise.resolve(undefined),
-  });
-}
-
-export type ConfigurationVersionsController = Pick<ReturnType<typeof usePromptImprovement>,
-  "history" | "busy" | "error" | "restore"
->;
-
-export function ConfigurationVersions(props: {
-  controller: ConfigurationVersionsController;
-  reload(): void | Promise<void>;
-}) {
-  const { controller } = props;
-  const versions = useMemo(
-    () => [...(controller.history?.versions ?? [])].sort((left, right) => left.sequence - right.sequence),
-    [controller.history?.versions],
-  );
-  const activeIndex = versions.findIndex(
-    (version) => version.id === controller.history?.activeVersionId,
-  );
-  const active = versions[activeIndex];
-  if (!controller.history && !controller.error) return null;
-  if (!active) return controller.error
-    ? <span className="configuration-version-error" role="alert" title={controller.error}>!</span>
-    : null;
-  const activate = (index: number) => {
-    const version = versions[index];
-    if (version) void controller.restore(version, props.reload);
+  const [busy, setBusy] = useState(false);
+  return {
+    busy,
+    start: async () => {
+      if (!improvement) return undefined;
+      setBusy(true);
+      try {
+        return await improvement.start({ surface: target.surface, ownerId: target.ownerId });
+      } finally {
+        setBusy(false);
+      }
+    },
   };
-  return <span className="configuration-versions" role="group" aria-label="Configuration version">
-    <button type="button" aria-label="Previous version"
-      disabled={controller.busy || activeIndex === 0}
-      onClick={() => activate(activeIndex - 1)}>‹</button>
-    <span aria-live="polite">v{active.sequence}</span>
-    <button type="button" aria-label="Next version"
-      disabled={controller.busy || activeIndex >= versions.length - 1}
-      onClick={() => activate(activeIndex + 1)}>›</button>
-    {controller.error ? <span className="configuration-version-error" role="alert" title={controller.error}>!</span> : null}
-  </span>;
 }
 
 export function PromptImproveButton(props: {

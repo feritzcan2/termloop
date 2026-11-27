@@ -104,10 +104,6 @@ import type {
   RunConfigurationImprovePreviewResult,
   RunConfigurationImproveLaunchParams,
   RunConfigurationImproveLaunchResult,
-  ConfigurationVersionListParams,
-  ConfigurationVersionListResult,
-  ConfigurationVersionRestoreParams,
-  ConfigurationVersionRestoreResult,
   RunConfigurationListResult,
   RunConfigurationMutationResult,
   RunConfigurationUpdateParams,
@@ -440,8 +436,6 @@ export type DesktopApi = {
   settingsImproveLaunch(params: SettingsImproveLaunchParams): Promise<SettingsImproveLaunchResult>;
   assistantPromptImprovePreview(params: AssistantPromptImprovePreviewParams): Promise<AssistantPromptImprovePreviewResult>;
   assistantPromptImproveLaunch(params: AssistantPromptImproveLaunchParams): Promise<AssistantPromptImproveLaunchResult>;
-  configurationVersionList(params: ConfigurationVersionListParams): Promise<ConfigurationVersionListResult>;
-  configurationVersionRestore(params: ConfigurationVersionRestoreParams): Promise<ConfigurationVersionRestoreResult>;
   runRuntimeList(params: RunRuntimeListParams): Promise<RunRuntimeListResult>;
   routineConfigurationList(params: RoutineConfigurationListParams): Promise<RoutineConfigurationListResult>;
   routineConfigurationCreate(params: RoutineConfigurationCreateParams): Promise<RoutineConfigurationMutationResult>;

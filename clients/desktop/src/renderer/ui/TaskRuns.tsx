@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useOverlayLease } from "./overlay-lease.js";
 import type {
   RunConfigurationCreateParams,
@@ -7,17 +7,12 @@ import type {
   RunConfigurationKind,
   RunConfigurationUpdateParams,
   RunSetupPolicy,
-  ConfigurationVersionDto,
-  ConfigurationVersionListResult,
-  ConfigurationVersionMutationResult,
-  VersionedConfigurationTarget,
 } from "@termloop/contract/current";
 import type { RunConfiguration, RunRuntime, Session, Task } from "../model.js";
 import { isLiveSession } from "../model.js";
 import type { QuickActionAgentSelection } from "../quick-action-memory.js";
 import { Icon } from "./Icon.js";
 import { OverlayPortal } from "./OverlayPortal.js";
-import { ConfigurationVersions, type ConfigurationVersionsController } from "./PromptImprovement.js";
 
 /// A run configuration is a launcher until it runs, and once it runs it *is*
 /// the Terminal Session core named after it. So the rail never draws a second
@@ -225,8 +220,6 @@ type Draft = {
 
 export type RunImprovement = {
   start(projectId: string, target: RunConfigurationImproverTarget, selection?: QuickActionAgentSelection, options?: { fresh?: boolean }): Promise<string | undefined>;
-  versions(projectId: string, target: VersionedConfigurationTarget): Promise<ConfigurationVersionListResult | string>;
-  restore(projectId: string, target: VersionedConfigurationTarget, versionId: string, expectedActiveVersionId: string | null): Promise<ConfigurationVersionMutationResult | string>;
 };
 
 /// Name, command, kind are the run. Everything else is a property of one of two
@@ -271,62 +264,6 @@ export function RunEditorDialog(props: {
     ? { configurationId: configuration.id, newKind: null }
     : seed ? { configurationId: null, newKind: seed.kind } : undefined;
   const creating = Boolean(target && !configuration);
-  const versionTarget = useMemo<VersionedConfigurationTarget | undefined>(() => target
-    ? target.configurationId
-      ? { kind: "runConfiguration", targetId: target.configurationId }
-      : { kind: "newRunConfiguration", targetId: target.newKind }
-    : undefined, [target?.configurationId, target?.newKind]);
-  const [history, setHistory] = useState<ConfigurationVersionListResult>();
-  const [versionBusy, setVersionBusy] = useState(false);
-  const refreshVersions = useCallback(async () => {
-    if (!improvement || !versionTarget) return;
-    const result = await improvement.versions(props.projectId, versionTarget);
-    if (typeof result === "string") {
-      setError(result);
-      return;
-    }
-    setHistory(result);
-  }, [improvement, props.projectId, versionTarget]);
-  useEffect(() => { void refreshVersions(); }, [refreshVersions]);
-  useEffect(() => {
-    const onFocus = () => void refreshVersions();
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, [refreshVersions]);
-  const useActivatedSnapshot = (result: ConfigurationVersionMutationResult) => {
-    if (creating) {
-      props.close();
-      return;
-    }
-    try {
-      setDraft(configurationDraft(JSON.parse(result.activeVersion.content) as RunConfigurationDto));
-    } catch {
-      setError("The active run version could not be displayed.");
-    }
-  };
-  const versionController = useMemo<ConfigurationVersionsController>(() => ({
-    history,
-    busy: versionBusy,
-    error,
-    restore: async (version: ConfigurationVersionDto, restored: () => void | Promise<void>) => {
-      if (!improvement || !versionTarget) return undefined;
-      setVersionBusy(true);
-      try {
-        const result = await improvement.restore(
-          props.projectId,
-          versionTarget,
-          version.id,
-          history?.activeVersionId ?? null,
-        );
-        if (typeof result === "string") { setError(result); return result; }
-        useActivatedSnapshot(result);
-        await refreshVersions();
-        await restored();
-        return undefined;
-      } finally { setVersionBusy(false); }
-    },
-  }), [creating, error, history, improvement, props.projectId, refreshVersions, versionBusy, versionTarget]);
-
   const startImprover = async () => {
     if (!improvement || !target) return;
     setBusy(true); setError(undefined);
@@ -408,7 +345,6 @@ export function RunEditorDialog(props: {
         <button className="icon-button quiet" aria-label="Close dialog" onClick={props.close}><Icon name="close" /></button>
       </header>
       <div className="dialog-body">
-        <ConfigurationVersions controller={versionController} reload={() => undefined} />
         {/* The Agent can inspect the checkout and test the command. Once the
             user says “apply”, the Agent creates and activates a new version. */}
         {configuration && improvement ? <section className="run-improve-bar">

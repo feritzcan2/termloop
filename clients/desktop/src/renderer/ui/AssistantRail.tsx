@@ -55,7 +55,6 @@ import { usePlaybookTaskDecision, type PlaybookTaskDecisionActions } from "./Pla
 import { Icon } from "./Icon.js";
 import { StewardHowItWorksButton, type StewardHowItWorksOverlay } from "./StewardHowItWorks.js";
 import {
-  ConfigurationVersions,
   PromptImproveButton,
   promptImprovementActionLabel,
   usePromptImprovement,
@@ -508,7 +507,6 @@ export function AssistantRail(props: Props) {
   const playbookImprovement = usePromptImprovement(
     props.improvement,
     playbookImprovementTarget,
-    { watch: true },
   );
   const playbookBuilder = playbookBuilderSession(props.projectId, props.sessions);
   const playbookBuilderAgent = playbookBuilder?.process.agent_id === "claude"
@@ -1076,7 +1074,6 @@ export function AssistantRail(props: Props) {
             <Icon name="close" />
           </button>
         </div> : null}
-        <ConfigurationVersions controller={playbookImprovement} reload={refreshSnapshots} />
         {buildCtaVisible ? <button type="button" className="ar-pl-build-cta"
           disabled={playbookImprovement.busy || playbookBusy}
           title="Choose the agent and launch settings, then draft this Project's pipeline"
@@ -1237,7 +1234,7 @@ function RoutineBuilderControl(props: {
     surface: "routineBuilder" as const,
     ownerId: null,
   }), []);
-  const builder = usePromptImprovement(props.improvement, target, { watch: true });
+  const builder = usePromptImprovement(props.improvement, target);
   const session = routineBuilderSession(props.projectId, props.sessions);
   const sessionAgent = session?.process.agent_id === "claude"
     ? "claude"
@@ -1260,6 +1257,5 @@ function RoutineBuilderControl(props: {
       start={() => { void builder.start(); }}
       setup={props.startSetup}
     />
-    <ConfigurationVersions controller={builder} reload={props.reload} />
   </div>;
 }

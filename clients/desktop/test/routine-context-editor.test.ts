@@ -71,35 +71,16 @@ describe("Routine next-run memory", () => {
     expect(confirm.mock.calls[1]?.[0]).toContain("scan/dedupe state will not be deleted");
   });
 
-  it("shows an Agent-created version as only the compact active version", async () => {
-    const target = { kind: "routineInstructions" as const, targetId: "routine-1" };
-    const versions = vi.fn(async () => ({
-      target,
-      activeVersionId: "version-2",
-      versions: [{
-        id: "version-2", target, sequence: 2,
-        content: JSON.stringify({ prompt: "Inspect immutable releases." }),
-        summary: "Use immutable release evidence",
-        sourceSessionId: "agent-session-1",
-        createdAtEpochMs: 2,
-      }],
-      stateRevision: 3,
-    }));
-    const improvement: PromptImprovement = {
-      start: async () => undefined,
-      versions,
-      restore: async () => undefined,
-    };
+  it("shows no version history control", async () => {
+    const improvement: PromptImprovement = { start: async () => undefined };
 
     await act(async () => {
       root.render(createElement(RoutineContextEditor, editorProps(improvement)));
       await Promise.resolve();
     });
 
-    expect(versions).toHaveBeenCalledWith(target);
-    expect(host.textContent).toContain("v2");
+    expect(host.querySelector('[aria-label="Configuration version"]')).toBeNull();
     expect(host.textContent).not.toContain("Agent activated");
-    expect(host.textContent).not.toContain("Use immutable release evidence");
     expect([...host.querySelectorAll("button")].some((button) => button.textContent === "Apply")).toBe(false);
   });
 });

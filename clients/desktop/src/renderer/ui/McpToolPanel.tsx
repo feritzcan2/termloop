@@ -15,30 +15,23 @@ import {
   type McpSettingsMutationResult,
 } from "../mcp-settings.js";
 import { Icon } from "./Icon.js";
-import { ConfigurationVersions, useConfigurationVersions, type ConfigurationVersionActions } from "./PromptImprovement.js";
 
 /// Stage page for one MCP tool description. Saves carry the revision the rail
 /// was loaded with, so a change made in another client surfaces as a conflict
 /// and reloads the current text instead of overwriting it.
-export function McpToolPanel({ scopeContext, tool, stateRevision, update, reset, apply, versions, reload, close }: {
+export function McpToolPanel({ scopeContext, tool, stateRevision, update, reset, apply, reload, close }: {
   scopeContext?: SettingsScopeContext | undefined;
   tool: McpToolSettingsDto;
   stateRevision: number;
   update(params: McpToolDescriptionUpdateParams): Promise<McpSettingsMutationResult>;
   reset(params: McpToolDescriptionResetParams): Promise<McpSettingsMutationResult>;
   apply(settings: McpToolSettingsResult): void;
-  versions?: ConfigurationVersionActions | undefined;
   reload?: (() => void) | undefined;
   close(): void;
 }) {
   const [draft, setDraft] = useState(tool.effectiveDescription);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  const versionController = useConfigurationVersions(
-    versions,
-    { kind: "settingsMcpTool", targetId: tool.name },
-    { watch: true, refreshKey: String(stateRevision) },
-  );
 
   useEffect(() => {
     setDraft(tool.effectiveDescription);
@@ -137,7 +130,6 @@ export function McpToolPanel({ scopeContext, tool, stateRevision, update, reset,
         </span>
         <code>{[...draft].length.toLocaleString("en-US")} / {MCP_TOOL_DESCRIPTION_MAX_CHARACTERS.toLocaleString("en-US")}</code>
       </div>
-      <ConfigurationVersions controller={versionController} reload={reload ?? (() => undefined)} />
     </section>
   );
 }

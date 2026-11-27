@@ -63,3 +63,18 @@ debug = "line-tables-only"
 
 [profile.dev.package."*"]
 debug = false
+
+# Every durable commit validates and serializes the whole current state under
+# the core lock. The serializer is instantiated in the store crate, so leaving it
+# unoptimized made each development-daemon commit about 5x slower (~40 ms vs ~8 ms).
+[profile.dev.package.serde]
+opt-level = 3
+
+[profile.dev.package.serde_json]
+opt-level = 3
+
+[profile.dev.package.termloop-domain]
+opt-level = 1
+
+[profile.dev.package.termloop-store]
+opt-level = 3

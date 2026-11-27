@@ -158,8 +158,6 @@ export const PROFILED_DESKTOP_OPERATIONS = {
   settingsImproveLaunch: "termloop:settings-improve-launch",
   assistantPromptImprovePreview: "termloop:assistant-prompt-improve-preview",
   assistantPromptImproveLaunch: "termloop:assistant-prompt-improve-launch",
-  configurationVersionList: "termloop:configuration-version-list",
-  configurationVersionRestore: "termloop:configuration-version-restore",
   runRuntimeList: "termloop:run-runtime-list",
   routineConfigurationList: "termloop:routine-configuration-list",
   routineConfigurationCreate: "termloop:routine-configuration-create",

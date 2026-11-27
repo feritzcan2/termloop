@@ -216,7 +216,7 @@ fn draft_write_is_separate_durable_cas_state_never_a_template_or_execution() {
     assert_eq!(read["proposal"]["workflow"]["name"], "Revised proposal");
     assert_eq!(read["summary"], "Revised");
     let saved = Store::open(f.root.join("state.json")).unwrap();
-    assert_eq!(saved.configuration_versions().len(), 2);
+    assert_eq!(saved.configuration_versions().len(), 1);
     assert!(saved.workflow_configurations().is_empty());
     assert_eq!(saved.sessions()[0].improver_target.as_ref(), Some(&target));
     assert!(

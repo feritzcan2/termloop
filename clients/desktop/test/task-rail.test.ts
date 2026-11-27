@@ -237,7 +237,7 @@ function railProps(options: RailOptions = {}): TaskRailProps {
     agentProfiles: [],
     runRuntimes: options.runRuntimes ?? [],
     runStateRevision: 0,
-    runImprovement: { start: unused, versions: unused, restore: unused },
+    runImprovement: { start: unused },
     setupRunImprovement: () => {},
     sessionsById: new Map((options.sessions ?? []).map((session) => [session.id, session])),
     agentGroups: options.agentGroups,

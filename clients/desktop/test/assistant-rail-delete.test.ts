@@ -89,13 +89,6 @@ describe("Steward reset", () => {
       deleteRoutine: async () => { throw new Error("unused"); },
       improvement: {
         start: async () => undefined,
-        versions: async (target) => ({
-          target,
-          activeVersionId: null,
-          versions: [],
-          stateRevision: 7,
-        }),
-        restore: async () => "unused",
       },
       setupPromptImprovement: () => undefined,
       restartSteward: async () => null,

@@ -70,7 +70,7 @@ import { LibraryScopeHeader } from "./LibraryScopeHeader.js";
 import type { McpSettingsMutationResult } from "../mcp-settings.js";
 import { AssistantRail, isAssistantSession, type AssistantSelection } from "./AssistantRail.js";
 import { StewardPanel, type StewardPanelProps } from "./StewardPanel.js";
-import { promptImprovementActionLabel, type ConfigurationVersionActions } from "./PromptImprovement.js";
+import { promptImprovementActionLabel } from "./PromptImprovement.js";
 import { StewardPetHost } from "./StewardPetHost.js";
 import { SessionRelocationDialog } from "./SessionRelocationDialog.js";
 import { JiraTaskProposalCards, jiraTaskWorktreeParams, type JiraTaskProposalActions } from "./JiraTaskProposalCards.js";
@@ -366,7 +366,7 @@ export type ShellProps = {
   launchTaskWorkflow(taskId: string, workflowId: string, goal: string): Promise<string | undefined>;
   launchProjectWorkflow(projectId: string, workflowId: string, goal: string): Promise<string | undefined>;
   runImprovement: RunImprovement;
-  settingsImprovement: ConfigurationVersionActions & {
+  settingsImprovement: {
     start(target: SettingsImproverTarget, selection?: QuickActionAgentSelection, options?: { fresh?: boolean }): Promise<string | undefined>;
   };
   saveRunConfiguration(params: RunConfigurationCreateParams | RunConfigurationUpdateParams): Promise<RunConfigurationDto | string>;
@@ -2123,7 +2123,6 @@ export function Shell(props: ShellProps) {
               skillId={stagePage.id}
               load={props.loadSkillDefinition}
               save={props.saveSkillDefinition}
-              versions={props.settingsImprovement}
               close={() => setStagePage(undefined)}
             /> : stagePage?.kind === "contextFile" ? <ContextBankEditorPanel
               scopeContext={settingsScope}
@@ -2141,7 +2140,6 @@ export function Shell(props: ShellProps) {
               update={props.updateMcpToolDescription}
               reset={props.resetMcpToolDescription}
               apply={mcpLibrary.set}
-              versions={props.settingsImprovement}
               reload={mcpLibrary.reload}
               close={() => setStagePage(undefined)}
             /> : <StageEditorPlaceholder
@@ -2167,7 +2165,6 @@ export function Shell(props: ShellProps) {
               update={props.updatePromptAsset}
               reset={props.resetPromptAsset}
               apply={promptLibrary.set}
-              versions={props.settingsImprovement}
               reload={promptLibrary.reload}
               close={() => setStagePage(undefined)}
             /> : <StageEditorPlaceholder

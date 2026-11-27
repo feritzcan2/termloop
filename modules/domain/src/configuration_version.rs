@@ -2,11 +2,14 @@ use crate::ImproverSessionTarget;
 
 pub const CONFIGURATION_VERSION_CONTENT_MAX_BYTES: usize = 512 * 1024;
 pub const CONFIGURATION_VERSION_SUMMARY_MAX_BYTES: usize = 2 * 1024;
-pub const CONFIGURATION_VERSIONS_PER_TARGET_MAX: usize = 24;
+/// Only the active snapshot is kept. Earlier snapshots are not history the
+/// product can restore: each one is a full copy of the configuration, and the
+/// whole state file is rewritten on every commit.
+pub const CONFIGURATION_VERSIONS_PER_TARGET_MAX: usize = 1;
 
-/// One accepted immutable configuration snapshot. Versions are bounded product
-/// state for user-editable configuration, not an event log: each row contains
-/// the complete value that was active at that version.
+/// The accepted configuration snapshot that is active for one target. Each row
+/// contains the complete value; its sequence still advances on every change so
+/// clients can tell a new snapshot apart from the one they last saw.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigurationVersion {

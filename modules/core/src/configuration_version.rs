@@ -1215,7 +1215,7 @@ mod tests {
     }
 
     #[test]
-    fn target_bound_agent_writes_activate_new_versions_and_selection_reuses_history() {
+    fn target_bound_agent_writes_activate_new_versions_and_drop_the_previous_snapshot() {
         let (mut runtime, state_path, target) = runtime();
         let initial = runtime
             .store
@@ -1269,23 +1269,19 @@ mod tests {
         let unchanged = commit.result.unwrap();
         let unchanged_effects = commit.effects;
         assert_eq!(unchanged["activeVersion"]["id"], second_id);
-        assert_eq!(runtime.store.configuration_versions().len(), 2);
+        assert_eq!(runtime.store.configuration_versions().len(), 1);
         assert!(unchanged_effects.steward_change.is_none());
 
         let project_id = runtime.store.projects()[0].id.clone();
-        let restore = runtime
-            .prepare_configuration_version_restore(json!({
+        // The replaced snapshot is not kept, so it cannot be restored.
+        assert!(matches!(
+            runtime.prepare_configuration_version_restore(json!({
                 "projectId": project_id,
                 "versionId": initial.id,
                 "expectedActiveVersionId": second_id,
-            }))
-            .unwrap();
-        let commit = runtime
-            .apply_owned_configuration_application(restore, AssistantAvailability::Proven, 4)
-            .unwrap();
-        let restored = commit.result.unwrap();
-        assert_eq!(restored["activeVersion"]["sequence"], 1);
-        assert_eq!(runtime.store.configuration_versions().len(), 2);
+            })),
+            Err(CoreError::NotFound)
+        ));
         let listed = runtime
             .list_configuration_versions(json!({
                 "projectId": project_id,
@@ -1293,8 +1289,8 @@ mod tests {
                 "targetId": target.target_id,
             }))
             .unwrap();
-        assert_eq!(listed["activeVersionId"], restored["activeVersion"]["id"]);
-        assert_eq!(listed["versions"].as_array().unwrap().len(), 2);
+        assert_eq!(listed["activeVersionId"], second_id);
+        assert_eq!(listed["versions"].as_array().unwrap().len(), 1);
         let _ = std::fs::remove_file(&state_path);
         let _ = std::fs::remove_dir_all(state_path.with_extension("project"));
     }

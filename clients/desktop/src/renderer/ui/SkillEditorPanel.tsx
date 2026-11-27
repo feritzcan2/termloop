@@ -3,7 +3,6 @@ import { SettingsScopeLabel } from "./SettingsScopeLabel.js";
 import { useCallback, useEffect, useState } from "react";
 
 import type { SkillDefinitionDto } from "@termloop/contract/current";
-import { ConfigurationVersions, useConfigurationVersions, type ConfigurationVersionActions } from "./PromptImprovement.js";
 import { Icon } from "./Icon.js";
 
 /**
@@ -11,13 +10,12 @@ import { Icon } from "./Icon.js";
  * Saves go through the daemon's stale-guarded definition command; a conflict
  * surfaces as an error and Reload fetches the current on-disk content.
  */
-export function SkillEditorPanel({ scopeContext, scope, skillId, load, save, versions, close }: {
+export function SkillEditorPanel({ scopeContext, scope, skillId, load, save, close }: {
   scopeContext?: SettingsScopeContext | undefined;
   scope?: "project" | "computer" | undefined;
   skillId: string;
   load(skillId: string): Promise<SkillDefinitionDto>;
   save(skillId: string, expectedContentSha256: string, content: string): Promise<SkillDefinitionDto>;
-  versions?: ConfigurationVersionActions | undefined;
   close(): void;
 }) {
   const [definition, setDefinition] = useState<SkillDefinitionDto>();
@@ -26,11 +24,6 @@ export function SkillEditorPanel({ scopeContext, scope, skillId, load, save, ver
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
   const [reloadToken, setReloadToken] = useState(0);
-  const versionController = useConfigurationVersions(
-    versions,
-    { kind: "settingsSkill", targetId: skillId },
-    { watch: true, refreshKey: String(reloadToken) },
-  );
   const reload = useCallback(() => setReloadToken((current) => current + 1), []);
 
   useEffect(() => {
@@ -106,7 +99,6 @@ export function SkillEditorPanel({ scopeContext, scope, skillId, load, save, ver
           }
         }}
       /> : null}
-      <ConfigurationVersions controller={versionController} reload={reload} />
     </section>
   );
 }

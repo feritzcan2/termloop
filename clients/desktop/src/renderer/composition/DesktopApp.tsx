@@ -11,7 +11,7 @@ import { emptyLayoutDocument, panes, type LayoutDocument, type SplitDirection, t
 import { desktopApi, type SourceDesktopApi } from "../transport/desktop-api.js";
 import { taskBindBranchFailureMessage } from "../transport/task-branch-binding.js";
 import { provisionTaskWorktree as submitTaskWorktreeProvisioning, taskProvisionWorktreeFailureMessage } from "../transport/task-worktree-provisioning.js";
-import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget, ConfigurationVersionDto, GitHostRepositoryPullRequestFilter, GitHostTaskProjectionDto, QuickActionParams, SettingsImproverTarget, ProjectLocalBranchListResult, ProtocolErrorDetails, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, TaskBranchCommitSummaryDto, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, VersionedConfigurationTarget, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
+import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget, GitHostRepositoryPullRequestFilter, GitHostTaskProjectionDto, QuickActionParams, SettingsImproverTarget, ProjectLocalBranchListResult, ProtocolErrorDetails, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, TaskBranchCommitSummaryDto, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
 import { rememberPromptImproverSession } from "../prompt-improver-session-link.js";
 import { taskLaunchFailureMessage } from "../transport/task-launch.js";
 import { onGatewayState } from "../transport/terminal-port.js";
@@ -1428,32 +1428,6 @@ export function DesktopApp() {
         return message;
       }
     },
-    async versions(target: VersionedConfigurationTarget) {
-      const projectId = presentationStore.getState().selectedProjectId ?? "";
-      if (!projectId) return "Open a Project first.";
-      try {
-        return await sourceApiForProject(projectId).configurationVersionList({ projectId, ...target });
-      } catch (error) {
-        return controlErrorMessage(error);
-      }
-    },
-    async restore(target: VersionedConfigurationTarget, version: ConfigurationVersionDto, activeVersionId: string | null): Promise<string | undefined> {
-      const projectId = presentationStore.getState().selectedProjectId ?? "";
-      if (!projectId) return "Open a Project first.";
-      try {
-        await sourceApiForProject(projectId).configurationVersionRestore({
-          projectId,
-          versionId: version.id,
-          expectedActiveVersionId: activeVersionId,
-        });
-        await refreshProjection();
-        return undefined;
-      } catch (error) {
-        const message = controlErrorMessage(error);
-        projectionStore.setMessage(message);
-        return message;
-      }
-    },
   }), []);
   const runImprovement = useMemo(() => {
     const templateRef = (target: RunConfigurationImproverTarget) =>
@@ -1492,28 +1466,6 @@ export function DesktopApp() {
           );
           await activateSession(activation, session);
           return undefined;
-        } catch (error) {
-          const message = controlErrorMessage(error);
-          projectionStore.setMessage(message);
-          return message;
-        }
-      },
-      async versions(projectId: string, target: VersionedConfigurationTarget) {
-        try {
-          return await sourceApiForProject(projectId).configurationVersionList({ projectId, ...target });
-        } catch (error) {
-          return controlErrorMessage(error);
-        }
-      },
-      async restore(projectId: string, _target: VersionedConfigurationTarget, versionId: string, expectedActiveVersionId: string | null) {
-        try {
-          const result = await sourceApiForProject(projectId).configurationVersionRestore({
-            projectId,
-            versionId,
-            expectedActiveVersionId,
-          });
-          await refreshProjection();
-          return result;
         } catch (error) {
           const message = controlErrorMessage(error);
           projectionStore.setMessage(message);
@@ -2490,28 +2442,6 @@ export function DesktopApp() {
           );
           rememberPromptImproverSession(projectId, target, session.id);
           await activateSession(activation, session);
-          return undefined;
-        } catch (error) {
-          const message = controlErrorMessage(error);
-          projectionStore.setMessage(message);
-          return message;
-        }
-      },
-      async versions(target: VersionedConfigurationTarget) {
-        try {
-          return await api.configurationVersionList({ projectId, ...target });
-        } catch (error) {
-          return controlErrorMessage(error);
-        }
-      },
-      async restore(target: VersionedConfigurationTarget, version: import("@termloop/contract/current").ConfigurationVersionDto, activeVersionId: string | null): Promise<string | undefined> {
-        try {
-          await api.configurationVersionRestore({
-            projectId,
-            versionId: version.id,
-            expectedActiveVersionId: activeVersionId,
-          });
-          await refreshProjection();
           return undefined;
         } catch (error) {
           const message = controlErrorMessage(error);
