@@ -257,6 +257,87 @@ fn acknowledged_destructive_removal_discards_local_content_and_preserves_branch(
 }
 
 #[test]
+fn interrupted_removal_link_restore_lets_the_exact_removal_finish() {
+    let fixture = Fixture::new();
+    let runner = GitRunner::discover().unwrap();
+    let base = GitRefName::from_bytes(b"refs/heads/main".to_vec()).unwrap();
+    let target = GitRefName::from_bytes(b"refs/heads/feature/interrupted".to_vec()).unwrap();
+    let oid = runner
+        .resolve_ref(&fixture.repository, &base)
+        .unwrap()
+        .unwrap();
+    let marker =
+        GitReflogMessage::from_bytes(b"termloop-provision:operation-interrupted".to_vec()).unwrap();
+    runner
+        .create_branch_ref(&fixture.repository, &target, &oid, &marker)
+        .unwrap();
+    let root = std::fs::canonicalize(&fixture.root).unwrap();
+    let destination = root.join("interrupted worktree");
+    let sibling = root.join("sibling worktree");
+    runner
+        .add_worktree(&fixture.repository, &destination, &target)
+        .unwrap();
+    let sibling_branch = GitRefName::from_bytes(b"refs/heads/feature/sibling".to_vec()).unwrap();
+    runner
+        .create_branch_ref(&fixture.repository, &sibling_branch, &oid, &marker)
+        .unwrap();
+    runner
+        .add_worktree(&fixture.repository, &sibling, &sibling_branch)
+        .unwrap();
+    let common_dir = std::fs::canonicalize(fixture.repository.join(".git")).unwrap();
+
+    // A live link is not an interrupted removal.
+    assert!(matches!(
+        runner.restore_interrupted_worktree_link(&common_dir, &destination),
+        Err(GitError::PathConflict)
+    ));
+
+    // Simulate Git being killed midway through `worktree remove --force`:
+    // the link and part of the checkout are gone, ignored output remains.
+    std::fs::create_dir(destination.join("bin")).unwrap();
+    std::fs::write(destination.join("bin/artifact"), "fixture\n").unwrap();
+    std::fs::remove_file(destination.join(".git")).unwrap();
+    std::fs::remove_file(destination.join("tracked.txt")).unwrap();
+    std::fs::remove_file(sibling.join(".git")).unwrap();
+    assert!(
+        runner
+            .remove_worktree_exact_discarding_checkout_content(&fixture.repository, &destination)
+            .is_err()
+    );
+
+    runner
+        .restore_interrupted_worktree_link(&common_dir, &destination)
+        .unwrap();
+    // Only the exact destination is touched.
+    assert!(!sibling.join(".git").exists());
+    runner
+        .remove_worktree_exact_discarding_checkout_content(&fixture.repository, &destination)
+        .unwrap();
+
+    assert!(!destination.exists());
+    assert!(
+        runner
+            .resolve_ref(&fixture.repository, &target)
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        runner
+            .list_worktrees(&fixture.repository)
+            .unwrap()
+            .iter()
+            .all(|worktree| worktree.registered_path != destination)
+    );
+
+    let unregistered = root.join("unregistered");
+    std::fs::create_dir(&unregistered).unwrap();
+    assert!(matches!(
+        runner.restore_interrupted_worktree_link(&common_dir, &unregistered),
+        Err(GitError::MissingRegistration)
+    ));
+}
+
+#[test]
 fn destructive_removal_accepts_a_symlink_aliased_destination_and_confirms_deregistration() {
     let fixture = Fixture::new();
     let runner = GitRunner::discover().unwrap();

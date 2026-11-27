@@ -609,3 +609,117 @@ fn safe_dirty_refusal_can_retry_without_reusing_a_new_operation() {
     assert_eq!(result["outcome"], "removed");
     assert!(!destination.exists());
 }
+
+/// Simulates Git being killed midway through `worktree remove`: the checkout's
+/// `.git` link is gone while the directory and its registration remain.
+fn interrupt_removal(fixture: &mut Fixture, task_id: &str, operation_id: &str, destination: &Path) {
+    fixture
+        .runtime
+        .store
+        .fail_task_worktree_cleanup(
+            &fixture.runtime.write_authority,
+            task_id,
+            operation_id,
+            termloop_domain::WorktreeCleanupFailure {
+                kind: WorktreeCleanupFailureKind::Timeout,
+                blockers: vec![],
+            },
+            termloop_platform::current_epoch_ms(),
+        )
+        .unwrap();
+    std::fs::remove_file(destination.join(".git")).unwrap();
+}
+
+#[test]
+fn interrupted_destructive_removal_resumes_and_finishes_on_retry() {
+    let mut fixture = Fixture::new();
+    let (task_id, destination, proof_id, generation) = provision_cleanup_fixture(&mut fixture);
+    std::fs::create_dir(destination.join("bin")).unwrap();
+    std::fs::write(destination.join("bin/artifact"), "build output\n").unwrap();
+    let operation_id = Uuid::new_v4().to_string();
+    let _removal = prepare_cleanup_removal(
+        &mut fixture,
+        json!({
+            "operationId": operation_id,
+            "taskId": task_id,
+            "expectedManagedWorktreeOperationId": proof_id,
+            "expectedWorktreeGeneration": generation,
+            "cleanupMode": "discardCheckoutContent",
+            "acknowledgedContentBlockers": ["untrackedContent"],
+        }),
+    );
+    interrupt_removal(&mut fixture, &task_id, &operation_id, &destination);
+
+    // The preview reports the journaled consent instead of an unknown checkout.
+    let preview = fixture
+        .runtime
+        .inspect_task_worktree_cleanup(json!({ "taskId": task_id }))
+        .unwrap();
+    assert_eq!(preview["blockers"], json!(["untrackedContent"]));
+    assert_eq!(preview["destructive_cleanup"]["status"], "available");
+
+    let replacement_operation_id = Uuid::new_v4().to_string();
+    let result = fixture
+        .runtime
+        .cleanup_task_worktree(json!({
+            "operationId": replacement_operation_id,
+            "taskId": task_id,
+            "expectedManagedWorktreeOperationId": proof_id,
+            "expectedWorktreeGeneration": generation,
+            "cleanupMode": "discardCheckoutContent",
+            "acknowledgedContentBlockers": ["untrackedContent"],
+        }))
+        .unwrap();
+    assert_eq!(result["outcome"], "removed");
+    assert!(!destination.exists());
+    assert!(fixture.runtime.store.cleanup_operations().is_empty());
+    // The resumed journal entry, not the request, owns the receipt.
+    assert_eq!(
+        fixture.runtime.store.cleanup_receipts()[0].operation_id,
+        operation_id
+    );
+    let runner = GitRunner::discover().unwrap();
+    assert!(
+        runner
+            .list_worktrees(&fixture.project_directory)
+            .unwrap()
+            .iter()
+            .all(|worktree| worktree.registered_path != destination)
+    );
+}
+
+#[test]
+fn interrupted_safe_removal_resumes_with_the_same_operation() {
+    let mut fixture = Fixture::new();
+    let (task_id, destination, proof_id, generation) = provision_cleanup_fixture(&mut fixture);
+    let operation_id = Uuid::new_v4().to_string();
+    let params = cleanup_params(&task_id, &operation_id, &proof_id, generation);
+    let _removal = prepare_cleanup_removal(&mut fixture, params.clone());
+    interrupt_removal(&mut fixture, &task_id, &operation_id, &destination);
+
+    let preview = fixture
+        .runtime
+        .inspect_task_worktree_cleanup(json!({ "taskId": task_id }))
+        .unwrap();
+    assert_eq!(preview["decision"], "allowed");
+
+    let result = fixture.runtime.cleanup_task_worktree(params).unwrap();
+    assert_eq!(result["outcome"], "removed");
+    assert!(!destination.exists());
+    assert!(fixture.runtime.store.cleanup_operations().is_empty());
+}
+
+#[test]
+fn unjournaled_missing_link_stays_unknown() {
+    let mut fixture = Fixture::new();
+    let (task_id, destination, _proof_id, _generation) = provision_cleanup_fixture(&mut fixture);
+    std::fs::remove_file(destination.join(".git")).unwrap();
+
+    let preview = fixture
+        .runtime
+        .inspect_task_worktree_cleanup(json!({ "taskId": task_id }))
+        .unwrap();
+    assert_eq!(preview["blockers"], json!(["observationFailed"]));
+    assert_eq!(preview["destructive_cleanup"]["status"], "unavailable");
+    assert!(destination.exists());
+}

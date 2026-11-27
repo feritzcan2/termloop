@@ -1,7 +1,8 @@
 use serde_json::Value;
 use termloop_domain::{
     WorktreeCleanupBlocker, WorktreeCleanupFailureKind, WorktreeCleanupMode,
-    WorktreeCleanupOperation, WorktreeStaleResolutionBlocker, WorktreeStaleResolutionMode,
+    WorktreeCleanupOperation, WorktreeCleanupStage, WorktreeStaleResolutionBlocker,
+    WorktreeStaleResolutionMode,
 };
 use termloop_gitio::{ChangeState, ContentState, LockState, SubmoduleState, UpstreamState};
 
@@ -115,11 +116,47 @@ impl CoreRuntime {
                 push_unique(&mut blockers, blocker);
             }
             return (blockers, warnings);
+        } else if let Some(journaled) = self.journaled_interrupted_removal(observed) {
+            // The half-deleted checkout still holds the content the journaled
+            // removal was authorized to discard; report exactly that consent so
+            // a retry resumes with the same intent.
+            for blocker in &journaled.acknowledged_content_blockers {
+                push_unique(&mut blockers, *blocker);
+            }
         } else if !both_absent(&observed.facts) && !orphaned_managed_directory(&observed.facts) {
             push_unique(&mut blockers, WorktreeCleanupBlocker::ObservationFailed);
         }
         (blockers, Vec::new())
     }
+
+    /// An interrupted removal has no observable checkout health, but it is not
+    /// unknown when this Task's own journal records the removal that was
+    /// already launched against this exact checkout.
+    fn journaled_interrupted_removal(
+        &self,
+        observed: &ObservedTaskWorktreeCleanup,
+    ) -> Option<&WorktreeCleanupOperation> {
+        self.store.cleanup_operations().iter().find(|operation| {
+            operation.task_id == observed.task_id
+                && resumable_interrupted_removal(&observed.facts, operation)
+        })
+    }
+}
+
+/// True when `operation` launched a removal that was killed midway and the
+/// checkout left behind is still exactly the one it was removing.
+pub(super) fn resumable_interrupted_removal(
+    facts: &TaskWorktreeCleanupFacts,
+    operation: &WorktreeCleanupOperation,
+) -> bool {
+    operation.stage == WorktreeCleanupStage::RemovePrepared
+        && facts.interrupted_removal
+        && facts.path_state == CleanupPathState::Present
+        && facts.registration_state == CleanupRegistrationState::Matching
+        && facts.branch_matches == Some(true)
+        && facts.head_matches == Some(true)
+        && facts.head_oid.as_deref() == Some(operation.baseline.head_oid.as_str())
+        && operation.baseline.checkout_branch_ref.is_none()
 }
 
 pub(super) fn both_absent(facts: &TaskWorktreeCleanupFacts) -> bool {

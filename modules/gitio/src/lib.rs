@@ -28,8 +28,9 @@ pub use changes::{
     WorktreeDiffObservation,
 };
 pub use command::{
-    CLEANUP_GIT_MUTATION_DEADLINE, CLEANUP_GIT_SUBPROCESS_DEADLINE, GitCapabilities, GitRunner,
-    GitVersion, HEALTH_GIT_SUBPROCESS_DEADLINE,
+    CLEANUP_GIT_MUTATION_DEADLINE, CLEANUP_GIT_SUBPROCESS_DEADLINE,
+    CLEANUP_GIT_WORKTREE_REMOVAL_DEADLINE, GitCapabilities, GitRunner, GitVersion,
+    HEALTH_GIT_SUBPROCESS_DEADLINE,
 };
 pub use commit_changes::{
     BRANCH_COMMIT_LIST_MAX_ENTRIES, BranchCommit, BranchCommitListObservation,

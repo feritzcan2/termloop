@@ -191,7 +191,7 @@ impl TaskWorktreeStaleDisposalStep {
                                 .expect("registered stale checkout has a branch binding");
                             let removal = runner
                                 .with_absolute_timeout(
-                                    termloop_gitio::CLEANUP_GIT_MUTATION_DEADLINE,
+                                    termloop_gitio::CLEANUP_GIT_WORKTREE_REMOVAL_DEADLINE,
                                 )
                                 .map_err(map_git_observation_error)
                                 .and_then(|runner| {
@@ -940,6 +940,7 @@ pub(super) fn observe_stale_resolution_facts(
         alternate_checkout_matches: false,
         head_oid,
         health: None,
+        interrupted_removal: false,
     })
 }
 

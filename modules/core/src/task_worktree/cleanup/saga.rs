@@ -14,7 +14,7 @@ use super::super::git_mapping::map_git_observation_error;
 use super::policy::{
     both_absent, cleanup_failure_kind, cleanup_intent, cleanup_operation_id_is_owned,
     cleanup_refused, post_removal_matches, proof_changed, push_unique, requires_recovery_attention,
-    unauthorized_cleanup_blockers,
+    resumable_interrupted_removal, unauthorized_cleanup_blockers,
 };
 use super::projection::outcome_name;
 use super::{CleanupPathState, TaskWorktreeCleanupFacts, observe_cleanup_facts};
@@ -71,6 +71,9 @@ pub struct TaskWorktreeCleanupRemovalStep {
     operation: WorktreeCleanupOperation,
     proof: ManagedWorktreeProof,
     runner: GitRunner,
+    /// Finishes a removal that was killed midway: restore the exact `.git`
+    /// link Git deleted first, then let Git remove what is left.
+    resume_interrupted: bool,
 }
 
 pub struct ExecutedTaskWorktreeCleanupRemoval {
@@ -152,8 +155,22 @@ impl TaskWorktreeCleanupRemovalStep {
         let bounded_runner = self
             .runner
             .clone()
-            .with_absolute_timeout(termloop_gitio::CLEANUP_GIT_MUTATION_DEADLINE);
+            .with_absolute_timeout(termloop_gitio::CLEANUP_GIT_WORKTREE_REMOVAL_DEADLINE);
         let result = match bounded_runner {
+            // The interrupted checkout's content was already authorized for
+            // removal and is partly deleted; finishing it must not require a
+            // clean status that the half-deleted checkout can never report.
+            Ok(runner) if self.resume_interrupted => runner
+                .restore_interrupted_worktree_link(
+                    Path::new(&self.operation.baseline.repository_common_dir),
+                    Path::new(&self.operation.baseline.worktree_path),
+                )
+                .and_then(|()| {
+                    runner.remove_worktree_exact_discarding_checkout_content(
+                        Path::new(&self.operation.baseline.repository_root),
+                        Path::new(&self.operation.baseline.worktree_path),
+                    )
+                }),
             Ok(runner) => match self.operation.cleanup_mode {
                 WorktreeCleanupMode::Safe => runner.remove_worktree_non_force(
                     Path::new(&self.operation.baseline.repository_root),
@@ -386,6 +403,43 @@ impl CoreRuntime {
             &observed.task_id,
             observed.facts.path_state == CleanupPathState::Absent,
         )?;
+        if let Some(previous_operation_id) = &observed.supersedes_operation_id {
+            let previous = self
+                .store
+                .cleanup_operations()
+                .iter()
+                .find(|operation| operation.operation_id == *previous_operation_id)
+                .cloned()
+                .ok_or(CoreError::NotFound)?;
+            if resumable_interrupted_removal(&observed.facts, &previous) {
+                if presence.total_count > 0 {
+                    return Err(cleanup_refused(
+                        &observed,
+                        vec![WorktreeCleanupBlocker::SessionAttached],
+                    ));
+                }
+                // Resume the journaled removal instead of starting a new one
+                // whose observation could never prove the half-deleted checkout.
+                let operation = self
+                    .store
+                    .retry_task_worktree_cleanup(
+                        &self.write_authority,
+                        &previous.task_id,
+                        &previous.operation_id,
+                        termloop_platform::current_epoch_ms(),
+                    )
+                    .map_err(store_error)?;
+                return Ok(TaskWorktreeCleanupProgress::Revalidate(Box::new(
+                    TaskWorktreeCleanupObservationStep {
+                        expected_task_archived_at_epoch_ms: observed
+                            .expected_task_archived_at_epoch_ms,
+                        operation,
+                        proof: observed.proof,
+                        runner: observed.runner,
+                    },
+                )));
+            }
+        }
         let (blockers, _) = self.cleanup_policy(&observed, &presence, Some(&observed.operation_id));
         let blockers = unauthorized_cleanup_blockers(
             observed.cleanup_mode,
@@ -557,6 +611,7 @@ impl CoreRuntime {
                         operation,
                         proof: observed.proof,
                         runner: observed.runner,
+                        resume_interrupted: false,
                     },
                 )))
             }
@@ -574,6 +629,23 @@ impl CoreRuntime {
                         .map_err(store_error)?;
                     self.complete_cleanup_binding_clear(&operation, "removed")
                         .map(TaskWorktreeCleanupProgress::Return)
+                } else if resumable_interrupted_removal(&observed.facts, &operation) {
+                    if presence.total_count > 0 {
+                        return Err(cleanup_refused(
+                            &observed,
+                            vec![WorktreeCleanupBlocker::SessionAttached],
+                        ));
+                    }
+                    Ok(TaskWorktreeCleanupProgress::Remove(Box::new(
+                        TaskWorktreeCleanupRemovalStep {
+                            expected_task_archived_at_epoch_ms: observed
+                                .expected_task_archived_at_epoch_ms,
+                            operation,
+                            proof: observed.proof,
+                            runner: observed.runner,
+                            resume_interrupted: true,
+                        },
+                    )))
                 } else {
                     self.mark_cleanup_attention(&operation)?;
                     Err(CoreError::WorktreeCleanupRecoveryAttention {

@@ -15,6 +15,12 @@ pub const HEALTH_GIT_SUBPROCESS_DEADLINE: Duration = Duration::from_millis(2_500
 /// can need several seconds; a timeout still fails closed.
 pub const CLEANUP_GIT_SUBPROCESS_DEADLINE: Duration = Duration::from_secs(20);
 pub const CLEANUP_GIT_MUTATION_DEADLINE: Duration = Duration::from_secs(60);
+/// Budget for one `git worktree remove`. Git deletes the whole checkout,
+/// including ignored build output (`bin/`, `obj/`, `node_modules`), which can
+/// be gigabytes of small files on an external volume. Killing Git midway
+/// leaves a half-deleted checkout whose `.git` link may already be gone, so
+/// this deadline only guards against a hung process, not slow deletion.
+pub const CLEANUP_GIT_WORKTREE_REMOVAL_DEADLINE: Duration = Duration::from_secs(30 * 60);
 const HEALTH_OUTPUT_LIMIT: usize = 8 * 1024 * 1024;
 
 /// Git for Windows writes CRLF for line-oriented stdout when the pipe is in

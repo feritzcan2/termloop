@@ -134,6 +134,89 @@ impl GitRunner {
         })
     }
 
+    /// Restores the `.git` link file of one exact registered worktree whose
+    /// removal was interrupted after Git deleted that file but before it
+    /// deleted the rest of the checkout and its administrative directory.
+    ///
+    /// Git refuses `worktree remove` for such a checkout ("validation failed")
+    /// and `worktree repair` reports it as broken, so the interrupted removal
+    /// could never finish. This writes back only the link Git itself recorded:
+    /// the destination must be an existing directory without a `.git` entry,
+    /// Git must list it as a prunable registration, and exactly one
+    /// administrative directory under `<common>/worktrees` must record
+    /// `<destination>/.git` as its backlink. It never removes, prunes, or
+    /// repairs any other worktree.
+    pub fn restore_interrupted_worktree_link(
+        &self,
+        repository_common_dir: &Path,
+        destination: &Path,
+    ) -> Result<(), GitError> {
+        let operation = GitOperation::RepairWorktree;
+        let canonical_destination =
+            termloop_platform::canonical_existing_directory_path(destination)
+                .map_err(|error| map_platform_error(error, operation))?;
+        if canonical_destination != destination {
+            return Err(GitError::PathConflict);
+        }
+        let link_path = destination.join(".git");
+        match termloop_platform::path_entry_state(&link_path)
+            .map_err(|error| map_platform_error(error, operation))?
+        {
+            termloop_platform::PathEntryState::Absent => {}
+            _ => return Err(GitError::PathConflict),
+        }
+        let registered_prunable =
+            self.list_worktrees(repository_common_dir)?
+                .iter()
+                .any(|worktree| {
+                    worktree.registered_path == destination
+                        && !matches!(worktree.prunable, crate::WorktreeMarker::Absent)
+                });
+        if !registered_prunable {
+            return Err(GitError::MissingRegistration);
+        }
+        let administrative_root = repository_common_dir.join("worktrees");
+        let entries = std::fs::read_dir(&administrative_root).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                GitError::MissingRegistration
+            } else {
+                map_platform_error(error.into(), operation)
+            }
+        })?;
+        let mut matching = Vec::new();
+        for entry in entries {
+            let entry = entry.map_err(|error| map_platform_error(error.into(), operation))?;
+            let administrative_dir = entry.path();
+            let Ok(Some(backlink)) = termloop_platform::read_bounded_file_if_present(
+                &administrative_dir.join("gitdir"),
+                LINK_FILE_LIMIT,
+            ) else {
+                continue;
+            };
+            let backlink = backlink.strip_suffix(b"\n").unwrap_or(&backlink).to_vec();
+            if termloop_platform::path_from_process_bytes(backlink)
+                .is_ok_and(|backlink| backlink == link_path)
+            {
+                matching.push(administrative_dir);
+            }
+        }
+        let [administrative_dir] = matching.as_slice() else {
+            return Err(if matching.is_empty() {
+                GitError::MissingRegistration
+            } else {
+                GitError::ParseFailed { operation }
+            });
+        };
+        let mut link = b"gitdir: ".to_vec();
+        link.extend(
+            termloop_platform::process_bytes_from_os_str(administrative_dir.as_os_str())
+                .map_err(|error| map_platform_error(error, operation))?,
+        );
+        link.push(b'\n');
+        termloop_platform::create_private_file(&link_path, &link)
+            .map_err(|error| map_platform_error(error, operation))
+    }
+
     /// Invokes only Git's non-force link-repair primitive.
     pub fn repair_worktree_link(
         &self,

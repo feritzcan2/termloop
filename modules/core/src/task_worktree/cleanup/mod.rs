@@ -85,6 +85,11 @@ pub struct TaskWorktreeCleanupFacts {
     pub alternate_checkout_matches: bool,
     pub head_oid: Option<String>,
     pub health: Option<WorktreeHealthObservation>,
+    /// The checkout directory and its Git registration both still exist, but
+    /// Git reports the registration prunable and the checkout's `.git` link
+    /// is gone: the shape a `git worktree remove` killed midway leaves behind.
+    /// Health cannot be observed without the link, so `health` stays `None`.
+    pub interrupted_removal: bool,
 }
 
 impl CoreRuntime {
@@ -393,6 +398,7 @@ pub(super) fn observe_cleanup_facts(
             alternate_checkout_matches: false,
             head_oid: None,
             health: None,
+            interrupted_removal: false,
         });
     }
     let path_state = match termloop_platform::canonical_directory_if_exists(destination)
@@ -436,8 +442,20 @@ pub(super) fn observe_cleanup_facts(
             WorktreeCheckout::Bare | WorktreeCheckout::Detached { .. } => false,
         });
     let mut alternate_checkout_matches = false;
+    let interrupted_removal = path_state == CleanupPathState::Present
+        && registration.as_ref().is_some_and(|registration| {
+            !matches!(
+                registration.prunable,
+                termloop_gitio::WorktreeMarker::Absent
+            )
+        })
+        && matches!(
+            termloop_platform::path_entry_state(&destination.join(".git")),
+            Ok(termloop_platform::PathEntryState::Absent)
+        );
     let health = if path_state == CleanupPathState::Present
         && registration_state == CleanupRegistrationState::Matching
+        && !interrupted_removal
     {
         let health = runner
             .inspect_worktree_health_with_budget(destination, WorktreeObservationBudget::Cleanup)
@@ -465,6 +483,7 @@ pub(super) fn observe_cleanup_facts(
         alternate_checkout_matches,
         head_oid,
         health,
+        interrupted_removal,
     })
 }
 
