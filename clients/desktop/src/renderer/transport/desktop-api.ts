@@ -137,6 +137,7 @@ import type {
   PlaybookGetResult,
   PlaybookRuntimeResult,
   PlaybookEvaluationHistoryResult,
+  PlaybookTaskTimelineResult,
   PlaybookTaskPositionSetParams,
   PlaybookTaskPositionSetResult,
   PlaybookUpdateParams,
@@ -461,6 +462,7 @@ export type DesktopApi = {
   playbookGet(projectId: string): Promise<PlaybookGetResult>;
   playbookRuntime(projectId: string): Promise<PlaybookRuntimeResult>;
   playbookEvaluationHistory(projectId: string): Promise<PlaybookEvaluationHistoryResult>;
+  playbookTaskTimeline(projectId: string, taskId: string): Promise<PlaybookTaskTimelineResult>;
   playbookTaskPositionSet(params: PlaybookTaskPositionSetParams): Promise<TaskControlDesktopResult<PlaybookTaskPositionSetResult>>;
   playbookUpdate(params: PlaybookUpdateParams): Promise<TaskControlDesktopResult<PlaybookUpdateResult>>;
   companionTranscriptList(params: CompanionTranscriptListParams): Promise<CompanionTranscriptListResult>;

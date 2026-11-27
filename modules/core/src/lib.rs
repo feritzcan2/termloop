@@ -93,6 +93,7 @@ pub use termloop_domain::{ImproverSessionTarget, ImproverSessionTargetKind};
 /// Re-exported so the daemon composition root can map the keep-awake
 /// preference onto its generated contract shape without depending on `domain`.
 pub use termloop_domain::{KeepAwakeMode, KeepAwakePreference};
+pub use termloop_domain::{PlaybookCriterionCheck, PlaybookCriterionStatus};
 pub use termloop_invocation::SettingsEntryKind;
 /// Integration status probes and the daemon-held Azure DevOps PAT handle.
 /// Probes are blocking CLI work and run outside the serialized core lock.

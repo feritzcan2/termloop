@@ -1397,6 +1397,10 @@
       "params": { "$ref": "#/$defs/playbookRuntimeParams" },
       "result": { "$ref": "#/$defs/playbookEvaluationHistoryResult" }
     },
+    "playbook.taskTimeline": {
+      "params": { "$ref": "#/$defs/playbookTaskTimelineParams" },
+      "result": { "$ref": "#/$defs/playbookTaskTimelineResult" }
+    },
     "companion.transcriptAppend": {
       "params": {
         "$ref": "#/$defs/companionTranscriptAppendParams"
@@ -2568,6 +2572,7 @@
         "playbook.taskPositionSet",
         "playbook.runtime",
         "playbook.evaluationHistory",
+        "playbook.taskTimeline",
         "companion.transcriptAppend",
         "companion.proposalRespond",
         "companion.suggestionAccept",
@@ -17433,7 +17438,144 @@
         "startedAtEpochMs": { "type": "integer", "minimum": 0 },
         "finishedAtEpochMs": { "type": ["integer", "null"], "minimum": 0 },
         "outcome": { "type": "string", "enum": ["inProgress", "passed", "waiting", "blocked", "failed", "interrupted", "rewound"] },
+        "evidence": { "type": "string", "maxLength": 600, "x-utf8-max-bytes": 600 },
+        "agentReport": { "$ref": "#/$defs/playbookEvaluationAgentReportDto" },
+        "criteria": { "description": "The evaluator's per-criterion findings behind its verdict.", "type": "array", "maxItems": 12, "items": { "$ref": "#/$defs/playbookCriterionCheckDto" } },
+        "pullRequestNumber": { "description": "The pull request the step passed with, when it follows one.", "type": "integer", "minimum": 1, "x-rust-type": "u64" },
+        "rewoundTo": { "$ref": "#/$defs/playbookEvaluationStepRefDto" }
+      }
+    },
+    "playbookEvaluationAgentReportDto": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookEvaluationAgentReportDto",
+      "description": "The Task Agent's own unverified report about the step, as it stood when the check started.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "evidence", "reportedAtEpochMs"],
+      "properties": {
+        "status": { "$ref": "#/$defs/playbookAgentReportStatus" },
+        "evidence": { "type": "string", "minLength": 1, "maxLength": 600, "x-utf8-max-bytes": 600 },
+        "reportedAtEpochMs": { "type": "integer", "minimum": 0, "x-rust-type": "u64" }
+      }
+    },
+    "playbookCriterionStatus": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookCriterionStatus",
+      "type": "string",
+      "enum": ["met", "unmet", "unknown"]
+    },
+    "playbookCriterionCheckDto": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookCriterionCheckDto",
+      "description": "One completion criterion an evaluator checked, and what it found.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["criterion", "status", "evidence"],
+      "properties": {
+        "criterion": { "type": "string", "minLength": 1, "maxLength": 300, "x-utf8-max-bytes": 300 },
+        "status": { "$ref": "#/$defs/playbookCriterionStatus" },
+        "evidence": { "type": "string", "minLength": 1, "maxLength": 600, "x-utf8-max-bytes": 600 }
+      }
+    },
+    "playbookEvaluationStepRefDto": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookEvaluationStepRefDto",
+      "description": "The earlier step a send-back moved the Task to, with its title when recorded.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["milestoneId", "title"],
+      "properties": {
+        "milestoneId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 4096 }
+      }
+    },
+    "playbookTaskTimelineParams": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookTaskTimelineParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectId", "taskId"],
+      "properties": {
+        "projectId": { "type": "string", "minLength": 1 },
+        "taskId": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    },
+    "playbookTaskTimelineEntryKind": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookTaskTimelineEntryKind",
+      "type": "string",
+      "enum": ["evaluation", "decision", "agentReport", "steward"]
+    },
+    "playbookTaskTimelineDecisionDto": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookTaskTimelineDecisionDto",
+      "description": "A step verdict decided without an evaluator: by TermLoop's own Git host read, a trusted Agent report, or the user.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verdict", "evaluator", "evidence", "pullRequestNumber"],
+      "properties": {
+        "verdict": { "$ref": "#/$defs/playbookStepVerdict" },
+        "evaluator": { "$ref": "#/$defs/playbookStepEvaluator" },
+        "evidence": { "type": "string", "maxLength": 600, "x-utf8-max-bytes": 600 },
+        "pullRequestNumber": { "type": ["integer", "null"], "minimum": 1, "x-rust-type": "u64" }
+      }
+    },
+    "playbookTaskTimelineAgentReportDto": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookTaskTimelineAgentReportDto",
+      "description": "The Task Agent's current claim that no check has weighed yet.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "status", "evidence"],
+      "properties": {
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "status": { "$ref": "#/$defs/playbookAgentReportStatus" },
         "evidence": { "type": "string", "maxLength": 600, "x-utf8-max-bytes": 600 }
+      }
+    },
+    "playbookTaskTimelineStewardDto": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookTaskTimelineStewardDto",
+      "description": "A Steward receipt or update about this Task, shortened for the timeline.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["messageId", "messageKind", "content"],
+      "properties": {
+        "messageId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "messageKind": { "$ref": "#/$defs/companionMessageKind" },
+        "content": { "type": "string", "maxLength": 2000, "x-utf8-max-bytes": 2000 }
+      }
+    },
+    "playbookTaskTimelineEntryDto": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookTaskTimelineEntryDto",
+      "description": "One event in a Task's Playbook story. Exactly the object named by kind is present.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "atEpochMs", "milestoneId", "milestoneTitle"],
+      "properties": {
+        "kind": { "$ref": "#/$defs/playbookTaskTimelineEntryKind" },
+        "atEpochMs": { "type": "integer", "minimum": 0, "x-rust-type": "u64" },
+        "milestoneId": { "type": ["string", "null"], "maxLength": 128 },
+        "milestoneTitle": { "type": ["string", "null"], "maxLength": 4096 },
+        "evaluation": { "$ref": "#/$defs/playbookEvaluationRecordDto" },
+        "decision": { "$ref": "#/$defs/playbookTaskTimelineDecisionDto" },
+        "agentReport": { "$ref": "#/$defs/playbookTaskTimelineAgentReportDto" },
+        "steward": { "$ref": "#/$defs/playbookTaskTimelineStewardDto" }
+      }
+    },
+    "playbookTaskTimelineResult": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookTaskTimelineResult",
+      "description": "One Task's Playbook story, newest first and bounded to the newest 100 entries.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["taskId", "entries", "truncated", "stateRevision"],
+      "properties": {
+        "taskId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "entries": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/playbookTaskTimelineEntryDto" } },
+        "truncated": { "type": "boolean" },
+        "stateRevision": { "type": "integer", "minimum": 0 }
       }
     },
     "playbookEvaluationHistoryResult": {
@@ -19523,7 +19665,8 @@
       "enum": [
         "deterministic",
         "routine",
-        "agent"
+        "agent",
+        "user"
       ]
     },
     "playbookAgentReportPolicy": {

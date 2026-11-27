@@ -109,9 +109,12 @@ impl CoreRuntime {
         } else {
             Vec::new()
         };
-        configuration
+        let index = configuration
             .pending_routine_findings
-            .retain(|finding| finding.id != finding_id);
+            .iter()
+            .position(|finding| finding.id == finding_id)
+            .ok_or(CoreError::NotFound)?;
+        let resolved = configuration.pending_routine_findings.remove(index);
         configuration.updated_at_epoch_ms = updated_at_epoch_ms;
         self.store
             .set_tracker_configuration(&self.write_authority, configuration, self.store.revision())
@@ -122,6 +125,12 @@ impl CoreRuntime {
             "status": "resolved",
             "findingId": finding_id,
             "resolution": resolution,
+            "summary": resolved.summary,
+            // A finding about one Task belongs on that Task's timeline.
+            "taskId": match resolved.related_task_ids.as_slice() {
+                [task_id] => Some(task_id.clone()),
+                _ => None,
+            },
             "stepCheckRequested": step_check_requested,
             "stateRevision": self.store.revision(),
         }))

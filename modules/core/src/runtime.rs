@@ -108,6 +108,7 @@ impl CoreRuntime {
             "playbook.get" => self.get_playbook(params),
             "playbook.runtime" => self.playbook_runtime(params),
             "playbook.evaluationHistory" => self.playbook_evaluation_history(params),
+            "playbook.taskTimeline" => self.playbook_task_timeline(params),
             "routine.runtimeList" => self.list_tracker_runtime(params),
             _ => Err(CoreError::MethodNotFound),
         }

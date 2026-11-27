@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { PlaybookEvaluationHistoryResult, PlaybookEvaluationRecordDto } from "@termloop/contract/current";
+import type { PlaybookCriterionStatus, PlaybookEvaluationHistoryResult, PlaybookEvaluationRecordDto } from "@termloop/contract/current";
 import { Icon } from "./Icon.js";
 import "./playbook-evaluation-history.css";
 
@@ -47,10 +47,31 @@ export function PlaybookEvaluationHistory(props: {
 export function PlaybookEvaluationList({ entries }: { entries: readonly PlaybookEvaluationRecordDto[] }) {
   if (entries.length === 0) return <p className="peh-empty">No checks recorded yet. New task checks and their results will appear here.</p>;
   return <ol className="peh-list">{entries.map((entry) => <li key={entry.id} className="peh-entry">
-    <div className="peh-entry-heading"><h3>{entry.taskTitle}</h3><span className={`peh-outcome ${entry.outcome}`}>{outcomeLabels[entry.outcome]}</span></div>
-    <p className="peh-step">{entry.milestoneTitle}</p>
+    <PlaybookEvaluationEntry entry={entry} heading={entry.taskTitle} />
+  </li>)}</ol>;
+}
+
+const criterionLabels: Record<PlaybookCriterionStatus, string> = { met: "Met", unmet: "Not met", unknown: "Unknown" };
+
+/** One evaluator check: its verdict, what the Task Agent had claimed, and
+    the per-criterion findings behind the verdict, collapsed by default. */
+export function PlaybookEvaluationEntry({ entry, heading }: { entry: PlaybookEvaluationRecordDto; heading: string }) {
+  const criteria = entry.criteria ?? [];
+  return <>
+    <div className="peh-entry-heading"><h3>{heading}</h3><span className={`peh-outcome ${entry.outcome}`}>{outcomeLabels[entry.outcome]}</span></div>
+    <p className="peh-step">{entry.milestoneTitle}
+      {entry.rewoundTo ? <> → sent back to <strong>{entry.rewoundTo.title}</strong></> : null}
+      {entry.pullRequestNumber === undefined ? null : <> · PR #{entry.pullRequestNumber}</>}</p>
     <p className="peh-agent"><Icon name={entry.agentId} /><span>{entry.sourceName === null ? <>Fresh evaluator</> : <>Fork of <strong>{entry.sourceName}</strong></>} · {entry.model === "default" ? "Provider default model" : entry.model}</span></p>
+    {entry.agentReport ? <p className="peh-claim"><span>Task Agent reported {entry.agentReport.status === "reached" ? "the step reached" : "it was blocked"}:</span> {entry.agentReport.evidence}</p> : null}
     <p className="peh-evidence">{entry.evidence || "Waiting for the evaluator’s result…"}</p>
+    {criteria.length > 0 ? <details className="peh-criteria">
+      <summary>{criteria.filter((item) => item.status === "met").length} of {criteria.length} criteria met</summary>
+      <ul>{criteria.map((item, index) => <li key={index}>
+        <span className={`peh-criterion ${item.status}`}>{criterionLabels[item.status]}</span>
+        <strong>{item.criterion}</strong> <span>{item.evidence}</span>
+      </li>)}</ul>
+    </details> : null}
     <details className="peh-details">
       <summary><time dateTime={new Date(entry.startedAtEpochMs).toISOString()}>{new Date(entry.startedAtEpochMs).toLocaleString()}</time></summary>
       <dl>
@@ -61,5 +82,5 @@ export function PlaybookEvaluationList({ entries }: { entries: readonly Playbook
         <dt>Check</dt><dd>{entry.id}</dd>
       </dl>
     </details>
-  </li>)}</ol>;
+  </>;
 }

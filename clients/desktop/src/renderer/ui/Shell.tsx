@@ -155,6 +155,7 @@ type AssistantActions = Pick<StewardPanelProps,
   deleteConfiguration(expectedRevision: number): Promise<import("@termloop/contract/current").StewardConfigurationDeleteResult>;
   getPresence(): ReturnType<StewardPanelProps["getConfiguration"]>;
   restartSteward(): Promise<string | null>;
+  getTaskTimeline(taskId: string): Promise<import("@termloop/contract/current").PlaybookTaskTimelineResult>;
 };
 
 type ImproverSetup =
@@ -2327,7 +2328,7 @@ export function Shell(props: ShellProps) {
             highlightedTaskId={hoveredRailTaskId ?? clickedRailTaskId}
             taskHovered={setHoveredPlaybookTaskId}
             saveTaskNotes={props.updateTaskDeveloperNotes}
-            loadEvaluationHistory={props.assistantActions.getEvaluationHistory}
+            loadTaskTimeline={props.assistantActions.getTaskTimeline}
             taskDecisionActions={props.assistantActions}
             closeTask={{
               inspect: props.inspectTaskWorktreeCleanup,

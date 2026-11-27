@@ -269,6 +269,12 @@ impl CoreRuntime {
             // Only identifiers already observed in this Project may be projected.
             return Err(CoreError::CapabilityDenied);
         }
+        // A finding is gone once handled, so a message about one Task's
+        // finding names that Task itself to stay on the Task's timeline.
+        let mut refs = refs;
+        if refs.task_id.is_none() {
+            refs.task_id = self.sole_task_of_routine_findings(project_id, &routine_finding_ids);
+        }
         if kind != "proposal"
             && let Some(pending) = self.current_pending_companion_proposal(project_id)
             && pending.refs.as_ref().is_some_and(|pending_refs| {
@@ -365,6 +371,105 @@ impl CoreRuntime {
             content.to_owned(),
             created_at_epoch_ms,
         )
+    }
+
+    /// Records what the Steward sent an Agent, tied to the Task that Agent
+    /// works when it is that Task's canonical Agent. The message itself was
+    /// already submitted; a full transcript must not turn it into a failure.
+    pub fn record_steward_agent_message(
+        &mut self,
+        steward_session_id: &str,
+        project_id: &str,
+        target_session_id: &str,
+        message: &str,
+        created_at_epoch_ms: u64,
+    ) {
+        let task_id = self.canonical_task_of_agent_session(project_id, target_session_id);
+        let content = format!(
+            "Sent the Agent a message: “{}”",
+            bounded_excerpt(message.trim(), STEWARD_RECEIPT_EXCERPT_MAX_BYTES)
+        );
+        let _ = self.append_steward_action(
+            steward_session_id,
+            project_id,
+            &content,
+            task_id,
+            Some(target_session_id.to_owned()),
+            created_at_epoch_ms,
+        );
+    }
+
+    /// Records how the Steward resolved one finding, from the result of
+    /// `resolve_routine_finding`. The resolution is already committed.
+    pub fn record_steward_finding_resolution(
+        &mut self,
+        steward_session_id: &str,
+        project_id: &str,
+        resolved: &Value,
+        created_at_epoch_ms: u64,
+    ) {
+        let verb = match resolved["resolution"].as_str() {
+            Some("completed") => "Handled",
+            _ => "Dismissed",
+        };
+        let summary = resolved["summary"].as_str().unwrap_or_default().trim();
+        let content = if summary.is_empty() {
+            format!("{verb} a finding.")
+        } else {
+            format!(
+                "{verb} finding: {}",
+                bounded_excerpt(summary, STEWARD_RECEIPT_EXCERPT_MAX_BYTES)
+            )
+        };
+        let _ = self.append_steward_action(
+            steward_session_id,
+            project_id,
+            &content,
+            resolved["taskId"].as_str().map(str::to_owned),
+            None,
+            created_at_epoch_ms,
+        );
+    }
+
+    /// The one Task every listed current finding is about, if there is one.
+    fn sole_task_of_routine_findings(
+        &self,
+        project_id: &str,
+        finding_ids: &[String],
+    ) -> Option<String> {
+        let mut task_ids = finding_ids
+            .iter()
+            .filter_map(|finding_id| self.current_routine_finding(project_id, finding_id))
+            .flat_map(|(_, finding)| finding.related_task_ids.iter().cloned())
+            .collect::<Vec<_>>();
+        task_ids.sort();
+        task_ids.dedup();
+        match task_ids.as_slice() {
+            [task_id] => Some(task_id.clone()),
+            _ => None,
+        }
+    }
+
+    /// The open Task whose canonical Agent is this Session, if any. Peers and
+    /// helpers in the same worktree do not speak for a Task.
+    pub(crate) fn canonical_task_of_agent_session(
+        &self,
+        project_id: &str,
+        session_id: &str,
+    ) -> Option<String> {
+        self.store
+            .tasks()
+            .iter()
+            .filter(|task| {
+                task.project_id == project_id
+                    && task.status == termloop_domain::TaskStatus::Open
+                    && task.archived_at_epoch_ms.is_none()
+            })
+            .find(|task| {
+                self.ensure_task_agent_request_target_for_executor(project_id, &task.id, session_id)
+                    .is_ok()
+            })
+            .map(|task| task.id.clone())
     }
 
     pub fn is_current_steward_session(&self, project_id: &str, session_id: &str) -> bool {
@@ -1109,6 +1214,22 @@ fn initial_assignment_state(
     })
 }
 
+/// A Steward receipt quotes at most this much of what it acted on.
+pub(crate) const STEWARD_RECEIPT_EXCERPT_MAX_BYTES: usize = 480;
+
+/// The leading part of `text` within `max_bytes`, ending on a character
+/// boundary and marked when something was left out.
+pub(crate) fn bounded_excerpt(text: &str, max_bytes: usize) -> String {
+    if text.len() <= max_bytes {
+        return text.to_owned();
+    }
+    let mut end = max_bytes.saturating_sub('…'.len_utf8());
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}…", text[..end].trim_end())
+}
+
 /// `task_agent_start` may idempotently reuse only a Session that this same
 /// Steward assignment path created. Any other current Task Agent already owns
 /// the worktree and must receive coordination through `agent_message_send`.
@@ -1164,6 +1285,16 @@ mod tests {
     use termloop_domain::{ProcessDescriptor, SessionKind, SessionRecord};
     use termloop_store::{Store, issue_core_write_authority_for_composition};
     use termloop_terminal::TerminalService;
+
+    #[test]
+    fn a_receipt_excerpt_stays_bounded_on_a_char_boundary() {
+        assert_eq!(bounded_excerpt("short", 10), "short");
+        let long = "ğ".repeat(40);
+        let excerpt = bounded_excerpt(&long, 21);
+        assert!(excerpt.len() <= 21);
+        assert!(excerpt.ends_with('…'));
+        assert!(excerpt.starts_with("ğğ"));
+    }
 
     fn task_agent_candidate(
         id: &str,

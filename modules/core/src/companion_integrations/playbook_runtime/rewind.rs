@@ -133,6 +133,10 @@ impl CoreRuntime {
             .completed_evaluation_record(&capability.check_id, &waiting)
             .map(|mut record| {
                 record.outcome = PlaybookEvaluationOutcome::Rewound;
+                record.rewound_to = Some(termloop_domain::PlaybookEvaluationStepRef {
+                    milestone_id: target.id.clone(),
+                    title: target.title.clone(),
+                });
                 record
             });
         self.send_task_back(

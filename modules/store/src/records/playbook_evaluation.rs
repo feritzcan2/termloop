@@ -34,11 +34,9 @@ pub(super) fn apply_finished(
     if current.outcome != PlaybookEvaluationOutcome::InProgress {
         return Err(StoreError::ConstraintViolation);
     }
-    let mut expected = current.clone();
-    expected.outcome = record.outcome;
-    expected.evidence = record.evidence.clone();
-    expected.finished_at_epoch_ms = record.finished_at_epoch_ms;
-    if expected != record {
+    // Finishing sets only the result; who ran the check and what the Task
+    // Agent claimed when it started stay as recorded.
+    if current.finished_with(&record) != record {
         return Err(StoreError::ConstraintViolation);
     }
     *current = record;

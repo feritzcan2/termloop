@@ -419,6 +419,19 @@ impl CoreRuntime {
             .filter(|report| report.describes(milestone))
     }
 
+    /// The Task Agent's current report, whatever step it named, for the
+    /// Task's own timeline.
+    pub(crate) fn agent_step_report_for_timeline(&self, task_id: &str) -> Option<Value> {
+        self.tracker_runtime
+            .agent_step_reports
+            .get(task_id)
+            .map(|report| {
+                let mut value = report.projection(task_id);
+                value["milestoneId"] = json!(report.milestone_id);
+                value
+            })
+    }
+
     /// Board projection of the reports for Tasks standing at this step.
     pub(crate) fn agent_step_report_projections(
         &self,

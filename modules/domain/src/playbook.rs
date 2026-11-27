@@ -248,6 +248,8 @@ pub enum PlaybookStepEvaluator {
     Routine,
     /// The Task's own Agent reported it under a `Trusted` step policy.
     Agent,
+    /// The user set the Task's position from Task details.
+    User,
 }
 
 /// Why a step with a deterministic check was answered by its Routine instead.

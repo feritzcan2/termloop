@@ -158,6 +158,10 @@ fn evaluator(runtime: &mut CoreRuntime, claim: &StewardRoutineClaim) {
                 finished_at_epoch_ms: None,
                 outcome: termloop_domain::PlaybookEvaluationOutcome::InProgress,
                 evidence: String::new(),
+                agent_report: None,
+                criteria: vec![],
+                pull_request_number: None,
+                rewound_to: None,
             },
         )
         .unwrap();
@@ -436,7 +440,8 @@ fn verdict_requires_exact_fork_read_and_advances_once_without_steward_overwrite(
             "reviewer-token",
             "evaluation-check",
             PlaybookStepVerdict::Passed,
-            "PR 42 verified".into()
+            "PR 42 verified".into(),
+            vec![]
         ),
         Err(CoreError::CapabilityDenied)
     ));
@@ -463,7 +468,8 @@ fn verdict_requires_exact_fork_read_and_advances_once_without_steward_overwrite(
             "reviewer-token",
             "other-check",
             PlaybookStepVerdict::Passed,
-            "PR 42 verified".into()
+            "PR 42 verified".into(),
+            vec![]
         ),
         Err(CoreError::CapabilityDenied)
     ));
@@ -487,6 +493,7 @@ fn verdict_requires_exact_fork_read_and_advances_once_without_steward_overwrite(
             "evaluation-check",
             PlaybookStepVerdict::Passed,
             "PR 42 verified".into(),
+            vec![],
         )
         .unwrap();
     assert_eq!(completed["result"]["passedCount"], 1);
@@ -518,7 +525,8 @@ fn verdict_requires_exact_fork_read_and_advances_once_without_steward_overwrite(
             "reviewer-token",
             "evaluation-check",
             PlaybookStepVerdict::Passed,
-            "PR 42 verified".into()
+            "PR 42 verified".into(),
+            vec![]
         ),
         Err(CoreError::CapabilityDenied)
     ));
@@ -590,7 +598,8 @@ fn changing_policy_or_manually_moving_task_rejects_the_in_flight_answer() {
                 "reviewer-token",
                 "evaluation-check",
                 PlaybookStepVerdict::Passed,
-                "Old evidence".into()
+                "Old evidence".into(),
+                vec![]
             ),
             Err(CoreError::TrackerReportStale)
         ));
@@ -683,6 +692,7 @@ fn editing_another_step_advances_the_playbook_but_keeps_the_running_evaluation()
             "evaluation-check",
             PlaybookStepVerdict::Passed,
             "PR 42 verified".into(),
+            vec![],
         )
         .unwrap();
     std::fs::remove_dir_all(root).unwrap();
@@ -802,7 +812,8 @@ fn an_evaluator_send_back_moves_the_task_and_is_kept_as_sent_back_in_history() {
         runtime.complete_playbook_evaluation_rewind(
             "reviewer-token",
             "evaluation-check",
-            "Fix PR #520 is open.".into()
+            "Fix PR #520 is open.".into(),
+            vec![]
         ),
         Err(CoreError::CapabilityDenied)
     ));
@@ -816,6 +827,7 @@ fn an_evaluator_send_back_moves_the_task_and_is_kept_as_sent_back_in_history() {
             "reviewer-token",
             "evaluation-check",
             "Fix PR #520 is open.".into(),
+            vec![],
         )
         .unwrap();
     assert_eq!(completed["result"]["status"], "rewound");
@@ -827,9 +839,147 @@ fn an_evaluator_send_back_moves_the_task_and_is_kept_as_sent_back_in_history() {
         history["entries"][0]["evidence"],
         "Sent back to “pr-open completed” (1/2): Fix PR #520 is open."
     );
+    assert_eq!(
+        history["entries"][0]["rewoundTo"],
+        json!({"milestoneId": "pr-open", "title": "pr-open completed"})
+    );
     let view = runtime
         .playbook_runtime(json!({"projectId": project}))
         .unwrap();
     assert_eq!(view["steps"][0]["waitingTaskIds"], json!(["task-1"]));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+fn criterion(
+    text: &str,
+    status: termloop_domain::PlaybookCriterionStatus,
+) -> termloop_domain::PlaybookCriterionCheck {
+    termloop_domain::PlaybookCriterionCheck {
+        criterion: text.into(),
+        status,
+        evidence: "Checked on the Git host.".into(),
+    }
+}
+
+#[test]
+fn a_task_timeline_joins_checks_findings_and_steward_receipts_newest_first() {
+    use termloop_domain::PlaybookCriterionStatus;
+    let (mut runtime, root, project) = pipeline_runtime();
+    let claim = claim(&mut runtime, &project);
+    evaluator(&mut runtime, &claim);
+    runtime.read_playbook_evaluation("reviewer-token").unwrap();
+    // Unbounded findings are refused before anything is recorded.
+    let too_many = vec![
+        criterion("Tests pass", PlaybookCriterionStatus::Met);
+        termloop_domain::PLAYBOOK_CRITERIA_MAX + 1
+    ];
+    assert!(matches!(
+        runtime.complete_playbook_evaluation(
+            "reviewer-token",
+            "evaluation-check",
+            PlaybookStepVerdict::Passed,
+            "PR 42 verified".into(),
+            too_many
+        ),
+        Err(CoreError::InvalidParams(_))
+    ));
+    runtime
+        .complete_playbook_evaluation(
+            "reviewer-token",
+            "evaluation-check",
+            PlaybookStepVerdict::Passed,
+            "PR 42 verified".into(),
+            vec![
+                criterion("A pull request is open", PlaybookCriterionStatus::Met),
+                criterion("CI is green", PlaybookCriterionStatus::Unknown),
+            ],
+        )
+        .unwrap();
+    let history = runtime
+        .playbook_evaluation_history(json!({"projectId": project}))
+        .unwrap();
+    assert_eq!(history["entries"][0]["criteria"][1]["status"], "unknown");
+
+    let later = termloop_platform::current_epoch_ms() + 60_000;
+    runtime
+        .append_steward_action(
+            "steward-session",
+            &project,
+            "Moved the Jira ticket to In Progress.",
+            Some("task-1".into()),
+            None,
+            later,
+        )
+        .unwrap();
+    runtime
+        .append_steward_action(
+            "steward-session",
+            &project,
+            "Started an Agent for another Task.",
+            Some("task-2".into()),
+            None,
+            later + 1,
+        )
+        .unwrap();
+
+    let timeline = runtime
+        .playbook_task_timeline(json!({"projectId": project, "taskId": "task-1"}))
+        .unwrap();
+    let entries = timeline["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 2, "{timeline}");
+    assert_eq!(entries[0]["kind"], "steward");
+    assert_eq!(
+        entries[0]["steward"]["content"],
+        "Moved the Jira ticket to In Progress."
+    );
+    assert_eq!(entries[1]["kind"], "evaluation");
+    assert_eq!(
+        entries[1]["evaluation"]["criteria"][0]["criterion"],
+        "A pull request is open"
+    );
+    assert_eq!(timeline["truncated"], false);
+
+    // A manual move is a user decision on the Task's own timeline.
+    let revision = runtime.state_revision();
+    runtime
+        .set_task_playbook_position(&project, "task-1", 2, 1, revision, later + 2)
+        .unwrap();
+    let timeline = runtime
+        .playbook_task_timeline(json!({"projectId": project, "taskId": "task-1"}))
+        .unwrap();
+    assert!(
+        timeline["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| entry["kind"] == "decision" && entry["decision"]["evaluator"] == "user")
+    );
+
+    // Days of Steward receipts still return one bounded page.
+    for index in 0..crate::runtime::playbook_evaluation_history::PLAYBOOK_TASK_TIMELINE_MAX {
+        runtime
+            .append_steward_action(
+                "steward-session",
+                &project,
+                &format!("Receipt {index}"),
+                Some("task-1".into()),
+                None,
+                later + 10 + index as u64,
+            )
+            .unwrap();
+    }
+    let timeline = runtime
+        .playbook_task_timeline(json!({"projectId": project, "taskId": "task-1"}))
+        .unwrap();
+    assert_eq!(
+        timeline["entries"].as_array().unwrap().len(),
+        crate::runtime::playbook_evaluation_history::PLAYBOOK_TASK_TIMELINE_MAX
+    );
+    assert_eq!(timeline["truncated"], true);
+    assert_eq!(timeline["entries"][0]["steward"]["content"], "Receipt 99");
+    assert!(matches!(
+        runtime.playbook_task_timeline(json!({"projectId": project, "taskId": "missing"})),
+        Err(CoreError::NotFound)
+    ));
     std::fs::remove_dir_all(root).unwrap();
 }

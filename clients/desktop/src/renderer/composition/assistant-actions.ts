@@ -112,6 +112,8 @@ export function createAssistantActions({
     ),
     // History has a single mounted consumer and an explicit refresh button.
     getEvaluationHistory: () => api.playbookEvaluationHistory(projectId),
+    // A Task's timeline is read only while its history is open.
+    getTaskTimeline: (taskId: string) => api.playbookTaskTimeline(projectId, taskId),
     getPlaybookRuntime: () => coordinator.read(
       identity,
       "playbook.runtime",

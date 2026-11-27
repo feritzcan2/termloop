@@ -21,3 +21,15 @@
 .peh-details summary { cursor: pointer; }
 .peh-details dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; margin-bottom: 0; }
 .peh-details dd { margin: 0; overflow-wrap: anywhere; }
+.peh-claim { margin: 12px 0 0; padding: 8px 10px; border-left: 2px solid var(--border); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; line-height: 1.6; color: var(--text-muted); }
+.peh-claim span { font-weight: 500; }
+.peh-criteria { margin: 0 0 10px; font-size: 11px; }
+.peh-criteria summary { cursor: pointer; color: var(--text-muted); }
+.peh-criteria ul { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 0; padding: 0; list-style: none; }
+.peh-criteria li { overflow-wrap: anywhere; line-height: 1.55; }
+.peh-criteria strong { font-weight: 500; }
+.peh-criterion { display: inline-block; margin-right: 6px; padding: 1px 5px; border-radius: 4px; font-size: 10px; background: var(--hover); color: var(--text-muted); }
+.peh-criterion.met { color: var(--success); }
+.peh-criterion.unmet { color: var(--danger); }
+.peh-time { display: block; color: var(--text-muted); font-size: 10px; }
+.peh-steward-content { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }

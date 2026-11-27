@@ -42,6 +42,9 @@ pub(crate) struct PlaybookEvaluation {
     report_rejected: bool,
     /// The one reminder sent after a turn ended with this evaluation open.
     retried: bool,
+    /// The per-criterion findings of the report being applied, read when its
+    /// receipt is finished.
+    pub(crate) criteria: Vec<termloop_domain::PlaybookCriterionCheck>,
 }
 
 #[derive(Default)]
@@ -377,6 +380,7 @@ impl CoreRuntime {
                 read: false,
                 report_rejected: false,
                 retried: false,
+                criteria: Vec::new(),
             },
         );
         Ok(())
@@ -508,7 +512,9 @@ impl CoreRuntime {
         check_id: &str,
         verdict: termloop_domain::PlaybookStepVerdict,
         evidence: String,
+        criteria: Vec<termloop_domain::PlaybookCriterionCheck>,
     ) -> Result<Value, CoreError> {
+        self.stage_playbook_evaluation_criteria(token, check_id, criteria)?;
         self.finish_playbook_evaluation_report(token, check_id, |runtime, evaluation, now| {
             runtime.apply_playbook_step_verdicts(
                 &evaluation.capability,
@@ -530,7 +536,9 @@ impl CoreRuntime {
         token: &str,
         check_id: &str,
         evidence: String,
+        criteria: Vec<termloop_domain::PlaybookCriterionCheck>,
     ) -> Result<Value, CoreError> {
+        self.stage_playbook_evaluation_criteria(token, check_id, criteria)?;
         self.finish_playbook_evaluation_report(token, check_id, |runtime, evaluation, now| {
             runtime.apply_playbook_step_rewind(
                 &evaluation.capability,
@@ -540,6 +548,28 @@ impl CoreRuntime {
                 now,
             )
         })
+    }
+
+    /// Holds the report's criteria on its own authenticated evaluation so the
+    /// receipt finished by the verdict carries them. A refused report leaves
+    /// them staged only until the evaluator's next accepted attempt replaces them.
+    fn stage_playbook_evaluation_criteria(
+        &mut self,
+        token: &str,
+        check_id: &str,
+        criteria: Vec<termloop_domain::PlaybookCriterionCheck>,
+    ) -> Result<(), CoreError> {
+        if !termloop_domain::playbook_criteria_are_valid(&criteria) {
+            return Err(CoreError::InvalidParams("criteria".into()));
+        }
+        let evaluation = self.authenticated_playbook_evaluation(token)?;
+        if evaluation.capability.check_id != check_id {
+            return Err(CoreError::CapabilityDenied);
+        }
+        if let Some(current) = self.playbook_evaluation.evaluations.get_mut(check_id) {
+            current.criteria = criteria;
+        }
+        Ok(())
     }
 
     fn finish_playbook_evaluation_report(

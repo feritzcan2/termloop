@@ -2518,6 +2518,50 @@
           "minLength": 1,
           "maxLength": 600,
           "x-utf8-max-bytes": 600
+        },
+        "criteria": {
+          "description": "Optional: one entry per completion criterion you checked, in the step's order, with what you found for it. At most 12.",
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "$ref": "#/$defs/playbookEvaluationCriterionInput"
+          }
+        }
+      }
+    },
+    "playbookEvaluationCriterionInput": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookEvaluationCriterionInput",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "criterion",
+        "status",
+        "evidence"
+      ],
+      "properties": {
+        "criterion": {
+          "description": "The criterion as the step states it, shortened if needed; at most 300 UTF-8 bytes.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "x-utf8-max-bytes": 300
+        },
+        "status": {
+          "description": "met, unmet, or unknown when you could not establish it.",
+          "type": "string",
+          "enum": [
+            "met",
+            "unmet",
+            "unknown"
+          ]
+        },
+        "evidence": {
+          "description": "The decisive fact for this criterion; at most 600 UTF-8 bytes.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 600,
+          "x-utf8-max-bytes": 600
         }
       }
     },

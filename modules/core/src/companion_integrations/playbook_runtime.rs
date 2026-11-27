@@ -212,7 +212,7 @@ impl CoreRuntime {
                         evidence: "Position set manually from Task details.".into(),
                         decided_at_epoch_ms,
                         next_attempt_at_epoch_ms: None,
-                        evaluator: termloop_domain::PlaybookStepEvaluator::Routine,
+                        evaluator: termloop_domain::PlaybookStepEvaluator::User,
                         deterministic_fallback: None,
                         rewind_count: 0,
                         pull_request_number: None,
@@ -2900,6 +2900,13 @@ pub(crate) mod tests {
             .resolve_routine_finding(&project_id, &finding_id, "dismissed", NOW + 2_000)
             .unwrap();
         assert_eq!(dismissed["stepCheckRequested"], false);
+        // The resolution names its Task so the Steward's receipt lands on it.
+        assert_eq!(dismissed["taskId"], "task-1");
+        assert!(
+            dismissed["summary"]
+                .as_str()
+                .is_some_and(|text| !text.is_empty())
+        );
         assert_eq!(
             runtime.step_nudge_epoch_ms("routine-pr", "task-1"),
             u64::MAX

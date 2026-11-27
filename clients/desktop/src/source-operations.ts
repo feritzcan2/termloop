@@ -183,6 +183,7 @@ export const PROFILED_DESKTOP_OPERATIONS = {
   playbookGet: "termloop:playbook-get",
   playbookRuntime: "termloop:playbook-runtime",
   playbookEvaluationHistory: "termloop:playbook-evaluation-history",
+  playbookTaskTimeline: "termloop:playbook-task-timeline",
   playbookTaskPositionSet: "termloop:playbook-task-position-set",
   playbookUpdate: "termloop:playbook-update",
   companionTranscriptList: "termloop:companion-transcript-list",

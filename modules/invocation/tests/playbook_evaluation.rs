@@ -54,7 +54,7 @@ fn evaluation_forks_apply_selected_model_and_permissions_with_visible_instructio
                 launch.provenance().template_ref,
                 "builtin.agent.playbook-evaluator"
             );
-            assert_eq!(launch.provenance().template_version, 6);
+            assert_eq!(launch.provenance().template_version, 7);
             assert_eq!(launch.inspectable_manifest().target.permission, permission);
             assert_eq!(
                 launch.delivered_prompt().unwrap(),
@@ -64,6 +64,7 @@ fn evaluation_forks_apply_selected_model_and_permissions_with_visible_instructio
             );
             let prompt = launch.delivered_prompt().unwrap();
             assert!(prompt.contains("600 UTF-8 bytes"));
+            assert!(prompt.contains("`criteria`"));
             // A Claude evaluator can start its first turn before its MCP
             // server connects; the prompt makes it wait instead of giving up.
             assert!(prompt.contains("still be connecting"));

@@ -1,11 +1,12 @@
 use serde_json::{Value, json};
 use std::sync::atomic::Ordering;
 use termloop_contract::current::{
-    PlaybookEvaluationCompleteParams, ProjectionTopic, RoutineAssignmentStatus,
+    PlaybookEvaluationCompleteParams, PlaybookEvaluationCriterionInput, ProjectionTopic,
+    RoutineAssignmentStatus,
 };
-use termloop_core::CoreError;
 use termloop_core::companion_integrations::tracker_runtime::StewardRoutineClaim;
 use termloop_core::session_launch::PlaybookEvaluationLaunch;
+use termloop_core::{CoreError, PlaybookCriterionCheck, PlaybookCriterionStatus};
 
 use super::AppState;
 
@@ -17,8 +18,29 @@ pub(super) fn invalid_report_message(arguments: &Value) -> String {
         .map(|evidence| format!(" Received {} bytes.", evidence.len()))
         .unwrap_or_default();
     format!(
-        "Expected only checkId (1-128 characters), status (satisfied/pending/blocked), and evidence (1-600 UTF-8 bytes).{evidence_size} Nothing was recorded; correct the arguments and retry the same check."
+        "Expected checkId, status, evidence (1-600 UTF-8 bytes), and optional criteria (at most 12).{evidence_size} Nothing was recorded; correct the arguments and retry the same check."
     )
+}
+
+fn criterion_checks(
+    criteria: Vec<PlaybookEvaluationCriterionInput>,
+) -> Result<Vec<PlaybookCriterionCheck>, CoreError> {
+    criteria
+        .into_iter()
+        .map(|input| {
+            let status = match input.status.as_str() {
+                "met" => PlaybookCriterionStatus::Met,
+                "unmet" => PlaybookCriterionStatus::Unmet,
+                "unknown" => PlaybookCriterionStatus::Unknown,
+                _ => return Err(CoreError::InvalidParams("criteria".into())),
+            };
+            Ok(PlaybookCriterionCheck {
+                criterion: input.criterion,
+                status,
+                evidence: input.evidence,
+            })
+        })
+        .collect()
 }
 
 /// Both scheduled wakes and explicit next-assignment calls use this path.
@@ -133,15 +155,23 @@ pub(super) async fn complete(
         ),
         RoutineAssignmentStatus::Rewind => None,
     };
+    let criteria = criterion_checks(params.criteria.unwrap_or_default())?;
     let completion = {
         let mut core = state.core.lock().await;
         match verdict {
-            Some(verdict) => {
-                core.complete_playbook_evaluation(token, &params.check_id, verdict, params.evidence)
-            }
-            None => {
-                core.complete_playbook_evaluation_rewind(token, &params.check_id, params.evidence)
-            }
+            Some(verdict) => core.complete_playbook_evaluation(
+                token,
+                &params.check_id,
+                verdict,
+                params.evidence,
+                criteria,
+            ),
+            None => core.complete_playbook_evaluation_rewind(
+                token,
+                &params.check_id,
+                params.evidence,
+                criteria,
+            ),
         }
     };
     let completion = match completion {

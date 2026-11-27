@@ -282,6 +282,10 @@ impl CoreRuntime {
             finished_at_epoch_ms: None,
             outcome: Outcome::InProgress,
             evidence: String::new(),
+            agent_report: recorded_agent_report(&step["tasks"][0]["agentReport"]),
+            criteria: vec![],
+            pull_request_number: None,
+            rewound_to: None,
         };
         self.store
             .start_playbook_evaluation(&self.write_authority, record)
@@ -312,6 +316,22 @@ fn delegated_result(check_id: &str, source: Option<&str>, evaluator: &str) -> Va
         "sourceSessionId": source, "sessionId": evaluator,
         "selection": if source.is_some() { "observedTaskWorkOrCanonicalAgent" } else { "freshEvaluator" },
     }})
+}
+
+/// The Task Agent's claim as the evaluator received it. A claim that does not
+/// fit a receipt is left out rather than truncated into something it never said.
+fn recorded_agent_report(report: &Value) -> Option<termloop_domain::PlaybookEvaluationAgentReport> {
+    let status = match report["status"].as_str()? {
+        "reached" => termloop_domain::PlaybookAgentReportStatus::Reached,
+        "blocked" => termloop_domain::PlaybookAgentReportStatus::Blocked,
+        _ => return None,
+    };
+    Some(termloop_domain::PlaybookEvaluationAgentReport {
+        status,
+        evidence: report["evidence"].as_str()?.to_owned(),
+        reported_at_epoch_ms: report["reportedAtEpochMs"].as_u64()?,
+    })
+    .filter(termloop_domain::PlaybookEvaluationAgentReport::is_valid)
 }
 
 #[cfg(test)]

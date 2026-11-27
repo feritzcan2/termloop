@@ -19,6 +19,10 @@ pub(super) fn evaluation(id: &str, time: u64) -> PlaybookEvaluationRecord {
         finished_at_epoch_ms: None,
         outcome: Outcome::InProgress,
         evidence: String::new(),
+        agent_report: None,
+        criteria: vec![],
+        pull_request_number: None,
+        rewound_to: None,
     }
 }
 
@@ -168,4 +172,42 @@ fn a_fresh_evaluator_has_no_source_agent_and_a_half_named_source_is_rejected() {
     let reopened = Store::open(&path).unwrap();
     assert_eq!(reopened.playbook_evaluations(), &[fresh]);
     std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn finishing_records_the_evaluator_findings_but_keeps_the_agent_claim() {
+    use termloop_domain::{
+        PlaybookAgentReportStatus, PlaybookCriterionCheck, PlaybookCriterionStatus,
+        PlaybookEvaluationAgentReport,
+    };
+    let (_path, mut store, authority) = fixture("findings");
+    let mut started = evaluation("one", 1);
+    started.agent_report = Some(PlaybookEvaluationAgentReport {
+        status: PlaybookAgentReportStatus::Reached,
+        evidence: "Opened PR #7 and all tests pass.".into(),
+        reported_at_epoch_ms: 1,
+    });
+    store
+        .start_playbook_evaluation(&authority, started.clone())
+        .unwrap();
+    let mut finished = started.clone();
+    finished.outcome = Outcome::Passed;
+    finished.finished_at_epoch_ms = Some(5);
+    finished.evidence = "PR #7 approved.".into();
+    finished.pull_request_number = Some(7);
+    finished.criteria = vec![PlaybookCriterionCheck {
+        criterion: "A reviewer approved the PR".into(),
+        status: PlaybookCriterionStatus::Met,
+        evidence: "Approved by a reviewer at 12:01.".into(),
+    }];
+    let mut rewritten_claim = finished.clone();
+    rewritten_claim.agent_report = None;
+    assert!(matches!(
+        store.finish_playbook_evaluation(&authority, rewritten_claim),
+        Err(StoreError::ConstraintViolation)
+    ));
+    store
+        .finish_playbook_evaluation(&authority, finished.clone())
+        .unwrap();
+    assert_eq!(store.playbook_evaluations(), &[finished]);
 }

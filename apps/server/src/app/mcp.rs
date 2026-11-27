@@ -1091,10 +1091,20 @@ async fn resolve_routine_finding(
             super::current_epoch_ms(),
         )?;
         wake_step_scheduler_if_requested(&resolved, state);
+        core.record_steward_finding_resolution(
+            session_id,
+            project_id,
+            &resolved,
+            super::current_epoch_ms(),
+        );
         core.state_revision()
     };
     let _ = state.invalidation_requests.try_send(InvalidationRequest {
-        topics: vec![ProjectionTopic::Routine],
+        topics: vec![
+            ProjectionTopic::Routine,
+            ProjectionTopic::Companion,
+            ProjectionTopic::Steward,
+        ],
         state_revision,
         observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
     });
@@ -1305,12 +1315,11 @@ async fn send_steward_agent_message(
         &params.session_id,
         &params.message,
     )?;
-    let _ = core.append_steward_action(
+    core.record_steward_agent_message(
         steward_session_id,
         project_id,
-        "Queued a message for verified Agent delivery.",
-        None,
-        Some(params.session_id.clone()),
+        &params.session_id,
+        &params.message,
         super::current_epoch_ms(),
     );
     let state_revision = core.state_revision();
@@ -1366,6 +1375,20 @@ async fn steward_task_agent_request(
         &params.session_id,
         &params.message,
     )?;
+    core.record_steward_agent_message(
+        steward_session_id,
+        project_id,
+        &params.session_id,
+        &params.message,
+        super::current_epoch_ms(),
+    );
+    let state_revision = core.state_revision();
+    drop(core);
+    let _ = state.invalidation_requests.try_send(InvalidationRequest {
+        topics: vec![ProjectionTopic::Companion, ProjectionTopic::Steward],
+        state_revision,
+        observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
+    });
     Ok(json!({ "sessionId": params.session_id, "status": "submitting" }))
 }
 

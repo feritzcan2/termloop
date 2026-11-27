@@ -1272,6 +1272,9 @@ handleIpc("termloop:playbook-runtime", (_event, projectId: string) =>
 handleIpc("termloop:playbook-evaluation-history", (_event, projectId: string) =>
   controlCall("playbook.evaluationHistory", { projectId }),
 );
+handleIpc("termloop:playbook-task-timeline", (_event, projectId: string, taskId: string) =>
+  controlCall("playbook.taskTimeline", { projectId, taskId }),
+);
 handleIpc(
   "termloop:playbook-task-position-set",
   (_event, params: import("@termloop/contract/current").PlaybookTaskPositionSetParams) =>
