@@ -30,6 +30,9 @@ pub const PLAYBOOK_REWIND_WHEN_MAX_BYTES: usize = 2048;
 pub const PLAYBOOK_REWIND_MAX_TIMES: u32 = 10;
 /// A provider model name a step's evaluator launches with.
 pub const PLAYBOOK_EVALUATOR_MODEL_MAX_BYTES: usize = 80;
+/// An IANA time zone name an active-hours window is read in.
+pub const PLAYBOOK_TIME_ZONE_MAX_BYTES: usize = 64;
+pub const MINUTES_PER_DAY: u16 = 24 * 60;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -82,6 +85,57 @@ pub struct PlaybookMilestone {
     /// before it.
     #[serde(default)]
     pub evaluator_models: Option<PlaybookStepEvaluatorModels>,
+    /// The hours this step is checked in, replacing the Playbook's own
+    /// window for this step. `None` follows the Playbook.
+    #[serde(default)]
+    pub active_hours: Option<PlaybookActiveHours>,
+}
+
+/// A daily window of wall-clock hours in one time zone. Outside it, a step's
+/// automatic checks wait for the window to open; a verdict already stored
+/// stays. `start_minute > end_minute` spans midnight.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaybookActiveHours {
+    /// Minutes since local midnight the window opens, `0..1440`.
+    pub start_minute: u16,
+    /// Minutes since local midnight the window closes, `0..1440`, exclusive.
+    pub end_minute: u16,
+    /// The IANA zone the hours are read in, such as `Europe/Berlin`. Whether
+    /// the zone exists is checked where the time zone database lives.
+    pub time_zone: String,
+}
+
+impl PlaybookActiveHours {
+    pub fn is_valid(&self) -> bool {
+        self.start_minute < MINUTES_PER_DAY
+            && self.end_minute < MINUTES_PER_DAY
+            // An empty window would never open; a full day needs no window.
+            && self.start_minute != self.end_minute
+            && !self.time_zone.is_empty()
+            && self.time_zone.len() <= PLAYBOOK_TIME_ZONE_MAX_BYTES
+            && self.time_zone.chars().all(|character| {
+                character.is_ascii_alphanumeric() || matches!(character, '/' | '_' | '-' | '+')
+            })
+    }
+
+    /// Whether `minute_of_day` falls inside the window.
+    pub fn contains(&self, minute_of_day: u16) -> bool {
+        if self.start_minute < self.end_minute {
+            (self.start_minute..self.end_minute).contains(&minute_of_day)
+        } else {
+            minute_of_day >= self.start_minute || minute_of_day < self.end_minute
+        }
+    }
+
+    /// Whole minutes from `minute_of_day` until the window next opens; `0`
+    /// while it is open.
+    pub fn minutes_until_open(&self, minute_of_day: u16) -> u16 {
+        if self.contains(minute_of_day) {
+            return 0;
+        }
+        (self.start_minute + MINUTES_PER_DAY - minute_of_day % MINUTES_PER_DAY) % MINUTES_PER_DAY
+    }
 }
 
 /// A step's own evaluator model per provider. The evaluator keeps the
@@ -233,6 +287,10 @@ pub struct PlaybookConfiguration {
     /// never destroys it.
     #[serde(default)]
     pub saved_pipelines: Vec<PlaybookPipeline>,
+    /// The hours every step is checked in, unless a step names its own.
+    /// `None` checks around the clock.
+    #[serde(default)]
+    pub active_hours: Option<PlaybookActiveHours>,
     pub updated_at_epoch_ms: u64,
 }
 
@@ -403,6 +461,10 @@ impl PlaybookMilestone {
                 .evaluator_models
                 .as_ref()
                 .is_none_or(PlaybookStepEvaluatorModels::is_valid)
+            && self
+                .active_hours
+                .as_ref()
+                .is_none_or(PlaybookActiveHours::is_valid)
     }
 }
 
@@ -460,6 +522,21 @@ impl PlaybookConfiguration {
                 std::iter::once(&self.active_pipeline_name)
                     .chain(self.saved_pipelines.iter().map(|pipeline| &pipeline.name)),
             )
+            && self
+                .active_hours
+                .as_ref()
+                .is_none_or(PlaybookActiveHours::is_valid)
+    }
+
+    /// The window `milestone` is checked in: its own, else the Playbook's.
+    pub fn active_hours_for<'a>(
+        &'a self,
+        milestone: &'a PlaybookMilestone,
+    ) -> Option<&'a PlaybookActiveHours> {
+        milestone
+            .active_hours
+            .as_ref()
+            .or(self.active_hours.as_ref())
     }
 
     /// Every stage in the document, active or kept. Referential checks run
@@ -536,6 +613,7 @@ mod tests {
             rewind: None,
             restart_on_new_pull_request: false,
             evaluator_models: None,
+            active_hours: None,
         }
     }
 
@@ -546,6 +624,7 @@ mod tests {
             active_pipeline_name: "Ship to production".into(),
             milestones: vec![milestone("pr-approved")],
             saved_pipelines: Vec::new(),
+            active_hours: None,
             updated_at_epoch_ms: 1,
         }
     }
@@ -767,6 +846,53 @@ mod tests {
             }
             .is_valid()
         );
+    }
+
+    fn hours(start: u16, end: u16) -> PlaybookActiveHours {
+        PlaybookActiveHours {
+            start_minute: start,
+            end_minute: end,
+            time_zone: "Europe/Berlin".into(),
+        }
+    }
+
+    #[test]
+    fn active_hours_open_daily_and_may_span_midnight() {
+        let office = hours(9 * 60, 18 * 60);
+        assert!(office.is_valid());
+        assert!(office.contains(9 * 60));
+        assert!(!office.contains(18 * 60));
+        assert_eq!(office.minutes_until_open(12 * 60), 0);
+        assert_eq!(office.minutes_until_open(8 * 60 + 30), 30);
+        assert_eq!(office.minutes_until_open(18 * 60), 15 * 60);
+        let night = hours(22 * 60, 6 * 60);
+        assert!(night.contains(23 * 60) && night.contains(0) && night.contains(5 * 60 + 59));
+        assert!(!night.contains(6 * 60));
+        assert_eq!(night.minutes_until_open(21 * 60), 60);
+        assert!(!hours(600, 600).is_valid());
+        assert!(!hours(0, MINUTES_PER_DAY).is_valid());
+        assert!(
+            !PlaybookActiveHours {
+                time_zone: "Europe/Berlin ".into(),
+                ..office.clone()
+            }
+            .is_valid()
+        );
+
+        // A step's own window replaces the Playbook's; otherwise it follows.
+        let mut document = playbook();
+        document.active_hours = Some(office.clone());
+        assert!(document.is_valid());
+        let step = document.milestones[0].clone();
+        assert_eq!(document.active_hours_for(&step), Some(&office));
+        let own = PlaybookMilestone {
+            active_hours: Some(night.clone()),
+            ..step
+        };
+        assert!(own.is_valid());
+        assert_eq!(document.active_hours_for(&own), Some(&night));
+        document.active_hours = Some(hours(1, 1));
+        assert!(!document.is_valid());
     }
 
     #[test]

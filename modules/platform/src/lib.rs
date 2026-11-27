@@ -29,6 +29,7 @@ mod stale_disposal;
 mod terminal_input;
 mod watch;
 mod workspace_files;
+mod zoned_clock;
 
 pub use workspace_files::{
     WORKSPACE_SEARCH_QUERY_LIMIT, WORKSPACE_SEARCH_RESULT_LIMIT, WorkspaceContentState,
@@ -38,6 +39,7 @@ pub use workspace_files::{
     search_workspace_files, validate_workspace_relative_path, workspace_file_version,
     write_workspace_file,
 };
+pub use zoned_clock::{ZonedClock, time_zone_is_known, zoned_clock};
 
 pub use access_crypto::{
     access_public_key_valid, access_server_fingerprint, generate_access_nonce,

@@ -1046,6 +1046,7 @@ pub(crate) mod tests {
             rewind: None,
             restart_on_new_pull_request: false,
             evaluator_models: None,
+            active_hours: None,
         }
     }
 
@@ -1205,6 +1206,7 @@ pub(crate) mod tests {
                         milestone("deployed", "routine-deploy", 3600),
                     ],
                     saved_pipelines: Vec::new(),
+                    active_hours: None,
                     updated_at_epoch_ms: 100,
                 },
                 revision,

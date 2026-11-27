@@ -311,12 +311,18 @@ pub(crate) fn record_playbook_version(
         .iter()
         .map(|pipeline| playbook_pipeline_snapshot(state, configuration, pipeline))
         .collect::<Vec<_>>();
-    let content = serde_json::to_string(&json!({
+    let mut snapshot = json!({
         "activePipelineName": configuration.active_pipeline_name,
         "milestones": milestones,
         "savedPipelines": saved_pipelines,
-    }))
-    .expect("Playbook configuration snapshot serializes");
+    });
+    // Present only when set, so versions saved before Playbook hours keep
+    // comparing equal to an unchanged document.
+    if let Some(hours) = &configuration.active_hours {
+        snapshot["activeHours"] = json!(hours);
+    }
+    let content =
+        serde_json::to_string(&snapshot).expect("Playbook configuration snapshot serializes");
     record_version(
         state,
         &configuration.project_id,
@@ -376,6 +382,9 @@ fn playbook_milestone_snapshot(
     }
     if let Some(models) = &milestone.evaluator_models {
         snapshot["evaluatorModels"] = json!(models);
+    }
+    if let Some(hours) = &milestone.active_hours {
+        snapshot["activeHours"] = json!(hours);
     }
     snapshot
 }

@@ -49,6 +49,9 @@ struct PlaybookSnapshot {
     active_pipeline_name: String,
     milestones: Vec<PlaybookMilestoneDraft>,
     saved_pipelines: Vec<PlaybookPipelineDraft>,
+    /// Absent in versions saved before Playbook hours, which had none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    active_hours: Option<termloop_domain::PlaybookActiveHours>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -206,6 +209,7 @@ impl TryFrom<LegacyPlaybookMilestoneDraft> for PlaybookMilestoneDraft {
             rewind: None,
             restart_on_new_pull_request: false,
             evaluator_models: None,
+            active_hours: None,
         })
     }
 }
@@ -246,6 +250,7 @@ impl TryFrom<LegacyPlaybookSnapshot> for PlaybookSnapshot {
                     })
                 })
                 .collect::<Result<_, CoreError>>()?,
+            active_hours: None,
         })
     }
 }
@@ -617,6 +622,7 @@ impl CoreRuntime {
                         "activePipelineName": snapshot.active_pipeline_name,
                         "milestones": snapshot.milestones,
                         "savedPipelines": snapshot.saved_pipelines,
+                        "activeHours": snapshot.active_hours,
                         "expectedPlaybookRevision": current.map_or(0, |value| value.revision),
                         "expectedRevision": self.store.revision(),
                     }),

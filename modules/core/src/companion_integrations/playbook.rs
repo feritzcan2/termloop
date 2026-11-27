@@ -10,10 +10,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use termloop_domain::{
-    PlaybookConfiguration, PlaybookDeterministicCheck, PlaybookGateKind, PlaybookMilestone,
-    PlaybookPipeline, PlaybookStepProgress, PlaybookStepVerdict, RoutineActionHandling,
-    RoutineTriggerMode, StewardConfiguration, TASK_STEWARD_BRIEF_MAX_BYTES, TaskStatus,
-    TrackerConfiguration,
+    PlaybookActiveHours, PlaybookConfiguration, PlaybookDeterministicCheck, PlaybookGateKind,
+    PlaybookMilestone, PlaybookPipeline, PlaybookStepProgress, PlaybookStepVerdict,
+    RoutineActionHandling, RoutineTriggerMode, StewardConfiguration, TASK_STEWARD_BRIEF_MAX_BYTES,
+    TaskStatus, TrackerConfiguration,
 };
 use termloop_store::PlaybookApply;
 
@@ -24,8 +24,21 @@ struct PlaybookUpdateDraft {
     active_pipeline_name: String,
     milestones: Vec<PlaybookMilestoneDraft>,
     saved_pipelines: Vec<PlaybookPipelineDraft>,
+    /// Absent keeps the current window, so a client that predates it never
+    /// clears one; `null` clears it.
+    #[serde(default, deserialize_with = "present_value")]
+    active_hours: Option<Option<PlaybookActiveHours>>,
     expected_playbook_revision: u64,
     expected_revision: u64,
+}
+
+/// Tells a present `null` apart from an absent field.
+fn present_value<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -61,6 +74,9 @@ pub(crate) struct PlaybookMilestoneDraft {
     /// for every step that follows the Project's evaluator settings.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) evaluator_models: Option<termloop_domain::PlaybookStepEvaluatorModels>,
+    /// Absent for every step that follows the Playbook's hours.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) active_hours: Option<PlaybookActiveHours>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -223,8 +239,15 @@ impl CoreRuntime {
             .collect::<Vec<_>>();
         routines_changed |= !delete_routine_ids.is_empty();
 
+        let active_hours = match draft.active_hours {
+            Some(hours) => hours,
+            None => current
+                .as_ref()
+                .and_then(|value| value.active_hours.clone()),
+        };
         let document_changed = current.as_ref().is_none_or(|value| {
-            value.active_pipeline_name != draft.active_pipeline_name
+            value.active_hours != active_hours
+                || value.active_pipeline_name != draft.active_pipeline_name
                 || value.milestones != milestones
                 || value.saved_pipelines != saved_pipelines
         });
@@ -251,10 +274,25 @@ impl CoreRuntime {
             active_pipeline_name: draft.active_pipeline_name,
             milestones,
             saved_pipelines,
+            active_hours,
             updated_at_epoch_ms,
         };
         if !configuration.is_valid() {
             return Err(CoreError::InvalidParams("playbook".into()));
+        }
+        // The document bounds a zone name; only the time zone database knows
+        // whether one exists.
+        if configuration
+            .active_hours
+            .iter()
+            .chain(
+                configuration
+                    .all_milestones()
+                    .filter_map(|milestone| milestone.active_hours.as_ref()),
+            )
+            .any(|hours| !termloop_platform::time_zone_is_known(&hours.time_zone))
+        {
+            return Err(CoreError::InvalidParams("activeHours".into()));
         }
         let progress_updates = current
             .as_ref()
@@ -712,6 +750,7 @@ fn materialize_pipeline(
             rewind: draft.rewind.clone(),
             restart_on_new_pull_request: draft.restart_on_new_pull_request,
             evaluator_models: draft.evaluator_models.clone(),
+            active_hours: draft.active_hours.clone(),
         });
     }
     Ok((milestones, changed))
@@ -827,6 +866,7 @@ fn playbook_projection(
             "rewind": value.rewind,
             "restartOnNewPullRequest": value.restart_on_new_pull_request,
             "evaluatorModels": value.evaluator_models,
+            "activeHours": value.active_hours,
         }))
     };
     let milestones = configuration
@@ -854,6 +894,7 @@ fn playbook_projection(
         "activePipelineName": configuration.active_pipeline_name,
         "milestones": milestones,
         "savedPipelines": saved_pipelines,
+        "activeHours": configuration.active_hours,
         "updatedAtEpochMs": configuration.updated_at_epoch_ms,
     }))
 }
@@ -1901,6 +1942,66 @@ mod tests {
 
         let _ = std::fs::remove_file(path);
         let _ = std::fs::remove_dir_all(folder);
+    }
+
+    #[test]
+    fn active_hours_round_trip_survive_a_client_that_omits_them_and_need_a_known_zone() {
+        let (path, folder, mut runtime, project_id) = runtime_with_empty_project();
+        let office = json!({"startMinute": 540, "endMinute": 1020, "timeZone": "Europe/Istanbul"});
+        let night = json!({"startMinute": 1320, "endMinute": 360, "timeZone": "Europe/Berlin"});
+        let mut milestones = two_step_milestones(600, 600, "CI is green on the Task's PR.");
+        milestones[1]["activeHours"] = night.clone();
+        let save =
+            |runtime: &mut CoreRuntime, hours: Option<Value>, milestones: &Value, at: u64| {
+                let expected = runtime
+                    .store
+                    .playbook_for_project(&project_id)
+                    .map_or(0, |playbook| playbook.revision);
+                let mut params = json!({
+                    "projectId": project_id,
+                    "activePipelineName": "Ship",
+                    "savedPipelines": [],
+                    "milestones": milestones,
+                    "expectedPlaybookRevision": expected,
+                });
+                if let Some(hours) = hours {
+                    params["activeHours"] = hours;
+                }
+                apply_playbook(runtime, params, at)
+            };
+        let saved = save(&mut runtime, Some(office.clone()), &milestones, 1).unwrap();
+        let read = runtime
+            .get_playbook(json!({"projectId": project_id}))
+            .unwrap();
+        for playbook in [&saved["playbook"], &read["playbook"]] {
+            assert_eq!(playbook["activeHours"], office);
+            assert_eq!(playbook["milestones"][0]["activeHours"], Value::Null);
+            assert_eq!(playbook["milestones"][1]["activeHours"], night);
+        }
+
+        // A client that predates the window keeps it; an explicit null clears it.
+        let kept = save(&mut runtime, None, &milestones, 2).unwrap();
+        assert_eq!(kept["playbook"]["activeHours"], office);
+        let cleared = save(&mut runtime, Some(Value::Null), &milestones, 3).unwrap();
+        assert_eq!(cleared["playbook"]["activeHours"], Value::Null);
+
+        // A zone the time zone database does not know is refused.
+        let unknown = json!({"startMinute": 540, "endMinute": 1020, "timeZone": "Mars/Olympus"});
+        assert!(save(&mut runtime, Some(unknown.clone()), &milestones, 4).is_err());
+        let mut unknown_step = milestones.clone();
+        unknown_step[0]["activeHours"] = unknown;
+        assert!(save(&mut runtime, None, &unknown_step, 5).is_err());
+        assert!(
+            runtime
+                .store
+                .playbook_for_project(&project_id)
+                .unwrap()
+                .milestones[0]
+                .active_hours
+                .is_none()
+        );
+        std::fs::remove_file(path).ok();
+        std::fs::remove_dir_all(folder).ok();
     }
 
     #[test]

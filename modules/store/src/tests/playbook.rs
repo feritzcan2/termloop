@@ -75,6 +75,7 @@ fn playbook(project_id: &str, revision: u64) -> PlaybookConfiguration {
         revision,
         active_pipeline_name: "Ship to production".into(),
         saved_pipelines: Vec::new(),
+        active_hours: None,
         milestones: vec![PlaybookMilestone {
             id: "pr-approved".into(),
             title: "PR approved".into(),
@@ -87,6 +88,7 @@ fn playbook(project_id: &str, revision: u64) -> PlaybookConfiguration {
             rewind: None,
             restart_on_new_pull_request: false,
             evaluator_models: None,
+            active_hours: None,
         }],
         updated_at_epoch_ms: 1,
     }

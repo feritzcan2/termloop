@@ -21,6 +21,7 @@ serde.workspace = true
 serde_json.workspace = true
 sha2 = "0.10.9"
 cap-std = "4.0.3"
+jiff = { version = "1.0.3", default-features = false, features = ["std", "tz-system", "tzdb-bundle-always", "tzdb-zoneinfo"] }
 
 [dev-dependencies]
 uuid.workspace = true

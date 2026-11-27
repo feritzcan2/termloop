@@ -26,6 +26,11 @@ import {
   changeMilestoneAgentReportForRoutine,
   changeMilestoneCheckForRoutine,
   changeMilestoneEvaluatorModelsForRoutine,
+  changeMilestoneActiveHoursForRoutine,
+  playbookActiveHoursIssue,
+  playbookActiveHoursLabel,
+  playbookMinuteFromLabel,
+  playbookMinuteLabel,
   playbookStepModelIssue,
   normalizePlaybookMilestone,
   playbookCheckCaption,
@@ -370,5 +375,38 @@ describe("Task Agent step reports", () => {
     expect(playbookStepModelIssue("m".repeat(81))).toBeDefined();
     expect(playbookStepModelIssue("opus\n")).toBeDefined();
     expect(playbookStepModelIssue("my-custom-model")).toBeUndefined();
+  });
+
+  it("keeps the Playbook and step hours through a save and sends a cleared window as null", () => {
+    const hours = { startMinute: 22 * 60, endMinute: 6 * 60, timeZone: "Europe/Istanbul" };
+    const loaded = playbookDraftFromDto({ ...playbook({ milestones: [automatic()] }), activeHours: hours });
+    const proceed = (draft: typeof loaded) => {
+      const decision = resolvePlaybookSave("project-1", draft, 3, { playbook: playbook({ revision: 3 }), stateRevision: 55 });
+      if (decision.kind !== "proceed") throw new Error("conflict");
+      return decision.params;
+    };
+    expect(proceed(loaded).activeHours).toEqual(hours);
+    expect(proceed({ ...loaded, activeHours: null })).toHaveProperty("activeHours", null);
+    // A draft that never loaded a Playbook leaves the saved window alone.
+    expect(proceed(playbookDraftFromDto(null))).not.toHaveProperty("activeHours");
+
+    const stepped = changeMilestoneActiveHoursForRoutine(loaded, "routine-merged", { ...hours, startMinute: 9 * 60, endMinute: 17 * 60 });
+    expect(playbookMilestonesForWire(stepped!.milestones)[0]?.activeHours).toEqual({ ...hours, startMinute: 540, endMinute: 1020 });
+    expect(changeMilestoneActiveHoursForRoutine(stepped!, "routine-merged", null)?.milestones[0]?.activeHours).toBeNull();
+    expect(changeMilestoneActiveHoursForRoutine(loaded, "missing", null)).toBeUndefined();
+  });
+
+  it("labels and validates active hours", () => {
+    expect(playbookMinuteLabel(0)).toBe("00:00");
+    expect(playbookMinuteLabel(1439)).toBe("23:59");
+    expect(playbookMinuteFromLabel("09:30")).toBe(570);
+    expect(playbookMinuteFromLabel("24:00")).toBeUndefined();
+    expect(playbookMinuteFromLabel("")).toBeUndefined();
+    expect(playbookActiveHoursLabel(null)).toBe("around the clock");
+    expect(playbookActiveHoursLabel({ startMinute: 540, endMinute: 1080, timeZone: "UTC" })).toBe("09:00–18:00 UTC");
+    expect(playbookActiveHoursIssue(null)).toBeUndefined();
+    expect(playbookActiveHoursIssue({ startMinute: 540, endMinute: 540, timeZone: "UTC" })).toBeDefined();
+    expect(playbookActiveHoursIssue({ startMinute: 540, endMinute: 600, timeZone: "Bad Zone" })).toBeDefined();
+    expect(playbookActiveHoursIssue({ startMinute: 1320, endMinute: 360, timeZone: "Europe/Berlin" })).toBeUndefined();
   });
 });

@@ -79,83 +79,86 @@ static CONTRACT_PATTERN_18: std::sync::LazyLock<regex::Regex> = std::sync::LazyL
     regex::Regex::new("^[A-Z][A-Z0-9_]*-[1-9][0-9]*$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_19: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^[A-Za-z0-9][A-Za-z0-9._:/-]*$").expect("generated contract pattern")
+    regex::Regex::new("^[A-Za-z0-9/_+-]{1,64}$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_20: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^[A-Za-z0-9_-]+$").expect("generated contract pattern")
+    regex::Regex::new("^[A-Za-z0-9][A-Za-z0-9._:/-]*$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_21: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^[A-Za-z0-9_-]{1,64}$").expect("generated contract pattern")
+    regex::Regex::new("^[A-Za-z0-9_-]+$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_22: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^[A-Za-z0-9_-]{43}$").expect("generated contract pattern")
+    regex::Regex::new("^[A-Za-z0-9_-]{1,64}$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_23: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^[A-Za-z0-9_-]{86}$").expect("generated contract pattern")
+    regex::Regex::new("^[A-Za-z0-9_-]{43}$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_24: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new("^[A-Za-z0-9_-]{86}$").expect("generated contract pattern")
+});
+static CONTRACT_PATTERN_25: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_25: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_26: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z_][A-Za-z0-9_]*$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_26: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_27: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[^\\s\\x00-\\x1f\\x7f]+$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_27: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_28: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_28: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_29: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[a-z0-9](?:[a-z0-9_-]{0,78}[a-z0-9])?$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_29: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_30: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[a-z](?:[a-z0-9]|-[a-z0-9])*$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_30: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_31: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://(?:github\\.com|dev\\.azure\\.com)/")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_31: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_32: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z](?:[A-Z0-9]{0,63})-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_32: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_33: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,62}[A-Z0-9]?-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_33: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_34: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_34: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_35: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}/?$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_35: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_36: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_36: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_37: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net/browse/[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_37: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_38: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://dev\\.azure\\.com/[a-z0-9](?:[a-z0-9-]{0,47}[a-z0-9])?/[^/?#]+/_git/[^/?#]+/pullrequest/[1-9][0-9]*$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_38: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_39: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_39: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_40: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https?://").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_40: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_41: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^refs/heads/").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_41: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_42: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^refs/remotes/[^/]+/.+").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_42: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_43: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^sha256:[0-9a-f]{64}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_43: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_44: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^sk-\\S+$").expect("generated contract pattern")
 });
 
@@ -194,47 +197,48 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
         "^[A-Z2-9]{4}-[A-Z2-9]{4}$" => CONTRACT_PATTERN_16.is_match(text),
         "^[A-Z][A-Z0-9_]*$" => CONTRACT_PATTERN_17.is_match(text),
         "^[A-Z][A-Z0-9_]*-[1-9][0-9]*$" => CONTRACT_PATTERN_18.is_match(text),
-        "^[A-Za-z0-9][A-Za-z0-9._:/-]*$" => CONTRACT_PATTERN_19.is_match(text),
-        "^[A-Za-z0-9_-]+$" => CONTRACT_PATTERN_20.is_match(text),
-        "^[A-Za-z0-9_-]{1,64}$" => CONTRACT_PATTERN_21.is_match(text),
-        "^[A-Za-z0-9_-]{43}$" => CONTRACT_PATTERN_22.is_match(text),
-        "^[A-Za-z0-9_-]{86}$" => CONTRACT_PATTERN_23.is_match(text),
-        "^[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_24.is_match(text),
-        "^[A-Za-z_][A-Za-z0-9_]*$" => CONTRACT_PATTERN_25.is_match(text),
-        "^[^\\s\\x00-\\x1f\\x7f]+$" => CONTRACT_PATTERN_26.is_match(text),
-        "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" => CONTRACT_PATTERN_27.is_match(text),
-        "^[a-z0-9](?:[a-z0-9_-]{0,78}[a-z0-9])?$" => CONTRACT_PATTERN_28.is_match(text),
-        "^[a-z](?:[a-z0-9]|-[a-z0-9])*$" => CONTRACT_PATTERN_29.is_match(text),
-        "^https://(?:github\\.com|dev\\.azure\\.com)/" => CONTRACT_PATTERN_30.is_match(text),
+        "^[A-Za-z0-9/_+-]{1,64}$" => CONTRACT_PATTERN_19.is_match(text),
+        "^[A-Za-z0-9][A-Za-z0-9._:/-]*$" => CONTRACT_PATTERN_20.is_match(text),
+        "^[A-Za-z0-9_-]+$" => CONTRACT_PATTERN_21.is_match(text),
+        "^[A-Za-z0-9_-]{1,64}$" => CONTRACT_PATTERN_22.is_match(text),
+        "^[A-Za-z0-9_-]{43}$" => CONTRACT_PATTERN_23.is_match(text),
+        "^[A-Za-z0-9_-]{86}$" => CONTRACT_PATTERN_24.is_match(text),
+        "^[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_25.is_match(text),
+        "^[A-Za-z_][A-Za-z0-9_]*$" => CONTRACT_PATTERN_26.is_match(text),
+        "^[^\\s\\x00-\\x1f\\x7f]+$" => CONTRACT_PATTERN_27.is_match(text),
+        "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" => CONTRACT_PATTERN_28.is_match(text),
+        "^[a-z0-9](?:[a-z0-9_-]{0,78}[a-z0-9])?$" => CONTRACT_PATTERN_29.is_match(text),
+        "^[a-z](?:[a-z0-9]|-[a-z0-9])*$" => CONTRACT_PATTERN_30.is_match(text),
+        "^https://(?:github\\.com|dev\\.azure\\.com)/" => CONTRACT_PATTERN_31.is_match(text),
         "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z](?:[A-Z0-9]{0,63})-[1-9][0-9]{0,19}$" => {
-            CONTRACT_PATTERN_31.is_match(text)
-        }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,62}[A-Z0-9]?-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_32.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,62}[A-Z0-9]?-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_33.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}/?$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_34.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}/?$" => {
             CONTRACT_PATTERN_35.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net/browse/[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net$" => {
             CONTRACT_PATTERN_36.is_match(text)
         }
-        "^https://dev\\.azure\\.com/[a-z0-9](?:[a-z0-9-]{0,47}[a-z0-9])?/[^/?#]+/_git/[^/?#]+/pullrequest/[1-9][0-9]*$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net/browse/[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_37.is_match(text)
         }
-        "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$" => {
+        "^https://dev\\.azure\\.com/[a-z0-9](?:[a-z0-9-]{0,47}[a-z0-9])?/[^/?#]+/_git/[^/?#]+/pullrequest/[1-9][0-9]*$" => {
             CONTRACT_PATTERN_38.is_match(text)
         }
-        "^https?://" => CONTRACT_PATTERN_39.is_match(text),
-        "^refs/heads/" => CONTRACT_PATTERN_40.is_match(text),
-        "^refs/remotes/[^/]+/.+" => CONTRACT_PATTERN_41.is_match(text),
-        "^sha256:[0-9a-f]{64}$" => CONTRACT_PATTERN_42.is_match(text),
-        "^sk-\\S+$" => CONTRACT_PATTERN_43.is_match(text),
+        "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$" => {
+            CONTRACT_PATTERN_39.is_match(text)
+        }
+        "^https?://" => CONTRACT_PATTERN_40.is_match(text),
+        "^refs/heads/" => CONTRACT_PATTERN_41.is_match(text),
+        "^refs/remotes/[^/]+/.+" => CONTRACT_PATTERN_42.is_match(text),
+        "^sha256:[0-9a-f]{64}$" => CONTRACT_PATTERN_43.is_match(text),
+        "^sk-\\S+$" => CONTRACT_PATTERN_44.is_match(text),
         _ => false,
     }
 }
@@ -243,7 +247,7 @@ pub const CONTRACT_IDENTITY: &str =
     "sha256:7eb20305e42354ec6af6cb6883f3c015de028823f2eb84e3d754895fb4d9c5d9";
 pub const CONTRACT_MAJOR: u32 = 1;
 pub const CONTRACT_REVISION: &str =
-    "sha256:d517219b0a699ac1c185853a2f29b9ff8c5b0826b6f0f0ef3772eb40610b80b5";
+    "sha256:1fbd18c94b6d4502f02bbcb6eb7c924c0d072e32e21cb1b3f9d37786d21b8eb1";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -5938,6 +5942,17 @@ pub struct StewardPresenceDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
+pub struct PlaybookActiveHoursDto {
+    #[serde(rename = "startMinute")]
+    pub start_minute: u16,
+    #[serde(rename = "endMinute")]
+    pub end_minute: u16,
+    #[serde(rename = "timeZone")]
+    pub time_zone: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct PlaybookStepEvaluatorModelsDto {
     #[serde(
         rename = "codexModel",
@@ -7730,6 +7745,8 @@ pub struct PlaybookMilestoneDto {
     pub restart_on_new_pull_request: Option<bool>,
     #[serde(rename = "evaluatorModels", skip_serializing_if = "Option::is_none")]
     pub evaluator_models: Option<PlaybookStepEvaluatorModelsDto>,
+    #[serde(rename = "activeHours", skip_serializing_if = "Option::is_none")]
+    pub active_hours: Option<PlaybookActiveHoursDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -7762,6 +7779,8 @@ pub struct PlaybookMilestoneDraftDto {
     pub restart_on_new_pull_request: Option<bool>,
     #[serde(rename = "evaluatorModels", skip_serializing_if = "Option::is_none")]
     pub evaluator_models: Option<PlaybookStepEvaluatorModelsDto>,
+    #[serde(rename = "activeHours", skip_serializing_if = "Option::is_none")]
+    pub active_hours: Option<PlaybookActiveHoursDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -7789,6 +7808,8 @@ pub struct PlaybookDto {
     pub milestones: Vec<PlaybookMilestoneDto>,
     #[serde(rename = "savedPipelines")]
     pub saved_pipelines: Vec<PlaybookPipelineDto>,
+    #[serde(rename = "activeHours", skip_serializing_if = "Option::is_none")]
+    pub active_hours: Option<PlaybookActiveHoursDto>,
     #[serde(rename = "updatedAtEpochMs")]
     pub updated_at_epoch_ms: u64,
 }
@@ -7976,6 +7997,8 @@ pub struct PlaybookUpdateParams {
     pub milestones: Vec<PlaybookMilestoneDraftDto>,
     #[serde(rename = "savedPipelines")]
     pub saved_pipelines: Vec<PlaybookPipelineDraftDto>,
+    #[serde(rename = "activeHours", skip_serializing_if = "Option::is_none")]
+    pub active_hours: Option<PlaybookActiveHoursDto>,
     #[serde(rename = "expectedPlaybookRevision")]
     pub expected_playbook_revision: u64,
     #[serde(rename = "expectedRevision")]
@@ -24096,6 +24119,41 @@ fn validate_steward_presence_dto(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_playbook_active_hours_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("startMinute").is_some_and(|field| {
+            field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                    && (number.as_u64().is_some_and(|number| number <= 1439_u64))
+            })
+        }) && object.get("endMinute").is_some_and(|field| {
+            field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                    && (number.as_u64().is_some_and(|number| number <= 1439_u64))
+            })
+        }) && object.get("timeZone").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 64
+                    && contract_pattern_matches("^[A-Za-z0-9/_+-]{1,64}$", text)
+            })
+        }) && object
+            .keys()
+            .all(|key| ["startMinute", "endMinute", "timeZone"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_playbook_step_evaluator_models_dto(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object.get("codexModel").is_some_and(|field| {
@@ -29498,6 +29556,9 @@ fn validate_playbook_milestone_dto(value: &Value) -> bool {
             && object.get("evaluatorModels").is_none_or(|field| {
                 (validate_playbook_step_evaluator_models_dto(field) || field.is_null())
             })
+            && object
+                .get("activeHours")
+                .is_none_or(|field| (validate_playbook_active_hours_dto(field) || field.is_null()))
             && object.keys().all(|key| {
                 [
                     "id",
@@ -29513,6 +29574,7 @@ fn validate_playbook_milestone_dto(value: &Value) -> bool {
                     "rewind",
                     "restartOnNewPullRequest",
                     "evaluatorModels",
+                    "activeHours",
                 ]
                 .contains(&key.as_str())
             })
@@ -29579,6 +29641,9 @@ fn validate_playbook_milestone_draft_dto(value: &Value) -> bool {
             && object.get("evaluatorModels").is_none_or(|field| {
                 (validate_playbook_step_evaluator_models_dto(field) || field.is_null())
             })
+            && object
+                .get("activeHours")
+                .is_none_or(|field| (validate_playbook_active_hours_dto(field) || field.is_null()))
             && object.keys().all(|key| {
                 [
                     "id",
@@ -29593,6 +29658,7 @@ fn validate_playbook_milestone_draft_dto(value: &Value) -> bool {
                     "rewind",
                     "restartOnNewPullRequest",
                     "evaluatorModels",
+                    "activeHours",
                 ]
                 .contains(&key.as_str())
             })
@@ -29696,6 +29762,9 @@ fn validate_playbook_dto(value: &Value) -> bool {
                             .all(|item| validate_playbook_pipeline_dto(item))
                 })
             })
+            && object
+                .get("activeHours")
+                .is_none_or(|field| (validate_playbook_active_hours_dto(field) || field.is_null()))
             && object.get("updatedAtEpochMs").is_some_and(|field| {
                 field.as_number().is_some_and(|number| {
                     (number.as_i64().is_some() || number.as_u64().is_some())
@@ -29709,6 +29778,7 @@ fn validate_playbook_dto(value: &Value) -> bool {
                     "activePipelineName",
                     "milestones",
                     "savedPipelines",
+                    "activeHours",
                     "updatedAtEpochMs",
                 ]
                 .contains(&key.as_str())
@@ -30258,6 +30328,9 @@ fn validate_playbook_update_params(value: &Value) -> bool {
                             .all(|item| validate_playbook_pipeline_draft_dto(item))
                 })
             })
+            && object
+                .get("activeHours")
+                .is_none_or(|field| (validate_playbook_active_hours_dto(field) || field.is_null()))
             && object.get("expectedPlaybookRevision").is_some_and(|field| {
                 field.as_number().is_some_and(|number| {
                     (number.as_i64().is_some() || number.as_u64().is_some())
@@ -30276,6 +30349,7 @@ fn validate_playbook_update_params(value: &Value) -> bool {
                     "activePipelineName",
                     "milestones",
                     "savedPipelines",
+                    "activeHours",
                     "expectedPlaybookRevision",
                     "expectedRevision",
                 ]

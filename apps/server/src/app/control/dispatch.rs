@@ -1409,8 +1409,12 @@ async fn dispatch_inner(
                 result
             }
             "playbook.update" => {
+                // Core reads the validated request as sent: an absent
+                // `activeHours` keeps the window while `null` clears it, a
+                // difference the typed value would lose.
+                let raw_params = request.params;
                 let params =
-                    serde_json::from_value::<protocol::PlaybookUpdateParams>(request.params)
+                    serde_json::from_value::<protocol::PlaybookUpdateParams>(raw_params.clone())
                         .expect("validated Playbook update params");
                 let project_id = params.project_id.clone();
                 let routine_capacity = params.milestones.len()
@@ -1426,7 +1430,7 @@ async fn dispatch_inner(
                 let previous_revision = core.state_revision();
                 let steward_was_enabled = core.current_enabled_steward_wake(&project_id).is_some();
                 let result = core.update_playbook(
-                    serde_json::to_value(params).expect("Playbook update params serialize"),
+                    raw_params,
                     new_routine_ids,
                     current_epoch_ms(),
                 );

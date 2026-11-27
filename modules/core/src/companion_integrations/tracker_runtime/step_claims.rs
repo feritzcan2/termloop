@@ -19,6 +19,31 @@ impl CoreRuntime {
         self.playbook_steward(project_id).is_some()
     }
 
+    /// When the active step `routine_id` evaluates is outside its hours at
+    /// `at_epoch_ms`, the moment its window next opens. `None` while it is
+    /// open, for a step without hours, and for a zone the database no longer
+    /// knows, which fails open rather than stopping the pipeline.
+    pub(super) fn step_closed_until(
+        &self,
+        project_id: &str,
+        routine_id: &str,
+        at_epoch_ms: u64,
+    ) -> Option<u64> {
+        let playbook = self.store.playbook_for_project(project_id)?;
+        let milestone = playbook
+            .milestones
+            .iter()
+            .find(|milestone| milestone.routine_id == routine_id)?;
+        let hours = playbook.active_hours_for(milestone)?;
+        let clock = termloop_platform::zoned_clock(at_epoch_ms, &hours.time_zone)?;
+        let wait_minutes = hours.minutes_until_open(clock.minute_of_day);
+        (wait_minutes > 0).then(|| {
+            at_epoch_ms
+                .saturating_sub(clock.ms_into_minute)
+                .saturating_add(u64::from(wait_minutes) * 60_000)
+        })
+    }
+
     fn due_step_routines(&self, project_id: &str, now_epoch_ms: u64) -> Vec<TrackerConfiguration> {
         let mut due = self
             .store
@@ -82,7 +107,14 @@ impl CoreRuntime {
                 Some(run_now) => run_now.task_id.as_deref() == Some(task_id.as_str()),
                 None => false,
             };
-            if !overrides_wait && step.due_at_epoch_ms > now_epoch_ms {
+            // Outside its hours a step waits for its window; only the user's
+            // own "Run now" checks it anyway.
+            if !overrides_wait
+                && (step.due_at_epoch_ms > now_epoch_ms
+                    || self
+                        .step_closed_until(project_id, &routine.id, now_epoch_ms)
+                        .is_some())
+            {
                 continue;
             }
             let capability = TrackerCheckCapability {
@@ -137,6 +169,7 @@ impl CoreRuntime {
     /// evaluation slots are full contributes nothing: a finishing check
     /// wakes the supervisor itself.
     pub(super) fn next_playbook_step_epoch_ms(&self) -> Option<u64> {
+        let now_epoch_ms = termloop_platform::current_epoch_ms();
         self.store
             .tracker_configurations()
             .iter()
@@ -147,10 +180,20 @@ impl CoreRuntime {
                     && self.project_step_check_count(&routine.project_id) < PROJECT_STEP_CHECKS_MAX
             })
             .filter_map(|routine| {
-                self.tracker_runtime
+                let due = self
+                    .tracker_runtime
                     .next_due_epoch_ms
                     .get(&routine.id)
-                    .copied()
+                    .copied()?;
+                if self.tracker_runtime.step_run_now.contains_key(&routine.id) {
+                    return Some(due);
+                }
+                // A step due while its window is shut wakes when it opens,
+                // not at a due time already passed.
+                Some(
+                    self.step_closed_until(&routine.project_id, &routine.id, due.max(now_epoch_ms))
+                        .unwrap_or(due),
+                )
             })
             .min()
     }
@@ -230,5 +273,101 @@ impl CoreRuntime {
                 capability: None,
                 result: json!({"status": "idle", "nextWakeAtEpochMs": null}),
             }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::companion_integrations::playbook_runtime::tests::pipeline_runtime;
+    use termloop_domain::PlaybookActiveHours;
+
+    /// 1970-01-01T00:16:40Z.
+    const NOW: u64 = 1_000_000;
+    const NINE_UTC: u64 = 9 * 60 * 60_000;
+
+    fn set_hours(
+        runtime: &mut crate::CoreRuntime,
+        project_id: &str,
+        playbook_hours: Option<(u16, u16)>,
+        step_hours: Option<(u16, u16)>,
+    ) {
+        let window = |(start, end): (u16, u16)| PlaybookActiveHours {
+            start_minute: start,
+            end_minute: end,
+            time_zone: "UTC".into(),
+        };
+        let mut playbook = runtime
+            .store
+            .playbook_for_project(project_id)
+            .unwrap()
+            .clone();
+        playbook.active_hours = playbook_hours.map(window);
+        for milestone in &mut playbook.milestones {
+            milestone.active_hours = step_hours.map(window);
+        }
+        let revision = runtime.state_revision();
+        runtime
+            .store
+            .set_playbook_configuration(&runtime.write_authority, playbook, revision)
+            .unwrap();
+    }
+
+    fn claims(runtime: &mut crate::CoreRuntime, project_id: &str, id: &str) -> bool {
+        runtime
+            .claim_next_playbook_step_or_idle(project_id, id.into(), NOW)
+            .unwrap()
+            .capability
+            .is_some()
+    }
+
+    #[test]
+    fn a_step_outside_its_hours_waits_for_its_window_to_open() {
+        let (mut runtime, root, project_id) = pipeline_runtime();
+        let routine_id = runtime
+            .store
+            .playbook_for_project(&project_id)
+            .unwrap()
+            .milestones[0]
+            .routine_id
+            .clone();
+        // Office hours 09:00-17:00 UTC: closed at 00:16, opening at 09:00.
+        set_hours(&mut runtime, &project_id, Some((9 * 60, 17 * 60)), None);
+        assert_eq!(
+            runtime.step_closed_until(&project_id, &routine_id, NOW),
+            Some(NINE_UTC)
+        );
+        assert!(!claims(&mut runtime, &project_id, "closed"));
+
+        // The step's own window replaces the Playbook's: open across midnight.
+        set_hours(
+            &mut runtime,
+            &project_id,
+            Some((9 * 60, 17 * 60)),
+            Some((22 * 60, 6 * 60)),
+        );
+        assert_eq!(
+            runtime.step_closed_until(&project_id, &routine_id, NOW),
+            None
+        );
+        assert!(claims(&mut runtime, &project_id, "open"));
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn run_now_checks_a_step_outside_its_hours() {
+        let (mut runtime, root, project_id) = pipeline_runtime();
+        let routine_id = runtime
+            .store
+            .playbook_for_project(&project_id)
+            .unwrap()
+            .milestones[0]
+            .routine_id
+            .clone();
+        set_hours(&mut runtime, &project_id, None, Some((9 * 60, 17 * 60)));
+        assert!(!claims(&mut runtime, &project_id, "closed"));
+        // Already due, so the request reports no newly scheduled run.
+        runtime.run_routine_now(&routine_id, NOW).unwrap();
+        assert!(claims(&mut runtime, &project_id, "run-now"));
+        std::fs::remove_dir_all(root).ok();
     }
 }

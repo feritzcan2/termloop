@@ -1,6 +1,7 @@
 import type {
   ErrorCode,
   GitHostProvider,
+  PlaybookActiveHoursDto,
   PlaybookAgentReportPolicy,
   PlaybookDeterministicCheckDto,
   PlaybookDeterministicCheckKind,
@@ -84,6 +85,9 @@ export type PlaybookDraft = {
   /** The Project's other pipelines, kept whole. Switching parks the active one
       here rather than discarding it, so every path stays reachable. */
   savedPipelines: PlaybookPipelineEditorDraft[];
+  /** The hours every step is checked in. Undefined leaves the saved window
+      as it is; null checks around the clock. */
+  activeHours?: PlaybookActiveHoursDto | null;
 };
 
 export const PLAYBOOK_DEFAULT_AGENT_REPORT: PlaybookAgentReportPolicy = "signal";
@@ -258,6 +262,7 @@ export function playbookDraftFromDto(playbook: PlaybookDto | null): PlaybookDraf
   const milestoneDraft = (milestone: PlaybookMilestoneDto): PlaybookMilestoneDraft => normalizePlaybookMilestone<PlaybookMilestoneDraft>(milestone);
   return {
     activePipelineName: playbook?.activePipelineName ?? "",
+    ...(playbook ? { activeHours: playbook.activeHours ?? null } : {}),
     milestones: playbook?.milestones.map(milestoneDraft) ?? [],
     savedPipelines: playbook?.savedPipelines.map((pipeline) => ({
       ...pipeline,
@@ -544,6 +549,7 @@ export function resolvePlaybookSave(
       activePipelineName: draft.activePipelineName,
       milestones: playbookMilestonesForWire(draft.milestones),
       savedPipelines: playbookPipelinesForWire(draft.savedPipelines),
+      ...(draft.activeHours !== undefined ? { activeHours: draft.activeHours } : {}),
       expectedPlaybookRevision: basePlaybookRevision,
       expectedRevision: latest.stateRevision,
     },
@@ -737,6 +743,45 @@ export function changeMilestoneEvaluatorModelsForRoutine(
   const claudeModel = playbookStepModelChoice(models?.claudeModel);
   const evaluatorModels = codexModel === null && claudeModel === null ? null : { codexModel, claudeModel };
   return changeMilestoneForRoutine(draft, routineId, (milestone) => ({ ...milestone, evaluatorModels }));
+}
+
+/** "09:30" for 570 minutes past midnight. */
+export function playbookMinuteLabel(minute: number): string {
+  return `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
+}
+
+/** Minutes past midnight for an "HH:MM" time input, or undefined. */
+export function playbookMinuteFromLabel(value: string): number | undefined {
+  const match = /^(\d{2}):(\d{2})$/.exec(value);
+  if (!match) return undefined;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  return hours < 24 && minutes < 60 ? hours * 60 + minutes : undefined;
+}
+
+/** "09:00–18:00 Europe/Berlin", or "around the clock" without a window. */
+export function playbookActiveHoursLabel(hours: PlaybookActiveHoursDto | null | undefined): string {
+  if (!hours) return "around the clock";
+  return `${playbookMinuteLabel(hours.startMinute)}–${playbookMinuteLabel(hours.endMinute)} ${hours.timeZone}`;
+}
+
+/** Why a window cannot be saved, or undefined when it can. The daemon still
+    decides whether the zone exists. */
+export function playbookActiveHoursIssue(hours: PlaybookActiveHoursDto | null): string | undefined {
+  if (hours === null) return undefined;
+  if (hours.startMinute === hours.endMinute) return "The window must open and close at different times.";
+  if (!/^[A-Za-z0-9/_+-]{1,64}$/.test(hours.timeZone)) return "Choose a time zone such as Europe/Berlin.";
+  return undefined;
+}
+
+/** Sets the hours the stage whose completion Routine is `routineId` is
+    checked in. Null follows the Playbook's hours. */
+export function changeMilestoneActiveHoursForRoutine(
+  draft: PlaybookDraft,
+  routineId: string,
+  activeHours: PlaybookActiveHoursDto | null,
+): PlaybookDraft | undefined {
+  return changeMilestoneForRoutine(draft, routineId, (milestone) => ({ ...milestone, activeHours }));
 }
 
 /** Why the last verdict came from the agent Routine although the step has a

@@ -11,7 +11,7 @@ import type {
   RoutineRunNowResult,
   PlaybookAgentReportPolicy, PlaybookDto, PlaybookGetResult, PlaybookMilestoneDto, PlaybookRuntimeResult, PlaybookUpdateParams,
   AssistantPromptImproverTarget,
-  PlaybookEvaluatorSettingsDto, PlaybookEvaluationHistoryResult, PlaybookStepEvaluatorModelsDto, AutoCompactionSettingsDto,
+  PlaybookEvaluatorSettingsDto, PlaybookEvaluationHistoryResult, PlaybookStepEvaluatorModelsDto, PlaybookActiveHoursDto, AutoCompactionSettingsDto,
 } from "@termloop/contract/current";
 import { assistantInitialView, defaultAssistantLaunchSelection, requestPlaybookBuilderSetup, routineIntervalLabel, type AssistantSelection, type AssistantView } from "./AssistantRail.js";
 import { Icon } from "./Icon.js";
@@ -27,8 +27,9 @@ import { CompanionTopicCard, currentStewardInteraction, groupCompanionTopics } f
 import { PlaybookAgentReportSelector } from "./PlaybookAgentReportSelector.js";
 import { PlaybookCheckSelector } from "./PlaybookCheckSelector.js";
 import { PlaybookStepModelSelector } from "./PlaybookStepModelSelector.js";
+import { PlaybookActiveHoursEditor } from "./PlaybookActiveHoursEditor.js";
 import {
-  changeMilestoneAgentReportForRoutine, changeMilestoneCheckForRoutine, changeMilestoneEvaluatorModelsForRoutine, playbookDraftFromDto, playbookRefusalMessage, resolvePlaybookSave,
+  changeMilestoneAgentReportForRoutine, changeMilestoneCheckForRoutine, changeMilestoneEvaluatorModelsForRoutine, changeMilestoneActiveHoursForRoutine, playbookDraftFromDto, playbookRefusalMessage, resolvePlaybookSave,
   type PlaybookDraft, type PlaybookUpdateOutcome,
 } from "./playbook-policy.js";
 
@@ -486,7 +487,9 @@ export function StewardPanel(props: StewardPanelProps) {
       check: selectedRoutineStep.deterministicCheck ?? null,
       agentReport: selectedRoutineStep.agentReport ?? "signal",
       evaluatorModels: selectedRoutineStep.evaluatorModels ?? null,
+      activeHours: selectedRoutineStep.activeHours ?? null,
     } : undefined}
+    playbookActiveHours={playbook?.activeHours ?? null}
     projectEvaluatorSettings={steward?.playbookEvaluator}
     saveCheck={updatePlaybook ? (check) => run(async () => {
       setPlaybook(await saveStepCheck(props.projectId, selectedRoutine.id, check, props.getPlaybook, updatePlaybook));
@@ -497,6 +500,11 @@ export function StewardPanel(props: StewardPanelProps) {
     saveEvaluatorModels={updatePlaybook ? (models) => run(async () => {
       setPlaybook(await saveStepChange(props.projectId,
         (draft) => changeMilestoneEvaluatorModelsForRoutine(draft, selectedRoutine.id, models),
+        "This step is no longer in the Playbook.", props.getPlaybook, updatePlaybook));
+    }) : undefined}
+    saveActiveHours={updatePlaybook ? (activeHours) => run(async () => {
+      setPlaybook(await saveStepChange(props.projectId,
+        (draft) => changeMilestoneActiveHoursForRoutine(draft, selectedRoutine.id, activeHours),
         "This step is no longer in the Playbook.", props.getPlaybook, updatePlaybook));
     }) : undefined}
     health={selectedRoutineHealth}
@@ -566,6 +574,13 @@ export function StewardPanel(props: StewardPanelProps) {
         );
         setSteward(result.configuration);
         setStewardRevision(result.stateRevision);
+      })} /> : null}
+    {playbook && updatePlaybook ? <PlaybookActiveHoursEditor scope="playbook"
+      hours={playbook.activeHours ?? null} busy={busy}
+      save={(activeHours) => run(async () => {
+        setPlaybook(await saveStepChange(props.projectId,
+          (draft) => draft.milestones.length > 0 ? { ...draft, activeHours } : undefined,
+          "This Project has no Playbook.", props.getPlaybook, updatePlaybook));
       })} /> : null}
     {/* An older daemon omits the field and would reject it on save. */}
     {steward?.autoCompaction ? <AutoCompactionSettings agentId={steward.agentId}
@@ -795,7 +810,10 @@ export function RoutineContextEditor(props: {
     check: PlaybookMilestoneDto["deterministicCheck"];
     agentReport: PlaybookAgentReportPolicy;
     evaluatorModels?: PlaybookStepEvaluatorModelsDto | null;
+    activeHours?: PlaybookActiveHoursDto | null;
   } | undefined;
+  playbookActiveHours?: PlaybookActiveHoursDto | null | undefined;
+  saveActiveHours?: ((activeHours: PlaybookActiveHoursDto | null) => Promise<void>) | undefined;
   projectEvaluatorSettings?: PlaybookEvaluatorSettingsDto | undefined;
   saveEvaluatorModels?: ((models: PlaybookStepEvaluatorModelsDto | null) => Promise<void>) | undefined;
   saveCheck?: ((check: PlaybookMilestoneDto["deterministicCheck"]) => Promise<void>) | undefined;
@@ -880,6 +898,13 @@ export function RoutineContextEditor(props: {
         projectSettings={props.projectEvaluatorSettings}
         busy={props.busy}
         save={props.saveEvaluatorModels}
+      /> : null}
+      {props.stepRetryDelaySeconds !== undefined && props.stepCheck && props.saveActiveHours ? <PlaybookActiveHoursEditor
+        scope="step"
+        hours={props.stepCheck.activeHours ?? null}
+        inherited={props.playbookActiveHours}
+        busy={props.busy}
+        save={props.saveActiveHours}
       /> : null}
       <details className="ap-details ap-instructions-details" open>
         <summary>What should the Steward verify?</summary>

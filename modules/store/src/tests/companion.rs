@@ -647,6 +647,7 @@ fn steward_delete_resets_only_the_project_assistant_tree_in_one_commit() {
         rewind: None,
         restart_on_new_pull_request: false,
         evaluator_models: None,
+        active_hours: None,
     };
     store
         .state
@@ -657,6 +658,7 @@ fn steward_delete_resets_only_the_project_assistant_tree_in_one_commit() {
             active_pipeline_name: "Ship".into(),
             milestones: vec![milestone],
             saved_pipelines: vec![],
+            active_hours: None,
             updated_at_epoch_ms: 1,
         });
     store

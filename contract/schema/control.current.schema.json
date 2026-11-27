@@ -13644,6 +13644,41 @@
         }
       }
     },
+    "playbookActiveHoursDto": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookActiveHoursDto",
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A daily window of wall-clock hours in one IANA time zone. Outside it, automatic step checks wait for the window to open. A start after the end spans midnight.",
+      "required": [
+        "startMinute",
+        "endMinute",
+        "timeZone"
+      ],
+      "properties": {
+        "startMinute": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1439,
+          "x-rust-type": "u16",
+          "description": "Minutes since local midnight the window opens."
+        },
+        "endMinute": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1439,
+          "x-rust-type": "u16",
+          "description": "Minutes since local midnight the window closes, exclusive. Never equal to startMinute."
+        },
+        "timeZone": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9/_+-]{1,64}$",
+          "description": "IANA time zone name, such as Europe/Berlin."
+        }
+      }
+    },
     "playbookStepEvaluatorModelsDto": {
       "x-codegen": true,
       "x-codegen-name": "PlaybookStepEvaluatorModelsDto",
@@ -17067,6 +17102,17 @@
               "type": "null"
             }
           ]
+        },
+        "activeHours": {
+          "description": "The hours this step is checked in, replacing the Playbook's window for this step. Null follows the Playbook.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/playbookActiveHoursDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },
@@ -17156,6 +17202,17 @@
           "anyOf": [
             {
               "$ref": "#/$defs/playbookStepEvaluatorModelsDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "activeHours": {
+          "description": "The hours this step is checked in, replacing the Playbook's window for this step. Null follows the Playbook.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/playbookActiveHoursDto"
             },
             {
               "type": "null"
@@ -17253,6 +17310,17 @@
             "$ref": "#/$defs/playbookPipelineDto"
           },
           "maxItems": 16
+        },
+        "activeHours": {
+          "description": "The hours every step is checked in unless a step names its own. Null checks around the clock.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/playbookActiveHoursDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "updatedAtEpochMs": {
           "type": "integer",
@@ -17658,6 +17726,17 @@
             "$ref": "#/$defs/playbookPipelineDraftDto"
           },
           "maxItems": 16
+        },
+        "activeHours": {
+          "description": "The hours every step is checked in unless a step names its own. Absent keeps the current window; null checks around the clock.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/playbookActiveHoursDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "expectedPlaybookRevision": {
           "type": "integer",
