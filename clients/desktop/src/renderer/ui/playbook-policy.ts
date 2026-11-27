@@ -338,10 +338,6 @@ export function moveMilestoneToSlot(draft: PlaybookDraft, from: number, to: numb
   return { ...draft, milestones };
 }
 
-export function removeMilestoneAt(draft: PlaybookDraft, index: number): PlaybookDraft {
-  return { ...draft, milestones: draft.milestones.filter((_, at) => at !== index) };
-}
-
 export function changeMilestoneRetryAt(
   draft: PlaybookDraft,
   index: number,

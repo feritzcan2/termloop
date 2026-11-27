@@ -2581,8 +2581,6 @@ button.folder-crumb:hover { background: light-dark(rgba(15,23,42,.07), rgba(255,
 .ar-step-tools { display: inline-flex; align-items: center; gap: 1px; max-width: 0; overflow: hidden; opacity: 0; transition: max-width 120ms ease, opacity 120ms ease; }
 .ar-routine.playbook-step:hover .ar-step-tools, .ar-step-tools:focus-within { max-width: 170px; opacity: 1; }
 .ar-step-tools .ar-action { width: 19px; height: 19px; font: 700 10px/1 var(--font-mono); }
-.ar-step-tools .ar-action.danger.armed { background: rgba(225,117,126,.16); color: light-dark(#916366, #f0a3a9); }
-.ar-step-tools .ar-action svg { width: 10px; height: 10px; }
 .ar-step-retry { height: 19px; margin: 0 2px; padding: 0 2px; border: 1px solid light-dark(rgba(15,23,42,.12), rgba(255,255,255,.12)); border-radius: 4px; outline: 0; background: rgba(0,0,0,.18); color: var(--sidebar-dim); font: 9px/1 var(--font-mono); }
 .ar-step-retry:focus { border-color: rgba(102,179,255,.55); }
 .ar-state.danger { color: light-dark(#916366, #f0a3a9); }

@@ -19,7 +19,6 @@ import {
   playbookStarterDraft,
   playbookStationApproverCaption,
   playbookTemplateDraft,
-  removeMilestoneAt,
   resolvePlaybookSave,
   switchToSavedPipeline,
   truncatePlaybookLabel,
@@ -101,12 +100,11 @@ describe("Inline pipeline edits", () => {
     savedPipelines: [],
   });
 
-  it("moves, removes, and retimes steps without mutating the source", () => {
+  it("moves and retimes steps without mutating the source", () => {
     expect(moveMilestoneToSlot(draft(), 2, 0).milestones.map((entry) => entry.title))
       .toEqual(["Three", "One", "Two"]);
     // A station's own edges are no-ops, so an inline ↑ at the top changes nothing.
     expect(moveMilestoneToSlot(draft(), 0, 0)).toEqual(draft());
-    expect(removeMilestoneAt(draft(), 1).milestones.map((entry) => entry.title)).toEqual(["One", "Three"]);
     const retimed = changeMilestoneRetryAt(draft(), 1, 1800);
     expect(retimed.milestones.map((entry) => entry.retryDelaySeconds)).toEqual([600, 1800, 600]);
     expect(draft().milestones[1]?.retryDelaySeconds).toBe(600);

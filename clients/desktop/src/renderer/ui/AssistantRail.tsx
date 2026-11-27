@@ -13,7 +13,6 @@ import {
   playbookCheckCaption,
   playbookStationApproverCaption,
   PLAYBOOK_TEMPLATES,
-  removeMilestoneAt,
   resolvePlaybookSave,
   switchToSavedPipeline,
   type PlaybookDraft,
@@ -498,8 +497,6 @@ export function AssistantRail(props: Props) {
   const [draggedTaskId, setDraggedTaskId] = useState<string>();
   const [dropRoutineId, setDropRoutineId] = useState<string>();
   const [confirmingSteward, setConfirmingSteward] = useState(false);
-  /// Which pipeline step is asking its one removal question right now.
-  const [confirmingStepId, setConfirmingStepId] = useState<string>();
   const [actionError, setActionError] = useState<string>();
   const playbookImprovementTarget = useMemo(() => ({
     surface: "playbook" as const,
@@ -778,8 +775,6 @@ export function AssistantRail(props: Props) {
       moveMilestoneToSlot(draft, index, direction < 0 ? index - 1 : index + 2));
   const changeStepRetry = (index: number, retryDelaySeconds: number) =>
     savePlaybook(`playbook-retry-${index}`, (draft) => changeMilestoneRetryAt(draft, index, retryDelaySeconds));
-  const removeStep = (index: number) =>
-    savePlaybook(`playbook-remove-${index}`, (draft) => removeMilestoneAt(draft, index));
   const adoptPlaybookTemplate = (template: PlaybookTemplate) =>
     void savePlaybook(`playbook-adopt-${template.id}`, (draft) => adoptTemplateInto(draft, template))
       .then((applied) => { if (applied) setPipelineJustCreated(true); });
@@ -894,12 +889,9 @@ export function AssistantRail(props: Props) {
     const milestone = step === undefined ? undefined : playbookDoc?.milestones[step];
     const approver = milestone ? playbookStationApproverCaption(milestone) : undefined;
     const check = milestone?.gate === "automatic" ? playbookCheckCaption(milestone.deterministicCheck) : undefined;
-    const armed = step !== undefined && confirmingStepId === routine.id;
-    const meta = armed
-      ? undefined
-      : step !== undefined
-        ? `${stepRoutineCadence(node.retryDelaySeconds)}${approver ? ` · ${approver}` : ""}`
-        : keptPipeline !== undefined ? `kept · ${keptPipeline}` : "not used by any step";
+    const meta = step !== undefined
+      ? `${stepRoutineCadence(node.retryDelaySeconds)}${approver ? ` · ${approver}` : ""}`
+      : keptPipeline !== undefined ? `kept · ${keptPipeline}` : "not used by any step";
     const taskDragEnabled = !props.disabled && mutatingKey === undefined;
     return <div
       className={`ar-pl-step${draggedTaskId && step !== undefined ? " task-drag-active" : ""}${dropRoutineId === routine.id ? " task-drop-target" : ""}`}
@@ -927,11 +919,9 @@ export function AssistantRail(props: Props) {
             aria-hidden="true">{step === undefined ? "–" : step + 1}</i>
           <span className="ar-copy">
             <strong>{routine.name}</strong>
-            <small>{armed
-              ? <em className="ar-state danger">Remove this step? Its Routine goes with it.</em>
-              : <>{check ? <span className="ar-step-check"
-                title={`Checked directly against the pull request (${check}); the agent Routine decides only if the provider cannot answer`}>{check}</span> : null}
-                <span>{meta}</span></>}</small>
+            <small>{check ? <span className="ar-step-check"
+              title={`Checked directly against the pull request (${check}); the agent Routine decides only if the provider cannot answer`}>{check}</span> : null}
+              <span>{meta}</span></small>
           </span>
         </button>
         <span className="ar-step-actions">
@@ -951,17 +941,6 @@ export function AssistantRail(props: Props) {
               {playbookRetryChoices(node.retryDelaySeconds).map((seconds) =>
                 <option key={seconds} value={seconds}>{playbookRetryChoiceLabel(seconds)}</option>)}
             </select> : null}
-            {armed ? <button type="button" className="ar-action" aria-label={`Keep step ${step + 1}`}
-              title="Keep this step" onClick={() => setConfirmingStepId(undefined)}><Icon name="close" /></button> : null}
-            <button type="button" className={`ar-action danger${armed ? " armed" : ""}`}
-              aria-label={armed ? `Yes, remove step ${step + 1}` : `Remove step ${step + 1}`}
-              title={armed ? "Yes, remove this step" : "Remove this step from the pipeline"}
-              disabled={playbookBusy}
-              onClick={() => {
-                if (!armed) { setConfirmingStepId(routine.id); setActionError(undefined); return; }
-                setConfirmingStepId(undefined);
-                void removeStep(step);
-              }}><Icon name="trash" /></button>
           </span> : null}
           {status.tone === "checking" && evaluations.length === 0 ? <span className="ar-flag checking">{status.label}</span>
             : null}
