@@ -1178,21 +1178,40 @@ mod tests {
             target_kind: ImproverSessionTargetKind::RunConfiguration,
             target_id: Some(run_id),
         };
+        insert_improver_session(
+            &mut runtime,
+            "improver-session",
+            project_id,
+            &project_folder,
+            &target,
+            "builtin.improver.run-configuration",
+        );
+        (runtime, state_path, target)
+    }
+
+    fn insert_improver_session(
+        runtime: &mut CoreRuntime,
+        session_id: &str,
+        project_id: String,
+        project_folder: &str,
+        target: &ImproverSessionTarget,
+        template_ref: &str,
+    ) {
         runtime
             .store
             .insert_session(
                 &runtime.write_authority,
                 SessionRecord {
-                    id: "improver-session".into(),
+                    id: session_id.into(),
                     project_id,
                     name: Some("Improve run".into()),
                     kind: SessionKind::Agent,
                     process: ProcessDescriptor {
                         program: "codex".into(),
                         args: vec![],
-                        cwd: project_folder,
+                        cwd: project_folder.into(),
                         agent_id: Some("codex".into()),
-                        template_ref: Some("builtin.improver.run-configuration".into()),
+                        template_ref: Some(template_ref.into()),
                         template_version: Some(1),
                     },
                     launch_selection: Default::default(),
@@ -1211,7 +1230,6 @@ mod tests {
                 },
             )
             .unwrap();
-        (runtime, state_path, target)
     }
 
     #[test]
@@ -1291,6 +1309,95 @@ mod tests {
             .unwrap();
         assert_eq!(listed["activeVersionId"], second_id);
         assert_eq!(listed["versions"].as_array().unwrap().len(), 1);
+        let _ = std::fs::remove_file(&state_path);
+        let _ = std::fs::remove_dir_all(state_path.with_extension("project"));
+    }
+
+    #[test]
+    fn a_builder_rewrite_of_its_read_keeps_step_models_reports_and_hours() {
+        let (mut runtime, state_path, _) = runtime();
+        let project = runtime.store.projects()[0].clone();
+        let target = ImproverSessionTarget {
+            target_kind: ImproverSessionTargetKind::Playbook,
+            target_id: None,
+        };
+        insert_improver_session(
+            &mut runtime,
+            "playbook-builder",
+            project.id.clone(),
+            &project.folder_path,
+            &target,
+            "builtin.builder.playbook",
+        );
+        let hours = json!({"startMinute": 480, "endMinute": 1080, "timeZone": "Europe/Istanbul"});
+        let step = json!({
+            "id": "review",
+            "title": "Reviewed",
+            "gate": "automatic",
+            "completeWhen": "The pull request has an approving review.",
+            "whileWaiting": {"mode": "off", "instructions": ""},
+            "retryDelaySeconds": 300,
+            "approver": null,
+            "deterministicCheck": null,
+            "agentReport": "trusted",
+            "evaluatorModels": {"codexModel": "gpt-5.5-mini", "claudeModel": null},
+            "activeHours": {"startMinute": 1320, "endMinute": 360, "timeZone": "UTC"},
+        });
+        let snapshot = json!({
+            "activePipelineName": "Delivery",
+            "milestones": [step],
+            "savedPipelines": [],
+            "activeHours": hours,
+        });
+        let write = |runtime: &mut CoreRuntime, content: String, at: u64| {
+            let active = runtime
+                .read_improver_configuration_version("playbook-builder", &target)
+                .unwrap()["activeVersionId"]
+                .as_str()
+                .map(str::to_owned);
+            let plan = runtime
+                .prepare_improver_configuration_write(
+                    "playbook-builder",
+                    &target,
+                    active,
+                    content,
+                    "Builder write".into(),
+                )
+                .unwrap();
+            runtime
+                .apply_owned_configuration_application(plan, AssistantAvailability::Proven, at)
+                .unwrap();
+        };
+        write(&mut runtime, snapshot.to_string(), 2);
+
+        // The Builder copies what it read and changes only the title.
+        let read = runtime
+            .read_improver_configuration_version("playbook-builder", &target)
+            .unwrap();
+        let mut rewritten: Value = serde_json::from_str(read["content"].as_str().unwrap()).unwrap();
+        assert_eq!(
+            rewritten["milestones"][0]["evaluatorModels"],
+            step["evaluatorModels"]
+        );
+        rewritten["milestones"][0]["title"] = json!("Review approved");
+        write(&mut runtime, rewritten.to_string(), 3);
+
+        let playbook = runtime.store.playbook_for_project(&project.id).unwrap();
+        let milestone = &playbook.milestones[0];
+        assert_eq!(milestone.title, "Review approved");
+        assert_eq!(
+            milestone.agent_report,
+            termloop_domain::PlaybookAgentReportPolicy::Trusted
+        );
+        assert_eq!(
+            milestone
+                .evaluator_models
+                .as_ref()
+                .and_then(|models| models.model_for("codex")),
+            Some("gpt-5.5-mini")
+        );
+        assert_eq!(json!(milestone.active_hours), step["activeHours"]);
+        assert_eq!(json!(playbook.active_hours), hours);
         let _ = std::fs::remove_file(&state_path);
         let _ = std::fs::remove_dir_all(state_path.with_extension("project"));
     }

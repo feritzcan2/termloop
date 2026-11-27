@@ -394,7 +394,7 @@ fn configuration_improvers_share_the_provider_neutral_task_evidence_policy() {
             ImproverTarget::Playbook {
                 project_name: "Nucleus",
             },
-            30,
+            31,
         ),
     ];
 
@@ -463,8 +463,8 @@ fn playbook_builder_reviews_every_step_and_declares_the_new_snapshot_contract() 
     let launch = prompt_improver_launch(target);
     let delivered = launch.delivered_prompt().unwrap();
 
-    assert_eq!(template.version, 30);
-    assert_eq!(launch.provenance().template_version, 30);
+    assert_eq!(template.version, 31);
+    assert_eq!(launch.provenance().template_version, 31);
     assert!(delivered.contains("never require the Agent to report back"));
     assert!(!delivered.contains("direct return handoff"));
     for expected in [
@@ -497,6 +497,10 @@ fn playbook_builder_reviews_every_step_and_declares_the_new_snapshot_contract() 
         "unknown scope never counts as permission to skip",
         "`approver`, and\n`deterministicCheck`",
         "exactly `kind` and `baseBranch`",
+        "Copy each one unchanged into the snapshot you\nwrite",
+        "`codexModel` and `claudeModel`",
+        "never guess or normalize a model\nID",
+        "`startMinute`, `endMinute`, and `timeZone`",
         "`pullRequestOpen`",
         "`pullRequestChecksPassing`",
         "`pullRequestMerged`",
