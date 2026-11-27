@@ -25,6 +25,8 @@ import {
   utf8ByteLength,
   changeMilestoneAgentReportForRoutine,
   changeMilestoneCheckForRoutine,
+  changeMilestoneEvaluatorModelsForRoutine,
+  playbookStepModelIssue,
   normalizePlaybookMilestone,
   playbookCheckCaption,
   playbookFallbackNeedsIntegrations,
@@ -352,5 +354,21 @@ describe("Task Agent step reports", () => {
     expect(playbookMilestoneWithGate(restarting, "human", "ferit").restartOnNewPullRequest).toBe(false);
     expect(playbookMilestoneWithGate(automatic(), "human", "ferit")).not.toHaveProperty("restartOnNewPullRequest");
     expect(playbookMilestoneFieldIssues({ ...milestone(), restartOnNewPullRequest: true }).gate).not.toHaveLength(0);
+  });
+
+  it("sets a step's own evaluator model and keeps it through the wire", () => {
+    const draft = playbookDraftFromDto(playbook({ milestones: [automatic()] }));
+    const chosen = changeMilestoneEvaluatorModelsForRoutine(draft, "routine-merged", { codexModel: " gpt-6-sol ", claudeModel: "" });
+    expect(chosen?.milestones[0]?.evaluatorModels).toEqual({ codexModel: "gpt-6-sol", claudeModel: null });
+    expect(playbookMilestonesForWire(chosen!.milestones)[0]?.evaluatorModels).toEqual({ codexModel: "gpt-6-sol", claudeModel: null });
+    // Another step edit keeps the chosen model.
+    const reported = changeMilestoneAgentReportForRoutine(playbookDraftFromDto(playbook({ milestones: chosen!.milestones.map((m) => ({ ...m, routineId: "routine-merged" })) })), "routine-merged", "off");
+    expect(reported?.milestones[0]?.evaluatorModels).toEqual({ codexModel: "gpt-6-sol", claudeModel: null });
+    // Following the Project for both providers stores null.
+    expect(changeMilestoneEvaluatorModelsForRoutine(chosen!, "routine-merged", { codexModel: null, claudeModel: " " })?.milestones[0]?.evaluatorModels).toBeNull();
+    expect(changeMilestoneEvaluatorModelsForRoutine(draft, "missing", null)).toBeUndefined();
+    expect(playbookStepModelIssue("m".repeat(81))).toBeDefined();
+    expect(playbookStepModelIssue("opus\n")).toBeDefined();
+    expect(playbookStepModelIssue("my-custom-model")).toBeUndefined();
   });
 });

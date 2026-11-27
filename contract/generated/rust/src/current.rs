@@ -243,7 +243,7 @@ pub const CONTRACT_IDENTITY: &str =
     "sha256:7eb20305e42354ec6af6cb6883f3c015de028823f2eb84e3d754895fb4d9c5d9";
 pub const CONTRACT_MAJOR: u32 = 1;
 pub const CONTRACT_REVISION: &str =
-    "sha256:6a40128ba1db2728d0d7cdc9ccd4ec421e9d0f13b3194e2bd5532517fdaf697e";
+    "sha256:d517219b0a699ac1c185853a2f29b9ff8c5b0826b6f0f0ef3772eb40610b80b5";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -5938,6 +5938,21 @@ pub struct StewardPresenceDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
+pub struct PlaybookStepEvaluatorModelsDto {
+    #[serde(
+        rename = "codexModel",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub codex_model: Option<String>,
+    #[serde(
+        rename = "claudeModel",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub claude_model: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct PlaybookEvaluatorSettingsDto {
     #[serde(
         rename = "codexModel",
@@ -7713,6 +7728,8 @@ pub struct PlaybookMilestoneDto {
         skip_serializing_if = "Option::is_none"
     )]
     pub restart_on_new_pull_request: Option<bool>,
+    #[serde(rename = "evaluatorModels", skip_serializing_if = "Option::is_none")]
+    pub evaluator_models: Option<PlaybookStepEvaluatorModelsDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -7743,6 +7760,8 @@ pub struct PlaybookMilestoneDraftDto {
         skip_serializing_if = "Option::is_none"
     )]
     pub restart_on_new_pull_request: Option<bool>,
+    #[serde(rename = "evaluatorModels", skip_serializing_if = "Option::is_none")]
+    pub evaluator_models: Option<PlaybookStepEvaluatorModelsDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -24077,6 +24096,33 @@ fn validate_steward_presence_dto(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_playbook_step_evaluator_models_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("codexModel").is_some_and(|field| {
+            (field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)
+                || field.is_null())
+        }) && object.get("claudeModel").is_some_and(|field| {
+            (field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)
+                || field.is_null())
+        }) && object
+            .keys()
+            .all(|key| ["codexModel", "claudeModel"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_playbook_evaluator_settings_dto(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object.get("codexModel").is_some_and(|field| {
@@ -29449,6 +29495,9 @@ fn validate_playbook_milestone_dto(value: &Value) -> bool {
             && object
                 .get("restartOnNewPullRequest")
                 .is_none_or(|field| field.is_boolean())
+            && object.get("evaluatorModels").is_none_or(|field| {
+                (validate_playbook_step_evaluator_models_dto(field) || field.is_null())
+            })
             && object.keys().all(|key| {
                 [
                     "id",
@@ -29463,6 +29512,7 @@ fn validate_playbook_milestone_dto(value: &Value) -> bool {
                     "agentReport",
                     "rewind",
                     "restartOnNewPullRequest",
+                    "evaluatorModels",
                 ]
                 .contains(&key.as_str())
             })
@@ -29526,6 +29576,9 @@ fn validate_playbook_milestone_draft_dto(value: &Value) -> bool {
             && object
                 .get("restartOnNewPullRequest")
                 .is_none_or(|field| field.is_boolean())
+            && object.get("evaluatorModels").is_none_or(|field| {
+                (validate_playbook_step_evaluator_models_dto(field) || field.is_null())
+            })
             && object.keys().all(|key| {
                 [
                     "id",
@@ -29539,6 +29592,7 @@ fn validate_playbook_milestone_draft_dto(value: &Value) -> bool {
                     "agentReport",
                     "rewind",
                     "restartOnNewPullRequest",
+                    "evaluatorModels",
                 ]
                 .contains(&key.as_str())
             })

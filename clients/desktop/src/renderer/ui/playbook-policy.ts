@@ -11,6 +11,7 @@ import type {
   PlaybookMilestoneDto,
   PlaybookMilestoneDraftDto,
   PlaybookPipelineDraftDto,
+  PlaybookStepEvaluatorModelsDto,
   PlaybookUpdateParams,
   PlaybookUpdateResult,
 } from "@termloop/contract/current";
@@ -700,6 +701,42 @@ export function changeMilestoneAgentReportForRoutine(
 ): PlaybookDraft | undefined {
   return changeMilestoneForRoutine(draft, routineId, (milestone) =>
     milestone.gate === "human" && agentReport === "trusted" ? undefined : { ...milestone, agentReport });
+}
+
+export const PLAYBOOK_EVALUATOR_MODEL_MAX_BYTES = 80;
+
+/** A step's own evaluator model, trimmed; null when blank so the provider
+    follows the Project setting. */
+export function playbookStepModelChoice(value: string | null | undefined): string | null {
+  const model = value?.trim() ?? "";
+  return model ? model : null;
+}
+
+/** Why a typed step model cannot be saved, or undefined when it can. */
+export function playbookStepModelIssue(value: string | null): string | undefined {
+  if (value === null) return undefined;
+  if (new TextEncoder().encode(value).length > PLAYBOOK_EVALUATOR_MODEL_MAX_BYTES) {
+    return `A model name is at most ${PLAYBOOK_EVALUATOR_MODEL_MAX_BYTES} bytes.`;
+  }
+  // Control characters (code points below 0x20 and DEL..0x9F) are refused.
+  if ([...value].some((character) => { const code = character.codePointAt(0)!; return code < 32 || (code >= 127 && code <= 159); })) {
+    return "A model name cannot contain control characters.";
+  }
+  return undefined;
+}
+
+/** Sets the evaluator models of the stage whose completion Routine is
+    `routineId`. A step that overrides no provider stores null, which follows
+    the Project's Playbook evaluator settings. */
+export function changeMilestoneEvaluatorModelsForRoutine(
+  draft: PlaybookDraft,
+  routineId: string,
+  models: PlaybookStepEvaluatorModelsDto | null,
+): PlaybookDraft | undefined {
+  const codexModel = playbookStepModelChoice(models?.codexModel);
+  const claudeModel = playbookStepModelChoice(models?.claudeModel);
+  const evaluatorModels = codexModel === null && claudeModel === null ? null : { codexModel, claudeModel };
+  return changeMilestoneForRoutine(draft, routineId, (milestone) => ({ ...milestone, evaluatorModels }));
 }
 
 /** Why the last verdict came from the agent Routine although the step has a

@@ -374,6 +374,9 @@ fn playbook_milestone_snapshot(
     if let Some(rewind) = &milestone.rewind {
         snapshot["rewind"] = json!(rewind);
     }
+    if let Some(models) = &milestone.evaluator_models {
+        snapshot["evaluatorModels"] = json!(models);
+    }
     snapshot
 }
 

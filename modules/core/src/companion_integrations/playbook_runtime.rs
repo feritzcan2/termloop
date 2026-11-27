@@ -303,6 +303,27 @@ impl CoreRuntime {
             })
     }
 
+    /// The evaluator models of the step this Task stands at, when that step
+    /// is evaluated by `routine_id` and names its own. `None` follows the
+    /// Project's Playbook evaluator settings.
+    pub(crate) fn playbook_step_evaluator_models(
+        &self,
+        task_id: &str,
+        routine_id: &str,
+    ) -> Option<termloop_domain::PlaybookStepEvaluatorModels> {
+        let task = self.store.tasks().iter().find(|task| task.id == task_id)?;
+        let playbook = self.store.playbook_for_project(&task.project_id)?;
+        let (PlaybookPosition::At(index), _) = self.task_playbook_position(task_id)? else {
+            return None;
+        };
+        playbook
+            .milestones
+            .get(index)
+            .filter(|milestone| milestone.routine_id == routine_id)?
+            .evaluator_models
+            .clone()
+    }
+
     /// The automatic step this open Task stands at right now, as its Routine
     /// and its own stored due time. Human gates and finished Tasks have none.
     pub(crate) fn playbook_automatic_step_for_task(&self, task_id: &str) -> Option<(String, u64)> {
@@ -1024,6 +1045,7 @@ pub(crate) mod tests {
             agent_report: Default::default(),
             rewind: None,
             restart_on_new_pull_request: false,
+            evaluator_models: None,
         }
     }
 

@@ -28,6 +28,8 @@ pub const PLAYBOOK_BASE_BRANCH_MAX_BYTES: usize = 255;
 pub const PLAYBOOK_REWIND_WHEN_MAX_BYTES: usize = 2048;
 /// How many times one step may send one Task back before it stops and asks.
 pub const PLAYBOOK_REWIND_MAX_TIMES: u32 = 10;
+/// A provider model name a step's evaluator launches with.
+pub const PLAYBOOK_EVALUATOR_MODEL_MAX_BYTES: usize = 80;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -74,6 +76,50 @@ pub struct PlaybookMilestone {
     /// passed with. `false` for documents written before it.
     #[serde(default)]
     pub restart_on_new_pull_request: bool,
+    /// The models this step's evaluator launches with, overriding the
+    /// Project's Playbook evaluator settings for this step alone. `None` for
+    /// every step that follows the Project setting, and for documents written
+    /// before it.
+    #[serde(default)]
+    pub evaluator_models: Option<PlaybookStepEvaluatorModels>,
+}
+
+/// A step's own evaluator model per provider. The evaluator keeps the
+/// provider of the Agent it forks, so the step names a model for each
+/// provider it cares about; a provider left `None` follows the Project
+/// setting.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaybookStepEvaluatorModels {
+    #[serde(default)]
+    pub codex_model: Option<String>,
+    #[serde(default)]
+    pub claude_model: Option<String>,
+}
+
+impl PlaybookStepEvaluatorModels {
+    /// The step's model for `agent_id`, when it names one.
+    pub fn model_for(&self, agent_id: &str) -> Option<&str> {
+        match agent_id {
+            "codex" => self.codex_model.as_deref(),
+            "claude" => self.claude_model.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// At least one provider is overridden, so a step that follows the
+    /// Project for every provider stores `None` instead of an empty value.
+    pub fn is_valid(&self) -> bool {
+        let models = [&self.codex_model, &self.claude_model];
+        models.iter().any(|model| model.is_some())
+            && models.iter().all(|model| {
+                model.as_deref().is_none_or(|model| {
+                    !model.trim().is_empty()
+                        && model.len() <= PLAYBOOK_EVALUATOR_MODEL_MAX_BYTES
+                        && !model.chars().any(char::is_control)
+                })
+            })
+    }
 }
 
 /// A step's rule for sending its Task back to an earlier step of the same
@@ -353,6 +399,10 @@ impl PlaybookMilestone {
             }
             // A pull request cannot stand in for a named person's approval.
             && !(self.restart_on_new_pull_request && self.gate == PlaybookGateKind::Human)
+            && self
+                .evaluator_models
+                .as_ref()
+                .is_none_or(PlaybookStepEvaluatorModels::is_valid)
     }
 }
 
@@ -485,6 +535,7 @@ mod tests {
             agent_report: PlaybookAgentReportPolicy::Signal,
             rewind: None,
             restart_on_new_pull_request: false,
+            evaluator_models: None,
         }
     }
 
@@ -716,6 +767,36 @@ mod tests {
             }
             .is_valid()
         );
+    }
+
+    #[test]
+    fn a_step_overrides_its_evaluator_model_per_provider() {
+        let with = |codex: Option<&str>, claude: Option<&str>| PlaybookMilestone {
+            evaluator_models: Some(PlaybookStepEvaluatorModels {
+                codex_model: codex.map(str::to_owned),
+                claude_model: claude.map(str::to_owned),
+            }),
+            ..milestone("pr-approved")
+        };
+        let step = with(Some("gpt-5.6-luna"), None);
+        assert!(step.is_valid());
+        let models = step.evaluator_models.as_ref().unwrap();
+        assert_eq!(models.model_for("codex"), Some("gpt-5.6-luna"));
+        assert_eq!(models.model_for("claude"), None);
+        assert_eq!(models.model_for("gemini"), None);
+        // Human gates are evaluated too, so they may choose their model.
+        assert!(with(None, Some("haiku")).is_valid());
+        // Following the Project for every provider is stored as `None`.
+        assert!(!with(None, None).is_valid());
+        assert!(!with(Some(" "), None).is_valid());
+        assert!(
+            !with(
+                Some(&"m".repeat(PLAYBOOK_EVALUATOR_MODEL_MAX_BYTES + 1)),
+                None
+            )
+            .is_valid()
+        );
+        assert!(!with(None, Some("opus\n")).is_valid());
     }
 
     #[test]

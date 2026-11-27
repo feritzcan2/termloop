@@ -86,6 +86,7 @@ fn playbook(project_id: &str, revision: u64) -> PlaybookConfiguration {
             agent_report: Default::default(),
             rewind: None,
             restart_on_new_pull_request: false,
+            evaluator_models: None,
         }],
         updated_at_epoch_ms: 1,
     }

@@ -84,11 +84,16 @@ impl CoreRuntime {
             .find(|configuration| configuration.project_id == capability.project_id)
             .map(|configuration| configuration.playbook_evaluator.clone())
             .unwrap_or_default();
-        let model = match plan.agent_id.as_str() {
+        // The step being evaluated may choose its own model; a provider it
+        // leaves unset follows the Project setting.
+        let step_model = self
+            .playbook_step_evaluator_models(&task_id, &capability.tracker_id)
+            .and_then(|models| models.model_for(&plan.agent_id).map(str::to_owned));
+        let model = step_model.or(match plan.agent_id.as_str() {
             "codex" => settings.codex_model,
             "claude" => settings.claude_model,
             _ => None,
-        };
+        });
         let selection = plan.interactive_options.get_or_insert_default();
         if let Some(model) = model {
             selection.model = model;
@@ -374,6 +379,62 @@ mod tests {
                 assert_eq!(source.launch_selection.permission, "bypassPermissions");
                 std::fs::remove_dir_all(root).unwrap();
             }
+        }
+    }
+
+    #[test]
+    fn a_step_model_overrides_the_project_setting_for_its_provider_only() {
+        for (step_codex, expected) in [
+            (Some("gpt-6-sol"), "gpt-6-sol"),
+            // A step that names only another provider's model follows the
+            // Project setting for this one.
+            (None, "gpt-6-luna"),
+        ] {
+            let (mut runtime, root, project) = pipeline_runtime();
+            attach_agents(&mut runtime, &root, &["source"]);
+            let mut configuration = runtime.store.steward_configurations()[0].clone();
+            configuration.playbook_evaluator.codex_model = Some("gpt-6-luna".into());
+            runtime
+                .store
+                .set_steward_configuration(
+                    &runtime.write_authority,
+                    configuration,
+                    runtime.state_revision(),
+                )
+                .unwrap();
+            let mut playbook = runtime
+                .store
+                .playbook_for_project(&project)
+                .unwrap()
+                .clone();
+            for milestone in &mut playbook.milestones {
+                milestone.evaluator_models = Some(termloop_domain::PlaybookStepEvaluatorModels {
+                    codex_model: step_codex.map(str::to_owned),
+                    claude_model: Some("haiku".into()),
+                });
+            }
+            runtime
+                .store
+                .set_playbook_configuration(
+                    &runtime.write_authority,
+                    playbook,
+                    runtime.state_revision(),
+                )
+                .unwrap();
+            let claim = runtime
+                .claim_next_playbook_step_or_idle(
+                    &project,
+                    "evaluation-check".into(),
+                    termloop_platform::current_epoch_ms(),
+                )
+                .unwrap();
+            let PlaybookEvaluationLaunch::Fork { plan, .. } =
+                runtime.plan_playbook_evaluation(&claim).unwrap()
+            else {
+                panic!("expected evaluation fork");
+            };
+            assert_eq!(plan.interactive_options.as_ref().unwrap().model, expected);
+            std::fs::remove_dir_all(root).unwrap();
         }
     }
 

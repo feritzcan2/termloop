@@ -646,6 +646,7 @@ fn steward_delete_resets_only_the_project_assistant_tree_in_one_commit() {
         agent_report: Default::default(),
         rewind: None,
         restart_on_new_pull_request: false,
+        evaluator_models: None,
     };
     store
         .state

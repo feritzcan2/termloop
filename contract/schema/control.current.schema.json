@@ -13644,6 +13644,36 @@
         }
       }
     },
+    "playbookStepEvaluatorModelsDto": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookStepEvaluatorModelsDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "codexModel",
+        "claudeModel"
+      ],
+      "properties": {
+        "codexModel": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Null follows the Project's Codex evaluator model."
+        },
+        "claudeModel": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Null follows the Project's Claude evaluator model."
+        }
+      }
+    },
     "playbookEvaluatorSettingsDto": {
       "x-codegen": true,
       "x-codegen-name": "PlaybookEvaluatorSettingsDto",
@@ -17026,6 +17056,17 @@
         "restartOnNewPullRequest": {
           "description": "Opt-in: once a Task passed this step, a newer pull request from its branch sends it back here from any later step, and later pull request checks follow the recorded pull request.",
           "type": "boolean"
+        },
+        "evaluatorModels": {
+          "description": "This step's own evaluator model per provider, overriding the Project's Playbook evaluator settings. Null follows the Project setting.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/playbookStepEvaluatorModelsDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },
@@ -17109,6 +17150,17 @@
         "restartOnNewPullRequest": {
           "description": "Opt-in: once a Task passed this step, a newer pull request from its branch sends it back here from any later step, and later pull request checks follow the recorded pull request.",
           "type": "boolean"
+        },
+        "evaluatorModels": {
+          "description": "This step's own evaluator model per provider, overriding the Project's Playbook evaluator settings. Null follows the Project setting.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/playbookStepEvaluatorModelsDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },

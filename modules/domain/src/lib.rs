@@ -68,13 +68,15 @@ pub use playbook_evaluation::{
 mod task_source;
 pub use playbook::{
     PLAYBOOK_APPROVER_MAX_BYTES, PLAYBOOK_BASE_BRANCH_MAX_BYTES, PLAYBOOK_ENTRY_ID_MAX_BYTES,
-    PLAYBOOK_EVIDENCE_MAX_BYTES, PLAYBOOK_MILESTONES_MAX, PLAYBOOK_PIPELINE_NAME_MAX_BYTES,
-    PLAYBOOK_RETRY_DELAY_MAX_SECONDS, PLAYBOOK_RETRY_DELAY_MIN_SECONDS, PLAYBOOK_REWIND_MAX_TIMES,
-    PLAYBOOK_REWIND_WHEN_MAX_BYTES, PLAYBOOK_ROUTINE_ID_MAX_BYTES, PLAYBOOK_SAVED_PIPELINES_MAX,
-    PLAYBOOK_TITLE_MAX_BYTES, PlaybookAgentReportPolicy, PlaybookConfiguration,
-    PlaybookDeterministicCheck, PlaybookDeterministicCheckKind, PlaybookDeterministicFallback,
-    PlaybookGateKind, PlaybookMilestone, PlaybookPipeline, PlaybookPosition, PlaybookStepEvaluator,
-    PlaybookStepProgress, PlaybookStepRewind, PlaybookStepVerdict, pipeline_position,
+    PLAYBOOK_EVALUATOR_MODEL_MAX_BYTES, PLAYBOOK_EVIDENCE_MAX_BYTES, PLAYBOOK_MILESTONES_MAX,
+    PLAYBOOK_PIPELINE_NAME_MAX_BYTES, PLAYBOOK_RETRY_DELAY_MAX_SECONDS,
+    PLAYBOOK_RETRY_DELAY_MIN_SECONDS, PLAYBOOK_REWIND_MAX_TIMES, PLAYBOOK_REWIND_WHEN_MAX_BYTES,
+    PLAYBOOK_ROUTINE_ID_MAX_BYTES, PLAYBOOK_SAVED_PIPELINES_MAX, PLAYBOOK_TITLE_MAX_BYTES,
+    PlaybookAgentReportPolicy, PlaybookConfiguration, PlaybookDeterministicCheck,
+    PlaybookDeterministicCheckKind, PlaybookDeterministicFallback, PlaybookGateKind,
+    PlaybookMilestone, PlaybookPipeline, PlaybookPosition, PlaybookStepEvaluator,
+    PlaybookStepEvaluatorModels, PlaybookStepProgress, PlaybookStepRewind, PlaybookStepVerdict,
+    pipeline_position,
 };
 pub use task_source::{
     TASK_SOURCE_AUTO_IMPORT_ACTIVE_TASK_LIMIT_DEFAULT,

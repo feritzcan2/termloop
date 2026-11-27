@@ -11,7 +11,7 @@ import type {
   RoutineRunNowResult,
   PlaybookAgentReportPolicy, PlaybookDto, PlaybookGetResult, PlaybookMilestoneDto, PlaybookRuntimeResult, PlaybookUpdateParams,
   AssistantPromptImproverTarget,
-  PlaybookEvaluatorSettingsDto, PlaybookEvaluationHistoryResult, AutoCompactionSettingsDto,
+  PlaybookEvaluatorSettingsDto, PlaybookEvaluationHistoryResult, PlaybookStepEvaluatorModelsDto, AutoCompactionSettingsDto,
 } from "@termloop/contract/current";
 import { assistantInitialView, defaultAssistantLaunchSelection, requestPlaybookBuilderSetup, routineIntervalLabel, type AssistantSelection, type AssistantView } from "./AssistantRail.js";
 import { Icon } from "./Icon.js";
@@ -26,8 +26,9 @@ import { routineDisplayStatus, statusExplanation } from "./assistant-status.js";
 import { CompanionTopicCard, currentStewardInteraction, groupCompanionTopics } from "./companion-chat.js";
 import { PlaybookAgentReportSelector } from "./PlaybookAgentReportSelector.js";
 import { PlaybookCheckSelector } from "./PlaybookCheckSelector.js";
+import { PlaybookStepModelSelector } from "./PlaybookStepModelSelector.js";
 import {
-  changeMilestoneAgentReportForRoutine, changeMilestoneCheckForRoutine, playbookDraftFromDto, playbookRefusalMessage, resolvePlaybookSave,
+  changeMilestoneAgentReportForRoutine, changeMilestoneCheckForRoutine, changeMilestoneEvaluatorModelsForRoutine, playbookDraftFromDto, playbookRefusalMessage, resolvePlaybookSave,
   type PlaybookDraft, type PlaybookUpdateOutcome,
 } from "./playbook-policy.js";
 
@@ -484,12 +485,19 @@ export function StewardPanel(props: StewardPanelProps) {
       gate: selectedRoutineStep.gate,
       check: selectedRoutineStep.deterministicCheck ?? null,
       agentReport: selectedRoutineStep.agentReport ?? "signal",
+      evaluatorModels: selectedRoutineStep.evaluatorModels ?? null,
     } : undefined}
+    projectEvaluatorSettings={steward?.playbookEvaluator}
     saveCheck={updatePlaybook ? (check) => run(async () => {
       setPlaybook(await saveStepCheck(props.projectId, selectedRoutine.id, check, props.getPlaybook, updatePlaybook));
     }) : undefined}
     saveAgentReport={updatePlaybook ? (agentReport) => run(async () => {
       setPlaybook(await saveStepAgentReport(props.projectId, selectedRoutine.id, agentReport, props.getPlaybook, updatePlaybook));
+    }) : undefined}
+    saveEvaluatorModels={updatePlaybook ? (models) => run(async () => {
+      setPlaybook(await saveStepChange(props.projectId,
+        (draft) => changeMilestoneEvaluatorModelsForRoutine(draft, selectedRoutine.id, models),
+        "This step is no longer in the Playbook.", props.getPlaybook, updatePlaybook));
     }) : undefined}
     health={selectedRoutineHealth}
     reports={reports.filter((report) => report.routineId === selectedRoutine.id)}
@@ -786,7 +794,10 @@ export function RoutineContextEditor(props: {
     gate: PlaybookMilestoneDto["gate"];
     check: PlaybookMilestoneDto["deterministicCheck"];
     agentReport: PlaybookAgentReportPolicy;
+    evaluatorModels?: PlaybookStepEvaluatorModelsDto | null;
   } | undefined;
+  projectEvaluatorSettings?: PlaybookEvaluatorSettingsDto | undefined;
+  saveEvaluatorModels?: ((models: PlaybookStepEvaluatorModelsDto | null) => Promise<void>) | undefined;
   saveCheck?: ((check: PlaybookMilestoneDto["deterministicCheck"]) => Promise<void>) | undefined;
   saveAgentReport?: ((agentReport: PlaybookAgentReportPolicy) => Promise<void>) | undefined;
   health: RoutineHealthDto | undefined;
@@ -863,6 +874,12 @@ export function RoutineContextEditor(props: {
         agentReport={props.stepCheck.agentReport}
         busy={props.busy}
         save={props.saveAgentReport}
+      /> : null}
+      {props.stepRetryDelaySeconds !== undefined && props.stepCheck && props.saveEvaluatorModels ? <PlaybookStepModelSelector
+        models={props.stepCheck.evaluatorModels ?? null}
+        projectSettings={props.projectEvaluatorSettings}
+        busy={props.busy}
+        save={props.saveEvaluatorModels}
       /> : null}
       <details className="ap-details ap-instructions-details" open>
         <summary>What should the Steward verify?</summary>

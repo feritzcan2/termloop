@@ -57,6 +57,10 @@ pub(crate) struct PlaybookMilestoneDraft {
     /// Absent in snapshots and drafts written before the opt-in existed.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub(crate) restart_on_new_pull_request: bool,
+    /// Absent in snapshots and drafts written before per-step models, and
+    /// for every step that follows the Project's evaluator settings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) evaluator_models: Option<termloop_domain::PlaybookStepEvaluatorModels>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -707,6 +711,7 @@ fn materialize_pipeline(
             agent_report: draft.agent_report,
             rewind: draft.rewind.clone(),
             restart_on_new_pull_request: draft.restart_on_new_pull_request,
+            evaluator_models: draft.evaluator_models.clone(),
         });
     }
     Ok((milestones, changed))
@@ -821,6 +826,7 @@ fn playbook_projection(
             "agentReport": value.agent_report,
             "rewind": value.rewind,
             "restartOnNewPullRequest": value.restart_on_new_pull_request,
+            "evaluatorModels": value.evaluator_models,
         }))
     };
     let milestones = configuration
@@ -1908,6 +1914,8 @@ mod tests {
         let mut milestones = two_step_milestones(600, 600, "CI is green on the Task's PR.");
         milestones[1]["rewind"] = rule.clone();
         milestones[0]["restartOnNewPullRequest"] = json!(true);
+        let models = json!({"codexModel": "gpt-6-sol", "claudeModel": null});
+        milestones[1]["evaluatorModels"] = models.clone();
         let saved = save_two_steps(&mut runtime, &project_id, milestones, 1);
         let read = runtime
             .get_playbook(json!({"projectId": project_id}))
@@ -1917,12 +1925,20 @@ mod tests {
             assert_eq!(playbook["milestones"][1]["rewind"], rule);
             assert_eq!(playbook["milestones"][0]["restartOnNewPullRequest"], true);
             assert_eq!(playbook["milestones"][1]["restartOnNewPullRequest"], false);
+            assert_eq!(playbook["milestones"][0]["evaluatorModels"], Value::Null);
+            assert_eq!(playbook["milestones"][1]["evaluatorModels"], models);
         }
 
-        // Pointing forward, or at itself, is refused and keeps the document.
-        for target in ["ci-green", "missing"] {
+        // Pointing forward, or at itself, is refused and keeps the document,
+        // as is a step model that overrides no provider.
+        for target in ["ci-green", "missing", "no-model"] {
             let mut milestones = two_step_milestones(600, 600, "CI is green on the Task's PR.");
-            milestones[1]["rewind"] = json!({"toMilestoneId": target, "when": "x", "maxTimes": 1});
+            if target == "no-model" {
+                milestones[1]["evaluatorModels"] = json!({"codexModel": null, "claudeModel": null});
+            } else {
+                milestones[1]["rewind"] =
+                    json!({"toMilestoneId": target, "when": "x", "maxTimes": 1});
+            }
             let expected = runtime
                 .store
                 .playbook_for_project(&project_id)
