@@ -212,14 +212,21 @@ export function openTasksByActivity(
     .map((entry) => entry.task);
 }
 
+/// Core launches every Playbook evaluator, fresh or forked, from this template.
+const PLAYBOOK_EVALUATOR_TEMPLATE_REF = "builtin.agent.playbook-evaluator";
+
 /// Playbook evaluators belong to the Steward panel, so Task cards drop them.
+/// The runtime evaluation list alone lags the Session list on both ends of an
+/// evaluation, so the evaluator's own launch provenance also hides it.
 export function withoutPlaybookEvaluators(
   sessionsById: ReadonlyMap<string, Session>,
   evaluations: readonly { sessionId: string | null }[],
 ): ReadonlyMap<string, Session> {
   const evaluatorIds = new Set(evaluations.flatMap((evaluation) => evaluation.sessionId ? [evaluation.sessionId] : []));
-  if (evaluatorIds.size === 0) return sessionsById;
-  return new Map([...sessionsById].filter(([sessionId]) => !evaluatorIds.has(sessionId)));
+  const isEvaluator = (session: Session) => evaluatorIds.has(session.id)
+    || session.process.template_ref === PLAYBOOK_EVALUATOR_TEMPLATE_REF;
+  if (![...sessionsById.values()].some(isEvaluator)) return sessionsById;
+  return new Map([...sessionsById].filter(([, session]) => !isEvaluator(session)));
 }
 
 /// Helper nesting is an independent exact source-Session projection. It does

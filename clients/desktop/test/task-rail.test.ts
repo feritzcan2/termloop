@@ -2243,10 +2243,17 @@ describe("Task rail live activity", () => {
 
 describe("withoutPlaybookEvaluators", () => {
   it("drops Playbook evaluator Sessions so Task cards never list them", () => {
-    const lead = { id: "lead" } as Session;
-    const fork = { id: "fork" } as Session;
+    const lead = { id: "lead", process: { template_ref: "builtin.agent.task-kickoff" } } as Session;
+    const fork = { id: "fork", process: { template_ref: "builtin.agent.task-kickoff" } } as Session;
     const sessionsById = new Map([[lead.id, lead], [fork.id, fork]]);
     expect([...withoutPlaybookEvaluators(sessionsById, [{ sessionId: "fork" }, { sessionId: null }]).keys()]).toEqual(["lead"]);
     expect(withoutPlaybookEvaluators(sessionsById, [{ sessionId: null }])).toBe(sessionsById);
+  });
+
+  it("drops an evaluator Session the runtime evaluation list does not name yet or anymore", () => {
+    const lead = { id: "lead", process: { template_ref: "builtin.agent.task-kickoff" } } as Session;
+    const evaluator = { id: "evaluator", process: { template_ref: "builtin.agent.playbook-evaluator" } } as Session;
+    const sessionsById = new Map([[lead.id, lead], [evaluator.id, evaluator]]);
+    expect([...withoutPlaybookEvaluators(sessionsById, []).keys()]).toEqual(["lead"]);
   });
 });
