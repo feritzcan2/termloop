@@ -24,6 +24,10 @@ pub const PLAYBOOK_RETRY_DELAY_MAX_SECONDS: u64 = 86_400;
 pub const PLAYBOOK_EVIDENCE_MAX_BYTES: usize = 600;
 /// A Git branch name a deterministic pull-request check may filter by.
 pub const PLAYBOOK_BASE_BRANCH_MAX_BYTES: usize = 255;
+/// The condition under which a step sends its Task back to an earlier step.
+pub const PLAYBOOK_REWIND_WHEN_MAX_BYTES: usize = 2048;
+/// How many times one step may send one Task back before it stops and asks.
+pub const PLAYBOOK_REWIND_MAX_TIMES: u32 = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -59,6 +63,27 @@ pub struct PlaybookMilestone {
     /// Documents written before agent reports default to `Signal`.
     #[serde(default)]
     pub agent_report: PlaybookAgentReportPolicy,
+    /// When this step's evaluator observes `when`, the Task is sent back to an
+    /// earlier step instead of waiting here. `None` for every step that never
+    /// sends a Task back, and for documents written before it.
+    #[serde(default)]
+    pub rewind: Option<PlaybookStepRewind>,
+}
+
+/// A step's rule for sending its Task back to an earlier step of the same
+/// pipeline, for example when a fix pull request reopens work that already
+/// passed review and merge.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaybookStepRewind {
+    /// The earlier step the Task returns to. It and every later step the Task
+    /// passed before this one are asked again.
+    pub to_milestone_id: String,
+    /// The observable condition, in plain language, that sends the Task back.
+    pub when: String,
+    /// How many times this step may send one Task back. Once reached, a
+    /// further send-back is recorded as blocked so a human decides.
+    pub max_times: u32,
 }
 
 /// How a Task Agent's own report that it reached a step is treated.
@@ -211,6 +236,10 @@ pub struct PlaybookStepProgress {
     /// not decide.
     #[serde(default)]
     pub deterministic_fallback: Option<PlaybookDeterministicFallback>,
+    /// How many times this step has sent this Task back to an earlier step.
+    /// Current state carried across this row's replacements, not a history.
+    #[serde(default)]
+    pub rewind_count: u32,
 }
 
 /// Where one Task stands on a pipeline, derived from its stored answers.
@@ -277,6 +306,7 @@ impl PlaybookPipeline {
             && self.milestones.len() <= PLAYBOOK_MILESTONES_MAX
             && self.milestones.iter().all(PlaybookMilestone::is_valid)
             && unique_ids(self.milestones.iter().map(|milestone| &milestone.id))
+            && rewinds_point_backward(&self.milestones)
     }
 }
 
@@ -304,7 +334,33 @@ impl PlaybookMilestone {
             // An Agent cannot approve on behalf of a named person.
             && !(self.gate == PlaybookGateKind::Human
                 && self.agent_report == PlaybookAgentReportPolicy::Trusted)
+            // Only an evaluator observes a send-back condition; a named
+            // person's approval is never reinterpreted as one.
+            && match &self.rewind {
+                None => true,
+                Some(rewind) => self.gate == PlaybookGateKind::Automatic && rewind.is_valid(),
+            }
     }
+}
+
+impl PlaybookStepRewind {
+    pub fn is_valid(&self) -> bool {
+        valid_entry_id(&self.to_milestone_id)
+            && valid_required_multiline_text(&self.when, PLAYBOOK_REWIND_WHEN_MAX_BYTES)
+            && (1..=PLAYBOOK_REWIND_MAX_TIMES).contains(&self.max_times)
+    }
+}
+
+/// Every send-back in `milestones` names a step strictly before its own, so
+/// the walk can never loop forward into itself.
+fn rewinds_point_backward(milestones: &[PlaybookMilestone]) -> bool {
+    milestones.iter().enumerate().all(|(index, milestone)| {
+        milestone.rewind.as_ref().is_none_or(|rewind| {
+            milestones[..index]
+                .iter()
+                .any(|earlier| earlier.id == rewind.to_milestone_id)
+        })
+    })
 }
 
 impl PlaybookDeterministicCheck {
@@ -331,6 +387,7 @@ impl PlaybookConfiguration {
             && self.milestones.len() <= PLAYBOOK_MILESTONES_MAX
             && self.milestones.iter().all(PlaybookMilestone::is_valid)
             && unique_ids(self.milestones.iter().map(|milestone| &milestone.id))
+            && rewinds_point_backward(&self.milestones)
             && valid_required_text(&self.active_pipeline_name, PLAYBOOK_PIPELINE_NAME_MAX_BYTES)
             && self.saved_pipelines.len() <= PLAYBOOK_SAVED_PIPELINES_MAX
             && self.saved_pipelines.iter().all(PlaybookPipeline::is_valid)
@@ -381,6 +438,10 @@ fn valid_required_text(value: &str, max_bytes: usize) -> bool {
     !value.trim().is_empty() && value.len() <= max_bytes && !value.chars().any(char::is_control)
 }
 
+fn valid_required_multiline_text(value: &str, max_bytes: usize) -> bool {
+    !value.trim().is_empty() && valid_optional_text(value, max_bytes)
+}
+
 fn valid_optional_text(value: &str, max_bytes: usize) -> bool {
     value.len() <= max_bytes
         && (value.is_empty() || !value.trim().is_empty())
@@ -409,6 +470,7 @@ mod tests {
             approver: Some("ferit".into()),
             deterministic_check: None,
             agent_report: PlaybookAgentReportPolicy::Signal,
+            rewind: None,
         }
     }
 
@@ -434,6 +496,7 @@ mod tests {
             next_attempt_at_epoch_ms: None,
             evaluator: PlaybookStepEvaluator::Routine,
             deterministic_fallback: None,
+            rewind_count: 0,
         }
     }
 
@@ -614,6 +677,73 @@ mod tests {
         document.milestones[0].approver = None;
         document.milestones[0].deterministic_check = check;
         document
+    }
+
+    #[test]
+    fn a_step_sends_its_task_back_only_to_an_earlier_step_of_its_own_pipeline() {
+        let automatic = |id: &str| PlaybookMilestone {
+            gate: PlaybookGateKind::Automatic,
+            approver: None,
+            ..milestone(id)
+        };
+        let rewind = |to: &str| {
+            Some(PlaybookStepRewind {
+                to_milestone_id: to.into(),
+                when: "A new development PR from the Task branch is open.".into(),
+                max_times: 2,
+            })
+        };
+        let mut document = playbook();
+        document.milestones = vec![
+            automatic("pr-open"),
+            automatic("merged"),
+            PlaybookMilestone {
+                rewind: rewind("pr-open"),
+                ..automatic("deployed")
+            },
+        ];
+        assert!(document.is_valid());
+
+        // Forward, self, and unknown targets would loop or point nowhere.
+        for target in ["deployed", "done", "missing"] {
+            let mut invalid = document.clone();
+            invalid.milestones[2].rewind = rewind(target);
+            assert!(!invalid.is_valid(), "{target}");
+        }
+        let mut forward = document.clone();
+        forward.milestones[2].rewind = None;
+        forward.milestones[0].rewind = rewind("merged");
+        assert!(!forward.is_valid());
+
+        // A kept pipeline is held to the same rule.
+        let mut kept = playbook();
+        kept.saved_pipelines = vec![PlaybookPipeline {
+            name: "Hotfix".into(),
+            milestones: vec![PlaybookMilestone {
+                rewind: rewind("merged"),
+                ..automatic("pr-open")
+            }],
+        }];
+        assert!(!kept.is_valid());
+
+        // Bounds: at least one and at most the cap, a nonblank condition, and
+        // never on a human gate.
+        for max_times in [0, PLAYBOOK_REWIND_MAX_TIMES + 1] {
+            let mut invalid = document.clone();
+            invalid.milestones[2].rewind.as_mut().unwrap().max_times = max_times;
+            assert!(!invalid.is_valid());
+        }
+        let mut blank = document.clone();
+        blank.milestones[2].rewind.as_mut().unwrap().when = "  ".into();
+        assert!(!blank.is_valid());
+        let mut long = document.clone();
+        long.milestones[2].rewind.as_mut().unwrap().when =
+            "x".repeat(PLAYBOOK_REWIND_WHEN_MAX_BYTES + 1);
+        assert!(!long.is_valid());
+        let mut human = document.clone();
+        human.milestones[2].gate = PlaybookGateKind::Human;
+        human.milestones[2].approver = Some("ferit".into());
+        assert!(!human.is_valid());
     }
 
     #[test]

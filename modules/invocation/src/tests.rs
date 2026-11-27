@@ -115,7 +115,7 @@ fn routines_use_one_provider_neutral_evidence_policy() {
         (
             ExecutorRole::StepCheckTracker,
             "builtin.tracker.step-check",
-            13,
+            14,
         ),
     ];
 
@@ -394,7 +394,7 @@ fn configuration_improvers_share_the_provider_neutral_task_evidence_policy() {
             ImproverTarget::Playbook {
                 project_name: "Nucleus",
             },
-            26,
+            27,
         ),
     ];
 
@@ -435,8 +435,8 @@ fn playbook_builder_reviews_every_step_and_declares_the_new_snapshot_contract() 
     let launch = prompt_improver_launch(target);
     let delivered = launch.delivered_prompt().unwrap();
 
-    assert_eq!(template.version, 26);
-    assert_eq!(launch.provenance().template_version, 26);
+    assert_eq!(template.version, 27);
+    assert_eq!(launch.provenance().template_version, 27);
     assert!(delivered.contains("never require the Agent to report back"));
     assert!(!delivered.contains("direct return handoff"));
     for expected in [
@@ -2989,7 +2989,7 @@ fn pipeline_prompts_use_live_provider_neutral_evidence_and_one_outcome_contract(
     );
 
     let step = tracker_assignment_prompt(ExecutorRole::StepCheckTracker).unwrap();
-    assert_eq!(step.provenance().template_version, 13);
+    assert_eq!(step.provenance().template_version, 14);
     assert!(step.delivered_preview().contains("purpose-built connector"));
     assert!(step.delivered_preview().contains("observed branch family"));
     assert!(step.delivered_preview().contains("title is only a label"));

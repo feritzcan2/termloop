@@ -122,22 +122,28 @@ pub(super) async fn complete(
     state: &AppState,
 ) -> Result<Value, CoreError> {
     let verdict = match params.status {
-        RoutineAssignmentStatus::Satisfied => {
-            termloop_core::companion_integrations::playbook_runtime::PlaybookStepVerdict::Passed
-        }
-        RoutineAssignmentStatus::Pending => {
-            termloop_core::companion_integrations::playbook_runtime::PlaybookStepVerdict::Waiting
-        }
-        RoutineAssignmentStatus::Blocked => {
-            termloop_core::companion_integrations::playbook_runtime::PlaybookStepVerdict::Blocked
+        RoutineAssignmentStatus::Satisfied => Some(
+            termloop_core::companion_integrations::playbook_runtime::PlaybookStepVerdict::Passed,
+        ),
+        RoutineAssignmentStatus::Pending => Some(
+            termloop_core::companion_integrations::playbook_runtime::PlaybookStepVerdict::Waiting,
+        ),
+        RoutineAssignmentStatus::Blocked => Some(
+            termloop_core::companion_integrations::playbook_runtime::PlaybookStepVerdict::Blocked,
+        ),
+        RoutineAssignmentStatus::Rewind => None,
+    };
+    let completion = {
+        let mut core = state.core.lock().await;
+        match verdict {
+            Some(verdict) => {
+                core.complete_playbook_evaluation(token, &params.check_id, verdict, params.evidence)
+            }
+            None => {
+                core.complete_playbook_evaluation_rewind(token, &params.check_id, params.evidence)
+            }
         }
     };
-    let completion = state.core.lock().await.complete_playbook_evaluation(
-        token,
-        &params.check_id,
-        verdict,
-        params.evidence,
-    );
     let completion = match completion {
         Err(CoreError::TrackerReportStale) => {
             // The fork stops on a stale answer. Retire it and re-queue the

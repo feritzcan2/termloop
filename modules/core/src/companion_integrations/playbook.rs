@@ -51,6 +51,9 @@ pub(crate) struct PlaybookMilestoneDraft {
     /// Absent in snapshots and drafts written before Task Agent reports.
     #[serde(default)]
     pub(crate) agent_report: termloop_domain::PlaybookAgentReportPolicy,
+    /// Absent in snapshots and drafts written before step send-backs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) rewind: Option<termloop_domain::PlaybookStepRewind>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -371,6 +374,7 @@ impl CoreRuntime {
                         next_attempt_at_epoch_ms: None,
                         evaluator: termloop_domain::PlaybookStepEvaluator::Routine,
                         deterministic_fallback: None,
+                        rewind_count: 0,
                     });
                 }
             }
@@ -416,6 +420,7 @@ impl CoreRuntime {
             let ask_again = previous.gate != next.gate
                 || previous.approver != next.approver
                 || previous.deterministic_check != next.deterministic_check
+                || previous.rewind != next.rewind
                 || previous_prompt != next_prompt;
             if !ask_again && previous.retry_delay_seconds == next.retry_delay_seconds {
                 continue;
@@ -628,6 +633,7 @@ fn materialize_pipeline(
                 && milestone.gate == draft.gate
                 && milestone.approver == draft.approver
                 && milestone.deterministic_check == draft.deterministic_check
+                && milestone.rewind == draft.rewind
                 && current.name == name
                 && current.prompt == prompt
                 && current.steward_instructions == steward_instructions
@@ -694,6 +700,7 @@ fn materialize_pipeline(
             approver: draft.approver.clone(),
             deterministic_check: draft.deterministic_check.clone(),
             agent_report: draft.agent_report,
+            rewind: draft.rewind.clone(),
         });
     }
     Ok((milestones, changed))
@@ -806,6 +813,7 @@ fn playbook_projection(
             "approver": value.approver,
             "deterministicCheck": value.deterministic_check,
             "agentReport": value.agent_report,
+            "rewind": value.rewind,
         }))
     };
     let milestones = configuration
@@ -1537,6 +1545,7 @@ mod tests {
                         next_attempt_at_epoch_ms: None,
                         evaluator: termloop_domain::PlaybookStepEvaluator::Routine,
                         deterministic_fallback: None,
+                        rewind_count: 0,
                     },
                     PlaybookStepProgress {
                         task_id: "task-1".into(),
@@ -1548,6 +1557,7 @@ mod tests {
                         next_attempt_at_epoch_ms: Some(302_000),
                         evaluator: termloop_domain::PlaybookStepEvaluator::Routine,
                         deterministic_fallback: None,
+                        rewind_count: 0,
                     },
                 ],
                 revision,
@@ -1684,6 +1694,7 @@ mod tests {
             next_attempt_at_epoch_ms: None,
             evaluator: termloop_domain::PlaybookStepEvaluator::Routine,
             deterministic_fallback: None,
+            rewind_count: 0,
         };
         let revision = runtime.state_revision();
         runtime
@@ -1871,6 +1882,77 @@ mod tests {
                 .revision,
             2
         );
+
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_dir_all(folder);
+    }
+
+    #[test]
+    fn a_send_back_rule_round_trips_and_must_point_to_an_earlier_step() {
+        let (path, folder, mut runtime, project_id) = runtime_with_empty_project();
+        let rule = json!({
+            "toMilestoneId": "pr-open",
+            "when": "A new fix pull request from the Task branch is open.",
+            "maxTimes": 2,
+        });
+        let mut milestones = two_step_milestones(600, 600, "CI is green on the Task's PR.");
+        milestones[1]["rewind"] = rule.clone();
+        let saved = save_two_steps(&mut runtime, &project_id, milestones, 1);
+        let read = runtime
+            .get_playbook(json!({"projectId": project_id}))
+            .unwrap();
+        for playbook in [&saved["playbook"], &read["playbook"]] {
+            assert_eq!(playbook["milestones"][0]["rewind"], Value::Null);
+            assert_eq!(playbook["milestones"][1]["rewind"], rule);
+        }
+
+        // Pointing forward, or at itself, is refused and keeps the document.
+        for target in ["ci-green", "missing"] {
+            let mut milestones = two_step_milestones(600, 600, "CI is green on the Task's PR.");
+            milestones[1]["rewind"] = json!({"toMilestoneId": target, "when": "x", "maxTimes": 1});
+            let expected = runtime
+                .store
+                .playbook_for_project(&project_id)
+                .unwrap()
+                .revision;
+            assert!(
+                apply_playbook(
+                    &mut runtime,
+                    json!({
+                        "projectId": project_id,
+                        "activePipelineName": "Ship",
+                        "savedPipelines": [],
+                        "milestones": milestones,
+                        "expectedPlaybookRevision": expected,
+                    }),
+                    2,
+                )
+                .is_err(),
+                "{target}"
+            );
+        }
+        assert_eq!(
+            runtime
+                .store
+                .playbook_for_project(&project_id)
+                .unwrap()
+                .milestones[1]
+                .rewind
+                .as_ref()
+                .unwrap()
+                .max_times,
+            2
+        );
+
+        // Removing the rule is a real edit of the step.
+        let saved = save_two_steps(
+            &mut runtime,
+            &project_id,
+            two_step_milestones(600, 600, "CI is green on the Task's PR."),
+            3,
+        );
+        assert_eq!(saved["playbook"]["milestones"][1]["rewind"], Value::Null);
+        assert_eq!(saved["playbook"]["revision"], 2);
 
         let _ = std::fs::remove_file(path);
         let _ = std::fs::remove_dir_all(folder);

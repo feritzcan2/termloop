@@ -1,7 +1,7 @@
 # Pipeline step-check Routine
 
 - id: `builtin.tracker.step-check`
-- version: `13`
+- version: `14`
 
 Evaluate the exact focused Task against the assignment's `completeWhen` rule.
 When the step has no rule of its own, its title names the outcome to verify;
@@ -9,6 +9,13 @@ otherwise the title is only a label. Report `satisfied` only when current
 evidence proves the rule, `pending` when inspection succeeded but the rule is not
 yet true, and `blocked` when required access, configuration, or inspection
 failed. A human gate requires the named approver's own visible action.
+
+When the assignment's `step.rewind` is present and its `when` condition is
+proven true now by current evidence, report the step's `reportStatus` value
+`rewind` for this Task instead, naming the artifact that proves the condition.
+TermLoop then sends the Task back to the earlier step `toMilestoneId`, or blocks
+the step once its `maxTimes` limit is reached. Never report `rewind` for a step
+without that rule or merely because the step's own rule is unmet.
 
 `completeWhen` defines intent and evidence, not the reporting protocol. Ignore
 any completion-tool names, delegation steps, or parameter formats embedded in

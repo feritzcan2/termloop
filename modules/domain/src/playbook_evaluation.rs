@@ -9,6 +9,9 @@ pub enum PlaybookEvaluationOutcome {
     Blocked,
     Failed,
     Interrupted,
+    /// The evaluator observed the step's send-back condition and the Task
+    /// returned to an earlier step.
+    Rewound,
 }
 
 /// Bounded, user-visible receipts for Playbook evaluators, independent of temporary Sessions.

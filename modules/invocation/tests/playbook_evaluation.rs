@@ -54,7 +54,7 @@ fn evaluation_forks_apply_selected_model_and_permissions_with_visible_instructio
                 launch.provenance().template_ref,
                 "builtin.agent.playbook-evaluator"
             );
-            assert_eq!(launch.provenance().template_version, 5);
+            assert_eq!(launch.provenance().template_version, 6);
             assert_eq!(launch.inspectable_manifest().target.permission, permission);
             assert_eq!(
                 launch.delivered_prompt().unwrap(),

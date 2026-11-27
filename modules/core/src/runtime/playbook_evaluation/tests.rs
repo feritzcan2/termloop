@@ -766,3 +766,70 @@ fn evaluator_parked_by_its_task_is_not_offered_for_termination() {
     );
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn an_evaluator_send_back_moves_the_task_and_is_kept_as_sent_back_in_history() {
+    let (mut runtime, root, project) = pipeline_runtime();
+    let mut playbook = runtime
+        .store
+        .playbook_for_project(&project)
+        .unwrap()
+        .clone();
+    playbook.revision = 2;
+    playbook.milestones[1].rewind = Some(termloop_domain::PlaybookStepRewind {
+        to_milestone_id: "pr-open".into(),
+        when: "A new fix pull request from the Task branch is open.".into(),
+        max_times: 2,
+    });
+    let revision = runtime.store.revision();
+    runtime
+        .store
+        .set_playbook_configuration(&runtime.write_authority, playbook, revision)
+        .unwrap();
+    let now = termloop_platform::current_epoch_ms();
+    let revision = runtime.state_revision();
+    runtime
+        .set_task_playbook_position(&project, "task-2", 2, 2, revision, now)
+        .unwrap();
+    let revision = runtime.state_revision();
+    runtime
+        .set_task_playbook_position(&project, "task-1", 1, 2, revision, now)
+        .unwrap();
+    let claim = claim(&mut runtime, &project);
+    evaluator(&mut runtime, &claim);
+    // The report still requires the fork's own read first.
+    assert!(matches!(
+        runtime.complete_playbook_evaluation_rewind(
+            "reviewer-token",
+            "evaluation-check",
+            "Fix PR #520 is open.".into()
+        ),
+        Err(CoreError::CapabilityDenied)
+    ));
+    let read = runtime.read_playbook_evaluation("reviewer-token").unwrap();
+    assert_eq!(
+        read["assignment"]["step"]["rewind"]["toMilestoneId"],
+        "pr-open"
+    );
+    let completed = runtime
+        .complete_playbook_evaluation_rewind(
+            "reviewer-token",
+            "evaluation-check",
+            "Fix PR #520 is open.".into(),
+        )
+        .unwrap();
+    assert_eq!(completed["result"]["status"], "rewound");
+    let history = runtime
+        .playbook_evaluation_history(json!({"projectId": project}))
+        .unwrap();
+    assert_eq!(history["entries"][0]["outcome"], "rewound");
+    assert_eq!(
+        history["entries"][0]["evidence"],
+        "Sent back to “pr-open completed” (1/2): Fix PR #520 is open."
+    );
+    let view = runtime
+        .playbook_runtime(json!({"projectId": project}))
+        .unwrap();
+    assert_eq!(view["steps"][0]["waitingTaskIds"], json!(["task-1"]));
+    std::fs::remove_dir_all(root).unwrap();
+}

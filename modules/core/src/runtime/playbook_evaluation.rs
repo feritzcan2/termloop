@@ -509,6 +509,45 @@ impl CoreRuntime {
         verdict: termloop_domain::PlaybookStepVerdict,
         evidence: String,
     ) -> Result<Value, CoreError> {
+        self.finish_playbook_evaluation_report(token, check_id, |runtime, evaluation, now| {
+            runtime.apply_playbook_step_verdicts(
+                &evaluation.capability,
+                vec![StewardStepVerdict {
+                    task_id: evaluation.task_id.clone(),
+                    verdict,
+                    evidence,
+                }],
+                termloop_platform::generate_opaque_id(),
+                now,
+            )
+        })
+    }
+
+    /// The evaluator observed the step's send-back condition. TermLoop alone
+    /// decides whether the step's limit still allows sending the Task back.
+    pub fn complete_playbook_evaluation_rewind(
+        &mut self,
+        token: &str,
+        check_id: &str,
+        evidence: String,
+    ) -> Result<Value, CoreError> {
+        self.finish_playbook_evaluation_report(token, check_id, |runtime, evaluation, now| {
+            runtime.apply_playbook_step_rewind(
+                &evaluation.capability,
+                &evaluation.task_id,
+                evidence,
+                termloop_platform::generate_opaque_id(),
+                now,
+            )
+        })
+    }
+
+    fn finish_playbook_evaluation_report(
+        &mut self,
+        token: &str,
+        check_id: &str,
+        apply: impl FnOnce(&mut Self, &PlaybookEvaluation, u64) -> Result<Value, CoreError>,
+    ) -> Result<Value, CoreError> {
         let evaluation = self.authenticated_playbook_evaluation(token)?;
         if evaluation.capability.check_id != check_id || !evaluation.read {
             return Err(CoreError::CapabilityDenied);
@@ -516,18 +555,7 @@ impl CoreRuntime {
         let now = termloop_platform::current_epoch_ms();
         let result = self
             .validate_playbook_evaluation(&evaluation, now)
-            .and_then(|()| {
-                self.apply_playbook_step_verdicts(
-                    &evaluation.capability,
-                    vec![StewardStepVerdict {
-                        task_id: evaluation.task_id,
-                        verdict,
-                        evidence,
-                    }],
-                    termloop_platform::generate_opaque_id(),
-                    now,
-                )
-            });
+            .and_then(|()| apply(self, &evaluation, now));
         let result = match result {
             Err(CoreError::TrackerReportStale) => {
                 if let Some(evaluation) = self.playbook_evaluation.evaluations.get_mut(check_id) {

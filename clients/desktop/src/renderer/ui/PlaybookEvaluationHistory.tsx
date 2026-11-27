@@ -6,6 +6,7 @@ import "./playbook-evaluation-history.css";
 const outcomeLabels: Record<PlaybookEvaluationRecordDto["outcome"], string> = {
   inProgress: "In progress", passed: "Passed", waiting: "Pending",
   blocked: "Blocked", failed: "Failed to start", interrupted: "Interrupted",
+  rewound: "Sent back",
 };
 
 export function PlaybookEvaluationHistory(props: {

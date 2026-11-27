@@ -11,7 +11,7 @@
 .peh-entry h3 { margin: 0; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 .peh-outcome { flex: none; padding: 3px 7px; border-radius: 5px; font-size: 10px; background: var(--hover); color: var(--text-muted); }
 .peh-outcome.passed { color: var(--success); }
-.peh-outcome.inProgress { color: var(--accent); }
+.peh-outcome.inProgress, .peh-outcome.rewound { color: var(--accent); }
 .peh-outcome.blocked, .peh-outcome.failed { color: var(--danger); }
 .peh-step { margin: 5px 0 12px; font-size: 11px; color: var(--text-muted); }
 .peh-agent { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 11px; overflow-wrap: anywhere; color: var(--text-muted); }

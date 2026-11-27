@@ -84,6 +84,7 @@ fn playbook(project_id: &str, revision: u64) -> PlaybookConfiguration {
             approver: Some("ferit".into()),
             deterministic_check: None,
             agent_report: Default::default(),
+            rewind: None,
         }],
         updated_at_epoch_ms: 1,
     }
@@ -533,6 +534,7 @@ fn step_verdict_and_waiting_finding_commit_atomically() {
         next_attempt_at_epoch_ms: Some(602_000),
         evaluator: termloop_domain::PlaybookStepEvaluator::Routine,
         deterministic_fallback: None,
+        rewind_count: 0,
     };
     let mut routine = store.tracker_configurations()[0].clone();
     routine.action_handling = RoutineActionHandling::Ask;
@@ -710,6 +712,7 @@ fn answer(task_id: &str, verdict: PlaybookStepVerdict) -> PlaybookStepProgress {
         },
         evaluator: termloop_domain::PlaybookStepEvaluator::Routine,
         deterministic_fallback: None,
+        rewind_count: 0,
     }
 }
 
@@ -1242,4 +1245,81 @@ fn a_save_inserts_only_new_passes_for_steps_it_asks() {
 
     drop(store);
     let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn a_send_back_replaces_one_tasks_answers_and_routine_in_one_commit() {
+    let (path, mut store, authority) = project_with_pipeline("send-back");
+    store
+        .insert_task(&authority, task("task-2", "project-a"))
+        .unwrap();
+    let revision = store.revision();
+    store
+        .record_playbook_step_progress(
+            &authority,
+            "project-a",
+            vec![
+                answer("task-1", PlaybookStepVerdict::Passed),
+                answer("task-2", PlaybookStepVerdict::Passed),
+            ],
+            revision,
+        )
+        .unwrap();
+    let routine = store.tracker_configurations()[0].clone();
+    let sent_back = PlaybookStepProgress {
+        rewind_count: 1,
+        ..answer("task-1", PlaybookStepVerdict::Waiting)
+    };
+
+    // A row for another Task, a stale revision, or an evaluation record that
+    // is not the send-back itself changes nothing.
+    let revision = store.revision();
+    assert!(matches!(
+        store.rewind_task_playbook_progress(
+            &authority,
+            "project-a",
+            "task-1",
+            vec![answer("task-2", PlaybookStepVerdict::Waiting)],
+            routine.clone(),
+            None,
+            revision,
+        ),
+        Err(StoreError::ConstraintViolation)
+    ));
+    assert!(matches!(
+        store.rewind_task_playbook_progress(
+            &authority,
+            "project-a",
+            "task-1",
+            vec![sent_back.clone()],
+            routine.clone(),
+            None,
+            revision.saturating_sub(1),
+        ),
+        Err(StoreError::RevisionConflict)
+    ));
+    assert_eq!(store.revision(), revision);
+    assert_eq!(store.playbook_step_progress().len(), 2);
+
+    store
+        .rewind_task_playbook_progress(
+            &authority,
+            "project-a",
+            "task-1",
+            vec![sent_back.clone()],
+            routine,
+            None,
+            revision,
+        )
+        .unwrap();
+    assert!(store.playbook_step_progress().contains(&sent_back));
+    assert!(store.playbook_step_progress().iter().any(|entry| {
+        entry.task_id == "task-2" && entry.verdict == PlaybookStepVerdict::Passed
+    }));
+
+    // The send-back count is durable current state.
+    drop(store);
+    let store = Store::open(&path).unwrap();
+    assert!(store.playbook_step_progress().contains(&sent_back));
+    let _ = std::fs::remove_file(path);
 }

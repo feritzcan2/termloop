@@ -439,6 +439,82 @@ impl Store {
         Ok(answers)
     }
 
+    /// Sends one Task back to an earlier step in one commit: its complete next
+    /// answer set, the answering step's Routine state, and the evaluator's
+    /// finished receipt land together, and every on-demand finding about the
+    /// Task is dropped because the question it described is no longer asked.
+    /// Core owns which answers the send-back keeps; the Store proves they are
+    /// this Task's answers to questions its Project is asking right now.
+    #[allow(clippy::too_many_arguments)]
+    pub fn rewind_task_playbook_progress(
+        &mut self,
+        _authority: &CoreWriteAuthority,
+        project_id: &str,
+        task_id: &str,
+        answers: Vec<PlaybookStepProgress>,
+        routine: TrackerConfiguration,
+        evaluation: Option<termloop_domain::PlaybookEvaluationRecord>,
+        expected_revision: u64,
+    ) -> Result<Vec<PlaybookStepProgress>, StoreError> {
+        if expected_revision != self.state.revision {
+            return Err(StoreError::RevisionConflict);
+        }
+        if !self
+            .state
+            .tasks
+            .iter()
+            .any(|task| task.id == task_id && task.project_id == project_id)
+            || self.playbook_for_project(project_id).is_none()
+            || routine.project_id != project_id
+            || routine.trigger_mode.is_scheduled()
+            || answers.iter().any(|answer| answer.task_id != task_id)
+        {
+            return Err(StoreError::ConstraintViolation);
+        }
+        let Some(routine_index) = self
+            .state
+            .tracker_configurations
+            .iter()
+            .position(|current| current.id == routine.id && current.project_id == project_id)
+        else {
+            return Err(StoreError::NotFound);
+        };
+
+        let previous = self.state.clone();
+        let mut next = previous.clone();
+        next.playbook_step_progress
+            .retain(|progress| progress.task_id != task_id);
+        next.playbook_step_progress.extend(answers.iter().cloned());
+        next.tracker_configurations[routine_index] = routine;
+        for routine in &mut next.tracker_configurations {
+            if !routine.trigger_mode.is_scheduled() {
+                routine
+                    .pending_routine_findings
+                    .retain(|finding| !finding.related_task_ids.iter().any(|id| id == task_id));
+            }
+        }
+        if let Some(record) = evaluation {
+            if record.project_id != project_id
+                || record.task_id != task_id
+                || record.outcome != termloop_domain::PlaybookEvaluationOutcome::Rewound
+                || !answers.iter().any(|answer| {
+                    answer.milestone_id == record.milestone_id
+                        && answer.evidence == record.evidence
+                        && answer.verdict == termloop_domain::PlaybookStepVerdict::Waiting
+                        && record.finished_at_epoch_ms == Some(answer.decided_at_epoch_ms)
+                })
+            {
+                return Err(StoreError::ConstraintViolation);
+            }
+            super::playbook_evaluation::apply_finished(&mut next, record)?;
+        }
+        crate::validation::validate_current_state(&next)
+            .map_err(|_| StoreError::ConstraintViolation)?;
+        self.state = next;
+        self.commit_or_restore(previous)?;
+        Ok(answers)
+    }
+
     fn project_task_ids(&self, project_id: &str) -> Vec<String> {
         self.state
             .tasks

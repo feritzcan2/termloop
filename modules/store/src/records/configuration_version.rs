@@ -352,7 +352,7 @@ fn playbook_milestone_snapshot(
 ) -> serde_json::Value {
     let routine = tracker_for_milestone(state, configuration, milestone)
         .expect("validated Playbook milestone has one same-Project Routine");
-    json!({
+    let mut snapshot = json!({
         "id": milestone.id,
         "title": milestone.title,
         "gate": milestone.gate,
@@ -365,7 +365,13 @@ fn playbook_milestone_snapshot(
         "approver": milestone.approver,
         "deterministicCheck": milestone.deterministic_check,
         "agentReport": milestone.agent_report,
-    })
+    });
+    // Present only when set, so versions saved before send-backs existed keep
+    // comparing equal to an unchanged document.
+    if let Some(rewind) = &milestone.rewind {
+        snapshot["rewind"] = json!(rewind);
+    }
+    snapshot
 }
 
 fn tracker_for_milestone<'a>(

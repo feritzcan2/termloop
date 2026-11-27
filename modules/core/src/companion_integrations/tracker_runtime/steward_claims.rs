@@ -371,6 +371,17 @@ pub(super) fn assigned_routine_result(
                 })
                 .collect::<Vec<_>>(),
         });
+        // A send-back is an observation like any verdict: the evaluator
+        // reports `rewind` when the condition holds now, and TermLoop alone
+        // decides whether the step's limit still allows it.
+        if let Some(rewind) = &step.milestone.rewind {
+            result["step"]["rewind"] = json!({
+                "toMilestoneId": rewind.to_milestone_id,
+                "when": rewind.when,
+                "maxTimes": rewind.max_times,
+                "reportStatus": "rewind",
+            });
+        }
     }
     result
 }

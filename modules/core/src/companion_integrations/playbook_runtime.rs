@@ -15,6 +15,8 @@ use crate::{CoreError, CoreRuntime};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 pub use termloop_domain::PlaybookStepVerdict;
+mod rewind;
+
 use termloop_domain::{
     PendingRoutineFinding, PlaybookConfiguration, PlaybookGateKind, PlaybookMilestone,
     PlaybookPosition, PlaybookStepEvaluator, PlaybookStepProgress, ROUTINE_PENDING_FINDINGS_MAX,
@@ -211,6 +213,7 @@ impl CoreRuntime {
                         next_attempt_at_epoch_ms: None,
                         evaluator: termloop_domain::PlaybookStepEvaluator::Routine,
                         deterministic_fallback: None,
+                        rewind_count: 0,
                     })
             })
             .collect::<Vec<_>>();
@@ -545,6 +548,31 @@ impl CoreRuntime {
         self.apply_playbook_step_verdicts(capability, verdicts, report_id, completed_at_epoch_ms)
     }
 
+    /// The Steward fallback's counterpart of an evaluator's send-back report.
+    pub fn report_steward_step_rewind(
+        &mut self,
+        capability: &super::tracker_runtime::TrackerCheckCapability,
+        task_id: &str,
+        evidence: String,
+        report_id: String,
+        completed_at_epoch_ms: u64,
+    ) -> Result<Value, CoreError> {
+        if self
+            .playbook_evaluation
+            .evaluations
+            .contains_key(&capability.check_id)
+        {
+            return Err(CoreError::CapabilityDenied);
+        }
+        self.apply_playbook_step_rewind(
+            capability,
+            task_id,
+            evidence,
+            report_id,
+            completed_at_epoch_ms,
+        )
+    }
+
     pub(crate) fn apply_playbook_step_verdicts(
         &mut self,
         capability: &super::tracker_runtime::TrackerCheckCapability,
@@ -595,6 +623,9 @@ impl CoreRuntime {
             {
                 return Err(CoreError::TrackerReportInvalid);
             }
+            let previous = self.store.playbook_step_progress().iter().find(|answer| {
+                answer.task_id == verdict.task_id && answer.milestone_id == assignment.milestone.id
+            });
             answers.push(PlaybookStepProgress {
                 task_id: verdict.task_id.clone(),
                 milestone_id: assignment.milestone.id.clone(),
@@ -604,10 +635,6 @@ impl CoreRuntime {
                 decided_at_epoch_ms: completed_at_epoch_ms,
                 next_attempt_at_epoch_ms: (verdict.verdict != PlaybookStepVerdict::Passed).then(
                     || {
-                        let previous = self.store.playbook_step_progress().iter().find(|answer| {
-                            answer.task_id == verdict.task_id
-                                && answer.milestone_id == assignment.milestone.id
-                        });
                         completed_at_epoch_ms.saturating_add(repeated_answer_delay_ms(
                             &assignment.milestone,
                             previous,
@@ -618,6 +645,9 @@ impl CoreRuntime {
                 ),
                 evaluator,
                 deterministic_fallback,
+                // The send-back limit counts across this step's answers, so
+                // a later pass or wait never resets it.
+                rewind_count: previous.map_or(0, |answer| answer.rewind_count),
             });
         }
         let mut new_pending_findings = Vec::new();
@@ -861,6 +891,7 @@ impl CoreRuntime {
                             "nextAttemptAtEpochMs": entry.next_attempt_at_epoch_ms,
                             "evaluator": entry.evaluator,
                             "deterministicFallback": entry.deterministic_fallback,
+                            "rewindCount": entry.rewind_count,
                         })
                     })
                     .collect::<Vec<_>>();
@@ -987,6 +1018,7 @@ pub(crate) mod tests {
             approver: None,
             deterministic_check: None,
             agent_report: Default::default(),
+            rewind: None,
         }
     }
 

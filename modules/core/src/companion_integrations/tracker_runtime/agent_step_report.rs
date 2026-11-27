@@ -265,6 +265,11 @@ impl CoreRuntime {
             && milestone.agent_report == PlaybookAgentReportPolicy::Trusted
             && milestone.gate == PlaybookGateKind::Automatic
         {
+            // A trusted pass never resets the step's send-back limit.
+            let rewind_count = answers
+                .iter()
+                .find(|answer| answer.milestone_id == milestone.id)
+                .map_or(0, |answer| answer.rewind_count);
             let mut answers = answers
                 .into_iter()
                 .filter(|answer| answer.milestone_id != milestone.id)
@@ -279,6 +284,7 @@ impl CoreRuntime {
                 next_attempt_at_epoch_ms: None,
                 evaluator: PlaybookStepEvaluator::Agent,
                 deterministic_fallback: None,
+                rewind_count,
             });
             self.store
                 .replace_task_playbook_progress(

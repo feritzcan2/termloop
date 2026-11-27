@@ -17012,6 +17012,16 @@
         },
         "agentReport": {
           "$ref": "#/$defs/playbookAgentReportPolicy"
+        },
+        "rewind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/playbookStepRewindDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },
@@ -17081,6 +17091,16 @@
         },
         "agentReport": {
           "$ref": "#/$defs/playbookAgentReportPolicy"
+        },
+        "rewind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/playbookStepRewindDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },
@@ -17219,6 +17239,13 @@
             }
           ]
         },
+        "rewindCount": {
+          "description": "How many times this step has sent this Task back to an earlier step.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10,
+          "x-rust-type": "u32"
+        },
         "taskId": {
           "type": "string",
           "minLength": 1,
@@ -17268,7 +17295,7 @@
         "permission": { "$ref": "#/$defs/assistantPermission" },
         "startedAtEpochMs": { "type": "integer", "minimum": 0 },
         "finishedAtEpochMs": { "type": ["integer", "null"], "minimum": 0 },
-        "outcome": { "type": "string", "enum": ["inProgress", "passed", "waiting", "blocked", "failed", "interrupted"] },
+        "outcome": { "type": "string", "enum": ["inProgress", "passed", "waiting", "blocked", "failed", "interrupted", "rewound"] },
         "evidence": { "type": "string", "maxLength": 600, "x-utf8-max-bytes": 600 }
       }
     },
@@ -19302,6 +19329,42 @@
           "maxLength": 255,
           "x-utf8-max-bytes": 255,
           "description": "Optional exact target branch the Task branch pull request must target."
+        }
+      }
+    },
+    "playbookStepRewindDto": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookStepRewindDto",
+      "description": "Sends the Task back to an earlier step of the same pipeline when this step's evaluator observes the condition, for example a new fix pull request after a failed deployment. The earlier step and every later step the Task passed are asked again.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "toMilestoneId",
+        "when",
+        "maxTimes"
+      ],
+      "properties": {
+        "toMilestoneId": {
+          "description": "The ID of an earlier step in the same pipeline.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "x-utf8-max-bytes": 64,
+          "pattern": "^[A-Za-z0-9_-]{1,64}$"
+        },
+        "when": {
+          "description": "The observable condition, in plain language, that sends the Task back.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "x-utf8-max-bytes": 2048
+        },
+        "maxTimes": {
+          "description": "How many times this step may send one Task back; a further send-back is recorded as blocked for a human decision.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "x-rust-type": "u32"
         }
       }
     },

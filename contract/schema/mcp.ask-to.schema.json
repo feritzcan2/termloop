@@ -1609,8 +1609,9 @@
     "routineAssignmentStatus": {
       "x-codegen": true,
       "x-codegen-name": "RoutineAssignmentStatus",
+      "description": "satisfied, pending, or blocked. rewind is accepted only for a Playbook step whose assignment carries a rewind rule, when its condition is observed now; the evidence names the artifact that triggered it.",
       "type": "string",
-      "enum": ["satisfied", "pending", "blocked"]
+      "enum": ["satisfied", "pending", "blocked", "rewind"]
     },
     "routineAssignmentCompleteResult": {
       "x-codegen": true,

@@ -1479,13 +1479,24 @@ async fn steward_complete_assignment(
                         super::current_epoch_ms(),
                     )
                 });
+        let rewind = params.status == RoutineAssignmentStatus::Rewind;
         let verdict = playbook_assignment_verdict(params, task_id, task_read_completed)?;
-        let result = state.core.lock().await.report_steward_step_verdicts(
-            &capability,
-            vec![verdict],
-            termloop_platform::generate_opaque_id(),
-            super::current_epoch_ms(),
-        );
+        let result = if rewind {
+            state.core.lock().await.report_steward_step_rewind(
+                &capability,
+                &verdict.task_id,
+                verdict.evidence,
+                termloop_platform::generate_opaque_id(),
+                super::current_epoch_ms(),
+            )
+        } else {
+            state.core.lock().await.report_steward_step_verdicts(
+                &capability,
+                vec![verdict],
+                termloop_platform::generate_opaque_id(),
+                super::current_epoch_ms(),
+            )
+        };
         let result = finish_steward_report_attempt(state, session_id, &capability, result).await?;
         if let Ok(mut capabilities) = state.tracker_report_capabilities.lock() {
             capabilities.revoke_check(session_id, &capability.check_id);
@@ -1501,6 +1512,12 @@ async fn steward_complete_assignment(
         return Ok(routine_completion_result(&result));
     }
 
+    // A send-back moves a Task on its pipeline; a scheduled Routine has none.
+    if params.status == RoutineAssignmentStatus::Rewind {
+        return Err(termloop_core::CoreError::InvalidParams(
+            "status rewind is only for a Playbook step with a rewind rule".into(),
+        ));
+    }
     if params.status == RoutineAssignmentStatus::Blocked {
         if params.expected_context_revision.is_some()
             || params.context_markdown.is_some()
@@ -1640,6 +1657,9 @@ fn playbook_assignment_verdict(
             RoutineAssignmentStatus::Satisfied => PlaybookStepVerdict::Passed,
             RoutineAssignmentStatus::Pending => PlaybookStepVerdict::Waiting,
             RoutineAssignmentStatus::Blocked => PlaybookStepVerdict::Blocked,
+            // The caller routes a send-back to its own command; the verdict
+            // here only carries the validated Task and evidence.
+            RoutineAssignmentStatus::Rewind => PlaybookStepVerdict::Waiting,
         },
         evidence: params.evidence,
     })
@@ -1677,7 +1697,8 @@ fn routine_completion_status(result: &Value) -> &'static str {
 
 pub(super) fn step_verdict_wake(result: &Value) -> Option<protocol::CompanionWakeReason> {
     match (
-        result["passedCount"].as_u64().unwrap_or(0) > 0,
+        // A send-back moves the Task too, only backward.
+        result["passedCount"].as_u64().unwrap_or(0) > 0 || result["status"] == "rewound",
         result["stewardReviewRequired"].as_bool().unwrap_or(false),
     ) {
         (true, true) => Some(protocol::CompanionWakeReason::PipelineMovedAndRoutineFinding),
@@ -2282,6 +2303,10 @@ mod tests {
             Some(protocol::CompanionWakeReason::PipelineMovedAndRoutineFinding)
         );
         assert_eq!(step_verdict_wake(&json!({})), None);
+        assert_eq!(
+            step_verdict_wake(&json!({ "status": "rewound", "passedCount": 0 })),
+            Some(protocol::CompanionWakeReason::PipelineMoved)
+        );
     }
 
     #[test]
