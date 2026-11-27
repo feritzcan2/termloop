@@ -308,6 +308,9 @@ export type TaskRailProps = {
   /// Task's card: it grows back, scrolls into view, and its live agent takes
   /// focus. Each new nonce is one request.
   revealRequest?: { taskId: string; nonce: number } | undefined;
+  /// Called once a reveal request was carried out, so its owner drops it and
+  /// a card that mounts later (a section move, a view switch) never replays it.
+  revealHandled?: ((nonce: number) => void) | undefined;
   agentCapabilities: readonly AgentCapabilityDto[];
   launchTaskTerminal(taskId: string): Promise<string | undefined>;
   launchTaskAgent(taskId: string, agentId: string, model?: string, permission?: AgentCapabilityDto["permissions"][number], reasoning?: AgentCapabilityDto["reasoning"][number], kickoffMessage?: string): Promise<string | undefined>;
@@ -489,6 +492,7 @@ export function TaskRail(props: TaskRailProps) {
       taskClicked={props.taskClicked}
       hoveredElsewhere={props.hoveredElsewhereTaskId === task.id}
       revealNonce={props.revealRequest?.taskId === task.id ? props.revealRequest.nonce : undefined}
+      revealHandled={props.revealHandled}
       detailOpen={props.detailTaskId === task.id}
       deleting={props.deletingTaskIds.has(task.id)}
       provisioning={props.provisioningTaskIds?.has(task.id) ?? false}
@@ -788,6 +792,7 @@ type TaskGroupProps = {
   taskClicked: ((taskId: string) => void) | undefined;
   hoveredElsewhere: boolean;
   revealNonce: number | undefined;
+  revealHandled: ((nonce: number) => void) | undefined;
   detailOpen: boolean;
   deleting: boolean;
   provisioning: boolean;
@@ -907,11 +912,17 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
   }, [relocationDrop.setNodeRef]);
   const revealRef = useRef(focusCard);
   revealRef.current = focusCard;
+  const revealHandledRef = useRef(props.revealHandled);
+  revealHandledRef.current = props.revealHandled;
   useEffect(() => {
-    if (props.revealNonce === undefined) return;
+    const nonce = props.revealNonce;
+    if (nonce === undefined) return;
     revealRef.current();
+    /// Reported after the scroll: dropping the request changes this effect's
+    /// dependency, and its cleanup would cancel a still-pending frame.
     const frame = requestAnimationFrame(() => {
       cardRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      revealHandledRef.current?.(nonce);
     });
     return () => cancelAnimationFrame(frame);
   }, [props.revealNonce]);

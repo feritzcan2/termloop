@@ -680,6 +680,41 @@ describe("Task rail row anatomy", () => {
     }
   });
 
+  it("reports a handled reveal so a remounted card never replays it", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const original = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+    const selectSession = vi.fn();
+    const agent = agentSession("live-agent");
+    let request: { taskId: string; nonce: number } | undefined = { taskId: "task-1", nonce: 1 };
+    const revealHandled = vi.fn((nonce: number) => { if (request?.nonce === nonce) request = undefined; });
+    const container = document.createElement("div"); document.body.append(container);
+    let root = createRoot(container);
+    const render = () => root.render(createElement(TaskRail, {
+      ...railProps({ sessions: [agent], statuses: [agentStatus(agent.id, "working")] }),
+      selectSession,
+      revealRequest: request,
+      revealHandled,
+    }));
+    try {
+      await act(async () => render());
+      await act(async () => new Promise((resolve) => requestAnimationFrame(() => resolve(undefined))));
+      expect(selectSession).toHaveBeenCalledExactlyOnceWith(agent.id);
+      expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalledTimes(1);
+      expect(revealHandled).toHaveBeenCalledExactlyOnceWith(1);
+      await act(async () => render());
+      /// The card mounts again (the rail came back, or the Task moved section)
+      /// while the user works elsewhere; the old click must not steal focus.
+      await act(async () => root.unmount());
+      root = createRoot(container);
+      await act(async () => render());
+      expect(selectSession).toHaveBeenCalledTimes(1);
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+      await act(async () => root.unmount()); container.remove();
+    }
+  });
+
   it("keeps activity visible on a folded Task, opens the exact agent, and clears it when work stops", async () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     const session = agentSession("workflow-lead");

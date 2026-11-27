@@ -1050,6 +1050,9 @@ export function Shell(props: ShellProps) {
     setWorkspaceView("overview");
     setRailRevealRequest((previous) => ({ taskId, nonce: (previous?.nonce ?? 0) + 1 }));
   }, [setWorkspaceView]);
+  const railRevealHandled = useCallback((nonce: number) => {
+    setRailRevealRequest((previous) => (previous?.nonce === nonce ? undefined : previous));
+  }, []);
   const openStagePage = useCallback(
     (page: StagePage) => {
       dismissChanges();
@@ -1837,6 +1840,7 @@ export function Shell(props: ShellProps) {
             taskClicked={setClickedRailTaskId}
             hoveredElsewhereTaskId={hoveredPlaybookTaskId}
             revealRequest={railRevealRequest}
+            revealHandled={railRevealHandled}
             agentCapabilities={props.agentCapabilities}
             launchTaskTerminal={props.launchTaskTerminal}
             launchTaskAgent={props.launchTaskAgent}
