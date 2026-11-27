@@ -759,6 +759,37 @@ pub(crate) fn decide_focused(
     if matching.len() > 1 {
         return DeterministicDecision::Fallback(Fallback::MultipleMatches);
     }
+    // An earlier merged pull request is history once a newer one from the
+    // same branch is open: the step is about the newer work.
+    if wanted == PullRequestState::Merged
+        && let [merged] = matching[..]
+        && let Some(newer) = targeted
+            .iter()
+            .filter(|summary| {
+                matches!(
+                    summary.state,
+                    PullRequestState::Open | PullRequestState::Draft
+                ) && summary.number > merged.number
+            })
+            .max_by_key(|summary| summary.number)
+    {
+        return DeterministicDecision::Waiting(bounded_evidence(format!(
+            "PR #{} from {branch} on {} is {}{} and not merged yet; PR #{} merged earlier.",
+            newer.number,
+            summary_repository(newer),
+            if newer.state == PullRequestState::Draft {
+                "a draft"
+            } else {
+                "open"
+            },
+            check
+                .base_branch
+                .as_deref()
+                .map(|base| format!(" targeting {base}"))
+                .unwrap_or_default(),
+            merged.number,
+        )));
+    }
     // A partial read cannot prove that this is the only match, or that there
     // is none.
     if truncated {

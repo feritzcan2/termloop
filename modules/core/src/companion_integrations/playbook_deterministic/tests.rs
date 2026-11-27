@@ -245,6 +245,42 @@ fn pull_request_merged_needs_exactly_one_merged_pull_request() {
 }
 
 #[test]
+fn a_merged_check_waits_for_a_newer_open_pull_request_from_the_same_branch() {
+    let merged = check(PullRequestMerged, Some("develop"));
+    let reopened = read(vec![
+        pull_request(66, Merged, "develop", Unknown),
+        pull_request(522, Open, "develop", Passing),
+    ]);
+    assert_eq!(
+        decide(&merged, &reopened),
+        DeterministicDecision::Waiting(
+            "PR #522 from feature/login on github.com/acme/widgets is open targeting develop and not merged yet; PR #66 merged earlier."
+                .into()
+        )
+    );
+    let drafted = read(vec![
+        pull_request(66, Merged, "develop", Unknown),
+        pull_request(522, Draft, "develop", Unknown),
+    ]);
+    assert!(matches!(
+        decide(&merged, &drafted),
+        DeterministicDecision::Waiting(evidence) if evidence.contains("PR #522") && evidence.contains("a draft")
+    ));
+    // An older open pull request, a closed newer one, or one aimed at another
+    // base never holds back the merged one.
+    for others in [
+        pull_request(12, Open, "develop", Passing),
+        pull_request(600, Closed, "develop", Unknown),
+        pull_request(600, Open, "main", Passing),
+    ] {
+        assert!(matches!(
+            decide(&merged, &read(vec![pull_request(66, Merged, "develop", Unknown), others])),
+            DeterministicDecision::Passed(evidence) if evidence.contains("PR #66")
+        ));
+    }
+}
+
+#[test]
 fn an_unavailable_or_partial_read_never_decides() {
     for reason in [
         Fallback::NoTaskBranch,
