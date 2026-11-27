@@ -7,6 +7,7 @@ import { DeleteTaskDialog } from "./task-dialogs/delete-task-dialog.js";
 import { useOverlayLease } from "./overlay-lease.js";
 import { PlaybookTaskNotes, type SavePlaybookTaskNotes } from "./PlaybookTaskNotes.js";
 import { Icon } from "./Icon.js";
+import { PlaybookTaskHistory, type LoadPlaybookEvaluationHistory } from "./PlaybookTaskHistory.js";
 import { PlaybookTaskDecisionStrip, type PlaybookTaskDecisionHandle } from "./PlaybookTaskDecision.js";
 
 export type AssistantTaskPlacement = Readonly<{
@@ -98,6 +99,8 @@ export function AssistantTaskRow(props: {
   processingTaskIds: readonly string[];
   openTask(taskId: string): void;
   saveTaskNotes?: SavePlaybookTaskNotes | undefined;
+  /** Opens this Task's retained Playbook check history beside the row. */
+  loadEvaluationHistory?: LoadPlaybookEvaluationHistory | undefined;
   notesDisabled?: boolean | undefined;
   dragging?: boolean;
   /** The Task pointed at or clicked in the Task rail. */
@@ -148,6 +151,7 @@ export function AssistantTaskRow(props: {
     ><Icon name="check" /></button>
     : null}{props.closeTask && props.task.status === "open"
     ? <CloseCompletedTaskButton task={props.task} close={props.closeTask} disabled={props.notesDisabled} />
+    : null}{props.loadEvaluationHistory ? <PlaybookTaskHistory task={props.task} load={props.loadEvaluationHistory} />
     : null}{props.saveTaskNotes ? <PlaybookTaskNotes task={props.task} save={props.saveTaskNotes} disabled={props.notesDisabled} /> : null}
   {decision ? <PlaybookTaskDecisionStrip
     taskTitle={props.task.title}
@@ -162,6 +166,7 @@ export function AssistantTaskTail(props: {
   processingTaskIds: readonly string[];
   openTask(taskId: string): void;
   saveTaskNotes?: SavePlaybookTaskNotes | undefined;
+  loadEvaluationHistory?: LoadPlaybookEvaluationHistory | undefined;
   notesDisabled?: boolean | undefined;
   draggingTaskId?: string | undefined;
   highlightedTaskId?: string | undefined;
@@ -189,6 +194,7 @@ export function AssistantTaskTail(props: {
       processingTaskIds={props.processingTaskIds}
       openTask={props.openTask}
       saveTaskNotes={props.saveTaskNotes}
+      loadEvaluationHistory={props.loadEvaluationHistory}
       notesDisabled={props.notesDisabled}
       dragging={props.draggingTaskId === task.id}
       highlighted={props.highlightedTaskId === task.id}

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { assistantRefusalMessage, isRevisionConflict } from "./StewardPanel.js";
 import type { SavePlaybookTaskNotes } from "./PlaybookTaskNotes.js";
+import type { LoadPlaybookEvaluationHistory } from "./PlaybookTaskHistory.js";
 import { PlaybookEvaluationStatus } from "./PlaybookEvaluationStatus.js";
 import {
   adoptTemplateInto,
@@ -399,6 +400,8 @@ type Props = {
   /** Pointing at a Playbook Task row; the Shell marks it in the Task rail. */
   taskHovered?: ((taskId: string | undefined) => void) | undefined;
   saveTaskNotes?: SavePlaybookTaskNotes | undefined;
+  /** Each Playbook Task row offers its own retained check history. */
+  loadEvaluationHistory?: LoadPlaybookEvaluationHistory | undefined;
   /** The Steward's open proposal or suggestion is answerable from its Task row. */
   taskDecisionActions?: PlaybookTaskDecisionActions | undefined;
   closeTask?: CloseCompletedTask | undefined;
@@ -980,6 +983,7 @@ export function AssistantRail(props: Props) {
           processingTaskIds={props.playbookRuntime?.processingTaskIds ?? []}
           openTask={props.openTask}
           saveTaskNotes={props.saveTaskNotes}
+          loadEvaluationHistory={props.loadEvaluationHistory}
           notesDisabled={props.disabled}
           dragging={draggedTaskId === task.id}
           highlighted={props.highlightedTaskId === task.id}
@@ -1130,6 +1134,7 @@ export function AssistantRail(props: Props) {
           processingTaskIds={props.playbookRuntime?.processingTaskIds ?? []}
           openTask={props.openTask}
           saveTaskNotes={props.saveTaskNotes}
+          loadEvaluationHistory={props.loadEvaluationHistory}
           notesDisabled={props.disabled}
           draggingTaskId={draggedTaskId}
           highlightedTaskId={props.highlightedTaskId}

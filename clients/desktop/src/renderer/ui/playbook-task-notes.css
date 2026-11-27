@@ -1,10 +1,10 @@
-.assistant-task-item { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 0 3px; min-width: 0; }
-.assistant-task-close, .assistant-task-approve { grid-row: 1; grid-column: 3; display: flex; align-items: center; border: 0; border-radius: 4px; padding: 5px 3px; background: transparent; color: var(--sidebar-dimmer); }
+.assistant-task-item { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center; gap: 0 3px; min-width: 0; }
+.assistant-task-close, .assistant-task-approve { grid-row: 1; grid-column: 4; display: flex; align-items: center; border: 0; border-radius: 4px; padding: 5px 3px; background: transparent; color: var(--sidebar-dimmer); }
 .assistant-task-close:hover:not(:disabled) { color: var(--danger); background: var(--hover); }
 .assistant-task-approve:hover:not(:disabled) { color: var(--success); background: var(--hover); }
 :is(.assistant-task-close, .assistant-task-approve):disabled { opacity: .45; }
 :is(.assistant-task-close, .assistant-task-approve) svg { width: 12px; height: 12px; }
-.playbook-note-toggle { display: flex; align-items: center; gap: 2px; border: 0; border-radius: 4px; padding: 5px 3px; background: transparent; color: var(--sidebar-dimmer); font-size: 9px; }
+.playbook-note-toggle { grid-row: 1; grid-column: 3; display: flex; align-items: center; gap: 2px; border: 0; border-radius: 4px; padding: 5px 3px; background: transparent; color: var(--sidebar-dimmer); font-size: 9px; }
 .playbook-note-toggle:hover, .playbook-note-toggle[aria-expanded="true"] { color: var(--accent); background: var(--hover); }
 .playbook-note-toggle svg { width: 12px; height: 12px; }
 .playbook-task-notes { grid-column: 1 / -1; display: grid; gap: 7px; margin: 2px 0 7px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-raised); color: var(--sidebar-text); font-size: 11px; }
@@ -16,3 +16,17 @@
 .playbook-task-notes p { margin: 0; color: var(--danger); }
 .playbook-task-notes footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--text-secondary); font-size: 10px; }
 .playbook-task-notes footer button { border: 1px solid var(--border); border-radius: 4px; padding: 4px 7px; background: var(--hover); color: var(--text); font: inherit; }
+
+.playbook-history-toggle { grid-row: 1; grid-column: 2; display: flex; align-items: center; border: 0; border-radius: 4px; padding: 5px 3px; background: transparent; color: var(--sidebar-dimmer); }
+.playbook-history-toggle:hover, .playbook-history-toggle[aria-expanded="true"] { color: var(--accent); background: var(--hover); }
+.playbook-history-toggle svg { width: 12px; height: 12px; }
+.playbook-task-history { grid-column: 1 / -1; display: grid; gap: 7px; margin: 2px 0 7px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-raised); color: var(--sidebar-text); font-size: 11px; max-height: 420px; overflow: auto; }
+.playbook-task-history header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.playbook-task-history header button { display: flex; align-items: center; gap: 4px; border: 1px solid var(--border); border-radius: 4px; padding: 3px 6px; background: transparent; color: inherit; font: inherit; font-size: 10px; }
+.playbook-task-history header svg { width: 11px; height: 11px; }
+.playbook-task-history > small, .playbook-task-history .peh-empty { margin: 0; color: var(--text-secondary); font-size: 10px; }
+.playbook-task-history > p { margin: 0; color: var(--danger); }
+.playbook-task-history .peh-list { gap: 8px; }
+.playbook-task-history .peh-entry { padding: 9px; }
+.playbook-task-history .peh-entry h3 { font-size: 11px; }
+.playbook-task-history .peh-evidence { margin: 8px 0; font-size: 11px; }

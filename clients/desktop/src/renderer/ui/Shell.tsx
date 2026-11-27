@@ -2326,6 +2326,7 @@ export function Shell(props: ShellProps) {
             highlightedTaskId={hoveredRailTaskId ?? clickedRailTaskId}
             taskHovered={setHoveredPlaybookTaskId}
             saveTaskNotes={props.updateTaskDeveloperNotes}
+            loadEvaluationHistory={props.assistantActions.getEvaluationHistory}
             taskDecisionActions={props.assistantActions}
             closeTask={{
               inspect: props.inspectTaskWorktreeCleanup,
