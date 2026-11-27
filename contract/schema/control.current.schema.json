@@ -6525,6 +6525,10 @@
           ],
           "minLength": 1
         },
+        "hidden_in_archive": {
+          "description": "True when this Agent was launched to stay out of History once it leaves the active rail; clients omit it from inactive, archived, and deleted History lists. Optional so older daemon projections remain readable.",
+          "type": "boolean"
+        },
         "run_configuration_id": {
           "description": "Run configuration this Terminal Session was started from; null for every Session that is not a run. Current provenance for projection grouping, never Session parentage or history.",
           "type": [

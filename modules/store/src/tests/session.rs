@@ -44,6 +44,7 @@ fn ordinary_agent_launch_preference_is_atomic_and_survives_reopen() {
                 resume_ref: None,
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -103,6 +104,7 @@ fn live_codex_launch_selection_update_is_fenced_durable_and_session_local() {
                 resume_ref: Some(resume_ref.clone()),
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -241,6 +243,7 @@ fn live_claude_launch_selection_update_requires_the_matching_provider_and_agent(
                 resume_ref: Some(resume_ref.clone()),
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -338,6 +341,7 @@ fn restart_reconcile_preserves_unconfirmed_agent_without_automatic_resume() {
                 resume_ref: None,
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -400,6 +404,7 @@ fn resume_reference_establish_is_idempotent_immutable_and_restart_ready() {
                 resume_ref: None,
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -486,6 +491,7 @@ fn running_codex_resume_reference_retargets_with_exact_current_cas() {
                 resume_ref: Some(original.clone()),
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -568,6 +574,7 @@ fn transient_capability_probe_failure_is_requeued_on_restart() {
                 ),
                 resume_launch_guard: None,
                 resume_failure: Some(ResumeFailureReason::ResumeCapabilityUnavailable),
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -624,6 +631,7 @@ fn generic_restart_is_stale_and_close_deletes_only_the_descriptor() {
                 resume_ref: None,
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -668,6 +676,7 @@ fn generic_restart_is_stale_and_close_deletes_only_the_descriptor() {
                 ),
                 resume_launch_guard: None,
                 resume_failure: Some(ResumeFailureReason::RuntimeConflict),
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -718,6 +727,7 @@ fn session_rename_is_current_state_and_survives_reopen() {
                 resume_ref: None,
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -872,6 +882,7 @@ fn marking_an_exited_session_again_does_not_create_a_revision() {
                 resume_ref: None,
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -931,6 +942,7 @@ fn ask_to_current_request_survives_source_exit_until_descriptor_delete() {
         ),
         resume_launch_guard: None,
         resume_failure: None,
+        hidden_in_archive: false,
     };
     let mut store = Store::open(&path).unwrap();
     store
@@ -1151,6 +1163,7 @@ fn moving_an_inactive_agent_replaces_its_descriptor_in_one_durable_commit() {
         resume_ref: Some(resume_ref.clone()),
         resume_launch_guard: None,
         resume_failure: None,
+        hidden_in_archive: false,
     };
     store
         .insert_session(&authority, agent("source", "project-b", "running"))

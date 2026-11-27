@@ -26,6 +26,8 @@ pub struct StewardProjectAgentRequest<'a> {
     pub model: Option<&'a str>,
     pub permission: Option<&'a str>,
     pub reasoning: Option<&'a str>,
+    /// Keep the Agent out of History once it leaves the active rail.
+    pub hide_in_archive: bool,
 }
 
 impl CoreRuntime {
@@ -73,6 +75,7 @@ impl CoreRuntime {
             "attachments": [],
         }))?;
         plan.steward_agent_name = Some(title.to_owned());
+        plan.hide_in_archive = request.hide_in_archive;
         Ok(plan)
     }
 }
@@ -89,5 +92,9 @@ impl AgentLaunchPlan {
 
     pub fn steward_agent_name(&self) -> Option<&str> {
         self.steward_agent_name.as_deref()
+    }
+
+    pub fn hides_in_archive(&self) -> bool {
+        self.hide_in_archive
     }
 }

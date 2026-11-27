@@ -124,6 +124,7 @@ fn prepare_relocation_fixture_for(agent_id: &str) -> (Fixture, String, String, P
                     }
                     .into(),
                 },
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -697,6 +698,7 @@ fn relocation_is_blocked_while_ask_to_delivery_is_current() {
                 resume_launch_guard: None,
                 resume_failure: None,
                 launch_selection: Default::default(),
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -912,6 +914,7 @@ fn ask_to_helper_can_relocate_to_project_without_gaining_interactive_mcp() {
                     permission: "acceptEdits".into(),
                     reasoning: "high".into(),
                 },
+                hidden_in_archive: false,
             },
         )
         .unwrap();

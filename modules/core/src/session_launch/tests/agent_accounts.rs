@@ -123,6 +123,7 @@ fn named_account_launch_is_pinned_and_legacy_resume_keeps_the_server_user() {
         resume_ref: ResumeRef::for_provider(ResumeProvider::Claude, Uuid::new_v4().to_string()),
         resume_launch_guard: None,
         resume_failure: None,
+        hidden_in_archive: false,
     };
     core.store
         .insert_session(&core.write_authority, source.clone())
@@ -251,6 +252,7 @@ fn a_session_switches_account_and_pins_the_account_against_removal() {
         resume_ref: None,
         resume_launch_guard: None,
         resume_failure: None,
+        hidden_in_archive: false,
     };
     core.store
         .insert_session(&core.write_authority, session.clone())
@@ -381,6 +383,7 @@ fn a_claude_conversation_missing_from_its_account_fails_resume_without_retry() {
                 ),
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();

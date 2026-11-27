@@ -187,6 +187,7 @@ impl ProjectPreviews {
                     }),
                     resume_launch_guard: None,
                     resume_failure: None,
+                    hidden_in_archive: false,
                 },
             )
             .unwrap();

@@ -820,6 +820,7 @@ pub(super) fn session_projection(
             "targetId": target.target_id,
         })),
         "run_configuration_id": session.run_configuration_id,
+        "hidden_in_archive": session.hidden_in_archive,
         "jira_task_proposal": null,
     })
 }

@@ -387,6 +387,7 @@ fn steward_session_attach_is_one_atomic_generation_checked_write() {
         ),
         resume_launch_guard: None,
         resume_failure: None,
+        hidden_in_archive: false,
     };
     let before_attach = store.revision();
     let attached = store
@@ -530,6 +531,7 @@ fn assistant_session(id: &str, project_id: &str, template_ref: &str, name: &str)
         resume_ref: None,
         resume_launch_guard: None,
         resume_failure: None,
+        hidden_in_archive: false,
     }
 }
 

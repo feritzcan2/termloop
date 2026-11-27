@@ -63,6 +63,7 @@ impl Fixture {
                     ),
                     resume_launch_guard: None,
                     resume_failure: Some(ResumeFailureReason::StartupTimedOut),
+                    hidden_in_archive: false,
                 },
             )
             .unwrap();

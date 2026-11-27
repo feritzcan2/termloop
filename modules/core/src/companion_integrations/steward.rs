@@ -1196,6 +1196,7 @@ mod tests {
             resume_launch_guard: None,
             resume_failure: None,
             launch_selection,
+            hidden_in_archive: false,
         }
     }
 
@@ -1449,6 +1450,7 @@ mod tests {
                     resume_launch_guard: None,
                     resume_failure: None,
                     launch_selection: Default::default(),
+                    hidden_in_archive: false,
                 },
                 &first,
                 1,
@@ -1557,6 +1559,7 @@ mod tests {
             model: None,
             permission: None,
             reasoning: None,
+            hide_in_archive: false,
         };
         let project_agent = runtime
             .plan_steward_project_agent_start(
@@ -1566,6 +1569,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(project_agent.agent_id(), "claude");
+        assert!(!project_agent.hides_in_archive());
         assert_eq!(
             project_agent.steward_agent_name(),
             Some("PrReview: Jane - Fix payment retry")
@@ -1594,6 +1598,18 @@ mod tests {
             )
             .unwrap();
         assert_eq!(explicit_project_agent.agent_id(), "codex");
+        assert!(!explicit_project_agent.hides_in_archive());
+        let hidden_project_agent = runtime
+            .plan_steward_project_agent_start(
+                "steward-session",
+                &first,
+                crate::StewardProjectAgentRequest {
+                    hide_in_archive: true,
+                    ..request("Routine check")
+                },
+            )
+            .unwrap();
+        assert!(hidden_project_agent.hides_in_archive());
         assert_eq!(
             explicit_project_agent.steward_agent_selection(),
             Some(&AgentLaunchSelection::new(
@@ -1660,6 +1676,7 @@ mod tests {
                     resume_ref: None,
                     resume_launch_guard: None,
                     resume_failure: None,
+                    hidden_in_archive: false,
                 },
             )
             .unwrap();
@@ -1814,6 +1831,7 @@ mod tests {
                         resume_launch_guard: None,
                         resume_failure: None,
                         launch_selection: Default::default(),
+                        hidden_in_archive: false,
                     },
                 )
                 .unwrap();

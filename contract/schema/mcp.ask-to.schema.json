@@ -271,7 +271,7 @@
       }
     },
     "project_agent_start": {
-      "description": "Start one new ordinary Agent in this authenticated Project's own checkout, without creating or attaching a Task, and deliver its first instruction. Use it only when the user, an explicit user-approved proposal, or the exact whileWaiting policy of the current Routine finding authorizes starting an independent Agent for bounded work such as a pull request review; never use it to replace a Task Agent, and never start it merely to check facts you can read yourself. Each call launches a separate new Agent, so record what you already started and never repeat a call for the same work item. Pass a short visible title for the Agent row, and an assignment written as a direct first-person instruction that states what to do, its scope, and what is and is not authorized. The Agent shares the Project checkout with other Agents, so tell it not to switch branches, edit files, or change the working tree unless the work requires it. Omit agentId, model, permission, and reasoning unless the user or the authorizing policy names them; the defaults are Claude, opus, acceptEdits (auto), and medium reasoning. Success means the inspected launch committed and TermLoop is delivering the assignment; read the outcome later through agent_status_read or the work's own external evidence instead of asking the Agent to report back.",
+      "description": "Start one new ordinary Agent in this authenticated Project's own checkout, without creating or attaching a Task, and deliver its first instruction. Use it only when the user, an explicit user-approved proposal, or the exact whileWaiting policy of the current Routine finding authorizes starting an independent Agent for bounded work such as a pull request review; never use it to replace a Task Agent, and never start it merely to check facts you can read yourself. Each call launches a separate new Agent, so record what you already started and never repeat a call for the same work item. Pass a short visible title for the Agent row, and an assignment written as a direct first-person instruction that states what to do, its scope, and what is and is not authorized. The Agent shares the Project checkout with other Agents, so tell it not to switch branches, edit files, or change the working tree unless the work requires it. Omit agentId, model, permission, and reasoning unless the user or the authorizing policy names them; the defaults are Claude, opus, acceptEdits (auto), and medium reasoning. Set hideInArchive to true when a Routine or scheduled check starts the Agent, or when the user asks, so its finished row stays out of History; it defaults to false. Success means the inspected launch committed and TermLoop is delivering the assignment; read the outcome later through agent_status_read or the work's own external evidence instead of asking the Agent to report back.",
       "role": "steward",
       "params": {
         "$ref": "#/$defs/mcpStewardProjectAgentStartParams"
@@ -1812,6 +1812,10 @@
             "xhigh",
             "max"
           ]
+        },
+        "hideInArchive": {
+          "description": "When true, the Agent stays out of the user's History (inactive, archived, and deleted Agent lists) once it leaves the active rail. Omit to use false.",
+          "type": "boolean"
         }
       }
     },

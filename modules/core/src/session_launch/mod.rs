@@ -142,6 +142,9 @@ pub struct AgentLaunchPlan {
     /// The Steward-chosen rail name for an independent Project Agent. Its
     /// presence also keeps that launch out of the remembered user selection.
     steward_agent_name: Option<String>,
+    /// Steward-chosen: keep this Agent out of History once it leaves the
+    /// active rail.
+    hide_in_archive: bool,
     workflow_creator: Option<workflow_creator::WorkflowCreatorLaunch>,
     prepared_launch: Option<termloop_invocation::LaunchPayload>,
     mcp_authorizer: McpAuthorizer,
@@ -548,6 +551,7 @@ impl CoreRuntime {
             resume_ref: None,
             resume_launch_guard: None,
             resume_failure: None,
+            hidden_in_archive: false,
         };
         if let Err(error) = self.terminal.spawn_shell(
             PtySpawnSpec {
@@ -685,6 +689,7 @@ impl CoreRuntime {
             improver_prompt_owner_id: None,
             improver_session_name: None,
             steward_agent_name: None,
+            hide_in_archive: false,
             workflow_creator: None,
             prepared_launch: None,
             mcp_authorizer: self.mcp_authorizer.clone(),
@@ -2074,6 +2079,7 @@ impl CoreRuntime {
                 }
             }),
             resume_failure: None,
+            hidden_in_archive: plan.hide_in_archive,
         };
         if generated_input_observable {
             self.agent_observations.insert(

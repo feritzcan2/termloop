@@ -105,6 +105,7 @@ fn personal_agent_library_is_durable_versioned_and_preview_pins_instructions() {
         resume_ref: ResumeRef::for_provider(ResumeProvider::Claude, Uuid::new_v4().to_string()),
         resume_launch_guard: None,
         resume_failure: None,
+        hidden_in_archive: false,
     };
 
     runtime

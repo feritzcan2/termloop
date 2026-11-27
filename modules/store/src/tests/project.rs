@@ -171,6 +171,7 @@ fn project_delete_blocks_only_worktrees_and_cascades_running_sessions() {
                 resume_ref: None,
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();

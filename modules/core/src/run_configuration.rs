@@ -603,6 +603,7 @@ impl CoreRuntime {
             resume_ref: None,
             resume_launch_guard: None,
             resume_failure: None,
+            hidden_in_archive: false,
         };
         let environment = configuration.env.iter().fold(
             termloop_platform::LaunchEnvironment::os_baseline()

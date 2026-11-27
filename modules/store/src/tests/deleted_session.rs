@@ -29,6 +29,7 @@ fn deleted_agent() -> SessionRecord {
         ),
         resume_launch_guard: None,
         resume_failure: None,
+        hidden_in_archive: false,
     }
 }
 

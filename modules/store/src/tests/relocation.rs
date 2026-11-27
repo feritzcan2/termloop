@@ -68,6 +68,7 @@ fn relocation_fixture(
                 resume_launch_guard: None,
                 resume_failure: None,
                 launch_selection: Default::default(),
+                hidden_in_archive: false,
             },
         )
         .unwrap();

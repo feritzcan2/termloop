@@ -135,6 +135,7 @@ fn cleanup_revalidation_refuses_new_presence_and_releases_the_reservation() {
                 ),
                 resume_launch_guard: None,
                 resume_failure: Some(termloop_domain::ResumeFailureReason::ResumeRejected),
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -223,6 +224,7 @@ fn cleanup_revalidation_refuses_new_presence_and_releases_the_reservation() {
                 resume_ref: None,
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();

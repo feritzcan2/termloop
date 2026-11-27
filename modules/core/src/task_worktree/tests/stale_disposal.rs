@@ -125,6 +125,7 @@ fn orphaned_managed_directory_can_forget_after_cleanup_attention_without_touchin
                 resume_ref: None,
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();

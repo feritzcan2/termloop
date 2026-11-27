@@ -275,7 +275,9 @@ impl CoreRuntime {
                 .sessions()
                 .iter()
                 .filter(|session| {
-                    session.project_id == project_id && session.archived_at_epoch_ms.is_some()
+                    session.project_id == project_id
+                        && session.archived_at_epoch_ms.is_some()
+                        && !session.hidden_in_archive
                 })
                 .map(|session| self.project_session(session))
                 .collect(),

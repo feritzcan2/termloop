@@ -1393,6 +1393,11 @@ pub struct SessionRecord {
     pub resume_launch_guard: Option<ResumeLaunchGuard>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resume_failure: Option<ResumeFailureReason>,
+    /// Launch-time presentation choice: once this Agent leaves the active
+    /// rail, History (inactive, archived, deleted) does not list it. Older
+    /// state has no value and stays visible.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hidden_in_archive: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

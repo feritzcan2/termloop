@@ -166,7 +166,9 @@ impl CoreRuntime {
             .store
             .deleted_sessions()
             .iter()
-            .filter(|deleted| deleted.session.project_id == project_id)
+            .filter(|deleted| {
+                deleted.session.project_id == project_id && !deleted.session.hidden_in_archive
+            })
             .cloned()
             .collect::<Vec<_>>();
         deleted.sort_by(|left, right| {

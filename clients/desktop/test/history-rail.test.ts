@@ -165,6 +165,7 @@ describe("Session History rail", () => {
       retiredWorker,
       agent("improver", { process: { ...stopped.process, template_ref: "builtin.improver.skill" } }),
       agent("run", { run_configuration_id: "dev-server" }),
+      agent("routine-check", { hidden_in_archive: true }),
     ];
 
     expect(inactiveHistorySessions(values)).toEqual([stopped, helper, forked, retiredWorker]);

@@ -30,6 +30,7 @@ fn agent_session(id: &str, agent_id: &str) -> SessionRecord {
         resume_ref: None,
         resume_launch_guard: None,
         resume_failure: None,
+        hidden_in_archive: false,
     }
 }
 

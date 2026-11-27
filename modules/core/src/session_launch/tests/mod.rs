@@ -215,6 +215,7 @@ fn running_persistent_assistant_restart_preserves_closed_mcp_role() {
                 ),
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
             &project_id,
             1,
@@ -320,6 +321,7 @@ fn running_persistent_assistant_restart_preserves_closed_mcp_role() {
                 ),
                 resume_launch_guard: None,
                 resume_failure: Some(ResumeFailureReason::StartupTimedOut),
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -364,6 +366,7 @@ fn running_persistent_assistant_restart_preserves_closed_mcp_role() {
                 ),
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -416,6 +419,7 @@ fn running_persistent_assistant_restart_preserves_closed_mcp_role() {
                     ),
                     resume_launch_guard: None,
                     resume_failure: None,
+                    hidden_in_archive: false,
                 },
             )
             .unwrap();
@@ -695,6 +699,7 @@ async fn late_terminal_exit_preserves_the_visible_resume_failure() {
                 ),
                 resume_launch_guard: None,
                 resume_failure: Some(ResumeFailureReason::StartupTimedOut),
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -854,6 +859,7 @@ fn intentional_resume_failure_reap_keeps_the_exact_typed_reason() {
                 ),
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -975,6 +981,7 @@ fn daemon_restart_restores_stopped_agent_as_an_interactive_terminal() {
                 ),
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -1038,6 +1045,7 @@ fn archive_retirement_does_not_recreate_an_exited_agent_terminal() {
                 ),
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -1155,6 +1163,7 @@ fn task_archive_retirement_does_not_recreate_an_exited_agent_terminal() {
                 ),
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -1242,6 +1251,7 @@ fn close_moves_an_agent_to_deleted_and_restore_recreates_its_terminal_hold() {
                 ),
                 resume_launch_guard: None,
                 resume_failure: Some(ResumeFailureReason::ResumeRejected),
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -1320,6 +1330,7 @@ fn deleted_agent_restore_stays_blocked_after_its_source_directory_is_removed() {
                 ),
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -1445,6 +1456,7 @@ fn deleted_agent_with_removed_task_worktree_restores_in_project_root() {
                     path: worktree.display().to_string(),
                 }),
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -1560,6 +1572,7 @@ fn quick_action_permission_modal_blocks_before_terminal_submission() {
                 resume_ref: None,
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -1782,6 +1795,7 @@ fn only_an_assistant_wake_follows_a_failed_claude_turn() {
                     resume_ref: None,
                     resume_launch_guard: None,
                     resume_failure: None,
+                    hidden_in_archive: false,
                 },
             )
             .unwrap();
@@ -1926,6 +1940,7 @@ async fn steward_activation_waits_for_post_hook_and_confirms_once() {
                 ),
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
             &project_id,
             1,
@@ -2150,6 +2165,7 @@ async fn assert_quick_action_initial_input_delivery(
                 resume_ref: None,
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -2820,6 +2836,7 @@ fn steward_launch_ticket_refuses_an_agent_that_appeared_in_the_task_worktree() {
                     "bypassPermissions",
                     "high",
                 ),
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -3303,6 +3320,7 @@ fn runtime_with_session() -> (CoreRuntime, std::path::PathBuf) {
                 resume_ref: None,
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -3353,6 +3371,7 @@ fn startup_ownership_uncertainty_does_not_revive_explicitly_exited_agents() {
                     ),
                     resume_launch_guard: None,
                     resume_failure: None,
+                    hidden_in_archive: false,
                 },
             )
             .unwrap();
@@ -3804,6 +3823,7 @@ fn agent_profile_resume_preview_reapplies_profile_without_a_first_message() {
                 ),
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -4174,6 +4194,7 @@ fn agent_environment_never_enters_the_durable_session_descriptor() {
         resume_ref: ResumeRef::for_provider(ResumeProvider::Claude, private_id.into()),
         resume_launch_guard: None,
         resume_failure: None,
+        hidden_in_archive: false,
     };
     let durable_json = serde_json::to_string(&session).unwrap();
     assert!(durable_json.contains(private_id));
@@ -4256,6 +4277,7 @@ fn agent_fork_plan_derives_private_source_context_without_persisting_a_parent() 
                 ),
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -4438,6 +4460,7 @@ fn agent_fork_source_survives_restart_and_is_projected_only_while_the_source_exi
         resume_ref: None,
         resume_launch_guard: None,
         resume_failure: None,
+        hidden_in_archive: false,
     };
     for session in [agent("source", None), agent("child", Some("source"))] {
         runtime
@@ -4529,6 +4552,7 @@ fn provider_history_repair_reserves_the_exact_stopped_codex_session_and_clears_d
                 resume_ref: ResumeRef::for_provider(ResumeProvider::Codex, "native-thread".into()),
                 resume_launch_guard: None,
                 resume_failure: Some(ResumeFailureReason::ProviderHistoryDamaged),
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -4639,6 +4663,7 @@ fn provider_history_damage_is_not_presented_as_a_blind_retry() {
         resume_ref: ResumeRef::for_provider(ResumeProvider::Codex, "thread".into()),
         resume_launch_guard: None,
         resume_failure: Some(ResumeFailureReason::ProviderHistoryDamaged),
+        hidden_in_archive: false,
     };
     assert!(!super::lifecycle::manual_agent_resume_available(&session));
     assert!(!ResumeFailureReason::ProviderHistoryDamaged.is_retryable());
@@ -4685,6 +4710,7 @@ fn failed_agent_fork_is_visible_and_retained_until_explicit_release_and_delete()
                 resume_ref: None,
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -4804,6 +4830,7 @@ fn terminate_cancels_resume_preparation_and_late_failure_cannot_revive_it() {
                 ),
                 resume_launch_guard: None,
                 resume_failure: Some(ResumeFailureReason::ResumeRejected),
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -4891,6 +4918,7 @@ fn retryable_ownership_failure_can_be_reserved_then_terminated_after_recovery() 
                 ),
                 resume_launch_guard: None,
                 resume_failure: Some(ResumeFailureReason::RuntimeOwnershipUncertain),
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -4967,6 +4995,7 @@ fn valid_resume_ref_attempts_even_when_startup_capability_probe_was_inconclusive
                 ),
                 resume_launch_guard: None,
                 resume_failure: Some(ResumeFailureReason::ResumeCapabilityUnavailable),
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -5039,6 +5068,7 @@ fn ticketed_manual_resume_reopens_exited_and_retries_a_prior_terminal_failure() 
                 ),
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -5077,6 +5107,7 @@ fn ticketed_manual_resume_reopens_exited_and_retries_a_prior_terminal_failure() 
                 ),
                 resume_launch_guard: None,
                 resume_failure: Some(ResumeFailureReason::ProviderSessionUnavailable),
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -5206,6 +5237,7 @@ fn guarded_resume_trusts_launch_provenance_over_current_task_state() {
                     path: cwd.clone(),
                 }),
                 resume_failure: Some(ResumeFailureReason::CwdUnavailable),
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -5397,6 +5429,7 @@ fn resume_enables_codex_trust_for_a_current_managed_worktree_proof() {
                     path: cwd,
                 }),
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -5475,6 +5508,7 @@ fn cwd_unavailable_retry_revalidates_the_exact_path_before_preparing() {
                     ),
                     resume_launch_guard: None,
                     resume_failure: Some(ResumeFailureReason::CwdUnavailable),
+                    hidden_in_archive: false,
                 },
             )
             .unwrap();
@@ -5562,6 +5596,7 @@ fn startup_resume_admission_is_bounded_fair_and_batches_overflow() {
                         ),
                         resume_launch_guard: None,
                         resume_failure: None,
+                        hidden_in_archive: false,
                     },
                 )
                 .unwrap();
@@ -5654,6 +5689,7 @@ fn prepared_resume_target_is_revalidated_before_final_commit() {
                 resume_ref: Some(resume_ref.clone()),
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -5789,6 +5825,7 @@ fn client_launch_restart_reserves_then_reaps_the_exact_live_runtime() {
                 ),
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -5905,6 +5942,7 @@ fn client_launch_restart_marks_only_a_working_codex_interrupted() {
                     ),
                     resume_launch_guard: None,
                     resume_failure: None,
+                    hidden_in_archive: false,
                 },
             )
             .unwrap();
@@ -6031,6 +6069,7 @@ fn daemon_restart_handoff_interrupts_working_claude_and_codex() {
                     ),
                     resume_launch_guard: None,
                     resume_failure: None,
+                    hidden_in_archive: false,
                 },
             )
             .unwrap();
@@ -6256,6 +6295,7 @@ fn client_launch_restart_snapshot_is_exact_fair_and_larger_than_one_wave() {
                     ),
                     resume_launch_guard: None,
                     resume_failure: None,
+                    hidden_in_archive: false,
                 },
             )
             .unwrap();
@@ -6308,6 +6348,7 @@ fn client_launch_restart_snapshot_is_exact_fair_and_larger_than_one_wave() {
                 ),
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -6437,5 +6478,102 @@ fn saved_profile_launch_accepts_a_launcher_provider_and_selection_override() {
     assert_eq!(pinned.selection, session.launch_selection);
     assert_eq!(session.launch_selection.model, "opus[1m]");
     let _ = runtime.terminal.terminate(session_id);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn hidden_in_archive_agents_stay_out_of_archived_and_deleted_lists() {
+    let root = std::env::temp_dir().join(format!(
+        "termloop-core-hidden-in-archive-{}-{}",
+        std::process::id(),
+        Uuid::new_v4()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let root = std::fs::canonicalize(root).unwrap();
+    let authority = termloop_store::issue_core_write_authority_for_composition();
+    let mut store = Store::open(root.join("state.json")).unwrap();
+    store
+        .insert_project(
+            &authority,
+            termloop_domain::ProjectRecord {
+                id: "project-1".into(),
+                name: "Project".into(),
+                folder_path: root.display().to_string(),
+            },
+        )
+        .unwrap();
+    let record = |id: &str, archived: bool, hidden: bool| SessionRecord {
+        launch_selection: Default::default(),
+        id: id.into(),
+        project_id: "project-1".into(),
+        name: None,
+        kind: SessionKind::Agent,
+        process: ProcessDescriptor {
+            program: "claude".into(),
+            args: vec![],
+            cwd: root.display().to_string(),
+            agent_id: Some("claude".into()),
+            template_ref: Some("builtin.agent.interactive".into()),
+            template_version: Some(4),
+        },
+        lifecycle_state: "exited".into(),
+        runtime_epoch: 1,
+        archived_at_epoch_ms: archived.then_some(1),
+        ask_to_source_session_id: None,
+        fork_source_session_id: None,
+        run_configuration_id: None,
+        improver_target: None,
+        ask_to_continuation: None,
+        resume_ref: None,
+        resume_launch_guard: None,
+        resume_failure: None,
+        hidden_in_archive: hidden,
+    };
+    for (id, archived, hidden) in [
+        ("archived-visible", true, false),
+        ("archived-hidden", true, true),
+        ("closed-visible", false, false),
+        ("closed-hidden", false, true),
+    ] {
+        store
+            .insert_session(&authority, record(id, archived, hidden))
+            .unwrap();
+    }
+    let mut runtime = CoreRuntime::new(store, authority, TerminalService::default(), 2).unwrap();
+    let sessions = runtime.list_sessions().unwrap();
+    let hidden = sessions
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|session| session["id"] == "closed-hidden")
+        .unwrap();
+    assert_eq!(hidden["hidden_in_archive"], true);
+    for id in ["closed-visible", "closed-hidden"] {
+        runtime.close_session(json!({ "sessionId": id })).unwrap();
+    }
+
+    let archived = runtime
+        .list_archived_sessions(json!({ "projectId": "project-1" }))
+        .unwrap();
+    let archived_ids = archived
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|session| session["id"].as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(archived_ids, ["archived-visible"]);
+    let deleted = runtime
+        .plan_deleted_session_list(json!({ "projectId": "project-1" }))
+        .unwrap()
+        .observe();
+    let deleted_ids = deleted
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["session"]["id"].as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(deleted_ids, ["closed-visible"]);
+    // The hidden Agent is still retained for restore; only listing omits it.
+    assert_eq!(runtime.store.deleted_sessions().len(), 2);
     let _ = std::fs::remove_dir_all(root);
 }

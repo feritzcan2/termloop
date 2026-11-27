@@ -103,6 +103,7 @@ fn archive_keeps_multiple_project_sessions_as_sidecars_not_task_children() {
                     resume_ref: None,
                     resume_launch_guard: None,
                     resume_failure: None,
+                    hidden_in_archive: false,
                 },
             )
             .unwrap();
@@ -220,6 +221,7 @@ fn archived_task_reuses_cleanup_then_deletes_only_its_exact_suspension_cohort() 
                 resume_ref: None,
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -259,6 +261,7 @@ fn archived_task_reuses_cleanup_then_deletes_only_its_exact_suspension_cohort() 
                 ),
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -380,6 +383,7 @@ fn archive_with_worktree_removed(fixture: &mut Fixture) -> (String, &'static str
                     permission: "acceptEdits".into(),
                     reasoning: "high".into(),
                 },
+                hidden_in_archive: false,
             },
         )
         .unwrap();

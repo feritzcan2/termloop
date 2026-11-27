@@ -50,6 +50,7 @@ fn session_archive_journal_commits_marker_and_process_retirement_atomically() {
                 resume_launch_guard: None,
                 resume_failure: None,
                 launch_selection: Default::default(),
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -148,6 +149,7 @@ fn archive_commit_and_restore_replace_one_bounded_current_state_atomically() {
                     resume_launch_guard: None,
                     resume_failure: None,
                     launch_selection: Default::default(),
+                    hidden_in_archive: false,
                 },
             )
             .unwrap();
@@ -256,6 +258,7 @@ fn close_parks_retired_agents_durably_and_reopen_consumes_them() {
                 resume_launch_guard: None,
                 resume_failure: None,
                 launch_selection: Default::default(),
+                hidden_in_archive: false,
             },
         )
         .unwrap();

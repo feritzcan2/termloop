@@ -83,7 +83,8 @@ export function inactiveHistorySessions(sessions: readonly Session[]): Session[]
       && !isLiveSession(session)
       && !isAssistantSession(session)
       && !sessionIsImprover(session)
-      && session.run_configuration_id === null);
+      && session.run_configuration_id === null
+      && session.hidden_in_archive !== true);
 }
 
 function historyRelationship(session: Session): HistoryRelationship | undefined {

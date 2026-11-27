@@ -144,6 +144,7 @@ fn health_and_presence_sequences_advance_only_for_semantic_changes() {
                 resume_ref: None,
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -334,6 +335,7 @@ fn cleanup_presence_uses_one_bounded_running_or_reserved_resume_predicate() {
                     resume_ref: None,
                     resume_launch_guard: None,
                     resume_failure: None,
+                    hidden_in_archive: false,
                 },
             )
             .unwrap();
@@ -437,6 +439,7 @@ fn a_fork_into_a_task_takes_that_tasks_name_instead_of_a_fork_name() {
                     "bypassPermissions",
                     "high",
                 ),
+                hidden_in_archive: false,
             },
         )
         .unwrap();

@@ -47,6 +47,7 @@ fn insert_live_session(fixture: &mut Fixture, id: &str, kind: SessionKind, cwd: 
                 },
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();

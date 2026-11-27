@@ -259,6 +259,7 @@ mod tests {
             resume_ref: None,
             resume_launch_guard: None,
             resume_failure: None,
+            hidden_in_archive: false,
         };
         runtime
             .store

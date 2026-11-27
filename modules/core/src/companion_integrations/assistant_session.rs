@@ -555,6 +555,7 @@ impl CoreRuntime {
             resume_ref: resume_ref.clone(),
             resume_launch_guard: None,
             resume_failure: None,
+            hidden_in_archive: false,
         };
         let configuration = match match &target.identity {
             PersistentAssistantIdentity::Steward {
@@ -804,6 +805,7 @@ mod tests {
             resume_launch_guard: None,
             resume_failure: None,
             launch_selection: Default::default(),
+            hidden_in_archive: false,
         }
     }
 
@@ -988,6 +990,7 @@ mod tests {
                     resume_launch_guard: None,
                     resume_failure: None,
                     launch_selection: Default::default(),
+                    hidden_in_archive: false,
                 },
                 &project_id,
                 1,

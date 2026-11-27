@@ -279,6 +279,7 @@ fn deleting_a_run_configuration_clears_session_markers() {
                 resume_ref: None,
                 resume_launch_guard: None,
                 resume_failure: None,
+                hidden_in_archive: false,
             },
         )
         .unwrap();
@@ -327,6 +328,7 @@ fn daemon_restart_retires_run_sessions_but_keeps_an_ordinary_terminal() {
         resume_ref: None,
         resume_launch_guard: None,
         resume_failure: None,
+        hidden_in_archive: false,
     };
     store
         .insert_session(&authority, terminal("run-session", Some("run-1")))

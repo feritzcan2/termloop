@@ -27,6 +27,7 @@ pub(super) async fn start(
             model: params.model.as_deref(),
             permission: params.permission.as_deref(),
             reasoning: params.reasoning.as_deref(),
+            hide_in_archive: params.hide_in_archive.unwrap_or(false),
         },
     )?;
     let selection = plan
