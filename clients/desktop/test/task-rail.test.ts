@@ -641,6 +641,45 @@ describe("Task rail row anatomy", () => {
     } finally { await act(async () => root.unmount()); container.remove(); }
   });
 
+  it("reveals a Task asked for by the Playbook: grows it, scrolls to it, and opens its agent without the detail", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    writeTaskCollapsed("project-1", "task-1", true);
+    const scrollIntoView = vi.fn();
+    const original = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    const openTaskDetail = vi.fn();
+    const selectSession = vi.fn();
+    const taskClicked = vi.fn();
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container);
+    const render = (revealRequest: { taskId: string; nonce: number } | undefined, sessions: ReturnType<typeof agentSession>[] = []) => root.render(createElement(TaskRail, {
+      ...railProps({ openTaskDetail, sessions, statuses: sessions.map((session) => agentStatus(session.id, "working")) }),
+      selectSession,
+      taskClicked,
+      revealRequest,
+    }));
+    try {
+      await act(async () => render(undefined));
+      await act(async () => render({ taskId: "task-1", nonce: 1 }));
+      await act(async () => new Promise((resolve) => requestAnimationFrame(() => resolve(undefined))));
+      expect(container.querySelector(".task-children")).not.toBeNull();
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      expect(taskClicked).toHaveBeenCalledExactlyOnceWith("task-1");
+      expect(selectSession).not.toHaveBeenCalled();
+
+      const agent = agentSession("live-agent");
+      await act(async () => render({ taskId: "task-1", nonce: 2 }, [agent]));
+      expect(selectSession).toHaveBeenCalledExactlyOnceWith(agent.id);
+      /// Re-rendering the same request does not repeat it.
+      await act(async () => render({ taskId: "task-1", nonce: 2 }, [agent]));
+      expect(selectSession).toHaveBeenCalledTimes(1);
+      expect(openTaskDetail).not.toHaveBeenCalled();
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+      await act(async () => root.unmount()); container.remove();
+    }
+  });
+
   it("keeps activity visible on a folded Task, opens the exact agent, and clears it when work stops", async () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     const session = agentSession("workflow-lead");

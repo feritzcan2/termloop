@@ -730,6 +730,9 @@ export function Shell(props: ShellProps) {
   /// The Task pointed at on the Steward's Playbook; its Task rail card looks
   /// pointed at too.
   const [hoveredPlaybookTaskId, setHoveredPlaybookTaskId] = useState<string>();
+  /// Clicking a Task on the Steward's Playbook reveals its card in the Task
+  /// rail and focuses its live agent instead of opening the Task detail.
+  const [railRevealRequest, setRailRevealRequest] = useState<{ taskId: string; nonce: number }>();
   useEffect(() => {
     if (stewardSidebarOpen) return;
     setHoveredRailTaskId(undefined);
@@ -1043,6 +1046,10 @@ export function Shell(props: ShellProps) {
     },
     [dismissChanges, terminalShowing],
   );
+  const revealTaskInRail = useCallback((taskId: string) => {
+    setWorkspaceView("overview");
+    setRailRevealRequest((previous) => ({ taskId, nonce: (previous?.nonce ?? 0) + 1 }));
+  }, [setWorkspaceView]);
   const openStagePage = useCallback(
     (page: StagePage) => {
       dismissChanges();
@@ -1829,6 +1836,7 @@ export function Shell(props: ShellProps) {
             taskHovered={stewardSidebarOpen ? setHoveredRailTaskId : undefined}
             taskClicked={setClickedRailTaskId}
             hoveredElsewhereTaskId={hoveredPlaybookTaskId}
+            revealRequest={railRevealRequest}
             agentCapabilities={props.agentCapabilities}
             launchTaskTerminal={props.launchTaskTerminal}
             launchTaskAgent={props.launchTaskAgent}
@@ -2314,7 +2322,7 @@ export function Shell(props: ShellProps) {
             selectSession={selectAssistantSession}
             openImproverTerminal={openImproverTerminal}
             dismissImproverSession={dismissSession}
-            openTask={openTaskDetail}
+            openTask={revealTaskInRail}
             highlightedTaskId={hoveredRailTaskId ?? clickedRailTaskId}
             taskHovered={setHoveredPlaybookTaskId}
             saveTaskNotes={props.updateTaskDeveloperNotes}

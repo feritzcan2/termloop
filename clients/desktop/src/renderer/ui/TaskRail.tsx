@@ -304,6 +304,10 @@ export type TaskRailProps = {
   /// The Task pointed at elsewhere, such as on the Steward's Playbook; its
   /// card looks pointed at here too.
   hoveredElsewhereTaskId?: string | undefined;
+  /// A request from elsewhere, such as the Steward's Playbook, to reveal one
+  /// Task's card: it grows back, scrolls into view, and its live agent takes
+  /// focus. Each new nonce is one request.
+  revealRequest?: { taskId: string; nonce: number } | undefined;
   agentCapabilities: readonly AgentCapabilityDto[];
   launchTaskTerminal(taskId: string): Promise<string | undefined>;
   launchTaskAgent(taskId: string, agentId: string, model?: string, permission?: AgentCapabilityDto["permissions"][number], reasoning?: AgentCapabilityDto["reasoning"][number], kickoffMessage?: string): Promise<string | undefined>;
@@ -484,6 +488,7 @@ export function TaskRail(props: TaskRailProps) {
       taskHovered={props.taskHovered}
       taskClicked={props.taskClicked}
       hoveredElsewhere={props.hoveredElsewhereTaskId === task.id}
+      revealNonce={props.revealRequest?.taskId === task.id ? props.revealRequest.nonce : undefined}
       detailOpen={props.detailTaskId === task.id}
       deleting={props.deletingTaskIds.has(task.id)}
       provisioning={props.provisioningTaskIds?.has(task.id) ?? false}
@@ -782,6 +787,7 @@ type TaskGroupProps = {
   taskHovered: ((taskId: string | undefined) => void) | undefined;
   taskClicked: ((taskId: string) => void) | undefined;
   hoveredElsewhere: boolean;
+  revealNonce: number | undefined;
   detailOpen: boolean;
   deleting: boolean;
   provisioning: boolean;
@@ -883,15 +889,32 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
   /// A card click is "take me to this Task's work": a parked or folded card
   /// grows back first, then a live Session takes focus, and only a Task with
   /// nothing running opens its detail page. Folding stays on the chevron.
-  const rowClick = () => {
+  const focusCard = () => {
     props.taskClicked?.(task.id);
     if (collapsed) toggleCollapsed();
-    if (primarySession) {
-      props.selectSession(primarySession.id);
-      return;
-    }
-    props.openDetail(task.id);
+    if (primarySession) props.selectSession(primarySession.id);
   };
+  const rowClick = () => {
+    focusCard();
+    if (!primarySession) props.openDetail(task.id);
+  };
+  /// A reveal is a card click that never opens the detail page, followed by
+  /// scrolling the card into view.
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const setCardRef = useCallback((node: HTMLDivElement | null) => {
+    cardRef.current = node;
+    relocationDrop.setNodeRef(node);
+  }, [relocationDrop.setNodeRef]);
+  const revealRef = useRef(focusCard);
+  revealRef.current = focusCard;
+  useEffect(() => {
+    if (props.revealNonce === undefined) return;
+    revealRef.current();
+    const frame = requestAnimationFrame(() => {
+      cardRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [props.revealNonce]);
   /// The execution owns these exact Sessions, so its progress card is their
   /// only rail home. Unrelated Task Sessions keep the ordinary row anatomy.
   const workflowSessionIds = useMemo(() => new Set(workflowExecution
@@ -1033,7 +1056,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
   ) : null;
   return (
     <div
-      ref={relocationDrop.setNodeRef}
+      ref={setCardRef}
       role="listitem"
       className={`task-group${props.focused ? " focused" : ""}${parked ? " parked" : ""}${props.hoveredElsewhere ? " hovered-elsewhere" : ""}${relocationDrop.isOver ? " session-drop-target" : ""}`}
       data-task-stage={stage.id}
