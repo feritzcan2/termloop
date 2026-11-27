@@ -266,10 +266,11 @@ impl CoreRuntime {
             && milestone.gate == PlaybookGateKind::Automatic
         {
             // A trusted pass never resets the step's send-back limit.
-            let rewind_count = answers
+            let previous = answers
                 .iter()
-                .find(|answer| answer.milestone_id == milestone.id)
-                .map_or(0, |answer| answer.rewind_count);
+                .find(|answer| answer.milestone_id == milestone.id);
+            let rewind_count = previous.map_or(0, |answer| answer.rewind_count);
+            let pull_request_number = previous.and_then(|answer| answer.pull_request_number);
             let mut answers = answers
                 .into_iter()
                 .filter(|answer| answer.milestone_id != milestone.id)
@@ -285,6 +286,7 @@ impl CoreRuntime {
                 evaluator: PlaybookStepEvaluator::Agent,
                 deterministic_fallback: None,
                 rewind_count,
+                pull_request_number,
             });
             self.store
                 .replace_task_playbook_progress(

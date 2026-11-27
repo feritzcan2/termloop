@@ -16,6 +16,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 pub use termloop_domain::PlaybookStepVerdict;
 mod rewind;
+pub(crate) use rewind::RestartWatch;
 
 use termloop_domain::{
     PendingRoutineFinding, PlaybookConfiguration, PlaybookGateKind, PlaybookMilestone,
@@ -214,6 +215,7 @@ impl CoreRuntime {
                         evaluator: termloop_domain::PlaybookStepEvaluator::Routine,
                         deterministic_fallback: None,
                         rewind_count: 0,
+                        pull_request_number: None,
                     })
             })
             .collect::<Vec<_>>();
@@ -648,6 +650,7 @@ impl CoreRuntime {
                 // The send-back limit counts across this step's answers, so
                 // a later pass or wait never resets it.
                 rewind_count: previous.map_or(0, |answer| answer.rewind_count),
+                pull_request_number: previous.and_then(|answer| answer.pull_request_number),
             });
         }
         let mut new_pending_findings = Vec::new();
@@ -892,6 +895,7 @@ impl CoreRuntime {
                             "evaluator": entry.evaluator,
                             "deterministicFallback": entry.deterministic_fallback,
                             "rewindCount": entry.rewind_count,
+                            "pullRequestNumber": entry.pull_request_number,
                         })
                     })
                     .collect::<Vec<_>>();
@@ -1019,6 +1023,7 @@ pub(crate) mod tests {
             deterministic_check: None,
             agent_report: Default::default(),
             rewind: None,
+            restart_on_new_pull_request: false,
         }
     }
 

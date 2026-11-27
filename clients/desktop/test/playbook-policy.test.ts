@@ -345,4 +345,12 @@ describe("Task Agent step reports", () => {
     expect(playbookMilestoneWithGate({ ...automatic(), agentReport: "trusted" }, "human", "ferit").agentReport).toBe("signal");
     expect(playbookMilestoneFieldIssues({ ...milestone(), agentReport: "trusted" }).gate).not.toHaveLength(0);
   });
+
+  it("drops the new-pull-request restart when a step becomes a human gate", () => {
+    const restarting = { ...automatic(), restartOnNewPullRequest: true };
+    expect(playbookMilestoneFieldIssues(restarting).gate).toHaveLength(0);
+    expect(playbookMilestoneWithGate(restarting, "human", "ferit").restartOnNewPullRequest).toBe(false);
+    expect(playbookMilestoneWithGate(automatic(), "human", "ferit")).not.toHaveProperty("restartOnNewPullRequest");
+    expect(playbookMilestoneFieldIssues({ ...milestone(), restartOnNewPullRequest: true }).gate).not.toHaveLength(0);
+  });
 });

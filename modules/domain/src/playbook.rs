@@ -68,6 +68,12 @@ pub struct PlaybookMilestone {
     /// sends a Task back, and for documents written before it.
     #[serde(default)]
     pub rewind: Option<PlaybookStepRewind>,
+    /// Opt-in: once a Task has passed this step, a newer pull request from
+    /// its branch sends it back here from whichever later step it stands at,
+    /// and later pull request checks follow the pull request this step
+    /// passed with. `false` for documents written before it.
+    #[serde(default)]
+    pub restart_on_new_pull_request: bool,
 }
 
 /// A step's rule for sending its Task back to an earlier step of the same
@@ -240,6 +246,11 @@ pub struct PlaybookStepProgress {
     /// Current state carried across this row's replacements, not a history.
     #[serde(default)]
     pub rewind_count: u32,
+    /// The pull request this step passed with, recorded only for a step that
+    /// restarts on a new pull request. Later pull request checks follow it,
+    /// and a newer one sends the Task back to this step.
+    #[serde(default)]
+    pub pull_request_number: Option<u64>,
 }
 
 /// Where one Task stands on a pipeline, derived from its stored answers.
@@ -340,6 +351,8 @@ impl PlaybookMilestone {
                 None => true,
                 Some(rewind) => self.gate == PlaybookGateKind::Automatic && rewind.is_valid(),
             }
+            // A pull request cannot stand in for a named person's approval.
+            && !(self.restart_on_new_pull_request && self.gate == PlaybookGateKind::Human)
     }
 }
 
@@ -471,6 +484,7 @@ mod tests {
             deterministic_check: None,
             agent_report: PlaybookAgentReportPolicy::Signal,
             rewind: None,
+            restart_on_new_pull_request: false,
         }
     }
 
@@ -497,6 +511,7 @@ mod tests {
             evaluator: PlaybookStepEvaluator::Routine,
             deterministic_fallback: None,
             rewind_count: 0,
+            pull_request_number: None,
         }
     }
 
@@ -677,6 +692,30 @@ mod tests {
         document.milestones[0].approver = None;
         document.milestones[0].deterministic_check = check;
         document
+    }
+
+    #[test]
+    fn only_an_automatic_step_restarts_on_a_new_pull_request() {
+        let automatic = PlaybookMilestone {
+            gate: PlaybookGateKind::Automatic,
+            approver: None,
+            restart_on_new_pull_request: true,
+            ..milestone("pr-open")
+        };
+        assert!(automatic.is_valid());
+        let human = PlaybookMilestone {
+            gate: PlaybookGateKind::Human,
+            approver: Some("Release manager".into()),
+            ..automatic.clone()
+        };
+        assert!(!human.is_valid());
+        assert!(
+            PlaybookMilestone {
+                restart_on_new_pull_request: false,
+                ..human
+            }
+            .is_valid()
+        );
     }
 
     #[test]

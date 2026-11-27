@@ -913,3 +913,188 @@ fn a_gate_reads_branches_the_worktree_pushed_but_not_branches_it_only_visited() 
     assert!(!local.candidate_truncated);
     let _ = std::fs::remove_dir_all(root);
 }
+
+fn watch(recorded: Option<u64>, base: Option<&str>) -> RestartWatch {
+    RestartWatch {
+        milestone_id: "pr-open".into(),
+        base_branch: base.map(str::to_owned),
+        pull_request_number: recorded,
+    }
+}
+
+#[test]
+fn a_restart_watch_adopts_the_newest_then_restarts_only_on_a_newer_open_one() {
+    let prs = || {
+        vec![
+            pull_request(10, Merged, "develop", NotReported),
+            pull_request(12, Closed, "develop", NotReported),
+            pull_request(11, Merged, "develop", NotReported),
+        ]
+    };
+    // Nothing recorded yet: the newest that is not closed becomes the one.
+    assert_eq!(
+        watch_decision(&watch(None, None), &read(prs())),
+        WatchDecision::Adopt(11)
+    );
+    assert_eq!(
+        watch_decision(&watch(None, None), &read(vec![])),
+        WatchDecision::Quiet
+    );
+    // Merged and closed pull requests never restart; a newer open or draft one does.
+    assert_eq!(
+        watch_decision(&watch(Some(11), None), &read(prs())),
+        WatchDecision::Quiet
+    );
+    let mut newer = prs();
+    newer.push(pull_request(13, Draft, "develop", NotReported));
+    newer.push(pull_request(14, Open, "main", NotReported));
+    assert_eq!(
+        watch_decision(&watch(Some(11), None), &read(newer.clone())),
+        WatchDecision::Restart(
+            "PR #14 from feature/login on github.com/acme/widgets was opened after PR #11.".into()
+        )
+    );
+    // The watched step's base branch filters what counts.
+    assert_eq!(
+        watch_decision(&watch(Some(11), Some("develop")), &read(newer.clone())),
+        WatchDecision::Restart(
+            "PR #13 from feature/login on github.com/acme/widgets was opened after PR #11.".into()
+        )
+    );
+    // A partial read proves nothing either way.
+    let PullRequestRead::Read {
+        repository,
+        branch,
+        pull_requests,
+        ..
+    } = read(newer)
+    else {
+        unreachable!()
+    };
+    assert_eq!(
+        watch_decision(
+            &watch(Some(11), None),
+            &PullRequestRead::Read {
+                repository,
+                branch,
+                pull_requests,
+                truncated: true,
+            }
+        ),
+        WatchDecision::Unknown
+    );
+}
+
+#[test]
+fn a_followed_pull_request_keeps_an_older_merged_one_from_making_a_check_ambiguous() {
+    let merged = check(PullRequestMerged, None);
+    let both = read(vec![
+        pull_request(10, Merged, "develop", NotReported),
+        pull_request(11, Merged, "develop", NotReported),
+    ]);
+    assert_eq!(
+        decide_focused(&merged, &both, None),
+        DeterministicDecision::Fallback(Fallback::MultipleMatches)
+    );
+    assert_eq!(
+        decide_focused(&merged, &both, Some(11)),
+        DeterministicDecision::Passed(
+            "PR #11 merged on github.com/acme/widgets targeting develop.".into()
+        )
+    );
+    // A followed pull request the read no longer holds focuses nothing.
+    assert_eq!(
+        decide_focused(&merged, &both, Some(99)),
+        DeterministicDecision::Fallback(Fallback::MultipleMatches)
+    );
+}
+
+#[test]
+fn a_new_pull_request_sends_the_task_back_from_any_later_step_only_when_opted_in() {
+    let (mut runtime, root, project_id) = pipeline_runtime();
+    let set_restart = |runtime: &mut CoreRuntime, on: bool| {
+        let mut playbook = runtime
+            .store
+            .playbook_for_project(&project_id)
+            .unwrap()
+            .clone();
+        playbook.revision += 1;
+        playbook.milestones[0].restart_on_new_pull_request = on;
+        let revision = runtime.store.revision();
+        runtime
+            .store
+            .set_playbook_configuration(&runtime.write_authority, playbook, revision)
+            .unwrap();
+    };
+    // Task 2 is done, so every claim below focuses Task 1 at "deployed",
+    // which has no check of its own.
+    let playbook_revision = runtime
+        .store
+        .playbook_for_project(&project_id)
+        .unwrap()
+        .revision;
+    let revision = runtime.state_revision();
+    runtime
+        .set_task_playbook_position(&project_id, "task-2", 2, playbook_revision, revision, NOW)
+        .unwrap();
+    let revision = runtime.state_revision();
+    runtime
+        .set_task_playbook_position(&project_id, "task-1", 1, playbook_revision, revision, NOW)
+        .unwrap();
+    let claim = |runtime: &mut CoreRuntime, id: &str, at: u64| {
+        let claim = runtime
+            .claim_next_playbook_step_or_idle(&project_id, id.into(), at)
+            .unwrap();
+        assert_eq!(claim.result["step"]["milestoneId"], "deployed");
+        claim.capability.unwrap()
+    };
+
+    // Not opted in: nothing is read for a step without a check.
+    let capability = claim(&mut runtime, "deploy-0", NOW + 1);
+    assert!(runtime.plan_deterministic_step_check(&capability).is_none());
+    runtime.postpone_playbook_step(&capability, NOW + 2);
+
+    set_restart(&mut runtime, true);
+    let capability = claim(&mut runtime, "deploy-1", NOW + 3);
+    let plan = runtime.plan_deterministic_step_check(&capability).unwrap();
+    // The first read records the newest pull request and leaves the step to
+    // its Routine.
+    let outcome = runtime
+        .apply_deterministic_step_check(
+            plan.observed(StepRead::PullRequests(read(vec![pull_request(
+                10,
+                Merged,
+                "develop",
+                NotReported,
+            )]))),
+            NOW + 4,
+        )
+        .unwrap();
+    assert!(matches!(outcome, DeterministicStepOutcome::Routine));
+    assert_eq!(
+        answer(&runtime, "pr-open").unwrap().pull_request_number,
+        Some(10)
+    );
+
+    // A newer pull request sends the Task back to the opted-in step.
+    let plan = runtime.plan_deterministic_step_check(&capability).unwrap();
+    let outcome = runtime
+        .apply_deterministic_step_check(
+            plan.observed(StepRead::PullRequests(read(vec![
+                pull_request(10, Merged, "develop", NotReported),
+                pull_request(11, Open, "develop", NotReported),
+            ]))),
+            NOW + 5,
+        )
+        .unwrap();
+    let DeterministicStepOutcome::Recorded { result, .. } = outcome else {
+        panic!("a restart is recorded");
+    };
+    assert_eq!(result["status"], "rewound");
+    assert_eq!(result["toMilestoneId"], "pr-open");
+    assert!(answer(&runtime, "pr-open").is_none());
+    assert!(answer(&runtime, "deployed").is_none());
+    assert!(!runtime.tracker_check_is_current(&capability));
+    assert_eq!(runtime.playbook_step_due_epoch_ms("routine-pr"), Some(0));
+    let _ = std::fs::remove_dir_all(root);
+}

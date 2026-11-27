@@ -7,7 +7,8 @@
 
 use serde_json::{Value, json};
 use termloop_domain::{
-    PlaybookEvaluationOutcome, PlaybookStepEvaluator, PlaybookStepProgress, PlaybookStepVerdict,
+    PlaybookConfiguration, PlaybookEvaluationOutcome, PlaybookEvaluationRecord,
+    PlaybookStepEvaluator, PlaybookStepProgress, PlaybookStepVerdict, TrackerConfiguration,
     TrackerReport, TrackerReportKind,
 };
 
@@ -28,7 +29,7 @@ impl CoreRuntime {
         report_id: String,
         completed_at_epoch_ms: u64,
     ) -> Result<Value, CoreError> {
-        let mut configuration = self.validate_current_check(capability, completed_at_epoch_ms)?;
+        let configuration = self.validate_current_check(capability, completed_at_epoch_ms)?;
         if configuration.trigger_mode.is_scheduled() {
             return Err(CoreError::InvalidParams(
                 "status rewind is only for a Playbook step with a rewind rule".into(),
@@ -80,16 +81,11 @@ impl CoreRuntime {
             .ok_or(CoreError::TrackerReportStale)?;
         let target = playbook.milestones[target_index].clone();
 
-        let task_answers = self
+        let previous = self
             .store
             .playbook_step_progress()
             .iter()
-            .filter(|answer| answer.task_id == task_id)
-            .cloned()
-            .collect::<Vec<_>>();
-        let previous = task_answers
-            .iter()
-            .find(|answer| answer.milestone_id == milestone_id);
+            .find(|answer| answer.task_id == task_id && answer.milestone_id == milestone_id);
         let count = previous.map_or(0, |answer| answer.rewind_count);
         if count >= rule.max_times {
             let evidence = bounded_evidence(&format!(
@@ -126,73 +122,34 @@ impl CoreRuntime {
             evaluator,
             deterministic_fallback,
             rewind_count,
+            pull_request_number: None,
         };
-        // Answers before the target stay. The target and everything after it
-        // is asked again, so a pass recorded for the old work can never carry
-        // the Task past the reopened work.
-        let mut answers = task_answers
-            .into_iter()
-            .filter(|answer| {
-                index_of(&answer.milestone_id).is_some_and(|index| index < target_index)
-            })
-            .collect::<Vec<_>>();
-        answers.push(waiting.clone());
-
-        configuration
-            .pending_routine_findings
-            .retain(|finding| !finding.related_task_ids.contains(&task_id));
-        configuration.last_check_started_at_epoch_ms = Some(capability.claimed_at_epoch_ms);
-        configuration.last_attempt_at_epoch_ms = Some(completed_at_epoch_ms);
-        configuration.last_successful_report_at_epoch_ms = Some(completed_at_epoch_ms);
-        configuration.updated_at_epoch_ms = completed_at_epoch_ms;
-
         let task_title = assignment.waiting[0].title.clone();
-        let report = TrackerReport {
-            id: report_id,
-            project_id: capability.project_id.clone(),
-            routine_id: capability.tracker_id.clone(),
-            check_id: capability.check_id.clone(),
-            generation: capability.generation,
-            kind: TrackerReportKind::Success,
-            message: format!(
-                "{} — {task_title} was sent back to “{}”.\n- {task_id} rewound: {evidence}",
-                assignment.milestone.title, target.title,
-            ),
-            source_references: Vec::new(),
-            related_task_ids: vec![task_id.clone()],
-            created_at_epoch_ms: completed_at_epoch_ms,
-        };
-        if !report.is_valid() {
-            return Err(CoreError::TrackerReportInvalid);
-        }
+        let message = format!(
+            "{} — {task_title} was sent back to “{}”.\n- {task_id} rewound: {evidence}",
+            assignment.milestone.title, target.title,
+        );
         let record = self
             .completed_evaluation_record(&capability.check_id, &waiting)
             .map(|mut record| {
                 record.outcome = PlaybookEvaluationOutcome::Rewound;
                 record
             });
-        self.store
-            .rewind_task_playbook_progress(
-                &self.write_authority,
-                &assignment.project_id,
-                &task_id,
-                answers,
-                configuration.clone(),
+        self.send_task_back(
+            capability,
+            configuration,
+            &playbook,
+            SendBack {
+                task_id: &task_id,
+                answering_milestone_id: &milestone_id,
+                target_index,
+                kept: Some(waiting),
+                report_id,
+                message,
                 record,
-                self.store.revision(),
-            )
-            .map_err(crate::store_error)?;
-        self.finish_steward_step_check(capability, completed_at_epoch_ms, &configuration);
-        self.settle_agent_step_report(
-            &task_id,
-            &milestone_id,
-            capability.claimed_at_epoch_ms,
-            PlaybookStepVerdict::Waiting,
+            },
             completed_at_epoch_ms,
-        );
-        self.push_runtime_report(report);
-        self.tracker_runtime
-            .schedule_tracker_now(&target.routine_id, completed_at_epoch_ms);
+        )?;
         Ok(json!({
             "status": "rewound",
             "milestoneId": milestone_id,
@@ -201,6 +158,245 @@ impl CoreRuntime {
             "maxTimes": rule.max_times,
             "passedCount": 0,
             "waitingCount": 1,
+            "blockedCount": 0,
+            "newPendingFindingCount": 0,
+            "stewardReviewRequired": false,
+            "stateRevision": self.store.revision(),
+        }))
+    }
+}
+
+/// One send-back: which Task returns to which step, and what is kept.
+pub(crate) struct SendBack<'a> {
+    pub(crate) task_id: &'a str,
+    /// The step whose claim observed the reason; its pending Agent report is
+    /// settled as waiting.
+    pub(crate) answering_milestone_id: &'a str,
+    pub(crate) target_index: usize,
+    /// A row the answering step keeps, such as its send-back count.
+    pub(crate) kept: Option<PlaybookStepProgress>,
+    pub(crate) report_id: String,
+    pub(crate) message: String,
+    pub(crate) record: Option<PlaybookEvaluationRecord>,
+}
+
+impl CoreRuntime {
+    /// Moves a Task back to `target_index` in one commit: answers before the
+    /// target stay, the target and every later step are asked again, so a
+    /// pass recorded for the old work can never carry the Task past the
+    /// reopened work. The claim is finished and the target asked at once.
+    pub(crate) fn send_task_back(
+        &mut self,
+        capability: &TrackerCheckCapability,
+        mut configuration: TrackerConfiguration,
+        playbook: &PlaybookConfiguration,
+        send: SendBack<'_>,
+        completed_at_epoch_ms: u64,
+    ) -> Result<(), CoreError> {
+        let target = &playbook.milestones[send.target_index];
+        let mut answers = self
+            .store
+            .playbook_step_progress()
+            .iter()
+            .filter(|answer| {
+                answer.task_id == send.task_id
+                    && playbook
+                        .milestones
+                        .iter()
+                        .position(|milestone| milestone.id == answer.milestone_id)
+                        .is_some_and(|index| index < send.target_index)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        answers.extend(send.kept);
+
+        configuration
+            .pending_routine_findings
+            .retain(|finding| !finding.related_task_ids.iter().any(|id| id == send.task_id));
+        configuration.last_check_started_at_epoch_ms = Some(capability.claimed_at_epoch_ms);
+        configuration.last_attempt_at_epoch_ms = Some(completed_at_epoch_ms);
+        configuration.last_successful_report_at_epoch_ms = Some(completed_at_epoch_ms);
+        configuration.updated_at_epoch_ms = completed_at_epoch_ms;
+
+        let report = TrackerReport {
+            id: send.report_id,
+            project_id: capability.project_id.clone(),
+            routine_id: capability.tracker_id.clone(),
+            check_id: capability.check_id.clone(),
+            generation: capability.generation,
+            kind: TrackerReportKind::Success,
+            message: send.message,
+            source_references: Vec::new(),
+            related_task_ids: vec![send.task_id.to_owned()],
+            created_at_epoch_ms: completed_at_epoch_ms,
+        };
+        if !report.is_valid() {
+            return Err(CoreError::TrackerReportInvalid);
+        }
+        self.store
+            .rewind_task_playbook_progress(
+                &self.write_authority,
+                &playbook.project_id,
+                send.task_id,
+                answers,
+                configuration.clone(),
+                send.record,
+                self.store.revision(),
+            )
+            .map_err(crate::store_error)?;
+        self.finish_steward_step_check(capability, completed_at_epoch_ms, &configuration);
+        self.settle_agent_step_report(
+            send.task_id,
+            send.answering_milestone_id,
+            capability.claimed_at_epoch_ms,
+            PlaybookStepVerdict::Waiting,
+            completed_at_epoch_ms,
+        );
+        self.push_runtime_report(report);
+        self.tracker_runtime
+            .schedule_tracker_now(&target.routine_id, completed_at_epoch_ms);
+        Ok(())
+    }
+}
+
+/// The restart a claim at a later step watches for: the latest earlier step
+/// that opted to restart on a new pull request, which this Task passed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RestartWatch {
+    pub(crate) milestone_id: String,
+    /// The watched step's own base-branch filter, if its check has one.
+    pub(crate) base_branch: Option<String>,
+    /// The pull request the Task's later steps follow; `None` until a read
+    /// records one.
+    pub(crate) pull_request_number: Option<u64>,
+}
+
+impl CoreRuntime {
+    pub(crate) fn restart_watch(
+        &self,
+        capability: &TrackerCheckCapability,
+    ) -> Option<RestartWatch> {
+        let task_id = self.claimed_step_task_id(capability)?;
+        let step_id = self.claimed_step_milestone_id(capability)?;
+        let playbook = self.routine_playbook(&capability.tracker_id)?;
+        let index = playbook
+            .milestones
+            .iter()
+            .position(|milestone| milestone.id == step_id)?;
+        let watched = playbook.milestones[..index]
+            .iter()
+            .rev()
+            .find(|milestone| milestone.restart_on_new_pull_request)?;
+        let passed = self.store.playbook_step_progress().iter().find(|answer| {
+            answer.task_id == task_id
+                && answer.milestone_id == watched.id
+                && answer.routine_id == watched.routine_id
+                && answer.verdict == PlaybookStepVerdict::Passed
+        })?;
+        Some(RestartWatch {
+            milestone_id: watched.id.clone(),
+            base_branch: watched
+                .deterministic_check
+                .as_ref()
+                .and_then(|check| check.base_branch.clone()),
+            pull_request_number: passed.pull_request_number,
+        })
+    }
+
+    /// Records the pull request the Task's later steps follow on the watched
+    /// step's passed answer.
+    pub(crate) fn adopt_restart_pull_request(
+        &mut self,
+        project_id: &str,
+        task_id: &str,
+        watched_milestone_id: &str,
+        number: u64,
+    ) -> Result<(), CoreError> {
+        let answers = self
+            .store
+            .playbook_step_progress()
+            .iter()
+            .filter(|answer| answer.task_id == task_id)
+            .map(|answer| {
+                let mut answer = answer.clone();
+                if answer.milestone_id == watched_milestone_id {
+                    answer.pull_request_number = Some(number);
+                }
+                answer
+            })
+            .collect::<Vec<_>>();
+        self.store
+            .replace_task_playbook_progress(
+                &self.write_authority,
+                project_id,
+                task_id,
+                answers,
+                self.store.revision(),
+            )
+            .map_err(crate::store_error)?;
+        Ok(())
+    }
+
+    /// A newer pull request opened while the Task stood at the claimed step:
+    /// the Task returns to the watched step, which then asks about it.
+    pub(crate) fn restart_for_new_pull_request(
+        &mut self,
+        capability: &TrackerCheckCapability,
+        configuration: TrackerConfiguration,
+        watched_milestone_id: &str,
+        task_id: &str,
+        evidence: &str,
+        completed_at_epoch_ms: u64,
+    ) -> Result<Value, CoreError> {
+        let playbook = self
+            .routine_playbook(&capability.tracker_id)
+            .ok_or(CoreError::TrackerReportStale)?
+            .clone();
+        let step_id = self
+            .claimed_step_milestone_id(capability)
+            .ok_or(CoreError::TrackerReportStale)?;
+        let index_of = |id: &str| {
+            playbook
+                .milestones
+                .iter()
+                .position(|milestone| milestone.id == id)
+        };
+        let step_index = index_of(&step_id).ok_or(CoreError::TrackerReportStale)?;
+        let target_index = index_of(watched_milestone_id)
+            .filter(|index| *index < step_index)
+            .ok_or(CoreError::TrackerReportStale)?;
+        let task_title = self
+            .store
+            .tasks()
+            .iter()
+            .find(|task| task.id == task_id)
+            .map(|task| task.title.clone())
+            .ok_or(CoreError::TrackerReportStale)?;
+        let step_title = playbook.milestones[step_index].title.clone();
+        let target_title = playbook.milestones[target_index].title.clone();
+        self.send_task_back(
+            capability,
+            configuration,
+            &playbook,
+            SendBack {
+                task_id,
+                answering_milestone_id: &step_id,
+                target_index,
+                kept: None,
+                report_id: termloop_platform::generate_opaque_id(),
+                message: format!(
+                    "{step_title} — {task_title} was sent back to “{target_title}”.\n- {task_id} rewound: {evidence}"
+                ),
+                record: None,
+            },
+            completed_at_epoch_ms,
+        )?;
+        Ok(json!({
+            "status": "rewound",
+            "milestoneId": step_id,
+            "toMilestoneId": watched_milestone_id,
+            "passedCount": 0,
+            "waitingCount": 0,
             "blockedCount": 0,
             "newPendingFindingCount": 0,
             "stewardReviewRequired": false,

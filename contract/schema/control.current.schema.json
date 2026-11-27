@@ -17022,6 +17022,10 @@
               "type": "null"
             }
           ]
+        },
+        "restartOnNewPullRequest": {
+          "description": "Opt-in: once a Task passed this step, a newer pull request from its branch sends it back here from any later step, and later pull request checks follow the recorded pull request.",
+          "type": "boolean"
         }
       }
     },
@@ -17101,6 +17105,10 @@
               "type": "null"
             }
           ]
+        },
+        "restartOnNewPullRequest": {
+          "description": "Opt-in: once a Task passed this step, a newer pull request from its branch sends it back here from any later step, and later pull request checks follow the recorded pull request.",
+          "type": "boolean"
         }
       }
     },
@@ -17245,6 +17253,15 @@
           "minimum": 0,
           "maximum": 10,
           "x-rust-type": "u32"
+        },
+        "pullRequestNumber": {
+          "description": "The pull request later steps follow, recorded only on a passed step that restarts on a new pull request.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "x-rust-type": "u64"
         },
         "taskId": {
           "type": "string",

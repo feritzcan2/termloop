@@ -85,6 +85,7 @@ fn playbook(project_id: &str, revision: u64) -> PlaybookConfiguration {
             deterministic_check: None,
             agent_report: Default::default(),
             rewind: None,
+            restart_on_new_pull_request: false,
         }],
         updated_at_epoch_ms: 1,
     }
@@ -535,6 +536,7 @@ fn step_verdict_and_waiting_finding_commit_atomically() {
         evaluator: termloop_domain::PlaybookStepEvaluator::Routine,
         deterministic_fallback: None,
         rewind_count: 0,
+        pull_request_number: None,
     };
     let mut routine = store.tracker_configurations()[0].clone();
     routine.action_handling = RoutineActionHandling::Ask;
@@ -713,6 +715,7 @@ fn answer(task_id: &str, verdict: PlaybookStepVerdict) -> PlaybookStepProgress {
         evaluator: termloop_domain::PlaybookStepEvaluator::Routine,
         deterministic_fallback: None,
         rewind_count: 0,
+        pull_request_number: None,
     }
 }
 
@@ -1268,6 +1271,7 @@ fn a_send_back_replaces_one_tasks_answers_and_routine_in_one_commit() {
     let routine = store.tracker_configurations()[0].clone();
     let sent_back = PlaybookStepProgress {
         rewind_count: 1,
+        pull_request_number: None,
         ..answer("task-1", PlaybookStepVerdict::Waiting)
     };
 

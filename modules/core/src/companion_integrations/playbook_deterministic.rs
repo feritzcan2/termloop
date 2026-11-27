@@ -18,6 +18,7 @@ use super::{
     GitHostProjectionReason, LocalObservation, ProviderQuery, TaskSnapshot, map_git_error,
     normalize_candidate_sets, snapshot, worktree_branches,
 };
+use crate::companion_integrations::playbook_runtime::RestartWatch;
 use crate::companion_integrations::playbook_runtime::StewardStepVerdict;
 use crate::task_worktree::TaskBranchCommitProbe;
 use crate::{CoreError, CoreRuntime};
@@ -25,8 +26,8 @@ use serde_json::Value;
 use std::time::Duration;
 use termloop_domain::{
     PLAYBOOK_EVIDENCE_MAX_BYTES, PlaybookDeterministicCheck, PlaybookDeterministicCheckKind,
-    PlaybookDeterministicFallback as Fallback, PlaybookGateKind, PlaybookStepEvaluator,
-    PlaybookStepVerdict, RoutineActionHandling,
+    PlaybookDeterministicFallback as Fallback, PlaybookGateKind, PlaybookMilestone,
+    PlaybookStepEvaluator, PlaybookStepVerdict, RoutineActionHandling,
 };
 use termloop_gitio::{BranchCommitState, BranchCommitUnavailable, GitRunner};
 use termloop_providers::{
@@ -42,7 +43,10 @@ const READ_DEADLINE: Duration = Duration::from_secs(10);
 pub struct DeterministicStepPlan {
     capability: TrackerCheckCapability,
     milestone_id: String,
-    check: PlaybookDeterministicCheck,
+    /// `None` when the claim is planned only for an earlier step's restart
+    /// watch; the step itself is then left to its Routine.
+    check: Option<PlaybookDeterministicCheck>,
+    watch: Option<RestartWatch>,
     snapshot: TaskSnapshot,
     github: Option<GitHubClient>,
     azure: Option<AzureDevOpsClient>,
@@ -54,7 +58,8 @@ pub struct DeterministicStepPlan {
 pub struct DeterministicStepObservation {
     capability: TrackerCheckCapability,
     milestone_id: String,
-    check: PlaybookDeterministicCheck,
+    check: Option<PlaybookDeterministicCheck>,
+    watch: Option<RestartWatch>,
     snapshot: TaskSnapshot,
     read: StepRead,
 }
@@ -95,6 +100,20 @@ pub(crate) enum PullRequestRead {
     },
 }
 
+/// What a restart watch concluded from one fresh pull request read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum WatchDecision {
+    /// The read cannot tell; the watch keeps what it had.
+    Unknown,
+    /// No pull request was recorded yet; this newest one becomes the one
+    /// later steps follow.
+    Adopt(u64),
+    /// A newer pull request is open; the evidence names it.
+    Restart(String),
+    /// Nothing newer.
+    Quiet,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum DeterministicDecision {
     Passed(String),
@@ -127,16 +146,19 @@ impl CoreRuntime {
             return None;
         }
         let milestone = self.claimed_step_milestone(capability)?;
-        // Domain validation already keeps a check off human gates; a named
-        // person's approval is never inferred from a pull request.
-        if milestone.gate != PlaybookGateKind::Automatic {
+        let check = planned_check(milestone);
+        // Any step, a human gate included, watches for the newer pull request
+        // an earlier step opted to restart on.
+        let watch = self.restart_watch(capability);
+        if check.is_none() && watch.is_none() {
             return None;
         }
-        let check = milestone.deterministic_check.clone()?;
         let milestone_id = milestone.id.clone();
         let task_id = self.claimed_step_task_id(capability)?;
         let task = self.store.tasks().iter().find(|task| task.id == task_id)?;
-        let commit_check = check.kind == PlaybookDeterministicCheckKind::BranchCommitted;
+        let commit_check = check
+            .as_ref()
+            .is_some_and(|check| check.kind == PlaybookDeterministicCheckKind::BranchCommitted);
         Some(DeterministicStepPlan {
             capability: capability.clone(),
             milestone_id,
@@ -144,6 +166,7 @@ impl CoreRuntime {
                 .then(|| self.task_branch_commit_probe(&task.id))
                 .flatten(),
             check,
+            watch,
             snapshot: snapshot(task),
             github: (!commit_check)
                 .then(|| self.github_client.clone())
@@ -168,8 +191,8 @@ impl CoreRuntime {
         let task_id = self.claimed_step_task_id(&capability);
         let still_asked = current_step.as_ref().is_some_and(|milestone| {
             milestone.id == observation.milestone_id
-                && milestone.deterministic_check.as_ref() == Some(&observation.check)
-        });
+                && planned_check(milestone) == observation.check
+        }) && self.restart_watch(&capability) == observation.watch;
         let same_binding = task_id.as_deref() == Some(observation.snapshot.task_id.as_str())
             && self.store.tasks().iter().any(|task| {
                 let current = snapshot(task);
@@ -183,7 +206,41 @@ impl CoreRuntime {
             return Ok(DeterministicStepOutcome::Routine);
         }
         let task_id = observation.snapshot.task_id;
-        let (verdict, evidence) = match decide_step(&observation.check, &observation.read) {
+        let mut focus = None;
+        if let (Some(watch), StepRead::PullRequests(read)) = (&observation.watch, &observation.read)
+        {
+            focus = watch.pull_request_number;
+            match watch_decision(watch, read) {
+                WatchDecision::Restart(evidence) => {
+                    let result = self.restart_for_new_pull_request(
+                        &capability,
+                        configuration,
+                        &watch.milestone_id,
+                        &task_id,
+                        &evidence,
+                        now_epoch_ms,
+                    )?;
+                    return Ok(DeterministicStepOutcome::Recorded {
+                        project_id: capability.project_id,
+                        result,
+                    });
+                }
+                WatchDecision::Adopt(number) => {
+                    self.adopt_restart_pull_request(
+                        &capability.project_id,
+                        &task_id,
+                        &watch.milestone_id,
+                        number,
+                    )?;
+                    focus = Some(number);
+                }
+                WatchDecision::Quiet | WatchDecision::Unknown => {}
+            }
+        }
+        let Some(check) = observation.check else {
+            return Ok(DeterministicStepOutcome::Routine);
+        };
+        let (verdict, evidence) = match decide_step(&check, &observation.read, focus) {
             DeterministicDecision::Fallback(reason) => {
                 self.mark_step_evaluation(
                     &capability,
@@ -247,7 +304,9 @@ impl DeterministicStepPlan {
                 &self.snapshot,
                 &self.github,
                 &self.azure,
-                self.check.kind == PlaybookDeterministicCheckKind::PullRequestChecksPassing,
+                self.check.as_ref().is_some_and(|check| {
+                    check.kind == PlaybookDeterministicCheckKind::PullRequestChecksPassing
+                }),
             ))
         };
         self.observed(read)
@@ -269,7 +328,9 @@ impl DeterministicStepPlan {
     }
 
     fn is_commit_check(&self) -> bool {
-        self.check.kind == PlaybookDeterministicCheckKind::BranchCommitted
+        self.check
+            .as_ref()
+            .is_some_and(|check| check.kind == PlaybookDeterministicCheckKind::BranchCommitted)
     }
 
     fn unavailable(self, reason: Fallback) -> DeterministicStepObservation {
@@ -286,6 +347,7 @@ impl DeterministicStepPlan {
             capability: self.capability,
             milestone_id: self.milestone_id,
             check: self.check,
+            watch: self.watch,
             snapshot: self.snapshot,
             read,
         }
@@ -544,9 +606,65 @@ fn summary_repository(summary: &PullRequestSummary) -> String {
     }
 }
 
-fn decide_step(check: &PlaybookDeterministicCheck, read: &StepRead) -> DeterministicDecision {
+/// The check a claim at `milestone` would answer itself. Domain validation
+/// already keeps a check off human gates; a named person's approval is never
+/// inferred from a pull request.
+fn planned_check(milestone: &PlaybookMilestone) -> Option<PlaybookDeterministicCheck> {
+    (milestone.gate == PlaybookGateKind::Automatic)
+        .then(|| milestone.deterministic_check.clone())
+        .flatten()
+}
+
+/// Whether a newer pull request than the one the watched step recorded is
+/// open on the Task branch. Pure.
+pub(crate) fn watch_decision(watch: &RestartWatch, read: &PullRequestRead) -> WatchDecision {
+    // A partial read can neither prove a newer pull request nor the newest.
+    let PullRequestRead::Read {
+        branch,
+        pull_requests,
+        truncated: false,
+        ..
+    } = read
+    else {
+        return WatchDecision::Unknown;
+    };
+    let targeted = pull_requests.iter().filter(|summary| {
+        watch
+            .base_branch
+            .as_deref()
+            .is_none_or(|base| summary.base_branch == base)
+    });
+    match watch.pull_request_number {
+        None => targeted
+            .filter(|summary| summary.state != PullRequestState::Closed)
+            .map(|summary| summary.number)
+            .max()
+            .map_or(WatchDecision::Quiet, WatchDecision::Adopt),
+        Some(recorded) => targeted
+            .filter(|summary| {
+                matches!(
+                    summary.state,
+                    PullRequestState::Open | PullRequestState::Draft
+                ) && summary.number > recorded
+            })
+            .max_by_key(|summary| summary.number)
+            .map_or(WatchDecision::Quiet, |newer| {
+                WatchDecision::Restart(bounded_evidence(format!(
+                    "PR #{} from {branch} on {} was opened after PR #{recorded}.",
+                    newer.number,
+                    summary_repository(newer)
+                )))
+            }),
+    }
+}
+
+fn decide_step(
+    check: &PlaybookDeterministicCheck,
+    read: &StepRead,
+    focus: Option<u64>,
+) -> DeterministicDecision {
     match read {
-        StepRead::PullRequests(read) => decide(check, read),
+        StepRead::PullRequests(read) => decide_focused(check, read, focus),
         StepRead::Commits(read) => decide_commits(read),
     }
 }
@@ -580,9 +698,21 @@ pub(crate) fn decide_commits(read: &CommitRead) -> DeterministicDecision {
 ///
 /// "Exactly one" is literal: more than one pull request that could satisfy the
 /// check is never narrowed to one without explicit policy.
+#[cfg(test)]
 pub(crate) fn decide(
     check: &PlaybookDeterministicCheck,
     read: &PullRequestRead,
+) -> DeterministicDecision {
+    decide_focused(check, read, None)
+}
+
+/// `focus` is the pull request an earlier restart step recorded. When the
+/// read still holds it, the check answers about it alone, so an older merged
+/// pull request never makes the answer ambiguous.
+pub(crate) fn decide_focused(
+    check: &PlaybookDeterministicCheck,
+    read: &PullRequestRead,
+    focus: Option<u64>,
 ) -> DeterministicDecision {
     let (repository, branch, pull_requests, truncated) = match read {
         PullRequestRead::Unavailable(reason) => return DeterministicDecision::Fallback(*reason),
@@ -602,6 +732,13 @@ pub(crate) fn decide(
                 .is_none_or(|base| summary.base_branch == base)
         })
         .collect::<Vec<_>>();
+    let targeted = match focus {
+        Some(number) if targeted.iter().any(|summary| summary.number == number) => targeted
+            .into_iter()
+            .filter(|summary| summary.number == number)
+            .collect(),
+        _ => targeted,
+    };
     let in_state = |state: PullRequestState| {
         targeted
             .iter()

@@ -204,6 +204,7 @@ impl TryFrom<LegacyPlaybookMilestoneDraft> for PlaybookMilestoneDraft {
             deterministic_check: None,
             agent_report: termloop_domain::PlaybookAgentReportPolicy::default(),
             rewind: None,
+            restart_on_new_pull_request: false,
         })
     }
 }

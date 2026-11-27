@@ -243,7 +243,7 @@ pub const CONTRACT_IDENTITY: &str =
     "sha256:7eb20305e42354ec6af6cb6883f3c015de028823f2eb84e3d754895fb4d9c5d9";
 pub const CONTRACT_MAJOR: u32 = 1;
 pub const CONTRACT_REVISION: &str =
-    "sha256:194ce45b671b894b24f83e8790dbfcd39e8f114bbc3ea5e6a2d56a3f9f5a9b48";
+    "sha256:6a40128ba1db2728d0d7cdc9ccd4ec421e9d0f13b3194e2bd5532517fdaf697e";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -7708,6 +7708,11 @@ pub struct PlaybookMilestoneDto {
     pub agent_report: PlaybookAgentReportPolicy,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rewind: Option<PlaybookStepRewindDto>,
+    #[serde(
+        rename = "restartOnNewPullRequest",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub restart_on_new_pull_request: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -7733,6 +7738,11 @@ pub struct PlaybookMilestoneDraftDto {
     pub agent_report: Option<PlaybookAgentReportPolicy>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rewind: Option<PlaybookStepRewindDto>,
+    #[serde(
+        rename = "restartOnNewPullRequest",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub restart_on_new_pull_request: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -7785,6 +7795,8 @@ pub struct PlaybookStepProgressDto {
     pub deterministic_fallback: Option<PlaybookDeterministicFallbackReason>,
     #[serde(rename = "rewindCount", skip_serializing_if = "Option::is_none")]
     pub rewind_count: Option<u32>,
+    #[serde(rename = "pullRequestNumber", skip_serializing_if = "Option::is_none")]
+    pub pull_request_number: Option<u64>,
     #[serde(rename = "taskId")]
     pub task_id: String,
     pub verdict: PlaybookStepVerdict,
@@ -29434,6 +29446,9 @@ fn validate_playbook_milestone_dto(value: &Value) -> bool {
             && object
                 .get("rewind")
                 .is_none_or(|field| (validate_playbook_step_rewind_dto(field) || field.is_null()))
+            && object
+                .get("restartOnNewPullRequest")
+                .is_none_or(|field| field.is_boolean())
             && object.keys().all(|key| {
                 [
                     "id",
@@ -29447,6 +29462,7 @@ fn validate_playbook_milestone_dto(value: &Value) -> bool {
                     "deterministicCheck",
                     "agentReport",
                     "rewind",
+                    "restartOnNewPullRequest",
                 ]
                 .contains(&key.as_str())
             })
@@ -29507,6 +29523,9 @@ fn validate_playbook_milestone_draft_dto(value: &Value) -> bool {
             && object
                 .get("rewind")
                 .is_none_or(|field| (validate_playbook_step_rewind_dto(field) || field.is_null()))
+            && object
+                .get("restartOnNewPullRequest")
+                .is_none_or(|field| field.is_boolean())
             && object.keys().all(|key| {
                 [
                     "id",
@@ -29519,6 +29538,7 @@ fn validate_playbook_milestone_draft_dto(value: &Value) -> bool {
                     "deterministicCheck",
                     "agentReport",
                     "rewind",
+                    "restartOnNewPullRequest",
                 ]
                 .contains(&key.as_str())
             })
@@ -29681,6 +29701,12 @@ fn validate_playbook_step_progress_dto(value: &Value) -> bool {
                         && (number.as_u64().is_some_and(|number| number <= 10_u64))
                 })
             })
+            && object.get("pullRequestNumber").is_none_or(|field| {
+                (field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 1_u64))
+                }) || field.is_null())
+            })
             && object.get("taskId").is_some_and(|field| {
                 field
                     .as_str()
@@ -29711,6 +29737,7 @@ fn validate_playbook_step_progress_dto(value: &Value) -> bool {
                     "evaluator",
                     "deterministicFallback",
                     "rewindCount",
+                    "pullRequestNumber",
                     "taskId",
                     "verdict",
                     "evidence",

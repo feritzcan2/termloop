@@ -163,6 +163,9 @@ export function playbookMilestoneFieldIssues(
   if (milestone.gate === "human" && milestone.agentReport === "trusted") {
     gate.push("A human gate waits for its approver, so it cannot trust a Task Agent report.");
   }
+  if (milestone.gate === "human" && milestone.restartOnNewPullRequest) {
+    gate.push("A human gate cannot restart its Task on a new pull request.");
+  }
   if (milestone.gate === "human") {
     if (milestone.approver === null) approver = ["A human gate names its approver."];
     else approver = requiredTextIssues(milestone.approver, PLAYBOOK_APPROVER_MAX_BYTES, "Approver");
@@ -624,6 +627,7 @@ export function playbookMilestoneWithGate<T extends PlaybookMilestoneDraft>(
       approver: approver ?? "",
       deterministicCheck: null,
       agentReport: milestone.agentReport === "trusted" ? PLAYBOOK_DEFAULT_AGENT_REPORT : milestone.agentReport,
+      ...(milestone.restartOnNewPullRequest ? { restartOnNewPullRequest: false } : {}),
     }
     : { ...milestone, gate, approver: null };
 }

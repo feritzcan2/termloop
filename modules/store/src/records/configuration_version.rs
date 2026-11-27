@@ -368,6 +368,9 @@ fn playbook_milestone_snapshot(
     });
     // Present only when set, so versions saved before send-backs existed keep
     // comparing equal to an unchanged document.
+    if milestone.restart_on_new_pull_request {
+        snapshot["restartOnNewPullRequest"] = json!(true);
+    }
     if let Some(rewind) = &milestone.rewind {
         snapshot["rewind"] = json!(rewind);
     }

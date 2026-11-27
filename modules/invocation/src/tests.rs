@@ -394,7 +394,7 @@ fn configuration_improvers_share_the_provider_neutral_task_evidence_policy() {
             ImproverTarget::Playbook {
                 project_name: "Nucleus",
             },
-            27,
+            28,
         ),
     ];
 
@@ -435,8 +435,8 @@ fn playbook_builder_reviews_every_step_and_declares_the_new_snapshot_contract() 
     let launch = prompt_improver_launch(target);
     let delivered = launch.delivered_prompt().unwrap();
 
-    assert_eq!(template.version, 27);
-    assert_eq!(launch.provenance().template_version, 27);
+    assert_eq!(template.version, 28);
+    assert_eq!(launch.provenance().template_version, 28);
     assert!(delivered.contains("never require the Agent to report back"));
     assert!(!delivered.contains("direct return handoff"));
     for expected in [

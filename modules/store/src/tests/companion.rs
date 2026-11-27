@@ -645,6 +645,7 @@ fn steward_delete_resets_only_the_project_assistant_tree_in_one_commit() {
         deterministic_check: None,
         agent_report: Default::default(),
         rewind: None,
+        restart_on_new_pull_request: false,
     };
     store
         .state
@@ -671,6 +672,7 @@ fn steward_delete_resets_only_the_project_assistant_tree_in_one_commit() {
             evaluator: termloop_domain::PlaybookStepEvaluator::Routine,
             deterministic_fallback: None,
             rewind_count: 0,
+            pull_request_number: None,
         });
     store.state.companion_messages = vec![
         message("project-a", 1, "reset me"),

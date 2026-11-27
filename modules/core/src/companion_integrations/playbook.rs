@@ -54,6 +54,9 @@ pub(crate) struct PlaybookMilestoneDraft {
     /// Absent in snapshots and drafts written before step send-backs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) rewind: Option<termloop_domain::PlaybookStepRewind>,
+    /// Absent in snapshots and drafts written before the opt-in existed.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) restart_on_new_pull_request: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -375,6 +378,7 @@ impl CoreRuntime {
                         evaluator: termloop_domain::PlaybookStepEvaluator::Routine,
                         deterministic_fallback: None,
                         rewind_count: 0,
+                        pull_request_number: None,
                     });
                 }
             }
@@ -634,6 +638,7 @@ fn materialize_pipeline(
                 && milestone.approver == draft.approver
                 && milestone.deterministic_check == draft.deterministic_check
                 && milestone.rewind == draft.rewind
+                && milestone.restart_on_new_pull_request == draft.restart_on_new_pull_request
                 && current.name == name
                 && current.prompt == prompt
                 && current.steward_instructions == steward_instructions
@@ -701,6 +706,7 @@ fn materialize_pipeline(
             deterministic_check: draft.deterministic_check.clone(),
             agent_report: draft.agent_report,
             rewind: draft.rewind.clone(),
+            restart_on_new_pull_request: draft.restart_on_new_pull_request,
         });
     }
     Ok((milestones, changed))
@@ -814,6 +820,7 @@ fn playbook_projection(
             "deterministicCheck": value.deterministic_check,
             "agentReport": value.agent_report,
             "rewind": value.rewind,
+            "restartOnNewPullRequest": value.restart_on_new_pull_request,
         }))
     };
     let milestones = configuration
@@ -1546,6 +1553,7 @@ mod tests {
                         evaluator: termloop_domain::PlaybookStepEvaluator::Routine,
                         deterministic_fallback: None,
                         rewind_count: 0,
+                        pull_request_number: None,
                     },
                     PlaybookStepProgress {
                         task_id: "task-1".into(),
@@ -1558,6 +1566,7 @@ mod tests {
                         evaluator: termloop_domain::PlaybookStepEvaluator::Routine,
                         deterministic_fallback: None,
                         rewind_count: 0,
+                        pull_request_number: None,
                     },
                 ],
                 revision,
@@ -1695,6 +1704,7 @@ mod tests {
             evaluator: termloop_domain::PlaybookStepEvaluator::Routine,
             deterministic_fallback: None,
             rewind_count: 0,
+            pull_request_number: None,
         };
         let revision = runtime.state_revision();
         runtime
@@ -1897,6 +1907,7 @@ mod tests {
         });
         let mut milestones = two_step_milestones(600, 600, "CI is green on the Task's PR.");
         milestones[1]["rewind"] = rule.clone();
+        milestones[0]["restartOnNewPullRequest"] = json!(true);
         let saved = save_two_steps(&mut runtime, &project_id, milestones, 1);
         let read = runtime
             .get_playbook(json!({"projectId": project_id}))
@@ -1904,6 +1915,8 @@ mod tests {
         for playbook in [&saved["playbook"], &read["playbook"]] {
             assert_eq!(playbook["milestones"][0]["rewind"], Value::Null);
             assert_eq!(playbook["milestones"][1]["rewind"], rule);
+            assert_eq!(playbook["milestones"][0]["restartOnNewPullRequest"], true);
+            assert_eq!(playbook["milestones"][1]["restartOnNewPullRequest"], false);
         }
 
         // Pointing forward, or at itself, is refused and keeps the document.
