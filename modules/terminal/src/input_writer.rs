@@ -8,8 +8,8 @@ use crate::output_settlement::{OutputActivitySnapshot, OutputActivityTracker};
 // paste burst for 120 ms after the last rapidly delivered character. Keep the
 // submit key beyond that window, with enough margin for ordinary scheduling
 // jitter, so a visible initial prompt is not left unsubmitted.
-pub(crate) const INPUT_SEQUENCE_GAP: Duration = Duration::from_millis(200);
-pub(crate) const MAX_INPUT_SEQUENCE_CHUNKS: usize = 4;
+pub const INPUT_SEQUENCE_GAP: Duration = Duration::from_millis(200);
+pub const MAX_INPUT_SEQUENCE_CHUNKS: usize = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InputChunkReceipt {

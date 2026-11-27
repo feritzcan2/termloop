@@ -14,4 +14,5 @@ pub use observation::{SessionObservation, observation_token_matches};
 pub mod hook_forwarder;
 
 mod observed_session;
+mod unframed_paste;
 pub use observed_session::ObservedSession;

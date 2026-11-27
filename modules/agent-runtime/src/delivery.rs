@@ -5,6 +5,8 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::time::Duration;
 
 use termloop_launch::GeneratedTerminalSubmission;
+
+use crate::unframed_paste;
 use termloop_terminal::{
     InputReadinessSnapshot, InputWriteFailure, OutputActivityDiagnostics, OutputSettlementEvidence,
     OutputSettlementFailure, TerminalError, TerminalService, UserInputActivitySnapshot,
@@ -377,7 +379,8 @@ impl GeneratedInputDeliveryRuntime {
                     }
                 };
             paste_started.store(true, Ordering::Release);
-            let paste_write = match terminal.input_atomic_receipted(
+            let paste_write = match unframed_paste::write_paste(
+                terminal,
                 session_id,
                 runtime_epoch,
                 submission.paste_input(),
@@ -1164,7 +1167,8 @@ fn run_transport_delivery(plan: GeneratedInputTransportPlan) -> GeneratedInputTr
                     }
                 };
             paste_started.store(true, Ordering::Release);
-            let paste_write = match terminal.input_atomic_receipted(
+            let paste_write = match unframed_paste::write_paste(
+                &terminal,
                 &session_id,
                 runtime_epoch,
                 submission.paste_input(),
@@ -1192,7 +1196,10 @@ fn run_transport_delivery(plan: GeneratedInputTransportPlan) -> GeneratedInputTr
             (paste_write, output_before_paste)
         }
     };
-    let paste_receipt = match paste_write.wait(WRITE_RECEIPT_TIMEOUT) {
+    let paste_receipt = match paste_write.wait(unframed_paste::paste_receipt_timeout(
+        WRITE_RECEIPT_TIMEOUT,
+        submission.paste_input(),
+    )) {
         Ok(receipt) => receipt,
         Err(_) => {
             return transport_result(

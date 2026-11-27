@@ -20,12 +20,11 @@ use tokio::sync::broadcast;
 use input_activity::{ClientInputActivity, ClientInputActivityKind};
 use input_readiness::InputReadinessTracker;
 pub use input_readiness::{InputReadinessDiagnostics, InputReadinessFacts, InputReadinessSnapshot};
-#[cfg(test)]
-use input_writer::INPUT_SEQUENCE_GAP;
+use input_writer::InputRequest;
 pub use input_writer::{
-    InputChunkReceipt, InputWriteFailure, InputWriteReceipt, PendingInputWrite,
+    INPUT_SEQUENCE_GAP, InputChunkReceipt, InputWriteFailure, InputWriteReceipt,
+    MAX_INPUT_SEQUENCE_CHUNKS, PendingInputWrite,
 };
-use input_writer::{InputRequest, MAX_INPUT_SEQUENCE_CHUNKS};
 use output_settlement::OutputActivityTracker;
 pub use output_settlement::{
     OutputActivityDiagnostics, OutputActivitySnapshot, OutputSettlementEvidence,
