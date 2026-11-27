@@ -134,13 +134,13 @@ const WORKFLOW_CREATOR_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const ROUTINE_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.builder.routine",
-    version: 11,
+    version: 12,
     authored_body: include_str!("../../../resources/prompts/builtin.builder.routine.md"),
 };
 
 const PLAYBOOK_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.builder.playbook",
-    version: 29,
+    version: 30,
     authored_body: include_str!("../../../resources/prompts/builtin.builder.playbook.md"),
 };
 

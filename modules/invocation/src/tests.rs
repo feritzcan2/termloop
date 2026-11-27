@@ -388,13 +388,13 @@ fn configuration_improvers_share_the_provider_neutral_task_evidence_policy() {
                 project_name: "Nucleus",
                 routine_summary: r#"{"routines":[]}"#,
             },
-            11,
+            12,
         ),
         (
             ImproverTarget::Playbook {
                 project_name: "Nucleus",
             },
-            29,
+            30,
         ),
     ];
 
@@ -427,6 +427,34 @@ fn configuration_improvers_share_the_provider_neutral_task_evidence_policy() {
 }
 
 #[test]
+fn configuration_builders_write_instructions_a_permission_review_can_authorize() {
+    for target in [
+        ImproverTarget::RoutineBuilder {
+            project_name: "Nucleus",
+            routine_summary: r#"{"routines":[]}"#,
+        },
+        ImproverTarget::Playbook {
+            project_name: "Nucleus",
+        },
+    ] {
+        let template_ref = target.template_ref();
+        let launch = prompt_improver_launch(target);
+        let delivered = launch.delivered_prompt().unwrap();
+        for expected in [
+            "automatic permission review",
+            "read-only when it includes any write",
+            "work around a permission denial",
+            "once with the exact blocked action",
+        ] {
+            assert!(
+                delivered.contains(expected),
+                "missing permission-review guidance {expected:?} in {template_ref}"
+            );
+        }
+    }
+}
+
+#[test]
 fn playbook_builder_reviews_every_step_and_declares_the_new_snapshot_contract() {
     let target = ImproverTarget::Playbook {
         project_name: "Nucleus",
@@ -435,8 +463,8 @@ fn playbook_builder_reviews_every_step_and_declares_the_new_snapshot_contract() 
     let launch = prompt_improver_launch(target);
     let delivered = launch.delivered_prompt().unwrap();
 
-    assert_eq!(template.version, 29);
-    assert_eq!(launch.provenance().template_version, 29);
+    assert_eq!(template.version, 30);
+    assert_eq!(launch.provenance().template_version, 30);
     assert!(delivered.contains("never require the Agent to report back"));
     assert!(!delivered.contains("direct return handoff"));
     for expected in [
