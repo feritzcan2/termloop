@@ -6,3 +6,6 @@
 .ap-step-check .ap-hint { margin: 0; }
 
 .ar-copy small > .ar-step-check { flex: none; max-width: 55%; padding: 0 5px; border: 1px solid rgba(102,179,255,.3); border-radius: 999px; color: light-dark(#4f6478, #b4daff); font-size: 8.5px; line-height: 1.5; text-overflow: ellipsis; }
+.ap-step-check-fields .ap-weekdays { display: flex; flex: 1 1 100%; flex-wrap: wrap; gap: 6px; }
+.ap-step-check-fields .ap-weekdays label { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 4px; }
+.ap-step-check-fields .ap-weekdays input { width: auto; padding: 0; }

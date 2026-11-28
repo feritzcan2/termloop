@@ -2,8 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import type { PlaybookActiveHoursDto } from "@termloop/contract/current";
 
 import {
+  PLAYBOOK_WEEKDAYS,
+  playbookActiveHoursEqual,
   playbookActiveHoursIssue,
   playbookActiveHoursLabel,
+  playbookActiveHoursOpensOn,
+  playbookToggleWeekday,
+  playbookWeekdayShortLabel,
+  playbookWeekdaysLabel,
   playbookMinuteFromLabel,
   playbookMinuteLabel,
 } from "./playbook-policy.js";
@@ -42,13 +48,13 @@ export function PlaybookActiveHoursEditor({
   const startMinute = hours?.startMinute;
   const endMinute = hours?.endMinute;
   const timeZone = hours?.timeZone;
+  const days = hours ? playbookWeekdaysLabel(hours) : undefined;
   useEffect(() => { setDraft(hours); },
     // Daemon refreshes return equal windows as new objects.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [startMinute, endMinute, timeZone]);
+    [startMinute, endMinute, timeZone, days]);
   const issue = playbookActiveHoursIssue(draft);
-  const changed = draft === null ? hours !== null
-    : hours === null || draft.startMinute !== hours.startMinute || draft.endMinute !== hours.endMinute || draft.timeZone !== hours.timeZone;
+  const changed = !playbookActiveHoursEqual(draft, hours);
   const subject = scope === "playbook" ? "Playbook" : "step";
   const draftZone = draft?.timeZone;
   const zones = useMemo(() => timeZoneChoices(draftZone), [draftZone]);
@@ -78,6 +84,14 @@ export function PlaybookActiveHoursEditor({
           onChange={(event) => setDraft({ ...draft, timeZone: event.target.value })}>
           {zones.map((zone) => <option key={zone} value={zone}>{zone}</option>)}
         </select>
+        <span className="ap-weekdays" role="group" aria-label={`${subject} active days`}>
+          {PLAYBOOK_WEEKDAYS.map((day) => <label key={day}>
+            <input type="checkbox" aria-label={`${subject} active on ${day}`} disabled={busy}
+              checked={playbookActiveHoursOpensOn(draft, day)}
+              onChange={() => setDraft(playbookToggleWeekday(draft, day))} />
+            {playbookWeekdayShortLabel(day)}
+          </label>)}
+        </span>
       </> : null}
       <button type="button" className="ap-btn primary" disabled={busy || !changed || issue !== undefined}
         onClick={() => void save(draft)}>Save</button>

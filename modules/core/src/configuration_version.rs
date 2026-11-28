@@ -1341,7 +1341,7 @@ mod tests {
             "deterministicCheck": null,
             "agentReport": "trusted",
             "evaluatorModels": {"codexModel": "gpt-5.5-mini", "claudeModel": null},
-            "activeHours": {"startMinute": 1320, "endMinute": 360, "timeZone": "UTC"},
+            "activeHours": {"startMinute": 1320, "endMinute": 360, "timeZone": "UTC", "weekdays": ["monday", "friday"]},
         });
         let snapshot = json!({
             "activePipelineName": "Delivery",

@@ -36,7 +36,9 @@ impl CoreRuntime {
             .find(|milestone| milestone.routine_id == routine_id)?;
         let hours = playbook.active_hours_for(milestone)?;
         let clock = termloop_platform::zoned_clock(at_epoch_ms, &hours.time_zone)?;
-        let wait_minutes = hours.minutes_until_open(clock.minute_of_day);
+        let weekday =
+            termloop_domain::PlaybookWeekday::from_monday_offset(u32::from(clock.days_from_monday));
+        let wait_minutes = hours.minutes_until_open(weekday, clock.minute_of_day);
         (wait_minutes > 0).then(|| {
             at_epoch_ms
                 .saturating_sub(clock.ms_into_minute)
@@ -279,7 +281,7 @@ impl CoreRuntime {
 #[cfg(test)]
 mod tests {
     use crate::companion_integrations::playbook_runtime::tests::pipeline_runtime;
-    use termloop_domain::PlaybookActiveHours;
+    use termloop_domain::{PlaybookActiveHours, PlaybookWeekday};
 
     /// 1970-01-01T00:16:40Z.
     const NOW: u64 = 1_000_000;
@@ -295,6 +297,7 @@ mod tests {
             start_minute: start,
             end_minute: end,
             time_zone: "UTC".into(),
+            weekdays: None,
         };
         let mut playbook = runtime
             .store
@@ -318,6 +321,35 @@ mod tests {
             .unwrap()
             .capability
             .is_some()
+    }
+
+    #[test]
+    fn a_step_waits_for_the_next_day_its_window_opens_on() {
+        let (mut runtime, _root, project_id) = pipeline_runtime();
+        let mut playbook = runtime
+            .store
+            .playbook_for_project(&project_id)
+            .unwrap()
+            .clone();
+        let routine_id = playbook.milestones[0].routine_id.clone();
+        // NOW is Thursday 00:16 UTC; a Monday-only 09:00-17:00 window opens
+        // four days and nine hours later.
+        playbook.active_hours = Some(PlaybookActiveHours {
+            start_minute: 9 * 60,
+            end_minute: 17 * 60,
+            time_zone: "UTC".into(),
+            weekdays: Some(vec![PlaybookWeekday::Monday]),
+        });
+        let revision = runtime.state_revision();
+        runtime
+            .store
+            .set_playbook_configuration(&runtime.write_authority, playbook, revision)
+            .unwrap();
+        assert_eq!(
+            runtime.step_closed_until(&project_id, &routine_id, NOW),
+            Some(4 * 24 * 60 * 60_000 + NINE_UTC)
+        );
+        assert!(!claims(&mut runtime, &project_id, "weekend"));
     }
 
     #[test]

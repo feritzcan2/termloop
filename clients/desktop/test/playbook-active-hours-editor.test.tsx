@@ -65,3 +65,22 @@ it("refuses a window that opens and closes at the same time", async () => {
   expect(button().disabled).toBe(true);
   expect(hint()).toContain("different times");
 });
+
+it("keeps a window off the weekend and saves only the chosen days", async () => {
+  await render("playbook", { startMinute: 540, endMinute: 1080, timeZone: "UTC" });
+  await act(async () => field<HTMLInputElement>("Playbook active on saturday").click());
+  await act(async () => field<HTMLInputElement>("Playbook active on sunday").click());
+  await act(async () => button().click());
+  expect(save).toHaveBeenCalledExactlyOnceWith({
+    startMinute: 540, endMinute: 1080, timeZone: "UTC",
+    weekdays: ["monday", "tuesday", "wednesday", "thursday", "friday"],
+  });
+});
+
+it("refuses a window with no days and reads every day as daily", async () => {
+  await render("step", { startMinute: 540, endMinute: 1080, timeZone: "UTC", weekdays: ["monday"] }, null);
+  expect(field<HTMLInputElement>("step active on tuesday").checked).toBe(false);
+  await act(async () => field<HTMLInputElement>("step active on monday").click());
+  expect(button().disabled).toBe(true);
+  expect(hint()).toContain("at least one day");
+});

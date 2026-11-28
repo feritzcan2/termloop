@@ -13654,7 +13654,7 @@
       "x-codegen-name": "PlaybookActiveHoursDto",
       "type": "object",
       "additionalProperties": false,
-      "description": "A daily window of wall-clock hours in one IANA time zone. Outside it, automatic step checks wait for the window to open. A start after the end spans midnight.",
+      "description": "A daily window of wall-clock hours in one IANA time zone, optionally on chosen weekdays. Outside it, automatic step checks wait for the window to open. A start after the end spans midnight and belongs to the day it opens.",
       "required": [
         "startMinute",
         "endMinute",
@@ -13681,8 +13681,40 @@
           "maxLength": 64,
           "pattern": "^[A-Za-z0-9/_+-]{1,64}$",
           "description": "IANA time zone name, such as Europe/Berlin."
+        },
+        "weekdays": {
+          "description": "The local days the window opens on. Absent or null opens it every day.",
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/playbookWeekday"
+              },
+              "minItems": 1,
+              "maxItems": 7,
+              "uniqueItems": true
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
+    },
+    "playbookWeekday": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookWeekday",
+      "description": "A day of the week in the window's time zone.",
+      "type": "string",
+      "enum": [
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday"
+      ]
     },
     "playbookStepEvaluatorModelsDto": {
       "x-codegen": true,

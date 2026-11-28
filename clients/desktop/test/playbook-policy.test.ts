@@ -28,6 +28,8 @@ import {
   changeMilestoneEvaluatorModelsForRoutine,
   changeMilestoneActiveHoursForRoutine,
   playbookActiveHoursIssue,
+  playbookToggleWeekday,
+  playbookActiveHoursEqual,
   playbookActiveHoursLabel,
   playbookMinuteFromLabel,
   playbookMinuteLabel,
@@ -408,5 +410,15 @@ describe("Task Agent step reports", () => {
     expect(playbookActiveHoursIssue({ startMinute: 540, endMinute: 540, timeZone: "UTC" })).toBeDefined();
     expect(playbookActiveHoursIssue({ startMinute: 540, endMinute: 600, timeZone: "Bad Zone" })).toBeDefined();
     expect(playbookActiveHoursIssue({ startMinute: 1320, endMinute: 360, timeZone: "Europe/Berlin" })).toBeUndefined();
+    expect(playbookActiveHoursIssue({ startMinute: 540, endMinute: 600, timeZone: "UTC", weekdays: [] })).toBeDefined();
+    const office = { startMinute: 540, endMinute: 1080, timeZone: "UTC" };
+    const weekdays = playbookToggleWeekday(playbookToggleWeekday(office, "sunday"), "saturday");
+    expect(weekdays.weekdays).toEqual(["monday", "tuesday", "wednesday", "thursday", "friday"]);
+    expect(playbookActiveHoursLabel(weekdays)).toBe("09:00–18:00 Mon–Fri UTC");
+    expect(playbookActiveHoursLabel({ ...office, weekdays: ["friday", "monday"] })).toBe("09:00–18:00 Mon, Fri UTC");
+    // Switching every day back on reads as daily again.
+    expect(playbookToggleWeekday(playbookToggleWeekday(weekdays, "saturday"), "sunday")).toEqual(office);
+    expect(playbookActiveHoursEqual({ ...office, weekdays: [...weekdays.weekdays!] }, weekdays)).toBe(true);
+    expect(playbookActiveHoursEqual(office, weekdays)).toBe(false);
   });
 });

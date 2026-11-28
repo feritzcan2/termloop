@@ -2,6 +2,7 @@ import type {
   ErrorCode,
   GitHostProvider,
   PlaybookActiveHoursDto,
+  PlaybookWeekday,
   PlaybookAgentReportPolicy,
   PlaybookDeterministicCheckDto,
   PlaybookDeterministicCheckKind,
@@ -759,10 +760,53 @@ export function playbookMinuteFromLabel(value: string): number | undefined {
   return hours < 24 && minutes < 60 ? hours * 60 + minutes : undefined;
 }
 
-/** "09:00–18:00 Europe/Berlin", or "around the clock" without a window. */
+export const PLAYBOOK_WEEKDAYS: readonly PlaybookWeekday[] = [
+  "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+];
+const WEEKDAY_SHORT: Record<PlaybookWeekday, string> = {
+  monday: "Mon", tuesday: "Tue", wednesday: "Wed", thursday: "Thu", friday: "Fri", saturday: "Sat", sunday: "Sun",
+};
+
+export function playbookWeekdayShortLabel(day: PlaybookWeekday): string {
+  return WEEKDAY_SHORT[day];
+}
+
+/** Whether the window opens on `day`; a window without days opens daily. */
+export function playbookActiveHoursOpensOn(hours: PlaybookActiveHoursDto, day: PlaybookWeekday): boolean {
+  return !hours.weekdays || hours.weekdays.includes(day);
+}
+
+/** The window with `day` switched on or off, in week order. Every day on
+    drops the list, so the window reads as daily. */
+export function playbookToggleWeekday(hours: PlaybookActiveHoursDto, day: PlaybookWeekday): PlaybookActiveHoursDto {
+  const open = !playbookActiveHoursOpensOn(hours, day);
+  const days = PLAYBOOK_WEEKDAYS.filter((candidate) => candidate === day ? open : playbookActiveHoursOpensOn(hours, candidate));
+  const { weekdays: _weekdays, ...daily } = hours;
+  return days.length === PLAYBOOK_WEEKDAYS.length ? daily : { ...daily, weekdays: days };
+}
+
+export function playbookActiveHoursEqual(left: PlaybookActiveHoursDto | null, right: PlaybookActiveHoursDto | null): boolean {
+  if (left === null || right === null) return left === right;
+  return left.startMinute === right.startMinute && left.endMinute === right.endMinute
+    && left.timeZone === right.timeZone && playbookWeekdaysLabel(left) === playbookWeekdaysLabel(right);
+}
+
+/** "Mon–Fri", "Mon, Wed", or "" for every day. */
+export function playbookWeekdaysLabel(hours: PlaybookActiveHoursDto): string {
+  const days = PLAYBOOK_WEEKDAYS.filter((day) => playbookActiveHoursOpensOn(hours, day));
+  if (days.length === PLAYBOOK_WEEKDAYS.length) return "";
+  const first = PLAYBOOK_WEEKDAYS.indexOf(days[0]!);
+  const consecutive = days.length > 2 && days.every((day, index) => PLAYBOOK_WEEKDAYS.indexOf(day) === first + index);
+  return consecutive
+    ? `${WEEKDAY_SHORT[days[0]!]}–${WEEKDAY_SHORT[days[days.length - 1]!]}`
+    : days.map((day) => WEEKDAY_SHORT[day]).join(", ");
+}
+
+/** "09:00–18:00 Mon–Fri Europe/Berlin", or "around the clock" without a window. */
 export function playbookActiveHoursLabel(hours: PlaybookActiveHoursDto | null | undefined): string {
   if (!hours) return "around the clock";
-  return `${playbookMinuteLabel(hours.startMinute)}–${playbookMinuteLabel(hours.endMinute)} ${hours.timeZone}`;
+  const days = playbookWeekdaysLabel(hours);
+  return `${playbookMinuteLabel(hours.startMinute)}–${playbookMinuteLabel(hours.endMinute)}${days ? ` ${days}` : ""} ${hours.timeZone}`;
 }
 
 /** Why a window cannot be saved, or undefined when it can. The daemon still
@@ -770,6 +814,7 @@ export function playbookActiveHoursLabel(hours: PlaybookActiveHoursDto | null | 
 export function playbookActiveHoursIssue(hours: PlaybookActiveHoursDto | null): string | undefined {
   if (hours === null) return undefined;
   if (hours.startMinute === hours.endMinute) return "The window must open and close at different times.";
+  if (hours.weekdays?.length === 0) return "Pick at least one day.";
   if (!/^[A-Za-z0-9/_+-]{1,64}$/.test(hours.timeZone)) return "Choose a time zone such as Europe/Berlin.";
   return undefined;
 }

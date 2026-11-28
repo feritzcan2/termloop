@@ -79,7 +79,7 @@ pub use playbook::{
     PlaybookConfiguration, PlaybookDeterministicCheck, PlaybookDeterministicCheckKind,
     PlaybookDeterministicFallback, PlaybookGateKind, PlaybookMilestone, PlaybookPipeline,
     PlaybookPosition, PlaybookStepEvaluator, PlaybookStepEvaluatorModels, PlaybookStepProgress,
-    PlaybookStepRewind, PlaybookStepVerdict, pipeline_position,
+    PlaybookStepRewind, PlaybookStepVerdict, PlaybookWeekday, pipeline_position,
 };
 pub use task_source::{
     TASK_SOURCE_AUTO_IMPORT_ACTIVE_TASK_LIMIT_DEFAULT,

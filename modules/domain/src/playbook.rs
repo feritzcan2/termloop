@@ -104,6 +104,44 @@ pub struct PlaybookActiveHours {
     /// The IANA zone the hours are read in, such as `Europe/Berlin`. Whether
     /// the zone exists is checked where the time zone database lives.
     pub time_zone: String,
+    /// The days the window opens on, read in `time_zone`; `None` opens it
+    /// every day. A window spanning midnight belongs to the day it opens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weekdays: Option<Vec<PlaybookWeekday>>,
+}
+
+/// One day of the week, as a window's opening day.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PlaybookWeekday {
+    Monday,
+    Tuesday,
+    Wednesday,
+    Thursday,
+    Friday,
+    Saturday,
+    Sunday,
+}
+
+impl PlaybookWeekday {
+    pub const ALL: [Self; 7] = [
+        Self::Monday,
+        Self::Tuesday,
+        Self::Wednesday,
+        Self::Thursday,
+        Self::Friday,
+        Self::Saturday,
+        Self::Sunday,
+    ];
+
+    /// The day `days_from_monday` (taken modulo 7) days after a Monday.
+    pub fn from_monday_offset(days_from_monday: u32) -> Self {
+        Self::ALL[(days_from_monday % 7) as usize]
+    }
+
+    fn monday_offset(self) -> u32 {
+        self as u32
+    }
 }
 
 impl PlaybookActiveHours {
@@ -117,24 +155,50 @@ impl PlaybookActiveHours {
             && self.time_zone.chars().all(|character| {
                 character.is_ascii_alphanumeric() || matches!(character, '/' | '_' | '-' | '+')
             })
+            // A window that never opens is a disabled step, not a schedule.
+            && self.weekdays.as_ref().is_none_or(|days| {
+                !days.is_empty()
+                    && days
+                        .iter()
+                        .enumerate()
+                        .all(|(index, day)| !days[..index].contains(day))
+            })
     }
 
-    /// Whether `minute_of_day` falls inside the window.
-    pub fn contains(&self, minute_of_day: u16) -> bool {
+    fn opens_on(&self, day: PlaybookWeekday) -> bool {
+        self.weekdays
+            .as_ref()
+            .is_none_or(|days| days.contains(&day))
+    }
+
+    /// Whether `minute_of_day` on `weekday` falls inside the window. The part
+    /// of a window after midnight belongs to the previous day's opening.
+    pub fn contains(&self, weekday: PlaybookWeekday, minute_of_day: u16) -> bool {
+        let yesterday = PlaybookWeekday::from_monday_offset(weekday.monday_offset() + 6);
         if self.start_minute < self.end_minute {
-            (self.start_minute..self.end_minute).contains(&minute_of_day)
+            self.opens_on(weekday) && (self.start_minute..self.end_minute).contains(&minute_of_day)
         } else {
-            minute_of_day >= self.start_minute || minute_of_day < self.end_minute
+            (minute_of_day >= self.start_minute && self.opens_on(weekday))
+                || (minute_of_day < self.end_minute && self.opens_on(yesterday))
         }
     }
 
-    /// Whole minutes from `minute_of_day` until the window next opens; `0`
-    /// while it is open.
-    pub fn minutes_until_open(&self, minute_of_day: u16) -> u16 {
-        if self.contains(minute_of_day) {
+    /// Whole minutes from `minute_of_day` on `weekday` until the window next
+    /// opens; `0` while it is open.
+    pub fn minutes_until_open(&self, weekday: PlaybookWeekday, minute_of_day: u16) -> u32 {
+        if self.contains(weekday, minute_of_day) {
             return 0;
         }
-        (self.start_minute + MINUTES_PER_DAY - minute_of_day % MINUTES_PER_DAY) % MINUTES_PER_DAY
+        let minute = u32::from(minute_of_day);
+        let start = u32::from(self.start_minute);
+        (0..=7u32)
+            .filter(|days| *days > 0 || start > minute)
+            .find(|days| {
+                self.opens_on(PlaybookWeekday::from_monday_offset(
+                    weekday.monday_offset() + days,
+                ))
+            })
+            .map_or(0, |days| days * u32::from(MINUTES_PER_DAY) + start - minute)
     }
 }
 
@@ -855,23 +919,70 @@ mod tests {
             start_minute: start,
             end_minute: end,
             time_zone: "Europe/Berlin".into(),
+            weekdays: None,
         }
     }
 
     #[test]
     fn active_hours_open_daily_and_may_span_midnight() {
+        use PlaybookWeekday::{Friday, Monday, Saturday, Sunday, Thursday};
         let office = hours(9 * 60, 18 * 60);
         assert!(office.is_valid());
-        assert!(office.contains(9 * 60));
-        assert!(!office.contains(18 * 60));
-        assert_eq!(office.minutes_until_open(12 * 60), 0);
-        assert_eq!(office.minutes_until_open(8 * 60 + 30), 30);
-        assert_eq!(office.minutes_until_open(18 * 60), 15 * 60);
+        assert!(office.contains(Sunday, 9 * 60));
+        assert!(!office.contains(Monday, 18 * 60));
+        assert_eq!(office.minutes_until_open(Monday, 12 * 60), 0);
+        assert_eq!(office.minutes_until_open(Monday, 8 * 60 + 30), 30);
+        assert_eq!(office.minutes_until_open(Monday, 18 * 60), 15 * 60);
         let night = hours(22 * 60, 6 * 60);
-        assert!(night.contains(23 * 60) && night.contains(0) && night.contains(5 * 60 + 59));
-        assert!(!night.contains(6 * 60));
-        assert_eq!(night.minutes_until_open(21 * 60), 60);
+        assert!(
+            night.contains(Monday, 23 * 60)
+                && night.contains(Monday, 0)
+                && night.contains(Monday, 5 * 60 + 59)
+        );
+        assert!(!night.contains(Monday, 6 * 60));
+        assert_eq!(night.minutes_until_open(Monday, 21 * 60), 60);
         assert!(!hours(600, 600).is_valid());
+
+        // Weekdays only: Friday evening waits for Monday morning.
+        let weekdays = PlaybookActiveHours {
+            weekdays: Some(PlaybookWeekday::ALL[..5].to_vec()),
+            ..office.clone()
+        };
+        assert!(weekdays.is_valid());
+        assert!(weekdays.contains(Friday, 10 * 60));
+        assert!(!weekdays.contains(Saturday, 10 * 60));
+        assert_eq!(
+            weekdays.minutes_until_open(Friday, 18 * 60),
+            2 * 1440 + 15 * 60
+        );
+        assert_eq!(weekdays.minutes_until_open(Sunday, 23 * 60), 10 * 60);
+        // An overnight window opened on Friday runs into Saturday morning,
+        // and one that would open on Saturday does not.
+        let weeknights = PlaybookActiveHours {
+            weekdays: Some(vec![Thursday, Friday]),
+            ..night.clone()
+        };
+        assert!(weeknights.contains(Saturday, 5 * 60));
+        assert!(!weeknights.contains(Sunday, 1));
+        assert!(!weeknights.contains(Saturday, 23 * 60));
+        assert_eq!(
+            weeknights.minutes_until_open(Saturday, 6 * 60),
+            5 * 1440 + 16 * 60
+        );
+        assert!(
+            !PlaybookActiveHours {
+                weekdays: Some(vec![]),
+                ..office.clone()
+            }
+            .is_valid()
+        );
+        assert!(
+            !PlaybookActiveHours {
+                weekdays: Some(vec![Monday, Monday]),
+                ..office.clone()
+            }
+            .is_valid()
+        );
         assert!(!hours(0, MINUTES_PER_DAY).is_valid());
         assert!(
             !PlaybookActiveHours {

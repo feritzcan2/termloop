@@ -1947,7 +1947,10 @@ mod tests {
     #[test]
     fn active_hours_round_trip_survive_a_client_that_omits_them_and_need_a_known_zone() {
         let (path, folder, mut runtime, project_id) = runtime_with_empty_project();
-        let office = json!({"startMinute": 540, "endMinute": 1020, "timeZone": "Europe/Istanbul"});
+        let office = json!({
+            "startMinute": 540, "endMinute": 1020, "timeZone": "Europe/Istanbul",
+            "weekdays": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+        });
         let night = json!({"startMinute": 1320, "endMinute": 360, "timeZone": "Europe/Berlin"});
         let mut milestones = two_step_milestones(600, 600, "CI is green on the Task's PR.");
         milestones[1]["activeHours"] = night.clone();
@@ -1988,6 +1991,9 @@ mod tests {
         // A zone the time zone database does not know is refused.
         let unknown = json!({"startMinute": 540, "endMinute": 1020, "timeZone": "Mars/Olympus"});
         assert!(save(&mut runtime, Some(unknown.clone()), &milestones, 4).is_err());
+        let no_days =
+            json!({"startMinute": 540, "endMinute": 1020, "timeZone": "UTC", "weekdays": []});
+        assert!(save(&mut runtime, Some(no_days), &milestones, 4).is_err());
         let mut unknown_step = milestones.clone();
         unknown_step[0]["activeHours"] = unknown;
         assert!(save(&mut runtime, None, &unknown_step, 5).is_err());

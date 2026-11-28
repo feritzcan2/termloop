@@ -8,6 +8,8 @@ pub struct ZonedClock {
     pub minute_of_day: u16,
     /// Milliseconds already elapsed within that minute, `0..60_000`.
     pub ms_into_minute: u64,
+    /// The local day of the week, `0` for Monday through `6` for Sunday.
+    pub days_from_monday: u8,
 }
 
 /// The wall clock of `time_zone` at `epoch_ms`. `None` when the zone is not
@@ -21,6 +23,7 @@ pub fn zoned_clock(epoch_ms: u64, time_zone: &str) -> Option<ZonedClock> {
             + u16::try_from(local.minute()).ok()?,
         ms_into_minute: u64::try_from(local.second()).ok()? * 1000
             + u64::try_from(local.millisecond()).ok()?,
+        days_from_monday: u8::try_from(local.weekday().to_monday_zero_offset()).ok()?,
     })
 }
 
@@ -41,7 +44,9 @@ mod tests {
             zoned_clock(winter, "UTC"),
             Some(ZonedClock {
                 minute_of_day: 8 * 60 + 30,
-                ms_into_minute: 12_500
+                ms_into_minute: 12_500,
+                // 2026-01-15 is a Thursday.
+                days_from_monday: 3,
             })
         );
         assert_eq!(

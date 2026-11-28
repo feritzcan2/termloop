@@ -247,7 +247,7 @@ pub const CONTRACT_IDENTITY: &str =
     "sha256:7eb20305e42354ec6af6cb6883f3c015de028823f2eb84e3d754895fb4d9c5d9";
 pub const CONTRACT_MAJOR: u32 = 1;
 pub const CONTRACT_REVISION: &str =
-    "sha256:4cc5bf42b522c94c95eb034412bc64e7448fdec48a94c07471e83f7b5d776448";
+    "sha256:6a930b62c1bc0411b760b9aa5ff30be1976c3797f509ecd69840e7ffdc98f0ed";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -5950,6 +5950,26 @@ pub struct PlaybookActiveHoursDto {
     pub end_minute: u16,
     #[serde(rename = "timeZone")]
     pub time_zone: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub weekdays: Option<Vec<PlaybookWeekday>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PlaybookWeekday {
+    #[serde(rename = "monday")]
+    Monday,
+    #[serde(rename = "tuesday")]
+    Tuesday,
+    #[serde(rename = "wednesday")]
+    Wednesday,
+    #[serde(rename = "thursday")]
+    Thursday,
+    #[serde(rename = "friday")]
+    Friday,
+    #[serde(rename = "saturday")]
+    Saturday,
+    #[serde(rename = "sunday")]
+    Sunday,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -24286,9 +24306,40 @@ fn validate_playbook_active_hours_dto(value: &Value) -> bool {
                     && text.chars().count() <= 64
                     && contract_pattern_matches("^[A-Za-z0-9/_+-]{1,64}$", text)
             })
+        }) && object.get("weekdays").is_none_or(|field| {
+            (field.as_array().is_some_and(|items| {
+                items.len() >= 1
+                    && items.len() <= 7
+                    && json_array_unique(items)
+                    && items.iter().all(|item| validate_playbook_weekday(item))
+            }) || field.is_null())
         }) && object
             .keys()
-            .all(|key| ["startMinute", "endMinute", "timeZone"].contains(&key.as_str()))
+            .all(|key| ["startMinute", "endMinute", "timeZone", "weekdays"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_playbook_weekday(value: &Value) -> bool {
+    value.as_str().is_some_and(|text| {
+        [
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday",
+        ]
+        .contains(&text)
     })
 }
 
