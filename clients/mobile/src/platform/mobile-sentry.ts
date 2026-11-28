@@ -1,5 +1,6 @@
 import * as Sentry from "@sentry/react-native";
 import * as Application from "expo-application";
+import { File, Paths } from "expo-file-system";
 import * as Updates from "expo-updates";
 
 import {
@@ -9,10 +10,12 @@ import {
 } from "./app-update-diagnostics";
 import { subscribeMobileDiagnostics } from "./mobile-diagnostics";
 import { mobileSentryDiagnostic } from "./sentry-diagnostics";
+import { mobileSentryEnvironment } from "./sentry-environment";
 import { correctMobileLogTimestamps } from "./sentry-log-clock";
 
 const SENTRY_DSN = "https://f947d94551545970dcb7e607aa06e13a@o4511248981164032.ingest.de.sentry.io/4512013745979472";
 const enabled = !__DEV__;
+const environment = mobileSentryEnvironment(() => new File(Paths.bundle, "embedded.mobileprovision").exists);
 
 export function logMobileAppUpdate(
   event: AppUpdateDiagnosticEvent,
@@ -34,7 +37,7 @@ export function logMobileAppUpdate(
 Sentry.init({
   dsn: SENTRY_DSN,
   enabled,
-  environment: "production",
+  environment,
   sendDefaultPii: false,
   enableLogs: enabled,
   logsOrigin: "js",
