@@ -15,6 +15,7 @@ use crate::{CoreError, CoreRuntime};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 pub use termloop_domain::PlaybookStepVerdict;
+mod dismissal;
 mod rewind;
 pub(crate) use rewind::RestartWatch;
 
@@ -681,6 +682,11 @@ impl CoreRuntime {
                 configuration
                     .pending_routine_findings
                     .retain(|finding| !finding.related_task_ids.contains(&answer.task_id));
+                dismissal::clear_step_dismissals(
+                    &mut configuration,
+                    &answer.milestone_id,
+                    &answer.task_id,
+                );
                 continue;
             }
             let source_key = step_waiting_source_key(
@@ -735,6 +741,14 @@ impl CoreRuntime {
                 }
                 steward_review_required |=
                     !self.companion_has_pending_proposal(&configuration.project_id);
+                continue;
+            }
+            // The Steward already dismissed this Task's current stay at this
+            // step; re-worded evidence is not a new decision.
+            if configuration
+                .recent_source_keys
+                .contains(&dismissal::step_dismissal_marker(answer))
+            {
                 continue;
             }
             if configuration.recent_source_keys.contains(&source_key) {
@@ -2939,6 +2953,118 @@ pub(crate) mod tests {
         assert_eq!(
             runtime.step_nudge_epoch_ms("routine-pr", "task-1"),
             u64::MAX
+        );
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    fn report_step_verdict(
+        runtime: &mut CoreRuntime,
+        project_id: &str,
+        check_id: &str,
+        verdict: PlaybookStepVerdict,
+        evidence: &str,
+        at: u64,
+    ) -> Value {
+        let claim = runtime
+            .claim_next_playbook_step_or_idle(project_id, check_id.into(), at)
+            .unwrap();
+        runtime
+            .report_steward_step_verdicts(
+                &claim
+                    .capability
+                    .expect("the waiting Task is due for another check"),
+                vec![StewardStepVerdict {
+                    task_id: "task-1".into(),
+                    verdict,
+                    evidence: evidence.into(),
+                }],
+                format!("report-{check_id}"),
+                at + 1_000,
+            )
+            .unwrap();
+        runtime.read_routine_findings(project_id).unwrap()
+    }
+
+    #[test]
+    fn a_dismissed_waiting_finding_stays_quiet_until_the_verdict_changes() {
+        const DAY: u64 = 24 * 60 * 60 * 1_000;
+        let (mut runtime, root, project_id) = auto_handled_pipeline();
+        let finding_id = waiting_finding(&mut runtime, &project_id, "check-1", "Open.", NOW);
+        runtime
+            .resolve_routine_finding(&project_id, &finding_id, "dismissed", NOW + 2_000)
+            .unwrap();
+
+        // Re-worded evidence for the same stay at the step is not a new
+        // decision, so the Steward is not asked to dismiss it again.
+        for (day, evidence) in [(1, "Still open."), (2, "Open, nobody reviewed it yet.")] {
+            let findings = report_step_verdict(
+                &mut runtime,
+                &project_id,
+                &format!("check-quiet-{day}"),
+                PlaybookStepVerdict::Waiting,
+                evidence,
+                NOW + day * DAY,
+            );
+            assert_eq!(findings["routines"], json!([]), "day {day}");
+        }
+
+        // A blocked check is a different situation the Steward must see.
+        let findings = report_step_verdict(
+            &mut runtime,
+            &project_id,
+            "check-blocked",
+            PlaybookStepVerdict::Blocked,
+            "The PR source is unreachable.",
+            NOW + 3 * DAY,
+        );
+        assert_eq!(
+            findings["routines"][0]["findings"].as_array().map(Vec::len),
+            Some(1)
+        );
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn a_step_dismissal_is_scoped_to_one_stay_and_cleared_when_the_task_leaves() {
+        let mut answer = PlaybookStepProgress {
+            task_id: "task-1".into(),
+            milestone_id: "pr".into(),
+            routine_id: "routine-pr".into(),
+            verdict: PlaybookStepVerdict::Waiting,
+            evidence: "Open.".into(),
+            decided_at_epoch_ms: NOW,
+            next_attempt_at_epoch_ms: None,
+            evaluator: PlaybookStepEvaluator::Routine,
+            deterministic_fallback: None,
+            rewind_count: 0,
+            pull_request_number: None,
+        };
+        let first = dismissal::step_dismissal_marker(&answer);
+        answer.evidence = "Re-worded.".into();
+        assert_eq!(dismissal::step_dismissal_marker(&answer), first);
+        answer.rewind_count = 1;
+        assert_ne!(dismissal::step_dismissal_marker(&answer), first);
+
+        let (runtime, root, _) = pipeline_runtime();
+        let mut configuration = runtime
+            .store
+            .tracker_configurations()
+            .iter()
+            .find(|routine| routine.id == "routine-pr")
+            .cloned()
+            .unwrap();
+        configuration.recent_source_keys = vec![
+            first,
+            dismissal::step_dismissal_marker(&answer),
+            "step-dismissed:pr:task-10:waiting:0".into(),
+            "step-waiting:other".into(),
+        ];
+        dismissal::clear_step_dismissals(&mut configuration, "pr", "task-1");
+        assert_eq!(
+            configuration.recent_source_keys,
+            ["step-dismissed:pr:task-10:waiting:0", "step-waiting:other"]
         );
 
         std::fs::remove_dir_all(root).ok();

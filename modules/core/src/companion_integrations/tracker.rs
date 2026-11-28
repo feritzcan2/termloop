@@ -115,6 +115,9 @@ impl CoreRuntime {
             .position(|finding| finding.id == finding_id)
             .ok_or(CoreError::NotFound)?;
         let resolved = configuration.pending_routine_findings.remove(index);
+        if resolution == "dismissed" {
+            self.remember_step_dismissal(&mut configuration, &resolved);
+        }
         configuration.updated_at_epoch_ms = updated_at_epoch_ms;
         self.store
             .set_tracker_configuration(&self.write_authority, configuration, self.store.revision())

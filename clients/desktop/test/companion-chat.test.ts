@@ -165,6 +165,35 @@ describe("Topic grouping", () => {
     expect(groups[0]!.items[0]!.message.id).toBe("m3");
   });
 
+  it("folds interleaved repeats of the same Steward receipt into one count each", () => {
+    const receipt = (id: number, task: string) => message({
+      id: `m${id}`, sequence: id, kind: "action", refs: { taskId: task },
+      content: `Dismissed finding: ${task} is waiting at “Live in production”.`,
+    });
+    const newestFirst = Array.from({ length: 9 }, (_, index) => 9 - index)
+      .map((id) => receipt(id, ["task-a", "task-b", "task-c"][id % 3]!));
+    const groups = groupCompanionTopics(newestFirst);
+    expect(groups.map((group) => group.id)).toEqual(["m9", "m8", "m7"]);
+    expect(groups.flatMap((group) => group.items.map((item) => item.repeatCount))).toEqual([3, 3, 3]);
+  });
+
+  it("does not fold a repeat across a user message", () => {
+    const later = message({ id: "m3", sequence: 3, content: "Reminder: review is waiting." });
+    const user = message({ id: "m2", sequence: 2, author: "user", content: "Okay." });
+    const earlier = message({ id: "m1", sequence: 1, content: "Reminder: review is waiting." });
+    const groups = groupCompanionTopics([later, user, earlier]);
+    expect(groups.map((group) => group.id)).toEqual(["m3", "m2", "m1"]);
+    expect(groups[0]!.items[0]!.repeatCount).toBe(1);
+  });
+
+  it("keeps the same wording about different Tasks as separate statements", () => {
+    const groups = groupCompanionTopics([
+      message({ id: "m2", sequence: 2, refs: { taskId: "task-2" }, content: "Waiting for review." }),
+      message({ id: "m1", sequence: 1, refs: { taskId: "task-1" }, content: "Waiting for review." }),
+    ]);
+    expect(groups.flatMap((group) => group.items.map((item) => item.message.id))).toEqual(["m2", "m1"]);
+  });
+
   it("links by Session and finding refs, not only by Task", () => {
     const bySession = [
       message({ id: "m2", sequence: 2, refs: { sessionId: "session-1" } }),

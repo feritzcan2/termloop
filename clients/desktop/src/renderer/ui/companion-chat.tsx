@@ -165,29 +165,48 @@ function repeatedCompanionWording(left: CompanionMessageDto, right: CompanionMes
   return left.kind === right.kind && left.content.trim() === right.content.trim();
 }
 
+/** The identity of one Steward statement for repeat folding: the same kind
+    and wording about the same Task or Session. */
+function companionRepeatKey(message: CompanionMessageDto): string {
+  return JSON.stringify([
+    message.kind,
+    message.content.trim(),
+    message.refs?.taskId ?? null,
+    message.refs?.sessionId ?? null,
+  ]);
+}
+
 /** Folds the newest-first transcript into topic groups: consecutive Steward
-    messages about the same Task, Session, or finding become one card, and an
-    exact repeat of the adjacent wording becomes a count instead of another
-    bubble. User messages never fold — a question or a decision receipt keeps
-    its own place in the conversation. */
+    messages about the same Task, Session, or finding become one card, and a
+    repeat of a Steward statement already shown since the last user message
+    becomes a count on that statement instead of another bubble, even when
+    other statements were interleaved between the repeats. User messages never
+    fold — a question or a decision receipt keeps its own place in the
+    conversation and bounds how far a repeat may fold. */
 export function groupCompanionTopics(messages: readonly CompanionMessageDto[]): CompanionTopicGroup[] {
   const groups: CompanionTopicGroup[] = [];
+  let shownSinceUserMessage = new Map<string, CompanionTopicItem>();
   for (const message of messages) {
-    const group = groups.at(-1);
-    const adjacent = group?.items.at(-1)?.message;
-    const linked = group !== undefined && adjacent !== undefined
-      && adjacent.author === "steward" && message.author === "steward"
-      && (sharedCompanionRef(adjacent, message) || repeatedCompanionWording(adjacent, message));
-    if (!linked) {
+    if (message.author !== "steward") {
+      shownSinceUserMessage = new Map();
       groups.push({ id: message.id, items: [{ message, repeatCount: 1 }] });
       continue;
     }
-    const last = group.items.at(-1);
-    if (last && repeatedCompanionWording(last.message, message)) {
-      last.repeatCount += 1;
-    } else {
-      group.items.push({ message, repeatCount: 1 });
+    const repeatKey = companionRepeatKey(message);
+    const shown = shownSinceUserMessage.get(repeatKey);
+    if (shown) {
+      shown.repeatCount += 1;
+      continue;
     }
+    const item = { message, repeatCount: 1 };
+    shownSinceUserMessage.set(repeatKey, item);
+    const group = groups.at(-1);
+    const adjacent = group?.items.at(-1)?.message;
+    const linked = group !== undefined && adjacent !== undefined
+      && adjacent.author === "steward"
+      && (sharedCompanionRef(adjacent, message) || repeatedCompanionWording(adjacent, message));
+    if (linked) group.items.push(item);
+    else groups.push({ id: message.id, items: [item] });
   }
   return groups;
 }
