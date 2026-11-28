@@ -69,7 +69,8 @@ export function startDesktopTelemetry(options: DesktopTelemetryOptions): void {
     dataCollection: { userInfo: false },
     defaultIntegrations: false,
     integrations: [
-      mainProcessSessionIntegration(),
+      // Count each launch immediately; TermLoop often stays open for days.
+      mainProcessSessionIntegration({ sendOnCreate: true }),
       onUncaughtExceptionIntegration(),
       onUnhandledRejectionIntegration(),
       childProcessIntegration(),
