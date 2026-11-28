@@ -83,9 +83,6 @@ importers:
       '@react-symbols/icons':
         specifier: 1.4.1
         version: 1.4.1(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
-      '@sentry/electron':
-        specifier: 8.4.0
-        version: 8.4.0(rollup@4.62.4)
       '@termloop/contract':
         specifier: workspace:*
         version: link:../../contract/generated/typescript
@@ -123,6 +120,9 @@ importers:
         specifier: 5.0.8
         version: 5.0.8(@types/react@19.1.10)(react@19.1.1)(use-sync-external-store@1.7.0(react@19.1.1))
     devDependencies:
+      '@sentry/electron':
+        specifier: 8.4.0
+        version: 8.4.0(rollup@4.62.4)
       '@types/node':
         specifier: 26.1.2
         version: 26.1.2

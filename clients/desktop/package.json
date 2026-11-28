@@ -23,7 +23,6 @@
     "@dnd-kit/sortable": "10.0.0",
     "@dnd-kit/utilities": "3.2.2",
     "@react-symbols/icons": "1.4.1",
-    "@sentry/electron": "8.4.0",
     "@termloop/contract": "workspace:*",
     "@termloop/terminal-surface": "workspace:*",
     "electron-updater": "6.8.9",
@@ -38,6 +37,7 @@
     "@termloop/ghostty-host": "workspace:*"
   },
   "devDependencies": {
+    "@sentry/electron": "8.4.0",
     "@types/node": "26.1.2",
     "@types/qrcode": "^1.5.6",
     "@types/react": "19.1.10",
@@ -55,5 +55,5 @@
   },
   "description": "TermLoop Next desktop client",
   "homepage": "https://github.com/feritzcan2/termloop",
-  "author": "Ferit \u00f6zcan"
+  "author": "Ferit özcan"
 }
