@@ -153,6 +153,10 @@ const launchAtLoginActions = {
   load: () => desktopApi.launchAtLoginGet(),
   set: (enabled: boolean) => desktopApi.launchAtLoginSet(enabled),
 };
+const telemetryActions = {
+  load: () => desktopApi.telemetryGet(),
+  set: (enabled: boolean) => desktopApi.telemetrySet(enabled),
+};
 const terminalPool = new TerminalPool(
   (onInput, onResize, onImagePaste, onFileDrop) => terminalRendererKind() !== "xterm"
     ? new GhosttySurface(onInput, onResize, ghosttyBridge, onFileDrop)
@@ -2604,6 +2608,7 @@ export function DesktopApp() {
       loadNotificationPreferences={desktopApi.notificationPreferencesGet}
       saveNotificationPreferences={desktopApi.notificationPreferencesSet}
       launchAtLogin={launchAtLoginActions}
+      telemetry={telemetryActions}
       agentConnections={agentConnections}
       computerSessions={computerSessions}
       switchAgentSessionAccount={switchAgentSessionAccount}

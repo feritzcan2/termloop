@@ -105,6 +105,7 @@ import { SettingsDialog, type SettingsPage } from "./SettingsDialog.js";
 import { UpdateNotice, type AppUpdateControls } from "./AppUpdate.js";
 import type { NotificationPreferences } from "../../notification-preferences.js";
 import type { LaunchAtLoginActions } from "./StartupSettings.js";
+import type { TelemetryActions } from "./DiagnosticsSettings.js";
 import type {
   ConnectionProfileConnectInput,
   ConnectionProfileConnectResult,
@@ -224,6 +225,8 @@ export type ShellProps = {
   saveNotificationPreferences(preferences: NotificationPreferences): Promise<NotificationPreferences>;
   /** This app's own login item. Absent hosts simply omit the Startup page. */
   launchAtLogin?: LaunchAtLoginActions | undefined;
+  /** This app's usage and error reporting. Absent hosts simply omit the Diagnostics page. */
+  telemetry?: TelemetryActions | undefined;
   agentConnections?: AgentConnectionActions;
   /** Every Session of the selected computer, for moving running Agents to a new account. */
   computerSessions?: readonly Session[];
@@ -2545,6 +2548,7 @@ export function Shell(props: ShellProps) {
         loadNotificationPreferences={props.loadNotificationPreferences}
         saveNotificationPreferences={props.saveNotificationPreferences}
         launchAtLogin={props.launchAtLogin}
+        telemetry={props.telemetry}
         agentConnections={props.agentConnections}
         initialProfileId={selectedConnectionProfileId}
         list={props.listConnectionProfiles}

@@ -154,6 +154,37 @@ describe("SettingsDialog", () => {
     expect(container.querySelector(".settings-nav")?.textContent).not.toContain("Startup");
   });
 
+  it("turns usage and error reporting off from the Diagnostics page and notes a pending restart", async () => {
+    const set = vi.fn(async (enabled: boolean) => ({ state: "available" as const, enabled, restartRequired: enabled }));
+    const telemetry = {
+      load: vi.fn(async () => ({ state: "available" as const, enabled: true, restartRequired: false })),
+      set,
+    };
+    await act(async () => root.render(createElement(SettingsDialog, props({ initialPage: "diagnostics", telemetry }))));
+
+    const toggle = container.querySelector<HTMLButtonElement>('[aria-label="Send usage and error reports"]');
+    expect(toggle?.getAttribute("aria-checked")).toBe("true");
+    await act(async () => toggle?.click());
+    expect(set).toHaveBeenCalledWith(false);
+    expect(toggle?.getAttribute("aria-checked")).toBe("false");
+    expect(container.textContent).not.toContain("next time TermLoop opens");
+
+    await act(async () => toggle?.click());
+    expect(set).toHaveBeenLastCalledWith(true);
+    expect(container.textContent).toContain("Reporting starts the next time TermLoop opens.");
+  });
+
+  it("disables reporting in builds without an endpoint and hides the page without a host", async () => {
+    const telemetry = { load: vi.fn(async () => ({ state: "unavailable" as const })), set: vi.fn() };
+    await act(async () => root.render(createElement(SettingsDialog, props({ initialPage: "diagnostics", telemetry }))));
+    const toggle = container.querySelector<HTMLButtonElement>('[aria-label="Send usage and error reports"]');
+    expect(toggle?.disabled).toBe(true);
+    expect(container.textContent).toContain("Reporting is not available in this build.");
+
+    await act(async () => root.render(createElement(SettingsDialog, props({ initialPage: "diagnostics" }))));
+    expect(container.querySelector(".settings-nav")?.textContent).not.toContain("Diagnostics");
+  });
+
   it("opens the existing server controls inside the Settings dialog", async () => {
     await act(async () => root.render(createElement(SettingsDialog, props({ initialPage: "servers" }))));
 

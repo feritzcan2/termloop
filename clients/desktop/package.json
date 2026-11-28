@@ -23,6 +23,7 @@
     "@dnd-kit/sortable": "10.0.0",
     "@dnd-kit/utilities": "3.2.2",
     "@react-symbols/icons": "1.4.1",
+    "@sentry/electron": "8.4.0",
     "@termloop/contract": "workspace:*",
     "@termloop/terminal-surface": "workspace:*",
     "electron-updater": "6.8.9",

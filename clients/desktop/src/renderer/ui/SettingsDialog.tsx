@@ -19,10 +19,11 @@ import { AgentConnectionsPanel, type AgentConnectionActions } from "./AgentConne
 import { AgentForkSettings, type AgentForkSettingsActions } from "./AgentForkSettings.js";
 import { SettingsSwitch } from "./SettingsSwitch.js";
 import { StartupSettings, type LaunchAtLoginActions } from "./StartupSettings.js";
+import { DiagnosticsSettings, type TelemetryActions } from "./DiagnosticsSettings.js";
 import type { ConnectionProfileSummary } from "../../connection-profile-types.js";
 import { connectionStatusSuffix } from "../connection-source-status.js";
 
-export type SettingsPage = "appearance" | "notifications" | "startup" | "updates" | "servers" | "accounts" | "agentSettings" | "integrations" | "mobile";
+export type SettingsPage = "appearance" | "notifications" | "startup" | "diagnostics" | "updates" | "servers" | "accounts" | "agentSettings" | "integrations" | "mobile";
 
 type SettingsNavItem = {
   page: SettingsPage;
@@ -35,6 +36,7 @@ const appNavItems: SettingsNavItem[] = [
   { page: "appearance", title: "Appearance", icon: "palette", keywords: "theme color dark light system mode look" },
   { page: "notifications", title: "Notifications", icon: "bell", keywords: "alerts sound push desktop iphone mobile apple watch steward review input" },
   { page: "startup", title: "Startup", icon: "power", keywords: "login launch open start automatically boot sign in autostart" },
+  { page: "diagnostics", title: "Diagnostics", icon: "alert", keywords: "privacy telemetry usage analytics crash error report sentry anonymous" },
   { page: "updates", title: "Updates", icon: "download", keywords: "version about upgrade release check restart install download" },
 ];
 
@@ -56,6 +58,8 @@ type SettingsDialogProps = Omit<ConnectionProfilesDialogProps, "close" | "embedd
   saveNotificationPreferences(preferences: NotificationPreferences): Promise<NotificationPreferences>;
   /** This app's own login item. Absent hosts simply omit the page. */
   launchAtLogin?: LaunchAtLoginActions | undefined;
+  /** This app's usage and error reporting. Absent hosts simply omit the page. */
+  telemetry?: TelemetryActions | undefined;
   showScope?: boolean;
   localComputerName?: string | undefined;
   mobile?: Omit<MobileConnectDialogProps, "close" | "embedded" | "computerName">;
@@ -75,6 +79,7 @@ export function SettingsDialog({
   loadNotificationPreferences,
   saveNotificationPreferences,
   launchAtLogin,
+  telemetry,
   showScope = false,
   localComputerName,
   mobile,
@@ -97,7 +102,7 @@ export function SettingsDialog({
   const navGroups = [
     {
       title: showScope ? "This app" : "General",
-      items: appNavItems.filter((item) => (item.page !== "startup" || launchAtLogin) && matchesSettingsQuery(item, query)),
+      items: appNavItems.filter((item) => (item.page !== "startup" || launchAtLogin) && (item.page !== "diagnostics" || telemetry) && matchesSettingsQuery(item, query)),
     },
     {
       title: "Computers",
@@ -235,7 +240,7 @@ export function SettingsDialog({
       </aside>
       <main className="settings-content">
         <div className="settings-content-inner">
-          {showScope && (page === "appearance" || page === "notifications" || page === "startup" || page === "updates") ? <p className="settings-scope-label">This app · {localComputerName ?? "This computer"}</p> : null}
+          {showScope && (page === "appearance" || page === "notifications" || page === "startup" || page === "diagnostics" || page === "updates") ? <p className="settings-scope-label">This app · {localComputerName ?? "This computer"}</p> : null}
           {page === undefined ? (
             <p className="settings-empty">No settings found for “{query.trim()}”</p>
           ) : page === "appearance" ? (
@@ -251,6 +256,8 @@ export function SettingsDialog({
             />
           ) : page === "startup" && launchAtLogin ? (
             <StartupSettings actions={launchAtLogin} />
+          ) : page === "diagnostics" && telemetry ? (
+            <DiagnosticsSettings actions={telemetry} />
           ) : page === "updates" ? (
             <UpdateSettings update={update} />
           ) : page === "integrations" && integrations ? (

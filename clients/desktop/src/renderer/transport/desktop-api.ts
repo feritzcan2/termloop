@@ -11,6 +11,7 @@ import type { QuickActionImageHandle } from "../../quick-action-image.js";
 import type { LayoutDocument } from "../../layout/model.js";
 import type { NotificationPreferences } from "../../notification-preferences.js";
 import type { LaunchAtLoginStatus } from "../../launch-at-login.js";
+import type { TelemetryStatus } from "../../telemetry-status.js";
 import type { UpdateSnapshot } from "../../update-status.js";
 import type { AppearanceTheme } from "../appearance-theme.js";
 import type {
@@ -243,6 +244,8 @@ export type DesktopApi = {
   notificationPreferencesSet(preferences: NotificationPreferences): Promise<NotificationPreferences>;
   launchAtLoginGet(): Promise<LaunchAtLoginStatus>;
   launchAtLoginSet(enabled: boolean): Promise<LaunchAtLoginStatus>;
+  telemetryGet(): Promise<TelemetryStatus>;
+  telemetrySet(enabled: boolean): Promise<TelemetryStatus>;
   pickLocalFolder(defaultPath?: string): Promise<string | null>;
   mobileAccessPairing(): Promise<MobileAccessPairingResult>;
   remoteMobileAccessPairing(profileId: string): Promise<MobileAccessPairingResult>;

@@ -130,6 +130,7 @@ import {
 } from "./notification-preferences.js";
 import { NotificationPreferencesFileStore } from "./platform/notification-preferences-store.js";
 import { launchAtLoginStatus, setLaunchAtLogin } from "./platform/launch-at-login.js";
+import { desktopTelemetryStatus, setDesktopTelemetryEnabled, startDesktopTelemetry } from "./platform/telemetry.js";
 
 declare const TERMLOOP_COMPILED_DEV_PROFILE: string | null;
 
@@ -160,6 +161,13 @@ const userDataOverride = desktopUserDataPath(
   app.getPath("appData"),
 );
 if (userDataOverride) app.setPath("userData", userDataOverride);
+startDesktopTelemetry({
+  packaged: app.isPackaged,
+  smoke: smokeRun,
+  version: app.getVersion(),
+  userDataPath: app.getPath("userData"),
+  environment: process.env,
+});
 const remoteHost = new RemoteHostManager();
 const tailscaleDiscovery = new TailscaleServerDiscoveryManager();
 let layoutStore: LayoutFileStore | undefined;
@@ -377,6 +385,17 @@ handleIpc("termloop:launch-at-login-set", (event, enabled: unknown) => {
   requireMainRenderer(event);
   if (typeof enabled !== "boolean") throw new Error("invalidLaunchAtLogin");
   return setLaunchAtLogin(app, enabled);
+});
+
+handleIpc("termloop:telemetry-get", (event) => {
+  requireMainRenderer(event);
+  return desktopTelemetryStatus();
+});
+
+handleIpc("termloop:telemetry-set", (event, enabled: unknown) => {
+  requireMainRenderer(event);
+  if (typeof enabled !== "boolean") throw new Error("invalidTelemetry");
+  return setDesktopTelemetryEnabled(enabled);
 });
 
 /// The OS folder panel, offered next to the daemon's own folder listing. It can
