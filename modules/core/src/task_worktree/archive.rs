@@ -3,7 +3,7 @@ use std::path::Path;
 use serde_json::{Value, json};
 use termloop_domain::{
     SessionKind, TaskArchiveOperation, TaskArchiveOperationState, TaskArchiveTarget,
-    WorktreeCleanupOutcome, WorktreeStaleResolutionMode,
+    TaskSuspensionReason, WorktreeCleanupOutcome, WorktreeStaleResolutionMode,
 };
 
 use super::health::comparison_key;
@@ -707,7 +707,12 @@ impl CoreRuntime {
             .store
             .task_archive_suspensions()
             .iter()
-            .filter(|suspension| suspension.archived_at_epoch_ms == archived_at)
+            // Close parks Agents in the same table; one in the same
+            // millisecond as the archive must stay parked for reopen.
+            .filter(|suspension| {
+                suspension.reason == TaskSuspensionReason::Archived
+                    && suspension.archived_at_epoch_ms == archived_at
+            })
             .filter(|suspension| {
                 suspension
                     .task_id
@@ -854,7 +859,12 @@ impl CoreRuntime {
             .store
             .task_archive_suspensions()
             .iter()
-            .filter(|suspension| suspension.archived_at_epoch_ms == archived_at)
+            // Close parks Agents in the same table; one in the same
+            // millisecond as the archive must stay parked for reopen.
+            .filter(|suspension| {
+                suspension.reason == TaskSuspensionReason::Archived
+                    && suspension.archived_at_epoch_ms == archived_at
+            })
             .filter(|suspension| {
                 suspension
                     .task_id

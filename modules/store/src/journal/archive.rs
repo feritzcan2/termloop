@@ -326,6 +326,7 @@ impl Store {
                 .iter()
                 .any(|suspension| {
                     suspension.session_id == *session_id
+                        && suspension.reason == TaskSuspensionReason::Archived
                         && suspension.archived_at_epoch_ms == archived_at
                         && suspension
                             .task_id
@@ -344,6 +345,7 @@ impl Store {
                 .iter()
                 .position(|suspension| {
                     suspension.session_id == *session_id
+                        && suspension.reason == TaskSuspensionReason::Archived
                         && suspension
                             .task_id
                             .as_ref()

@@ -271,7 +271,7 @@ fn interrupted_removal_link_restore_lets_the_exact_removal_finish() {
     runner
         .create_branch_ref(&fixture.repository, &target, &oid, &marker)
         .unwrap();
-    let root = std::fs::canonicalize(&fixture.root).unwrap();
+    let root = termloop_platform::canonical_existing_directory_path(&fixture.root).unwrap();
     let destination = root.join("interrupted worktree");
     let sibling = root.join("sibling worktree");
     runner
@@ -284,7 +284,9 @@ fn interrupted_removal_link_restore_lets_the_exact_removal_finish() {
     runner
         .add_worktree(&fixture.repository, &sibling, &sibling_branch)
         .unwrap();
-    let common_dir = std::fs::canonicalize(fixture.repository.join(".git")).unwrap();
+    let common_dir =
+        termloop_platform::canonical_existing_directory_path(&fixture.repository.join(".git"))
+            .unwrap();
 
     // A live link is not an interrupted removal.
     assert!(matches!(

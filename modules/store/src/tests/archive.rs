@@ -300,6 +300,40 @@ fn close_parks_retired_agents_durably_and_reopen_consumes_them() {
         Err(StoreError::ConstraintViolation)
     ));
 
+    // An archive in the same millisecond as the close must not let restore
+    // consume the close-parked Agent; it stays parked for reopen.
+    store
+        .begin_task_archive(
+            &authority,
+            termloop_domain::TaskArchiveOperation {
+                operation_id: "archive-closed".into(),
+                task_id: "task-close".into(),
+                project_id: "project-cleanup".into(),
+                worktree_path: Some(proof.registered_worktree_path.clone()),
+                worktree_generation: proof.worktree_generation,
+                targets: vec![],
+                state: termloop_domain::TaskArchiveOperationState::Prepared,
+            },
+        )
+        .unwrap();
+    store
+        .commit_task_archive(&authority, "task-close", "archive-closed", 50)
+        .unwrap();
+    assert!(matches!(
+        store.restore_task_archive(&authority, "task-close", &["agent-close".into()], 55),
+        Err(StoreError::ConstraintViolation)
+    ));
+    assert!(
+        store
+            .restore_task_archive(&authority, "task-close", &[], 55)
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        store.task_archive_suspensions()[0].reason,
+        termloop_domain::TaskSuspensionReason::Closed,
+    );
+
     let (reopened, resumable) = store
         .reopen_task_with_suspended_sessions(&authority, "task-close", 70)
         .unwrap();
