@@ -30,6 +30,7 @@ import {
   playbookActiveHoursIssue,
   playbookToggleWeekday,
   playbookActiveHoursEqual,
+  playbookOffHoursLabel,
   playbookActiveHoursLabel,
   playbookMinuteFromLabel,
   playbookMinuteLabel,
@@ -396,6 +397,26 @@ describe("Task Agent step reports", () => {
     expect(playbookMilestonesForWire(stepped!.milestones)[0]?.activeHours).toEqual({ ...hours, startMinute: 540, endMinute: 1020 });
     expect(changeMilestoneActiveHoursForRoutine(stepped!, "routine-merged", null)?.milestones[0]?.activeHours).toBeNull();
     expect(changeMilestoneActiveHoursForRoutine(loaded, "missing", null)).toBeUndefined();
+  });
+
+  it("says when a Playbook is out of its working hours and when it opens", () => {
+    // 2026-01-15 is a Thursday.
+    const at = (day: number, hour: number, minute = 0) => Date.UTC(2026, 0, day, hour, minute);
+    const weekdays = { startMinute: 540, endMinute: 1080, timeZone: "UTC", weekdays: ["monday", "tuesday", "wednesday", "thursday", "friday"] as const };
+    const hours = { ...weekdays, weekdays: [...weekdays.weekdays] };
+    expect(playbookOffHoursLabel(hours, at(15, 10))).toBeUndefined();
+    expect(playbookOffHoursLabel(hours, at(15, 8, 30))).toBe("Out of working hours · opens 09:00");
+    expect(playbookOffHoursLabel(hours, at(15, 18))).toBe("Out of working hours · opens tomorrow 09:00");
+    expect(playbookOffHoursLabel(hours, at(16, 18, 30))).toBe("Out of working hours · opens Mon 09:00");
+    expect(playbookOffHoursLabel(hours, at(18, 12))).toBe("Out of working hours · opens tomorrow 09:00");
+    // Read on the window's own clock: 07:00 UTC is 10:00 in Istanbul.
+    expect(playbookOffHoursLabel({ ...hours, timeZone: "Europe/Istanbul" }, at(15, 7))).toBeUndefined();
+    // A Friday night window is still open early on Saturday, not on Sunday.
+    const fridayNight = { startMinute: 1320, endMinute: 360, timeZone: "UTC", weekdays: ["friday" as const] };
+    expect(playbookOffHoursLabel(fridayNight, at(17, 5))).toBeUndefined();
+    expect(playbookOffHoursLabel(fridayNight, at(18, 5))).toBe("Out of working hours · opens Fri 22:00");
+    expect(playbookOffHoursLabel(null, at(15, 3))).toBeUndefined();
+    expect(playbookOffHoursLabel({ ...hours, timeZone: "Mars/Olympus" }, at(15, 3))).toBeUndefined();
   });
 
   it("labels and validates active hours", () => {

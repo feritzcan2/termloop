@@ -802,6 +802,54 @@ export function playbookWeekdaysLabel(hours: PlaybookActiveHoursDto): string {
     : days.map((day) => WEEKDAY_SHORT[day]).join(", ");
 }
 
+/** Whether a window is open at `epochMs`, and if not when it next opens,
+    read the way the daemon gates checks: on the window's own wall clock, with
+    a window past midnight belonging to the day it opened. Undefined when
+    this runtime does not know the zone. */
+export type PlaybookActiveHoursState =
+  | { open: true }
+  | { open: false; opensInDays: number; opensOn: PlaybookWeekday; opensAtMinute: number };
+
+export function playbookActiveHoursState(hours: PlaybookActiveHoursDto, epochMs: number): PlaybookActiveHoursState | undefined {
+  let parts: Intl.DateTimeFormatPart[];
+  try {
+    parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: hours.timeZone, weekday: "long", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    }).formatToParts(new Date(epochMs));
+  } catch {
+    return undefined;
+  }
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((candidate) => candidate.type === type)?.value ?? "";
+  const today = PLAYBOOK_WEEKDAYS.indexOf(part("weekday").toLowerCase() as PlaybookWeekday);
+  const minute = Number(part("hour")) % 24 * 60 + Number(part("minute"));
+  if (today < 0 || !Number.isFinite(minute)) return undefined;
+  const dayAt = (offset: number) => PLAYBOOK_WEEKDAYS[(today + offset + 7) % 7]!;
+  const opens = (offset: number) => playbookActiveHoursOpensOn(hours, dayAt(offset));
+  const open = hours.startMinute < hours.endMinute
+    ? opens(0) && minute >= hours.startMinute && minute < hours.endMinute
+    : (minute >= hours.startMinute && opens(0)) || (minute < hours.endMinute && opens(-1));
+  if (open) return { open: true };
+  for (let days = 0; days <= 7; days += 1) {
+    if ((days > 0 || hours.startMinute > minute) && opens(days)) {
+      return { open: false, opensInDays: days, opensOn: dayAt(days), opensAtMinute: hours.startMinute };
+    }
+  }
+  return undefined;
+}
+
+/** "Out of working hours · opens 09:00" (today), "opens tomorrow 09:00", or
+    "opens Mon 09:00"; undefined while the window is open or unreadable. */
+export function playbookOffHoursLabel(hours: PlaybookActiveHoursDto | null | undefined, epochMs: number): string | undefined {
+  if (!hours) return undefined;
+  const state = playbookActiveHoursState(hours, epochMs);
+  if (!state || state.open) return undefined;
+  const at = playbookMinuteLabel(state.opensAtMinute);
+  const when = state.opensInDays === 0 ? at
+    : state.opensInDays === 1 ? `tomorrow ${at}`
+      : `${WEEKDAY_SHORT[state.opensOn]} ${at}`;
+  return `Out of working hours · opens ${when}`;
+}
+
 /** "09:00–18:00 Mon–Fri Europe/Berlin", or "around the clock" without a window. */
 export function playbookActiveHoursLabel(hours: PlaybookActiveHoursDto | null | undefined): string {
   if (!hours) return "around the clock";

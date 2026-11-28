@@ -7,7 +7,9 @@ import {
   adoptTemplateInto,
   changeMilestoneRetryAt,
   moveMilestoneToSlot,
+  playbookActiveHoursLabel,
   playbookDraftFromDto,
+  playbookOffHoursLabel,
   playbookRefusalMessage,
   playbookRetryChoiceLabel,
   playbookRetryChoices,
@@ -492,6 +494,15 @@ export function AssistantRail(props: Props) {
   }, [health, playbookDoc, props.projectId, routines, snapshotProjectId, steward]);
   const stepIndex = useMemo(() => stepRoutineIndex(playbookDoc), [playbookDoc]);
   const playbookName = playbookDoc?.activePipelineName ?? "";
+  const playbookHours = playbookDoc?.activeHours ?? null;
+  const [clockEpochMs, setClockEpochMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!playbookHours) return;
+    setClockEpochMs(Date.now());
+    const timer = window.setInterval(() => setClockEpochMs(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, [playbookHours]);
+  const offHours = playbookOffHoursLabel(playbookHours, clockEpochMs);
   const [failed, setFailed] = useState(false);
   const [restartingSteward, setRestartingSteward] = useState(false);
   const [routineDraft, setRoutineDraft] = useState<{ name: string; intervalMinutes: string }>();
@@ -1040,6 +1051,9 @@ export function AssistantRail(props: Props) {
       <div className="ar-playbook" aria-label="Project Playbook">
         <div className="ar-playbook-controls">
           <span className="ar-routines-label">{playbookName ? `Playbook · ${playbookName}` : "Playbook"}</span>
+          {offHours ? <span className="ar-off-hours" role="status"
+            title={`Automatic checks wait for the Playbook's working hours (${playbookActiveHoursLabel(playbookHours)}). Run now still checks immediately.`}>
+            {offHours}</span> : null}
           {props.improvement ? <span className="ar-routines-tools">
             {buildCtaVisible || playbookBuilder ? null : <button type="button" className="ar-routines-improve"
               disabled={playbookImprovement.busy}

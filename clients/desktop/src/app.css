@@ -2543,6 +2543,7 @@ button.folder-crumb:hover { background: light-dark(rgba(15,23,42,.07), rgba(255,
 .ar-playbook > .assistant-empty { margin: 2px 2px 4px; }
 .ar-playbook-controls { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin: 1px 0 0; min-width: 0; }
 .ar-playbook-controls > .ar-routines-label { min-width: 0; padding-left: 0; }
+.ar-off-hours { flex: none; margin-left: auto; padding: 2px 6px; border: 1px solid rgba(245,180,70,.35); border-radius: 999px; background: rgba(245,180,70,.1); color: light-dark(#8a5a00, #f5c46b); font: 650 8px/1.2 var(--font-ui); white-space: nowrap; }
 .ar-routines-tools { display: inline-flex; flex: none; align-items: center; gap: 4px; }
 .ar-routines-edit { display: inline-flex; flex: none; align-items: center; gap: 4px; margin-top: 3px; padding: 3px 5px; border: 1px solid light-dark(rgba(15,23,42,.1), rgba(255,255,255,.1)); border-radius: 5px; background: light-dark(rgba(15,23,42,.035), rgba(255,255,255,.035)); color: var(--sidebar-dim); font: 650 8px/1 var(--font-ui); }
 .ar-routines-edit:hover:not(:disabled), .ar-routines-edit.review-needed { border-color: rgba(102,179,255,.45); background: rgba(102,179,255,.12); color: #fff; }
